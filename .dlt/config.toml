@@ -1,0 +1,21 @@
+# put your configuration values here
+
+[runtime]
+log_level="WARNING"  # the system log level of dlt
+# use the dlthub_telemetry setting to enable/disable anonymous usage data reporting, see https://dlthub.com/docs/reference/telemetry
+dlthub_telemetry = true
+
+[sources.sql_database]
+table = "<configure me>" # fill this in!
+
+[sources.sql_database.lmrmsinsurance.credentials]
+drivername = "mssql+pyodbc"
+host = "pr0503-14002-00\\LMRMSINSURANCE"
+database = "master"
+query = {
+    driver = "ODBC Driver 18 for SQL Server",
+    Encrypt = "yes",
+    TrustServerCertificate = "yes",
+    authentication = "ActiveDirectoryIntegrated"
+}
+
