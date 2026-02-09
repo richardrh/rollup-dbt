@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: catmodel
+    schema: catmodel
+    loader: python
+    description: "Raw vendor outputs ingested via Python/DAgu; RiskLink is produced by a lightweight pipeline and drops into this schema."
+    tables:
+      - name: verisk_ylt
+        description: "Verisk YLT events (sourced directly from Verisk)."
+      - name: risklink_ylt
+        description: "RiskLink YLT events (produced by the Python/DAgu jobs that replay the RiskLink pipeline)."
+      - name: verisk_ep
+        description: "Verisk EP summary output used for blending calculations."
+      - name: risklink_ep
+        description: "RiskLink EP summary output used for blending calculations."

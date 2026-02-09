@@ -1,34 +1,6 @@
-# put your configuration values here
+# This file is generated from ./config/connectors/*.toml and config/source_config.py
 
 [runtime]
-log_level="WARNING"  # the system log level of dlt
-# use the dlthub_telemetry setting to enable/disable anonymous usage data reporting, see https://dlthub.com/docs/reference/telemetry
+log_level = "WARNING"
 dlthub_telemetry = false
-
-
-[sources.sql_database.lmrmsinsurance.credentials]
-drivername = "mssql+pyodbc"
-host = "pr0503-14002-00\\LMRMSINSURANCE"
-database = "master"
-query = {
-    driver = "ODBC Driver 18 for SQL Server",
-    Encrypt = "yes",
-    TrustServerCertificate = "yes",
-    authentication = "ActiveDirectoryIntegrated"
-}
-
-[sources.sql_database.cds_staging.credentials]
-drivername = "mssql+pyodbc"
-host = "prod-groupuw-db"
-database = "CDSStaging_HiscoCAT"
-query = {
-    driver = "ODBC Driver 18 for SQL Server",
-    Encrypt = "yes",
-    TrustServerCertificate = "yes",
-    authentication = "ActiveDirectoryIntegrated"
-}
-
-# TODO: We need to have lmrmsinsurance be dynamic from config so it can
-# transfer data from a defiend database based on config/user input via click cli
-
 

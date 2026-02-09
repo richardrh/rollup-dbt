@@ -1,0 +1,74 @@
+[connectors.sql_database]
+type = "sql"
+label = "Microsoft SQL Server via ODBC (pyodbc)"
+default_section = "credentials"
+
+[[connectors.sql_database.fields]]
+name = "drivername"
+label = "Driver name"
+default = "mssql+pyodbc"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "host"
+label = "SQL host"
+default = "localhost"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "database"
+label = "Database"
+default = "master"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "schema"
+label = "Schema"
+default = "catmodel"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "table"
+label = "Table"
+default = ""
+required = false
+
+[[connectors.sql_database.fields]]
+name = "driver"
+label = "ODBC driver"
+section = "query"
+default = "ODBC Driver 18 for SQL Server"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "Encrypt"
+label = "Encrypt"
+section = "query"
+default = "yes"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "TrustServerCertificate"
+label = "Trust server certificate"
+section = "query"
+default = "yes"
+required = true
+
+[[connectors.sql_database.fields]]
+name = "authentication"
+label = "Authentication mode"
+section = "query"
+default = "ActiveDirectoryIntegrated"
+required = true
+
+[connectors.parquet]
+type = "file"
+label = "Parquet file path"
+default_section = "credentials"
+
+[[connectors.parquet.fields]]
+name = "file_path"
+label = "Parquet file path"
+required = true
+
+sources = []

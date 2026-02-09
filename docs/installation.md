@@ -6,6 +6,7 @@ own system, the only requirement is:
 
 1. git
 2. uv
+3. duckdb
 
 # Quick Install
 
@@ -17,13 +18,20 @@ Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 
 scoop install git
 scoop install uv
+scoop install duckdb
 ```
 Once you have git and uv installed you will pull the repo
 from Hiscox Bitbucket.
 
 ```bash
 
-git clone
+git clone [insert]
 uv sync
 
 ```
+
+If you have issues with TLS certs then run this instead.
+```bash
+uv sync [tls]
+```
+
