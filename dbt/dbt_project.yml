@@ -1,8 +1,8 @@
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
-name: 'rollup'
-version: '1.0.0'
+name: 'laiter'
+version: '0.0.1'
 # This setting configures which "profile" dbt uses for this project.
 profile: 'rollup'
 # These configurations specify where dbt should look for different types of files.
@@ -31,3 +31,7 @@ models:
     # Config indicated by + and applies to all files under models/example/
     example:
       +materialized: view
+sources:
+  - name: lm_rms_insurance
+    database: pr0503-14002-00\LMRMSINSURANCE
+    table:
