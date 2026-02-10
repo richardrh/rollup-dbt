@@ -1,0 +1,19 @@
+version: 2
+
+seeds:
+  - name: forecast_factors
+    description: "Forecast factor registry by LOB and forecast date."
+    columns:
+      - name: lob_id
+        tests:
+          - not_null
+      - name: forecast_date
+        tests:
+          - not_null
+      - name: factor
+        tests:
+          - not_null
+          - expression_is_true:
+              expression: "factor > 0"
+      - name: office
+      - name: class

@@ -11,4 +11,8 @@ wheels/
 *.log
 *.duckdb
 *.parquet
+*.sqlite
+
+.DS_Store
+
 
