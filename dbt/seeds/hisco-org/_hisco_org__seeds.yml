@@ -1,0 +1,52 @@
+version: 2
+
+seeds:
+  - name: hisco_org__lobs
+    description: "Lookup table of HISCO Lines of Business."
+    columns:
+      - name: lob_id
+        description: "Unique identifier for the LOB."
+        tests:
+          - not_null
+          - unique
+      - name: rollup_lob
+        description: "Standardized LOB rollup grouping."
+      - name: cds_cat_class_name
+        description: "CDS catastrophe class name."
+      - name: nds_class_name_gbp
+        description: "NDS class name for GBP region."
+      - name: nds_class_name_usd
+        description: "NDS class name for USD region."
+
+  - name: hisco_org__offices
+    description: "Lookup table of offices."
+    columns:
+      - name: office_id
+        tests:
+          - not_null
+          - unique
+      - name: country
+      - name: region
+      - name: city
+
+  - name: hisco_org__classes
+    description: "Lookup table of class definitions."
+    columns:
+      - name: class_id
+        tests:
+          - not_null
+          - unique
+      - name: class_name
+      - name: class_type
+        tests:
+          - accepted_values:
+              values: ["mga", "fa", "prop", "liabs", "cyber"]
+
+  - name: hisco_org__required_currency
+    description: "Required currency mappings."
+    columns:
+      - name: currency
+        description: "Currency ISO code."
+        tests:
+          - not_null
+          - unique

@@ -14,7 +14,7 @@ select
     ylt.yearid,
     ylt.eventid,
     ylt.loss
-from {{ ref('stg_risklink__ylt') }} as ylt
+from {{ ref('stg_risklink__ylts') }} as ylt
 inner join {{ source('core', 'dim_rl_analysis') }} as dra
     on dra.rl_analysis_id = ylt.anlsid
 inner join {{ source('core', 'dim_region_perils') }} as rps

@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: reference
+    schema: reference
+    tables:
+      - name: lobs
+      - name: air_events
+      - name: euws_rate_factors
+      - name: blending_factors
+      - name: forecast_factors_with_lobs_to_apply
+      - name: fx_rates
+      - name: flood_rl22_model_events

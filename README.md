@@ -1,5 +1,6 @@
 Things to arrange in the project:
 
+
 ## ETL
 How do we get Verisk and Risklink data into the dbt models.
 Define dbt sources, load an ETL process that creates the stg_ tables
@@ -152,4 +153,5 @@ check results before running the dlt export pipeline to
 the CDS destination.
 
 
-
+## Excali draw project diagram
+https://excalidraw.com/#json=vS8H21UObanim0APNXAE0,4KeJKrmS5EJH1eBi7v8P3

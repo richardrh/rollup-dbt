@@ -1,0 +1,47 @@
+# Laiter Rollup Configuration
+# All paths and settings in one place
+
+[sources]
+# CSV file paths for source data
+risklink_elt_csv = "//network/drive/risklink/elt_data.csv"
+verisk_ylt_csv = "//network/drive/verisk/ylt_data.csv"
+
+[staging]
+# Raw tables loaded by DLT (physical tables in 'staging' schema)
+risklink_elts_table = "stg_risklink__elts"      # ELT raw from RMS
+risklink_ylts_table = "stg_risklink__ylts"      # YLT post-simulation
+verisk_ylts_table = "stg_verisk__ylts"          # YLT from Verisk
+
+[schemas]
+# Schema configuration for dbt best practices
+raw_schema = "staging"          # Where DLT loads physical tables
+analytics_schema = "cat_models" # Where dbt creates views/models
+
+[database]
+# SQL Server connection settings
+host = "prod-group-uw"
+database = "CDS_Staging"
+driver = "ODBC Driver 18 for SQL Server"
+authentication = "ActiveDirectoryIntegrated"
+TrustServerCertificate = "yes"
+
+[simulation]
+# Risklink simulation settings
+n_simulations = 100000
+analysis_ids = []  # Add your analysis IDs: [123, 456, 789]
+random_seed = 42
+distribution_type = "lognormal"  # "lognormal" or "beta"
+
+[project]
+name = "laiter_rollup"
+environment = "development"
+version = "0.1.0"
+
+[validation]
+min_events = 100
+max_loss_ratio = 10.0
+check_event_ids = true
+
+[checkpoints]
+enabled = true
+auto_continue_timeout_minutes = -1  # -1 = wait forever

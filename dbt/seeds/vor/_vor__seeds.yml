@@ -1,0 +1,52 @@
+version: 2
+
+seeds:
+  - name: vor__blending_factors
+    description: "VOR model blending factors per region-peril and vendor."
+    config:
+      column_types:
+        blending_factor_id: integer
+        BlendSetID: integer
+        RegionPerilID: integer
+        SubRegionPerilID: varchar
+        SubRegionPeril: varchar
+        AIRBlend: float
+        RMSBlend: float
+        KatRiskBlend: float
+        created_at: date
+    columns:
+      - name: blending_factor_id
+        description: "Primary key for blending record."
+        tests:
+          - unique
+          - not_null
+      - name: BlendSetID
+        description: "Blend set identifier."
+      - name: RegionPerilID
+        description: "Region-peril identifier."
+      - name: SubRegionPerilID
+      - name: SubRegionPeril
+      - name: AIRBlend
+      - name: RMSBlend
+      - name: KatRiskBlend
+      - name: created_at
+        description: "Creation timestamp."
+
+  - name: vor__euws_rate_factors
+    description: "EUWS rate factors by ModelEventID and OccYear."
+    config:
+      column_types:
+        ModelEventID: integer
+        OccYear: integer
+        Factor: float
+    columns:
+      - name: ModelEventID
+        description: "Model event identifier."
+        tests:
+          - not_null
+      - name: OccYear
+        description: "Occurrence year."
+      - name: Factor
+        description: "Rate factor."
+        tests:
+          - not_null

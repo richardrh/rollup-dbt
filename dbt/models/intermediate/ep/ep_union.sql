@@ -52,7 +52,7 @@ risklink as (
         rp.blending_factor_sub_region_peril_id,
         lobs.cds_cat_class_name,
         ep.gl
-    from {{ ref('stg_risklink__ep') }} as ep
+    from {{ ref('stg_risklink__eps') }} as ep
     inner join modelled_lobs as lobs
         on lobs.modelled_lob = ep.lob
     inner join region_perils as rp
@@ -85,7 +85,7 @@ verisk as (
         rp.blending_factor_sub_region_peril_id,
         lobs.cds_cat_class_name,
         ep.gl
-    from {{ ref('stg_verisk__ep') }} as ep
+    from {{ ref('stg_verisk__eps') }} as ep
     inner join modelled_lobs as lobs
         on lobs.modelled_lob = ep.lob
     inner join region_perils as rp

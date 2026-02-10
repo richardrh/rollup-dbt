@@ -27,11 +27,11 @@ dispatch:
 # directory as views. These settings can be overridden in the individual model
 # files using the `{{ config(...) }}` macro.
 models:
-  rollup:
-    # Config indicated by + and applies to all files under models/example/
-    example:
+  laiter:
+    staging:
       +materialized: view
-sources:
-  - name: lm_rms_insurance
-    database: pr0503-14002-00\LMRMSINSURANCE
-    table:
+      +schema: cat_models
+    intermediate:
+      +schema: cat_models
+    marts:
+      +schema: cat_models
