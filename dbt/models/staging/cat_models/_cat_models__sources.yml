@@ -6,12 +6,5 @@ sources:
     schema: staging
     tables:
       - name: stg_risklink__elts
-        description: "Risklink Event Loss Table (ELT) - raw data from RMS"
       - name: stg_risklink__ylts
-        description: "Risklink Year Loss Table (YLT) - post-simulation"
       - name: stg_verisk__ylts
-        description: "Verisk Year Loss Table (YLT)"
-      - name: stg_risklink__eps
-        description: "Risklink Exceedance Probability (EP) curves"
-      - name: stg_verisk__eps
-        description: "Verisk Exceedance Probability (EP) curves"

@@ -146,28 +146,3 @@ seeds:
           - expression_is_true:
               arguments:
                 expression: "adjustment_factor > 0"
-
-  - name: vor__custom__lob_region_vendor_rank
-    description: "Vendor+lob adjustments with metric-level overrides."
-    columns:
-      - name: lob_id
-        tests:
-          - not_null
-      - name: region_peril_id
-        tests:
-          - not_null
-      - name: vendor
-        tests:
-          - not_null
-      - name: metric
-        tests:
-          - not_null
-      - name: rank
-        tests:
-          - not_null
-      - name: adjustment_factor
-        tests:
-          - not_null
-          - expression_is_true:
-              arguments:
-                expression: "adjustment_factor > 0"

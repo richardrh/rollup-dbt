@@ -4,10 +4,23 @@
 -- This is the raw data before simulation
 -- Note: In production, this references the raw ELT table in staging schema
 
+with source as (
+    select
+
+    *
+
+    from ref {{ source('cat_models_raw', 'stg_risklink_elts') }}
+)
+
+
 select
+    analysis_id,
     eventid as event_id,
     rate,
-    meanloss as mean_loss,
-    stddev as std_dev,
-    expvalue as exp_value
-from {{ source('cat_models_raw', 'stg_risklink__elts') }}
+    perspcode,
+    perspvalue as meanloss,
+    stddevi as stddevi,
+    stddevc as stddevc
+    expvalue as expvalue
+from source
+

@@ -8,15 +8,10 @@ models:
       materialized: view
     columns:
       - name: event_id
-        description: "Event identifier"
       - name: rate
-        description: "Annual occurrence rate"
       - name: mean_loss
-        description: "Mean loss value"
       - name: std_dev
-        description: "Standard deviation"
       - name: exp_value
-        description: "Exposure value"
 
   - name: stg_risklink__ylts
     description: "Staging view for Risklink YLT data (post-simulation)"
@@ -24,14 +19,12 @@ models:
       schema: cat_models
       materialized: view
     columns:
-      - name: anlsid
-        description: "Analysis ID"
+      - name: anlysis_id
+      - name: modelled_lob
+      - name: perspcode
       - name: yearid
-        description: "Simulation year"
       - name: eventid
-        description: "Event identifier"
       - name: loss
-        description: "Simulated loss value"
 
   - name: stg_verisk__ylts
     description: "Staging view for Verisk YLT data"
@@ -40,60 +33,9 @@ models:
       materialized: view
     columns:
       - name: lob
-        description: "Line of business"
       - name: analysis
-        description: "Analysis/region code"
       - name: model_code
-        description: "Model identifier"
       - name: yearid
-        description: "Simulation year"
       - name: eventid
-        description: "Event identifier"
       - name: net_pre_cat_loss
-        description: "Net pre-catastrophe loss"
       - name: catalog_type_code
-        description: "Catalog type code e.g. STC, HIST, RDS"
-
-  - name: stg_risklink__eps
-    description: "Staging view for Risklink EP curves"
-    config:
-      schema: cat_models
-      materialized: view
-    columns:
-      - name: rp
-        description: "Return period"
-      - name: ep_type
-        description: "EP curve type"
-      - name: lob
-        description: "Line of business"
-      - name: region_peril
-        description: "Region-peril combination"
-      - name: gl
-        description: "Ground-up loss"
-
-  - name: stg_verisk__eps
-    description: "Staging view for Verisk EP curves"
-    config:
-      schema: cat_models
-      materialized: view
-    columns:
-      - name: rp
-        description: "Return period"
-      - name: ep_type
-        description: "EP curve type"
-      - name: lob
-        description: "Line of business"
-      - name: analysis
-        description: "Analysis/region code"
-      - name: gl
-        description: "Ground-up loss"
-      - name: model_code
-        description: "Model identifier"
-      - name: yearid
-        description: "Simulation year"
-      - name: eventid
-        description: "Event identifier"
-      - name: net_pre_cat_loss
-        description: "Net pre-catastrophe loss"
-      - name: catalog_type_code
-        description: "Catalog type code e.g. STC, HIST, RDS"

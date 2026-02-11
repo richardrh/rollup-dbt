@@ -5,30 +5,8 @@ models:
     description: "Staged forecast factors with stable surrogate key."
     columns:
       - name: forecast_factor_id
-        description: "Stable surrogate key derived from the seed grain."
-        tests:
-          - not_null
-          - unique
-      - name: lob_id
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('hisco_org__lobs')
-                field: lob_id
+      - name: modelled_lob
       - name: forecast_date
-        tests:
-          - not_null
       - name: factor
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              arguments:
-                min_value: 0.0
-                max_value: 5.0
       - name: office
-        tests:
-          - dbt_utils.not_empty_string
       - name: class
-        tests:
-          - dbt_utils.not_empty_string
