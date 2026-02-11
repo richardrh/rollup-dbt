@@ -1,0 +1,19 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+
+:root {
+  --site-font: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+  --code-font: "Space Mono", "SFMono-Regular", "JetBrains Mono", "Roboto Mono", monospace;
+}
+
+body,
+.md-typeset {
+  font-family: var(--site-font);
+}
+
+code,
+pre,
+.md-typeset code,
+.md-typeset pre,
+.md-typeset .md-code {
+  font-family: var(--code-font);
+}

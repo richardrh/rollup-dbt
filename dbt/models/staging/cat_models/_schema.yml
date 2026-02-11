@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: stg_risklink__elts
+    description: "Staging view for Risklink ELT data"
+    config:
+      schema: cat_models
+      materialized: view
+    columns:
+      - name: event_id
+      - name: rate
+      - name: mean_loss
+      - name: std_dev
+      - name: exp_value
+
+  - name: stg_risklink__ylts
+    description: "Staging view for Risklink YLT data (post-simulation)"
+    config:
+      schema: cat_models
+      materialized: view
+    columns:
+      - name: anlysis_id
+      - name: modelled_lob
+      - name: perspcode
+      - name: yearid
+      - name: eventid
+      - name: loss
+
+  - name: stg_verisk__ylts
+    description: "Staging view for Verisk YLT data"
+    config:
+      schema: cat_models
+      materialized: view
+    columns:
+      - name: lob
+      - name: analysis
+      - name: model_code
+      - name: yearid
+      - name: eventid
+      - name: net_pre_cat_loss
+      - name: catalog_type_code

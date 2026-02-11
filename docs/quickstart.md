@@ -1,8 +1,36 @@
 # Quick start
 
-1. Install the `uv` dependencies and activate your environment.
-2. Run `python -m app.source_cli` to interactively register the sources you need. The CLI prompts for server/database/file path, shows the current registry, and regenerates the DLT config.
-3. Execute your DLT pipeline (or `dlt pipeline run ...`) so the `catmodel.*` tables are populated.
-4. Run `dbt seed` + `dbt run --select ylt_all_factors_long_from_cachetbl` to move through the dbt DAG.
 
-Updating a source simply means rerunning step 2, letting the CLI rewrite `config/sources.toml`, and rerunning the DLT + dbt steps.
+## Config
+The ./config folder contains config.toml.
+This config file specifies all the required config for Laiter in one file.
+
+Users can edit this config file directly and then run the workflows manually.
+The recommended approach is to use the CLI tool.
+
+## CLI
+Laiter ships with a cli tool that prompts users to confirm configuration.
+
+run this with
+
+```bash
+
+uv run python -m cli
+
+```
+
+User will be prompted to confirm or otherwise the config settings such as:
+- Database paths
+- Source paths for ELTs/YLTs
+- Output file name for CDS Staging
+
+The CLI tool writes this config to ./config/config.toml and executes the workflows.
+
+### Manually running workflows
+Laiter uses Dagu as a lightweight orchestrator to execute the end to end
+workflow.
+
+Dagu ships with it's own web gui and allows individual steps to be executed
+or the entire workflow to be run in one step manually.
+
+

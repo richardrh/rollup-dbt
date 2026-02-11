@@ -1,0 +1,23 @@
+version: 2
+
+seeds:
+  - name: fx_rates
+    description: ""
+    config:
+      column_types:
+        base_ccy: vrchar
+        target_ccy: varchar
+        rate: float
+    columns:
+      - name: base_ccy
+        tests:
+          - not_null
+      - name: target_ccy
+        tests:
+          - not_null
+      - name: rate
+        tests:
+          - not_null
+          - expression_is_true:
+              arguments:
+                expression: "factor > 0"

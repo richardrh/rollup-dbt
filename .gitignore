@@ -13,6 +13,9 @@ wheels/
 *.parquet
 *.sqlite
 
-.DS_Store
+# MkDocs build output
+site/
+.mkdocs/
 
+.DS_Store
 

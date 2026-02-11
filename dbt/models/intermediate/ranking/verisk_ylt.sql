@@ -14,7 +14,7 @@ select
     ylt.yearid,
     ylt.eventid,
     ylt.net_pre_cat_loss as loss
-from {{ ref('stg_verisk__ylt') }} as ylt
+from {{ ref('stg_verisk__ylts') }} as ylt
 inner join {{ source('reference', 'lobs') }} as lobs
     on lobs.modelled_lob = ylt.lob
 inner join {{ source('core', 'dim_region_perils') }} as rps
