@@ -36,7 +36,8 @@ seeds:
       - name: class_type
         tests:
           - accepted_values:
-              values: ["mga", "fa", "prop", "liabs", "cyber"]
+              arguments:
+                values: ["mga", "fa", "prop", "liabs", "cyber"]
 
   - name: hisco_org__required_currency
     description: "Required currency mappings."

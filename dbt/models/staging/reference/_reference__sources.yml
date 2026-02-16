@@ -2,12 +2,12 @@ version: 2
 
 sources:
   - name: reference
-    schema: reference
+    description: "Reference datasets naming the lookup views we just built"
+    schema: cat_models
     tables:
       - name: lobs
-      - name: air_events
-      - name: euws_rate_factors
-      - name: blending_factors
-      - name: forecast_factors_with_lobs_to_apply
-      - name: fx_rates
-      - name: flood_rl22_model_events
+        description: "HISCO LOB metadata plus type labels."
+        identifier: stg_reference__hisco_org__lobs
+      - name: offices
+        description: "Office lookup metadata."
+        identifier: stg_reference__hisco_org__offices

@@ -5,15 +5,15 @@ seeds:
     description: "Forecast factor registry by LOB and forecast date."
     config:
       column_types:
-        lob_id: integer
+        modelled_lob: varchar
         forecast_date: date
-        factor: float
         office: varchar
         class: varchar
+        factor: float
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
-            combination_of_columns: [lob_id, forecast_date, office, class]
+            combination_of_columns: [modelled_lob, forecast_date, office, class]
     columns:
       - name: modelled_lob
         tests:

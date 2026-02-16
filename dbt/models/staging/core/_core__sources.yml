@@ -1,8 +1,0 @@
-version: 2
-
-sources:
-  - name: core
-    schema: main
-    tables:
-      - name: dim_region_perils
-      - name: dim_rl_analysis

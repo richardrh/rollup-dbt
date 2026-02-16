@@ -5,11 +5,8 @@
 -- Note: In production, this references the raw ELT table in staging schema
 
 with source as (
-    select
-
-    *
-
-    from ref {{ source('cat_models_raw', 'stg_risklink_elts') }}
+    select *
+    from {{ source('cat_models_raw', 'stg_risklink__elts') }}
 )
 
 
@@ -20,7 +17,6 @@ select
     perspcode,
     perspvalue as meanloss,
     stddevi as stddevi,
-    stddevc as stddevc
+    stddevc as stddevc,
     expvalue as expvalue
 from source
-

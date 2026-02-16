@@ -10,6 +10,13 @@ from rich.table import Table
 from rich.text import Text
 
 
+def post_etl_load() -> Panel:
+    table = Table(show_header=False, box=None)
+    table.add_column("Source", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Details", style="white")
+
+
 def create_checkpoint_panel(stage: str) -> Panel:
     """Create a Rich panel showing checkpoint status."""
 

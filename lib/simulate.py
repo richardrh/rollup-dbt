@@ -35,6 +35,7 @@ def map_losses(
         sigma = np.sqrt(np.log(1 + (stddev**2 / meanloss**2)))
         z = norm.ppf(p)
         losses = np.exp(mu + sigma * z)
+
     elif dist_type == "beta":
         # Method-of-moments for alpha/beta
         m = np.clip(meanloss / expvalue, 1e-12, 1 - 1e-12)

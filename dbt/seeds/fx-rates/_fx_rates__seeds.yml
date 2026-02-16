@@ -5,7 +5,7 @@ seeds:
     description: ""
     config:
       column_types:
-        base_ccy: vrchar
+        base_ccy: varchar
         target_ccy: varchar
         rate: float
     columns:

@@ -10,18 +10,18 @@ renamed as (
     select
 
         {{ dbt_utils.generate_surrogate_key([
-            'lob_id',
+            'modelled_lob',
             'forecast_date',
             'office',
             'class'
         ]) }} as forecast_factor_id,
 
 
-        lob_id,
+        modelled_lob
         forecast_date,
-        factor,
         office,
-        class
+        class,
+        factor
 
     from source
 )
