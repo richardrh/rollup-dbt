@@ -9,8 +9,10 @@ models:
     columns:
       - name: event_id
       - name: rate
-      - name: mean_loss
-      - name: std_dev
+      - name: perspcode
+      - name: meanloss
+      - name: stddevi
+      - name: stddevc
       - name: exp_value
 
   - name: stg_risklink__ylts

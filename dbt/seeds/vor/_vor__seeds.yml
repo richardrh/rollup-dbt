@@ -1,7 +1,7 @@
 version: 2
 
 seeds:
-  - name: vor__blending_factors
+  - name: vor_blending_factors
     description: "VOR model blending factors per region-peril and vendor."
     config:
       column_types:
@@ -32,7 +32,7 @@ seeds:
       - name: created_at
         description: "Creation timestamp."
 
-  - name: vor__euws_rate_factors
+  - name: vor_euws_rate_factors
     description: "EUWS rate factors by ModelEventID and OccYear."
     config:
       column_types:
@@ -50,3 +50,26 @@ seeds:
         description: "Rate factor."
         tests:
           - not_null
+
+  - name: vor_analysis_variations
+    description: "Catalog of VOR analysis variations per region/peril and optional modifier set."
+    config:
+      column_types:
+        region: varchar
+        peril: varchar
+        modifiers: varchar
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [region, peril, modifiers]
+    columns:
+      - name: region
+        description: "Geographic region for the analysis (e.g., UK, BE)."
+        tests:
+          - not_null
+      - name: peril
+        description: "Peril code (e.g., WS, FL)."
+        tests:
+          - not_null
+      - name: modifiers
+        description: "Optional modifier list applied to the analysis variant."

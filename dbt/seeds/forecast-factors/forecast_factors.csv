@@ -1,1 +1,4 @@
-modelled_lob,forecast_date,office,class,factor
+forecast_date,entity,office,lob_type,forecast_factor
+2026-07-01,HIG,UK,FA,1.2
+2026-07-01,HIG,EU,PROP,1.3
+2026-07-01,33,UK,FA,1.1

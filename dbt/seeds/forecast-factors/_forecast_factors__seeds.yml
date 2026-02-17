@@ -5,27 +5,35 @@ seeds:
     description: "Forecast factor registry by LOB and forecast date."
     config:
       column_types:
-        modelled_lob: varchar
         forecast_date: date
+        entity: varchar
         office: varchar
-        class: varchar
-        factor: float
+        lob_type: varchar
+        forecast_factor: float
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
-            combination_of_columns: [modelled_lob, forecast_date, office, class]
+            combination_of_columns: [forecast_date, entity, office, lob_type]
     columns:
-      - name: modelled_lob
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('hisco_org__lobs')
-                field: modelled_lob
       - name: forecast_date
+        description: "Snapshot date for the forecast factor."
         tests:
           - not_null
-      - name: factor
+      - name: entity
+        description: "Business entity (e.g., HIG, 33)."
+        tests:
+          - not_null
+      - name: office
+        description: "Office code or geography (UK, EU, etc.)."
+        tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: lob_type
+        description: "LOB type (FA, PROP, MGA, etc.)."
+        tests:
+          - not_null
+      - name: forecast_factor
+        description: "Applied factor multiplier."
         tests:
           - not_null
           - dbt_utils.accepted_range:
@@ -34,10 +42,4 @@ seeds:
                 max_value: 10.0
           - expression_is_true:
               arguments:
-                expression: "factor > 0"
-      - name: office
-        tests:
-          - dbt_utils.not_empty_string
-      - name: class
-        tests:
-          - dbt_utils.not_empty_string
+                expression: "forecast_factor > 0"

@@ -10,9 +10,10 @@ renamed as (
 
         {{ dbt_utils.generate_surrogate_key([
             'currency'
-        ]) }} as required_currency_id,
+        ]) }} as fx_rate_currency_id,
 
         currency
+
 
     from source
 )

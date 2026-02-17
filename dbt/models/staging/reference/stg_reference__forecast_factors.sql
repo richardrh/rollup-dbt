@@ -13,7 +13,8 @@ renamed as (
             'modelled_lob',
             'forecast_date',
             'office',
-            'class'
+            'class',
+            'factor'
         ]) }} as forecast_factor_id,
 
 

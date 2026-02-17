@@ -9,8 +9,21 @@ with source as (
     from {{ source('cat_models_raw', 'stg_risklink__elts') }}
 )
 
+with renamed as (
+
+        {{ dbt_utils.generate_surrogate_key([
+            'analysis_id',
+            'eventid',
+            'perspcode',
+        ]) }} as elt_event_id,
+
+        *
+from source )
+
+
 
 select
+    elt_event_id,
     analysis_id,
     eventid as event_id,
     rate,
@@ -19,4 +32,4 @@ select
     stddevi as stddevi,
     stddevc as stddevc,
     expvalue as expvalue
-from source
+from renamed

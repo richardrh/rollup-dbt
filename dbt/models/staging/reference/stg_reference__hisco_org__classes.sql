@@ -9,7 +9,8 @@ renamed as (
     select
 
         {{ dbt_utils.generate_surrogate_key([
-            'class_id'
+            'class_id',
+            'class_name',
         ]) }} as id,
 
         class_id as original_class_id,
