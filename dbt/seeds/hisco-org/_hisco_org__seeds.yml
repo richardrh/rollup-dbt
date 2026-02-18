@@ -1,5 +1,4 @@
 version: 2
-
 seeds:
   - name: hisco_org__lobs
     description: "Lookup table of HISCO Lines of Business."
@@ -12,45 +11,20 @@ seeds:
       - name: rollup_lob
         description: "Standardized LOB rollup grouping."
       - name: cds_cat_class_name
-        description: "CDS catastrophe class name."
       - name: nds_class_name_gbp
-        description: "NDS class name for GBP region."
       - name: nds_class_name_usd
-        description: "NDS class name for USD region."
-
-  - name: hisco_org__offices
-    description: "Lookup table of offices."
+  - name: hisco_org__forecast_factors
+    description: "Forecast factors at office and class grain"
+    config:
+      column_types:
+        class: varchar
+        office: varchar
+        office_iso2: varchar
+        forecast_date: date
+        forecast_factor: float
     columns:
+      - name: class
       - name: office
-        tests:
-          - not_null
-          - unique
-      - name: country
-      - name: region
-      - name: city
-
-  - name: hisco_org__classes
-    description: "Lookup table of class definitions."
-    columns:
-      - name: class_name
-      - name: class_type
-        tests:
-          - accepted_values:
-              arguments:
-                values: ["mga", "fa", "prop", "liabs", "cyber"]
-
-  - name: hisco_org__required_currency
-    description: "Required currency mappings."
-    columns:
-      - name: office
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('hisco_org__offices')
-                field: office
-      - name: currency
-        description: "Currency ISO code."
-        tests:
-          - not_null
-          - unique
+      - name: office_iso2
+      - name: forecast_date
+      - name: forecast_factor

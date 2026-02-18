@@ -1,5 +1,0 @@
-model_option_id,vendor,region,peril,option
-1,risklink,UK,WSSS,,
-2,verisk,UK,WSSS,,
-3,risklink,UK,WSSS,CVV
-4,risklink,EU,WS,CVV

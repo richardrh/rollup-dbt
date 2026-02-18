@@ -1,10 +1,13 @@
 version: 2
-
 sources:
   - name: cat_models_raw
     description: "Raw staging tables loaded by DLT/ETL processes"
     schema: staging
     tables:
+      # Raw elt/ylt
       - name: stg_risklink__elts
       - name: stg_risklink__ylts
       - name: stg_verisk__ylts
+      # EP Curves from ETL process
+      - name: stg_risklink__ep
+      - name: stf_verisk__ep

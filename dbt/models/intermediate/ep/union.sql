@@ -24,8 +24,7 @@ region_perils as (
         applies_to_prop,
         applies_to_fa,
         blending_factor_region_peril_id,
-        blending_factor_sub_region_peril_id,
-        id
+        blending_factor_sub_region_peril_ida       id
     from {{ source('core', 'dim_region_perils') }}
 ),
 

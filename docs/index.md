@@ -190,3 +190,267 @@ the CDS destination.
 
 ## Excali draw project diagram
 https://excalidraw.com/#json=vS8H21UObanim0APNXAE0,4KeJKrmS5EJH1eBi7v8P3
+
+
+## Other issues
+- Retail needs a utils library that can extract, perform agg calculations,
+calculate EP curves for various grains.
+
+- Need to understand the databricks capture process for UK, EU
+
+# Proposed workflow
+### Phase 1
+#### Workstream A: Tech debt cleanup
+Cleaning up existing January 2026 rollup
+
+#### Workstream B: Fact find
+Fact finding:
+    1. How are other teams in Hiscox solving issues if possible?
+    2. Find out how the source rollup data was generated
+    3. Find out what GC do to the data before modelling
+    4. Collate the likely data sources for UK/EU
+    5. How international perils are generated and vor
+    6. Tomcat replacement?
+
+### Phase 2
+#### Workstream A: Warehouse
+Generate rationale input seed values
+Hisco lib/utils build
+
+#### Workstream B: ETL Build
+Generate ETL, pre and post-modelling tools
+to format data pre-warehouse
+
+### Workstream C: Responsibilities
+Agree which team is responsible for running the process
+in future
+
+
+### Phase 3
+#### Workstream A: Testing
+- Source 1.4.2026 data from above sources
+
+
+#### Workstram B: Nice-to-haves
+Various EDM outputs
+
+# Issues with proposed workflow to be dealt with
+## Tomcat
+- Tomcat replacement: Tomcat's functionality was replaced by
+Retail tool that maps to RMS Simulation set in an automated workflow
+Runtime approx 3seconds and cut down the need for
+an analyst to use the system/click through GUI.
+
+- London Market have a different process again.
+
+## Databricks system
+- Limited implementation, but this would be the ideal
+system +/- snowflake to stage data in and out
+
+- January 2026 rollup used Duckdb and continue to work
+on Duckdb as Databricks is not currently operational fo me
+Duckdb runs the rollup in c.1-15minutes end to end.
+
+Depends upon network / citrix speed
+
+##
+
+
+
+# Proposal: Fixing the Retail Rollup Process (UK & EU)
+
+## Executive Proposal
+
+Hiscox Retail UK & EU currently operates a rollup process that is
+**slow, fragile, opaque, and operationally risky**.
+Key modelling steps are implicit, manual, and difficult to reproduce or validate.
+
+Additionally as the business evolves the required analysis changes which means
+the process is difficult to reproduce, examples of this are:
+- Model settings changing year to year
+- Naming conventions, entities, portfolios changing
+- Processes to generate inputs like forecast factors are undefined and change year to year
+
+
+As a result, the business is exposed to:
+- Unclear ownership and application of modelling adjustments
+- Limited auditability
+- Difficulty explaining *why* results changed between runs
+- Friction and rework at CDS ingestion if requirements or inputs change
+
+To overcome these issues in full there are a combination of things Hiscox could do:
+### Agree how the business structure is defined
+This step means Hiscox/Retail will define how the business is structured. The
+naming conventions used and by extension the grain at which various inputs
+are to be defined. Immediate examples of this are:
+- Define a process for the grain and input data used to generate forecast factors
+and do this programmatically with human review.
+
+### Implement checkpoints which MUST pass
+Human in the loop checkpoitns should be officially defined during the
+rollup process. The managerial and human review should happen early-on in
+the process and not only at the end.o
+
+### Define data sources and responsibilities
+Document this - in modern documentation systems which can be audited and traced
+where data is derived, who produced it and when.
+
+### Implement appropriate technologies
+This proposal delivers a **modernised Retail rollup capability**
+that turns the rollup from a *bespoke analyst exercise* into
+a **repeatable, governed modelling process**.
+
+---
+
+## What Hiscox Will Be Able To Do
+The intention of the project should be to build the base for a rollup
+that can be performed more frequently (quarterly) and is open to be translated
+to other systems to meet Hiscox's longer term goals.
+
+## What Hiscox Will Explicitly *Not* Get
+This project is deliberately scoped to avoid over‑reach.
+
+- ❌ It does **not** unify process between Retail and other teams
+- ❌ It does **not** require Databricks to be fully operational on day one
+
+Instead, it **stabilises and professionalises** the Retail rollup layer that already exists.
+
+
+## What Hiscox shuld expect
+Catch issues earlier - whether that be in the source data sets or
+modelling outputs.
+
+Retail team internally defines its' review practices and produces sign off
+templates which MUST be done prior to uploading to CDS.
+
+
+### 1. Run Retail Rollups Reliably and Repeatedly
+- Execute the full UK/EU Retail rollup on demandd
+- Re-run prior periods and explain differences
+- Produce consistent outputs regardless of who runs the process
+
+### 2. Explain Results — Not Just Produce Them
+- Trace losses from raw model output → blended → forecast → CDS
+- Show exactly which factors moved results and why
+- Provide defensible explanations to Group, Risk, and Finance
+
+### 3. Control and Govern Modelling Adjustments
+- Manage blending, forecast, EUWS, FX, and custom factors as **data**
+- Apply scenario-based forecasts without code changes
+- Override factors deliberately, visibly, and with sign‑off
+
+### 4. Reduce Operational and Key‑Person Risk
+- Remove dependency on manual systems and undocumented steps
+- Reduce reliance on specialist “how it works” knowledge
+- Make the process supportable as a BAU activity
+
+### 5. Catch Issues Earlier
+- Validate event IDs, EP curves, and aggregates *before* CDS export
+- Review results at agreed checkpoints, not after the fact
+- Avoid late-stage rework and failed CDS ingestions
+
+---
+
+## What Hiscox Will Explicitly *Not* Get
+
+This project is deliberately scoped to avoid over‑reach.
+
+- ❌ It does **not** redesign vendor models (Verisk / Risklink)
+- ❌ It does **not** change Group Cat methodologies
+- ❌ It does **not** unify Retail and London Market processes
+- ❌ It does **not** require Databricks to be fully operational on day one
+
+Instead, it **stabilises and professionalises** the Retail rollup layer that already exists.
+
+---
+
+## How This Moves the Dial Forward
+
+| Dimension | Before | After |
+|--------|-------|------|
+| Reproducibility | Low | High |
+| Transparency | Implicit | Explicit & documented |
+| Speed | Analyst / system dependent | Minutes, repeatable |
+| Governance | Informal | Seed- and checkpoint-driven |
+| Auditability | Limited | Built-in artefacts |
+| Operational Risk | High | Materially reduced |
+
+This is a **capability uplift**, not just a technical refactor.
+
+---
+
+## Key Deliverables to the Business
+
+By the end of the project, Hiscox will have:
+
+1. **A defined Retail rollup process**
+   - Inputs, transformations, outputs clearly documented
+
+2. **A production-ready rollup pipeline**
+   - From vendor outputs to CDS Staging
+
+3. **Governed adjustment logic**
+   - Blending, forecast, EUWS, FX, custom factors
+
+4. **Results verification artefacts**
+   - EP curves and summaries at each stage
+
+5. **Clear ownership and run responsibility**
+   - Enabling BAU execution
+
+---
+
+## Dependencies & Preconditions
+
+### Business Dependencies
+- Agreement on:
+  - Blending methodology
+  - Forecast factor usage
+  - EUWS handling and override policy
+- Alignment with CDS on acceptance criteria
+
+### Data & System Dependencies
+- Access to Verisk and Risklink outputs
+- Access to CDS event ID reference data
+- Stable CDS Staging environment
+
+### Organisational Dependencies
+- Named owners for:
+  - Factor governance
+  - Run execution
+  - Result sign‑off
+
+---
+
+## Key Challenges & How They Are Addressed
+
+### Legacy Knowledge Risk
+- Challenge: Important logic exists only in analyst workflows
+- Response: Structured fact‑finding and side‑by‑side validation
+
+### Adjustment Complexity
+- Challenge: Multiple interacting factors can obscure impact
+- Response: Explicit sequencing, defaults, and EP checkpoints
+
+### Change Adoption
+- Challenge: Trusting automation over manual review
+- Response: Human‑in‑the‑loop checkpoints retained by design
+
+### Platform Constraints
+- Challenge: Databricks availability is limited
+- Response: Local-first design with future portability
+
+---
+
+## Success Criteria (Business-Focused)
+
+The project is successful when:
+
+- Retail rollups can be run confidently without specialist intervention
+- Result movements can be clearly explained and defended
+- CDS ingestion becomes routine rather than a risk point
+- The process is owned, documented, and supportable long‑term
+
+---
+
+*This proposal turns the Retail rollup from a fragile operational task into a governed modelling capability that the business can rely on.*
