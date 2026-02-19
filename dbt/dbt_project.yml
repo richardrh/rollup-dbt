@@ -35,3 +35,5 @@ models:
       +schema: cat_models
     marts:
       +schema: cat_models
+vars:
+  cat_results_path: "{{ env_var('CAT_RESULTS_PATH')) }}"

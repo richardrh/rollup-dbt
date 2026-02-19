@@ -1,0 +1,15 @@
+version: 2
+sources:
+  - name: risklink
+    schema: raw
+    tables:
+      - name: elts
+      - name: ylts
+      - name: ep
+      - name: analysis_list
+  - name: verisk
+    schema: raw
+    tables:
+      - name: ylts
+      - name: ep
+      - name: analysis_list
