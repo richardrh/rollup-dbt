@@ -1,3 +1,4 @@
+
 ---
 title: "UK & EU Group Retail Rollup Process: Enhancement Proposal"
 author: Richard Hampton
@@ -7,6 +8,9 @@ format:
     toc: true
     number-sections: true
     colorlinks: true
+    include-in-header:
+      text: |
+        \usepackage{pdflscape}
 ---
 
 
@@ -25,6 +29,9 @@ several foundational steps must be completed first.
 The project is structured into three phases. The final phase remains open-ended, as
 there are systems and processes not yet fully understood; it is therefore expected that
 additional issues will surface requiring resolution in Phase 3.
+
+A number of operational requirements detailed in Section 4 will be required.
+Ideally, these will be agreed rather than workarounds being done.
 
 ### Project Phases
 
@@ -54,10 +61,32 @@ to take a step back and review them once more.
 
 {{< pagebreak >}}
 
+```{=latex}
+\begin{landscape}
+```
+
 ### Project Timeline
 
 ![Project Timeline](diagrams/gannt.png){fig-align="center" width=100%}
 
+```{=latex}
+\end{landscape}
+```
+
+
+## Success criteria
+1. Data sources have been mapped and documented ETL process to produce
+cat model inputs
+2. Replication of GC work and playback reports
+3. Cat model resource knows the defined data format and how to execute the
+modelling workflow
+4. ELT process documented and defined to produce the required CDS inputs.
+
+### Nice-to-haves
+Exposure based metrics such as Global Exposures, aggregates, various inputs for
+RDS, BSCR, PRA returns. It is unlikely a robust process to produce all of these
+can be accomplished. Instead the clean exposure datasets produced above
+would enable this analysis to be done in future.
 
 ## Costs
 
@@ -143,15 +172,23 @@ impact on the smoothness of the Group rollup:
    system should be made immediately available to the retail team to minimise problems
    with importing invalid data to CDS.
 
-3. **Agree ownership of the modelling process** in Touchstone and Risklink.
+3. **Chnges to CDS System** Any changes to the CDS system should follow their
+own governance process which should include informing the Group Retail team.
+Any changes to CDS can and will prevent smoothly uploading the information and
+precipitate workarounds which will have a high potential to end up being
+undocumented.
+
+4. **Agree ownership of the modelling process** in Touchstone and Risklink.
    By extension, the data format to be delivered to, and produced by, the modeller
    will be formally agreed.
 
-4. **Produce checklists and results templates** to aid managerial review and to give
+5. **Produce checklists and results templates** to aid managerial review and to give
    the analyst running the process clear criteria for completion.
 
-5. **Implement modern analytical database tooling and version control.** These must
+6. **Implement modern analytical database tooling and version control.** These must
    become standard practice to ensure the systems do not deteriorate over time.
+   Managers must enforce this or they will inevitably fall into disuse, ending
+   back at undocumented and uncontrolled procedures.
 
 {{< pagebreak >}}
 
@@ -174,7 +211,7 @@ enforces a clearly defined standard for what inputs are acceptable.
 
 **Note:** The catastrophe modelling process is included within the ETL scope.
 
-![ETL Process](etl-excalidraw.png)
+![ETL Process](diagrams/etl-excalidraw.png)
 
 *This schematic was produced prior to the adoption of Databricks; the technical
 implementation will change accordingly. The primary purpose here is to illustrate
@@ -209,7 +246,7 @@ data modelling workflow. The goals of this stage are to:
   dials-up view
 - Optionally: generate aggregates and global exposures
 
-![Post-Modelling ELT Workflow](elt-rollup.png)
+![Post-Modelling ELT Workflow](diagrams/elt-rollup.png)
 
 {{< pagebreak >}}
 
@@ -228,3 +265,9 @@ a fully end-to-end automated workflow. The specific limitations are as follows:
 
 3. **The final upload to CDS is a manual process.** A live staging area, auto-loading
    pipeline, or web API integration is not currently available.
+
+
+## Review meetings
+I suggest we hold fortnightly review meetings initially. As issues may crop up
+that require Hiscox to make decisions or assist in solving roadblocks.
+
