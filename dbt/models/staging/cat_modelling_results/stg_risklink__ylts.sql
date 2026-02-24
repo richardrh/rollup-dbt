@@ -5,4 +5,4 @@ select
     yearid,
     eventid,
     loss
-from {{ source('cat_models_raw', 'stg_risklink__ylts') }}
+from {{ source('cat_models_raw', 'risklink__ylts') }}

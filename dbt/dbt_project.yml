@@ -1,10 +1,10 @@
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
-name: 'laiter'
-version: '0.0.1'
+name: "arriba"
+version: "0.0.1"
 # This setting configures which "profile" dbt uses for this project.
-profile: 'rollup'
+profile: "rollup"
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
 # found in the "models/" directory. You probably won't need to change these!
@@ -19,7 +19,7 @@ clean-targets: # directories to be removed by `dbt clean`
   - "dbt_packages"
 dispatch:
   - macro_namespace: dbt
-    search_order: ['dbt_project_evaluator', 'dbt']
+    search_order: ["dbt_project_evaluator", "dbt"]
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
 
@@ -36,4 +36,4 @@ models:
     marts:
       +schema: cat_models
 vars:
-  cat_results_path: "{{ env_var('CAT_RESULTS_PATH')) }}"
+  cat_results_path: "{{ env_var('CAT_RESULTS_PATH') }}"

@@ -1,0 +1,28 @@
+{
+  "name": "laiter2",
+  "version": "1.0.0",
+  "description": "--- title: UKEU Group Retail Rollup process author: RH date: 2026-02-23 ---",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamptonian/rollup-dbt.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/hamptonian/rollup-dbt/issues"
+  },
+  "homepage": "https://github.com/hamptonian/rollup-dbt#readme",
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.12.0"
+  }
+}
