@@ -32,8 +32,10 @@ models:
       +materialized: view
       +schema: cat_models
     intermediate:
+      +materialized: view
       +schema: cat_models
     marts:
+      +materialized: table
       +schema: cat_models
 vars:
   cat_results_path: "{{ env_var('CAT_RESULTS_PATH') }}"

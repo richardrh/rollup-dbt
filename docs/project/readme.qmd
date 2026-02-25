@@ -33,6 +33,13 @@ additional issues will surface requiring resolution in Phase 3.
 A number of operational requirements detailed in Section 4 will be required.
 Ideally, these will be agreed rather than workarounds being done.
 
+
+### Tech choices
+- Analysis DB: Duckdb or Databricks
+- ETL: Python cleansing scripts
+- Data source management: Required to validate data - CLI tool possibly Dataiku
+- Orchestrator: Too complex for this project.
+
 ### Project Phases
 
 **Phase 1: Current — March**

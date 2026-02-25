@@ -16,6 +16,7 @@ dependencies = [
     "sqlalchemy>=2.0.46",
     "rich>=14.3.2",
     "pandoc>=2.4",
+    "numpy>=2.4.2",
 ]
 
 [dependency-groups]
