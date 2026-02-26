@@ -2,5 +2,5 @@
 
 
 select *
-from read_parquet('{{ var("cat_results_path") }}/risklink/elts/*.parquet',
+from read_parquet('{{ var("cat_results_path") }}/risklink/ylts/*.parquet',
     filename=true)

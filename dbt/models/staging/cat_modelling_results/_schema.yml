@@ -1,20 +1,5 @@
 version: 2
-
 models:
-  - name: stg_risklink__elts
-    description: "Staging view for Risklink ELT data"
-    config:
-      schema: cat_models
-      materialized: view
-    columns:
-      - name: event_id
-      - name: rate
-      - name: perspcode
-      - name: meanloss
-      - name: stddevi
-      - name: stddevc
-      - name: exp_value
-
   - name: stg_risklink__ylts
     description: "Staging view for Risklink YLT data (post-simulation)"
     config:
@@ -27,7 +12,6 @@ models:
       - name: yearid
       - name: eventid
       - name: loss
-
   - name: stg_verisk__ylts
     description: "Staging view for Verisk YLT data"
     config:

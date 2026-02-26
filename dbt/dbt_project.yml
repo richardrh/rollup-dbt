@@ -1,7 +1,7 @@
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
-name: "arriba"
+name: "rollup"
 version: "0.0.1"
 # This setting configures which "profile" dbt uses for this project.
 profile: "rollup"
@@ -38,4 +38,5 @@ models:
       +materialized: table
       +schema: cat_models
 vars:
-  cat_results_path: "{{ env_var('CAT_RESULTS_PATH') }}"
+  data_dir: "C:/Users/hamptonr/data"
+  cat_results_path: "C:/Users/hamptonr/data/cat_results"
