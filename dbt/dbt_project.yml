@@ -19,7 +19,7 @@ clean-targets: # directories to be removed by `dbt clean`
   - "dbt_packages"
 dispatch:
   - macro_namespace: dbt
-    search_order: ["dbt_project_evaluator", "dbt"]
+    search_order: ["dbt"]
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
 
@@ -27,16 +27,20 @@ dispatch:
 # directory as views. These settings can be overridden in the individual model
 # files using the `{{ config(...) }}` macro.
 models:
-  laiter:
+  rollup:
     staging:
       +materialized: view
-      +schema: cat_models
+      +schema: staging
     intermediate:
       +materialized: view
-      +schema: cat_models
+      +schema: intermediate
     marts:
       +materialized: table
-      +schema: cat_models
+      +schema: marts
 vars:
-  data_dir: "C:/Users/hamptonr/data"
-  cat_results_path: "C:/Users/hamptonr/data/cat_results"
+  cat_results_path: >-
+    {%- if target.name == 'prod' -%}
+      {{ env_var('CAT_RESULTS_PATH') }}
+    {%- else -%}
+      {{ env_var('CAT_RESULTS_PATH', '../rollup-data/cat_results') }}
+    {%- endif -%}

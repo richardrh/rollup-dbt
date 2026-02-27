@@ -18,6 +18,3 @@ seeds:
       - name: rate
         tests:
           - not_null
-          - expression_is_true:
-              arguments:
-                expression: "factor > 0"

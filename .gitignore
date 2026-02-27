@@ -20,3 +20,6 @@ site/
 .DS_Store
 
 .data/risklink
+
+# Environment variables (never commit)
+.env

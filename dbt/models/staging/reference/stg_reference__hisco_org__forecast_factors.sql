@@ -2,27 +2,23 @@
 
 with source as (
     select *
-    from {{ ref('forecast_factors') }}
+    from {{ ref('hisco_org__forecast_factors') }}
 ),
-
 
 renamed as (
     select
 
         {{ dbt_utils.generate_surrogate_key([
-            'modelled_lob',
-            'forecast_date',
-            'office',
             'class',
-            'factor'
+            'office',
+            'forecast_date'
         ]) }} as forecast_factor_id,
 
-
-        modelled_lob
-        forecast_date,
-        office,
         class,
-        factor
+        office,
+        office_iso2,
+        forecast_date,
+        forecast_factor
 
     from source
 )

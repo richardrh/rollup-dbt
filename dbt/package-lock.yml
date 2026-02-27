@@ -1,4 +1,4 @@
 packages:
-  - local: ../libs/dbt-utils
+  - local: ./libs/dbt-utils
     name: dbt_utils
-sha1_hash: 1086c97e6ef98fe931e9149e952dc5489c1f9459
+sha1_hash: b01cd106eb60870530b39f20eb3acbdfb8083209

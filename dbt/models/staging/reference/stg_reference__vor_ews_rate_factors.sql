@@ -2,23 +2,20 @@
 
 with source as (
     select *
-    from {{ ref('vor__euws_rate_factors') }}
+    from {{ ref('vor_euws_rate_factors') }}
 ),
-
 
 renamed as (
     select
 
         {{ dbt_utils.generate_surrogate_key([
-
             'ModelEventID',
-            'OccYear',
-
+            'OccYear'
         ]) }} as euws_rate_factor_id,
 
-    ModelEventID as model_event_id,
-    OccYear as yearid,
-    Factor as factor
+        ModelEventID as model_event_id,
+        OccYear      as occ_year,
+        Factor       as factor
 
     from source
 )

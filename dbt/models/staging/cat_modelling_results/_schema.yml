@@ -1,27 +1,28 @@
 version: 2
+
 models:
   - name: stg_risklink__ylts
-    description: "Staging view for Risklink YLT data (post-simulation)"
-    config:
-      schema: cat_models
-      materialized: view
+    description: "Staging view for Risklink YLT data. Reads from hive-partitioned parquet store at cat_results/risklink/ylts/date=.../."
     columns:
-      - name: anlysis_id
-      - name: modelled_lob
-      - name: perspcode
-      - name: yearid
-      - name: eventid
+      - name: pk
+      - name: aggregation_key
+      - name: run_date
+        description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: source_file
+        description: "Source parquet filename (e.g. fine-art-uuid-1234.parquet)."
+      - name: analysis_id
+        description: "Risklink analysis identifier."
+      - name: year_id
+        description: "Simulation year identifier."
+        tests:
+          - not_null
+      - name: event_id
+        description: "Catastrophe event identifier."
+        tests:
+          - not_null
       - name: loss
-  - name: stg_verisk__ylts
-    description: "Staging view for Verisk YLT data"
-    config:
-      schema: cat_models
-      materialized: view
-    columns:
-      - name: lob
-      - name: analysis
-      - name: model_code
-      - name: yearid
-      - name: eventid
-      - name: net_pre_cat_loss
-      - name: catalog_type_code
+        description: "Simulated loss value."
+        tests:
+          - not_null

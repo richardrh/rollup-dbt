@@ -21,19 +21,16 @@ this project was built.
 
 The workflow relies on seed files and sources. Seed files are the lookup/reference
 tables that change infrequently, they are stored as .csv files and are source
-controlled. Each model run the user will be prompted to check the seed files
-and update as needed.
+controlled.
 
 Sources are larger data sources, not in source control which are pulled into
 the project either as raw cat modelling data sources or larger reference tables
 that could be updated by third-party departments and therefore need to be
-refreshed. Examples of this are: EUWS VoR factors and the YLT from Verisk/Risklink.
+refreshed.
 
 ## ETL Process
-Laiter is an ELT analytics project, but all ELT projects still have some element
-of ETL. ETL takes two forms:
-1. DLT sources and pipelines with filters
-2. Custom Python scripts to load data
+This is not an ETL project. it relies on clean data coming in. ETL is a
+separate code base but part of the same rollup workstream.
 
 ## Custom Processes
 The Risklink workflow and Global Exposures are custom workflows.

@@ -1,10 +1,62 @@
 version: 2
-sources:
-  - name: risklink
-    schema: raw
-    tables:
-      - name: ylts
-  - name: verisk
-    schema: raw
-    tables:
-      - name: ylts
+
+# DuckDB parquet files cannot be declared as dbt sources (source() only works
+# for database tables/views). Raw models in this folder ARE the source layer —
+# they read directly from external parquet files using read_parquet() and the
+# cat_results_path var defined in dbt_project.yml.
+#
+# Data ingestion structure (hive-partitioned):
+#
+#   ../rollup-data/cat_results/
+#     risklink/ylts/
+#       date=YYYY-MM-DD/
+#         <name>-<uuid>.parquet
+#
+# Raw models expose these files as views that downstream staging models ref() into.
+
+models:
+  - name: risklink__ylts
+    description: >
+      Raw view over hive-partitioned Risklink YLT parquet files.
+      Reads all parquet files under cat_results_path/risklink/ylts/date=YYYY-MM-DD/.
+      Each parquet file represents a single LOB run (e.g. fine-art-uuid.parquet).
+    columns:
+      - name: date
+        description: "Run date extracted automatically from hive partition folder (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: filename
+        description: "Full path to the source parquet file, including the hive partition folder."
+        tests:
+          - not_null
+      - name: analysis_id
+        description: "Risklink analysis identifier."
+      - name: year_id
+        description: "Simulation year identifier."
+        tests:
+          - not_null
+      - name: event_id
+        description: "Catastrophe event identifier."
+        tests:
+          - not_null
+      - name: loss
+        description: "Simulated loss value."
+        tests:
+          - not_null
+
+  - name: risklink__analysis_list
+    description: >
+      List of what is in the analysis
+    columns:
+      - name: analysis_id
+        description: ""
+        tests:
+          - not_null
+      - name: modelled_lob
+        description: ""
+        tests:
+          - not_null
+      - name: modelled_peril
+        description: ""
+      - name: is_official
+        description: ""
