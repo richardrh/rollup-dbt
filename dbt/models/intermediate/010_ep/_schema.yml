@@ -4,9 +4,14 @@ models:
   - name: int_ep__risklink
     description: >
       RiskLink EP (Exceedance Probability) curves produced by the ep_curve_from_ylt macro,
-      with dimension columns joined in from int_ep__risklink_dim_lookup.
+      with dimension columns joined in from int_setup__dim_risklink__distinct_ylts.
     columns:
       - name: aggregation_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('int_setup__dim_risklink__distinct_ylts')
+              field: aggregation_key
       - name: run_date
         description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
         tests:
@@ -36,7 +41,7 @@ models:
         tests:
           - not_null
 
-  - name: int_ep__risklink_dim_lookup
+  - name: int_setup__dim_risklink__distinct_ylts
     description: >
       Dimension lookup table mapping aggregation_key back to the human-readable
       YLT run dimensions. One row per unique (run_date, source_file, analysis_id).
@@ -57,3 +62,62 @@ models:
         description: "RiskLink analysis identifier."
         tests:
           - not_null
+
+  - name: int_ep_combined
+    description: >
+      Combined EP (Exceedance Probability) curves for both Verisk and RiskLink vendors,
+      produced by the ep_curve_from_ylt macro with incremental materialization.
+      Only processes new/changed data on incremental runs based on run_date.
+    columns:
+      - name: aggregation_key
+        description: "SHA-256 hash identifying unique YLT run dimensions"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('int_setup__dim_distinct_ylts')
+              field: aggregation_key
+      - name: run_date
+        description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: source_vendor
+        description: "Source vendor: 'verisk' or 'risklink'"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["verisk", "risklink"]
+      - name: source_file
+        description: "Source parquet filename (basename only)."
+      - name: analysis_id
+        description: "Analysis identifier from the vendor."
+        tests:
+          - not_null
+      - name: ep_type
+        description: "EP curve type: 'AEP' (aggregate), 'OEP' (occurrence), or 'AAL' (average annual loss)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["AEP", "OEP", "AAL"]
+      - name: return_period
+        description: "Return period in years. 0 for AAL rows."
+        tests:
+          - not_null
+      - name: rank_num
+        description: "Loss rank (1 = largest). 0 for AAL rows."
+        tests:
+          - not_null
+      - name: annual_loss
+        description: "Loss at the given return period, or the AAL for AAL rows."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - aggregation_key
+            - source_vendor
+            - ep_type
+            - return_period
+            - rank_num

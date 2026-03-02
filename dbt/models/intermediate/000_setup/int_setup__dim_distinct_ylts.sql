@@ -11,6 +11,7 @@
 select distinct
     aggregation_key,
     run_date,
+    source_vendor,
     source_file,
     analysis_id
-from {{ ref('stg_risklink__ylts') }}
+from {{ ref('stg_cat_modelling_results__ylts') }}

@@ -1,19 +1,37 @@
 version: 2
-
 models:
-  - name: stg_risklink__ylts
-    description: "Staging view for Risklink YLT data. Reads from hive-partitioned parquet store at cat_results/risklink/ylts/date=.../."
+  - name: stg_cat_modelling_results__ylts
+    description: "Staging view for YLT data from all vendors. Reads from hive-partitioned parquet store at cat_results/date=.../vendor=.../type=ylt/."
     columns:
       - name: pk
+        description: >
+          Surrogate primary key. Business key is (vendor, date, analysis_id, model_id, year_id, event_id). model_id is null for risklink and populated for verisk — generate_surrogate_key handles nulls consistently so one pk definition covers both vendors.
+
+        tests:
+          - unique
+          - not_null
       - name: aggregation_key
+        description: "Hash key for aggregating YLT records by vendor, date, file, and analysis."
+      - name: source_vendor
+        description: "Vendor source extracted from hive partition (vendor=risklink|verisk)."
+        tests:
+          - not_null
       - name: run_date
         description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
         tests:
           - not_null
       - name: source_file
         description: "Source parquet filename (e.g. fine-art-uuid-1234.parquet)."
+      - name: content_hash
+        description: "SHA256 hash of all data columns for row-level deduplication detection."
+        tests:
+          - not_null
       - name: analysis_id
-        description: "Risklink analysis identifier."
+        description: "Vendor-specific analysis identifier."
+        relationship: # TODO: Add a relationship so that this analysis_id must
+        # appear in analysis_id in the analysis_list table
+      - name: model_id
+        description: "Model id for verisk, null for risklink."
       - name: year_id
         description: "Simulation year identifier."
         tests:
@@ -24,5 +42,37 @@ models:
           - not_null
       - name: loss
         description: "Simulated loss value."
+        tests:
+          - not_null
+  - name: stg_cat_modelling_results__analysis_lists
+    description: "Staging view for analysis list metadata. Reads from hive-partitioned parquet store at cat_results/date=.../vendor=.../type=analysis_list/."
+    columns:
+      - name: pk
+        description: "Surrogate primary key for the analysis list record."
+        tests:
+          - unique
+          - not_null
+      - name: source_vendor
+        description: "Vendor source extracted from hive partition (vendor=risklink|verisk)."
+        tests:
+          - not_null
+      - name: run_date
+        description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: analysis_id
+        description: "Vendor-specific analysis identifier."
+        tests:
+          - not_null
+      - name: modelled_lob
+        description: "Line of business being modelled."
+        tests:
+          - not_null
+      - name: modelled_peril
+        description: "Peril being modelled (e.g. wind, flood)."
+        tests:
+          - not_null
+      - name: is_official
+        description: "Whether this is the official/signed-off analysis."
         tests:
           - not_null

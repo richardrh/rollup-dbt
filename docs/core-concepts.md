@@ -8,9 +8,10 @@ of yaml files to enable orchestration and file structure.
 ## Technology
 **Data modelling ELT**: Dbt - market standard for analytics and data modelling
 **Data transform and ETL**: Dlt + Python
-**Orchestration**: Dagu - lightweight FOSS alternative to Airflow
-**Soure control**: Git on Hiscox Bitbucket account
+**Soure control**: Git or Hiscox Bitbucket account
 **Package management**: uv + packages.yml for dbt specific packages
+dbt has it's own package management system which is defined in
+./dbt/packages.yml
 
 
 ## Overall design

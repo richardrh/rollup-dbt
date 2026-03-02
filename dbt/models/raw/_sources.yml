@@ -1,5 +1,4 @@
 version: 2
-
 # DuckDB parquet files cannot be declared as dbt sources (source() only works
 # for database tables/views). Raw models in this folder ARE the source layer —
 # they read directly from external parquet files using read_parquet() and the
@@ -8,29 +7,44 @@ version: 2
 # Data ingestion structure (hive-partitioned):
 #
 #   ../rollup-data/cat_results/
-#     risklink/ylts/
-#       date=YYYY-MM-DD/
-#         <name>-<uuid>.parquet
+#     date=YYYY-MM-DD/
+#       vendor=risklink/
+#         type=ylt/
+#           <name>-<uuid>.parquet
+#         type=analysis_list/
+#           analysis_list.parquet
+#       vendor=verisk/
+#         type=ylt/
+#           <name>-<uuid>.parquet
+#
+# DuckDB hive_partitioning=true auto-extracts date, vendor, and type as columns.
+# No regex extraction is needed for these partition keys.
 #
 # Raw models expose these files as views that downstream staging models ref() into.
-
 models:
-  - name: risklink__ylts
+  - name: hive_storage__raw_ylts
     description: >
-      Raw view over hive-partitioned Risklink YLT parquet files.
-      Reads all parquet files under cat_results_path/risklink/ylts/date=YYYY-MM-DD/.
-      Each parquet file represents a single LOB run (e.g. fine-art-uuid.parquet).
+      Raw view over hive-partitioned YLT parquet files from all vendors. Reads all parquet files under cat_results_path/date=YYYY-MM-DD/vendor=*/type=ylt/. Each parquet file represents a single LOB or analysis set (e.g. fine-art-uuid.parquet).
+
     columns:
       - name: date
-        description: "Run date extracted automatically from hive partition folder (date=YYYY-MM-DD)."
+        description: "Run date extracted from hive partition folder (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: vendor
+        description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
         tests:
           - not_null
       - name: filename
-        description: "Full path to the source parquet file, including the hive partition folder."
+        description: "Full path to the source parquet file, including hive partition folders."
         tests:
           - not_null
       - name: analysis_id
-        description: "Risklink analysis identifier."
+        description: "Vendor-specific analysis identifier."
+      - name: model_id
+        description: >
+          Model identifier. Null for risklink (not present in parquet schema). TODO: When Verisk YLT parquets are onboarded, model_id will need to be read from the parquet payload. The raw model currently emits null as model_id for all vendors — this stub will need to be revisited.
+
       - name: year_id
         description: "Simulation year identifier."
         tests:
@@ -43,20 +57,32 @@ models:
         description: "Simulated loss value."
         tests:
           - not_null
-
-  - name: risklink__analysis_list
+  - name: hive_storage__analysis_lists
     description: >
-      List of what is in the analysis
+      Raw view over hive-partitioned analysis list metadata from all vendors. Reads from cat_results_path/date=YYYY-MM-DD/vendor=*/type=analysis_list/. Contains metadata about what is included in each analysis.
+
     columns:
+      - name: date
+        description: "Run date extracted from hive partition folder (date=YYYY-MM-DD)."
+        tests:
+          - not_null
+      - name: vendor
+        description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
+        tests:
+          - not_null
       - name: analysis_id
-        description: ""
+        description: "Vendor-specific analysis identifier."
         tests:
           - not_null
       - name: modelled_lob
-        description: ""
+        description: "Line of business being modelled."
         tests:
           - not_null
       - name: modelled_peril
-        description: ""
+        description: "Peril being modelled (e.g. wind, flood)."
+        tests:
+          - not_null
       - name: is_official
-        description: ""
+        description: "Whether this is the official/signed-off analysis."
+        tests:
+          - not_null

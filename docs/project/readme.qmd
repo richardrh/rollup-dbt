@@ -13,7 +13,6 @@ format:
         \usepackage{pdflscape}
 ---
 
-
 {{< pagebreak >}}
 
 ## Executive Summary
