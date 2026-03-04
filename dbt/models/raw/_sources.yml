@@ -16,6 +16,8 @@ version: 2
 #       vendor=verisk/
 #         type=ylt/
 #           <name>-<uuid>.parquet
+#         type=analysis_list/
+#           analysis_list.parquet
 #
 # DuckDB hive_partitioning=true auto-extracts date, vendor, and type as columns.
 # No regex extraction is needed for these partition keys.
@@ -41,10 +43,8 @@ models:
           - not_null
       - name: analysis_id
         description: "Vendor-specific analysis identifier."
-      - name: model_id
-        description: >
-          Model identifier. Null for risklink (not present in parquet schema). TODO: When Verisk YLT parquets are onboarded, model_id will need to be read from the parquet payload. The raw model currently emits null as model_id for all vendors — this stub will need to be revisited.
-
+        tests:
+          - not_null
       - name: year_id
         description: "Simulation year identifier."
         tests:
@@ -57,9 +57,9 @@ models:
         description: "Simulated loss value."
         tests:
           - not_null
-  - name: hive_storage__analysis_lists
+  - name: hive_storage__raw_analysis_lists
     description: >
-      Raw view over hive-partitioned analysis list metadata from all vendors. Reads from cat_results_path/date=YYYY-MM-DD/vendor=*/type=analysis_list/. Contains metadata about what is included in each analysis.
+      Raw view over hive-partitioned analysis list parquet files from all vendors. Reads all parquet files under cat_results_path/date=YYYY-MM-DD/vendor=*/type=analysis_list/. Contains metadata about what is included in each analysis.
 
     columns:
       - name: date
@@ -70,6 +70,10 @@ models:
         description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
         tests:
           - not_null
+      - name: filename
+        description: "Full path to the source parquet file, including hive partition folders."
+        tests:
+          - not_null
       - name: analysis_id
         description: "Vendor-specific analysis identifier."
         tests:
@@ -78,11 +82,11 @@ models:
         description: "Line of business being modelled."
         tests:
           - not_null
-      - name: modelled_peril
-        description: "Peril being modelled (e.g. wind, flood)."
+      - name: region_peril
+        description: "Region and peril combination e.g. US_HURRICANE."
         tests:
           - not_null
+      - name: analysis_modifications
+        description: "Description of analysis modifications applied."
       - name: is_official
-        description: "Whether this is the official/signed-off analysis."
-        tests:
-          - not_null
+        description: "If this is an analysis that should be in the final rollup"

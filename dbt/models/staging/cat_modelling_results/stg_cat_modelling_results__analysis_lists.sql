@@ -1,24 +1,25 @@
 {{ config(materialized='view') }}
 
 with source as (
-    select * from {{ ref('hive_storage__analysis_lists') }}
+    select * from {{ ref('hive_storage__raw_analysis_lists') }}
 ),
 
 renamed as (
     select
         {{ dbt_utils.generate_surrogate_key([
-            'vendor',
-            'date',
-            'analysis_id',
+        'source',
+        'analysis_id',
+        'filename',
+        'run_date',
         ]) }} as pk,
 
-        vendor      as source_vendor,
-        date        as run_date,
+        source as source_vendor,
+        date as run_date
+        filename as source_file,
         analysis_id,
         modelled_lob,
-        modelled_peril,
-        is_official
-
+        region_peril,
+        analysis_modifications,
     from source
 )
 

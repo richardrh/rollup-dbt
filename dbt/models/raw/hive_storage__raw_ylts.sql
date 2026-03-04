@@ -2,7 +2,7 @@
 
 select
     date,
-    vendor,
+    source,
     filename,
     analysis_id,
     model_id,
@@ -10,7 +10,7 @@ select
     event_id,
     loss
 from read_parquet(
-    '{{ var("cat_results_path") }}/date=*/vendor=*/type=ylt/*.parquet',
+    '{{ var("cat_results_path") }}/date=*/source=*/type=ylt/*.parquet',
     hive_partitioning = true,
     filename = true,
     union_by_name = true
