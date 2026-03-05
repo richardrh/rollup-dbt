@@ -1,8 +1,15 @@
 {{ config(materialized='view') }}
 
 /*
-    Blending funnel for YLT data across all vendors.
-    
+
+    Blending factors:
+
+    Objective:
+        We bring in the calculate ep curve for both vendors.
+        Compare the EP points from both models and apply the blend
+        weightings to each EP point.
+        This gives us a final blended target return period point.
+
     Uses wide format (explicit vendor joins) for readable blending calculations.
     This model will be unpivoted back to long format in a subsequent model.
 */
@@ -80,49 +87,33 @@ ep_wide as (
         coalesce(r.ep_type, v.ep_type) as ep_type,
         coalesce(r.return_period, v.return_period) as return_period,
         coalesce(r.rank_num, v.rank_num) as rank_num,
-        
+
         -- RiskLink values (may be null if no matching Verisk data)
         r.risklink_annual_loss,
-        
-        -- Verisk values (may be null if no matching RiskLink data)  
+
+        -- Verisk values (may be null if no matching RiskLink data)
         v.verisk_annual_loss,
-        
+
         -- Blending factors
         bf.air_blend,
-        bf.rms_blend
-        
+        bf.rms_blend,
+
+        -- Blended loss calculation (readable in wide format)
+        (
+        coalesce(risklink_annual_loss, 0) * coalesce(rms_blend, 0) +
+        coalesce(verisk_annual_loss, 0) * coalesce(air_blend, 0)
+        ) / nullif(coalesce(rms_blend, 0) + coalesce(air_blend, 0), 0)
+        as blended_annual_loss
+
     from risklink_ep r
     full outer join verisk_ep v
         on v.aggregation_key = r.aggregation_key
         and v.ep_type = r.ep_type
         and v.return_period = r.return_period
-        and v.rank_num = r.rank_num
     left join blending_factors bf
         on bf.sub_region_peril = coalesce(r.modelled_peril, v.modelled_peril)
 )
 
-select 
-    aggregation_key,
-    run_date,
-    modelled_lob,
-    modelled_peril,
-    ep_type,
-    return_period,
-    rank_num,
-    
-    -- Individual vendor losses
-    risklink_annual_loss,
-    verisk_annual_loss,
-    
-    -- Blending factors
-    air_blend,
-    rms_blend,
-    
-    -- Blended loss calculation (readable in wide format)
-    (
-        coalesce(risklink_annual_loss, 0) * coalesce(rms_blend, 0) +
-        coalesce(verisk_annual_loss, 0) * coalesce(air_blend, 0)
-    ) / nullif(coalesce(rms_blend, 0) + coalesce(air_blend, 0), 0) 
-        as blended_annual_loss
-        
+select
+*
 from ep_wide

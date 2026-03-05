@@ -35,7 +35,7 @@ If you have issues with TLS certs then run this instead.
 uv sync [tls]
 ```
 
-OR try running uv with --native-tls
+**OR try running uv with --native-tls**
 
 
 ### Serve the docs
@@ -54,4 +54,3 @@ If you have problems running it, then specify the port like this:
 ```bash
 uv run mkdocs serve -a localhost:4333
 ```
-

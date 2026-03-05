@@ -15,16 +15,10 @@ seeds:
       - name: nds_class_name_usd
   - name: hisco_org__forecast_factors
     description: "Forecast factors at office and class grain"
-    config:
-      column_types:
-        class: varchar
-        office: varchar
-        office_iso2: varchar
-        forecast_date: date
-        forecast_factor: float
     columns:
       - name: class
       - name: office
       - name: office_iso2
+      - name: base_date
       - name: forecast_date
       - name: forecast_factor

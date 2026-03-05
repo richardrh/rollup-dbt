@@ -7,11 +7,14 @@ of yaml files to enable orchestration and file structure.
 
 ## Technology
 **Data modelling ELT**: Dbt - market standard for analytics and data modelling
-**Data transform and ETL**: Dlt + Python
+**Data transform and ETL**: Relies on upstream tools to cleanse and push data
+to Hive partition
 **Soure control**: Git or Hiscox Bitbucket account
 **Package management**: uv + packages.yml for dbt specific packages
 dbt has it's own package management system which is defined in
 ./dbt/packages.yml
+**Data Store**: Uses a Hive partition to extract keys for vendor model, type,
+date and so on. Processes any file that appears in the hive store.
 
 
 ## Overall design

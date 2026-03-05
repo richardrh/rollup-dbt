@@ -44,3 +44,13 @@ vars:
     {%- else -%}
       {{ env_var('CAT_RESULTS_PATH', '../rollup-data/cat_results') }}
     {%- endif -%}
+
+seeds:
+  hisco_org__forecast_factors:
+    +column_types:
+      class: varchar
+      office: varchar
+      office_iso2: varchar
+      base_date: date
+      forecast_date: date
+      forecast_factor: float
