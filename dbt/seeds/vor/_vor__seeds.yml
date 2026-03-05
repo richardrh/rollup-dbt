@@ -26,7 +26,6 @@ seeds:
       - name: AIRBlend
       - name: RMSBlend
         description: "RMS model blend weight."
-
   - name: vor_euws_rate_factors
     description: "EUWS rate factors by ModelEventID and OccYear."
     config:
@@ -45,3 +44,33 @@ seeds:
         description: "Rate factor."
         tests:
           - not_null
+  - name: vor_region_perils
+    description: ""
+    config:
+      column_types:
+        id: integer
+        vendor: varchar
+        modelled_region_peril: varchar
+        cleaned_region_peril: varchar
+        region: varchar
+        peril: varchar
+        adjustments: varchar
+        applies_to_mga: boolean
+        applies_to_prop: boolean
+        applies_to_fa: boolean
+    columns:
+      - name: id
+        description: "Primary key for blending record."
+        tests:
+          - unique
+          - not_null
+      - name: vendor
+      - name: modelled_region_peril
+      - name: cleaned_region_peril
+      - name: rollup_region_peril
+      - name: region
+      - name: peril
+      - name: adjustments
+      - name: applies_to_mga
+      - name: applies_to_prop
+      - name: applies_to_fa

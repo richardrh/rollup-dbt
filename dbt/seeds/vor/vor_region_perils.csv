@@ -1,0 +1,23 @@
+﻿id,vendor,modelled_region_peril,cleaned_region_peril,rollup_region_peril,region,peril,adjustments,excludes,blending_factor_region_peril_id,blending_factor_sub_region_peril_id,applies_to_mga,applies_to_prop,applies_to_fa
+1,risklink,BE FL,BE_FL,BE_FL,BE,FL,None,None,216,216c,1,1,1
+2,risklink,DE FL,DE_FL,EU_FL,DE,FL,None,None,216,216b,1,1,1
+3,risklink,EU FL HD,EU_FL_HD,None,EU,FL,HD,None,[NULL],[NULL],0,0,0
+4,risklink,EUxESGB EQ,EU_EQ,EU_EQ,EU,EQ,None,ESUK,[NULL],[NULL],0,0,0
+5,risklink,EUxESGB EQ Adj,EU_EQ,EU_EQ,EU,EQ,Adj,ESUK,205,205a,1,1,1
+6,risklink,EUxGB WS,EU_WS,EU_WS,EU,WS,None,UK,[NULL],[NULL],0,0,0
+7,risklink,EUxGB WS (FlrArea),EU_WS,EU_WS,EU,WS,FloorArea,UK,[NULL],[NULL],0,0,0
+8,risklink,EUxGB WS CVV,EU_WS,EU_WS,EU,WS,CVV,UK,206,206a,1,0,1
+9,risklink,EUxGB WS CVV (FlrArea),EU_WS,EU_WS,EU,WS,CVV FloorArea,UK,206,206a,0,1,0
+10,risklink,GB FL,UK_FL,UK_FL,UK,FL,None,None,217,217a,1,1,1
+11,risklink,GB FL HD,UK_FL,None,UK,FL,HD,None,[NULL],[NULL],0,0,0
+12,risklink,GB WSSS,UK_WSSS,UK_WSSS,UK,WSSS,None,None,[NULL],[NULL],0,0,0
+13,risklink,GB WSSS (FlrArea),UK_WSSS,UK_WSSS,UK,WSSS,FloorArea,None,[NULL],[NULL],0,0,0
+14,risklink,GB WSSS CVV,UK_WSSS,UK_WSSS,UK,WSSS,CVV,None,206,206a,1,0,1
+15,risklink,GB WSSS CVV (FlrArea),UK_WSSS,UK_WSSS,UK,WSSS,CVV FloorArea,None,206,206a,0,1,0
+16,verisk,EU_EQ,EU_EQ,EU_EQ,EU,EQ,None,None,205,205a,1,1,1
+17,verisk,EU_FL,EU_FL,EU_FL,EU,FL,None,None,216,216a,1,1,1
+18,verisk,EU_WS,EU_WS,EU_WS,EU,WSSS,None,None,206,206a,1,1,1
+19,verisk,EU_WS_GCAdj,EU_WS,EU_WS,EU,WSSS,GC,None,[NULL],[NULL],0,0,0
+20,verisk,UK_FL,UK_FL,UK_FL,UK,FL,None,None,217,217a,1,1,1
+21,verisk,UK_WSSS,UK_WSSS,UK_WSSS,UK,WSSS,None,None,206,206a,1,1,1
+22,verisk,UK_WSSS_GCAdj,UK_WSSS,UK_WSSS,UK,WSSS,GC,None,[NULL],[NULL],0,0,0

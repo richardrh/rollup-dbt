@@ -1,5 +1,4 @@
 version: 2
-
 models:
   - name: stg_reference__fx_rates
     description: "Staging view of FX rates seed. One row per currency pair."
@@ -21,7 +20,6 @@ models:
         description: "Exchange rate from base to target currency."
         tests:
           - not_null
-
   - name: stg_reference__hisco_org__forecast_factors
     description: "Staging view of HISCO org forecast factors seed. One row per class/office/date combination."
     columns:
@@ -44,7 +42,6 @@ models:
           - not_null
       - name: forecast_factor
         description: "Multiplicative forecast factor."
-
   - name: stg_reference__hisco_org__lobs
     description: "Staging view of HISCO lines of business seed. One row per modelled LOB."
     columns:
@@ -70,7 +67,6 @@ models:
         description: "Office name."
       - name: class
         description: "Insurance class."
-
   - name: stg_reference__vor_blending_factors
     description: "Staging view of VOR model blending factors seed. One row per region-peril / sub-region-peril."
     columns:
@@ -95,7 +91,6 @@ models:
         description: "AIR model blend weight."
       - name: rms_blend
         description: "RMS model blend weight."
-
   - name: stg_reference__vor_ews_rate_factors
     description: "Staging view of VOR EUWS rate factors seed. One row per model event."
     columns:
@@ -114,3 +109,19 @@ models:
         description: "Rate factor."
         tests:
           - not_null
+  - name: stf_reference__vor_region_perils
+    description: "Lookup table of region perils to blending factor region"
+    columns:
+      - name: region_peril_id
+        description: "Surrogate key, not really needed but did it anyway"
+      - name: id
+      - name: vendor
+      - name: modelled_region_peril
+      - name: cleaned_region_peril
+      - name: rollup_region_peril
+      - name: region
+      - name: peril
+      - name: adjustments
+      - name: applies_to_mga
+      - name: applies_to_prop
+      - name: applies_to_fa
