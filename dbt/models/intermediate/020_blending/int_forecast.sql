@@ -16,8 +16,7 @@ forecasted as (
         f.forecast_date,
         b.office,
         b.class,
-        b.modelled_lob,
-        b.modelled_peril,
+        b.cleaned_region_peril,
         b.ep_type,
         b.return_period,
         b.rank_num,
@@ -25,8 +24,11 @@ forecasted as (
         b.metric_value as original_value,
         f.forecast_factor,
         b.metric_value * coalesce(f.forecast_factor, 1) as forecasted_value,
-        b.air_blend,
-        b.rms_blend
+        b.base_vendor,
+        case
+            when b.metric_name like '%' || b.base_vendor || '%' then true
+            else false
+        end as is_base_model
     from blended_long b
     left join forecast_factors f
         on f.class = b.class

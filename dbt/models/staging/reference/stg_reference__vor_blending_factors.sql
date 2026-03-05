@@ -21,7 +21,8 @@ renamed as (
         SubRegionPerilID as sub_region_peril_id,
         SubRegionPeril  as sub_region_peril,
         AIRBlend        as air_blend,
-        RMSBlend        as rms_blend
+        RMSBlend        as rms_blend,
+        base_vendor
 
     from source
 )

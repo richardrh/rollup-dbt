@@ -91,6 +91,8 @@ models:
         description: "AIR model blend weight."
       - name: rms_blend
         description: "RMS model blend weight."
+      - name: base_vendor
+        description: "Base vendor for blending factors."
   - name: stg_reference__vor_ews_rate_factors
     description: "Staging view of VOR EUWS rate factors seed. One row per model event."
     columns:
@@ -115,13 +117,16 @@ models:
       - name: region_peril_id
         description: "Surrogate key, not really needed but did it anyway"
       - name: id
-      - name: vendor
+      - name: source_vendor
       - name: modelled_region_peril
       - name: cleaned_region_peril
       - name: rollup_region_peril
       - name: region
       - name: peril
       - name: adjustments
+      - name: excludes
+      - name: blending_factor_region_peril_id
+      - name: blending_factor_sub_region_peril_id
       - name: applies_to_mga
       - name: applies_to_prop
       - name: applies_to_fa

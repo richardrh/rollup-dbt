@@ -16,16 +16,21 @@ with source as (
             'cleaned_region_peril',
 
         ]) }} as region_peril_id,
-    id,
-    vendor,
-    modelled_region_peril,
-    cleaned_region_peril,
-    region,
-    peril,
-    adjustments,
-    applies_to_mga,
-    appplies_to_prop,
-    applies_to_fa
+        
+        id,
+        vendor as source_vendor,
+        modelled_region_peril,
+        cleaned_region_peril,
+        rollup_region_peril,
+        region,
+        peril,
+        adjustments,
+        excludes,
+        blending_factor_region_peril_id,
+        blending_factor_sub_region_peril_id,
+        applies_to_mga,
+        applies_to_prop,
+        applies_to_fa
 
     from source
 )
