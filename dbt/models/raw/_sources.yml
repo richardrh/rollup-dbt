@@ -90,3 +90,8 @@ models:
         description: "Description of analysis modifications applied."
       - name: is_official
         description: "If this is an analysis that should be in the final rollup"
+      - name: AAL
+      - name: OEP_200
+      - name: OEP_1000
+      - name: AEP_200
+      - name: AEP_1000
