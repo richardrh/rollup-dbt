@@ -68,8 +68,10 @@ models:
           - not_null
       - name: vendor
         description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
-        tests:
-          - not_null
+        data_tests:
+          - accepted_values:
+              arguements:
+                values: ['verisk', 'risklink']
       - name: filename
         description: "Full path to the source parquet file, including hive partition folders."
         tests:
@@ -91,7 +93,23 @@ models:
       - name: is_official
         description: "If this is an analysis that should be in the final rollup"
       - name: AAL
+        data_tests:
+          - not_null
       - name: OEP_200
+        data_tests:
+          - not_null
+      - name: OEP_200
+        data_tests:
+          - not_null
       - name: OEP_1000
+        data_tests:
+          - not_null
+      - name: OEP_200
+        data_tests:
+          - not_null
       - name: AEP_200
+        data_tests:
+          - not_null
       - name: AEP_1000
+        data_tests:
+          - not_null

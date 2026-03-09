@@ -70,3 +70,8 @@ models:
         description: "Run date from hive partition key"
         tests:
           - not_null
+      - name: AAL
+      - name: OEP_200
+      - name: OEP_1000
+      - name: AEP_200
+      - name: AEP_1000
