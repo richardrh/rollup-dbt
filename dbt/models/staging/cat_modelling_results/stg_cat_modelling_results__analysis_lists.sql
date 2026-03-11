@@ -14,18 +14,12 @@ renamed as (
         ]) }} as pk,
 
         source as source_vendor,
-        date as run_date
+        date as run_date,
         filename as source_file,
         analysis_id,
         modelled_lob,
         region_peril,
-        analysis_modifications ,
-            is_official,
-    AAL,
-    OEP_200,
-    OEP_1000,
-    AEP_200,
-    AEP_1000,
+        is_official
     from source
 )
 

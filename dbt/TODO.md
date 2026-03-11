@@ -12,7 +12,13 @@ analysis lists as previously.
 
 3b. we take the analysis list from stg_cat_modelling_results__analysis_lists
 and join to itself.
-split it into source_vendor (gonna be risklink or verisk)
+split it into source_vendor (gonna be risklink or verisk) or instead of splitting
+the table in two queries, join to itself but split by source_vendor -
+the output should look like this:
+
+risklink_aal, risklink_oep_200, risklink_oep_1000, verisk_aal, verisk_oep_200, verisk_oep_1000
+
+joined on modelled_lob, rollup_lob, and peril
 
 
 4. be clear where we are going to store the dev and prod duckdb files.

@@ -70,7 +70,7 @@ models:
         description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
         data_tests:
           - accepted_values:
-              arguements:
+              arguments:
                 values: ['verisk', 'risklink']
       - name: filename
         description: "Full path to the source parquet file, including hive partition folders."
@@ -98,13 +98,7 @@ models:
       - name: OEP_200
         data_tests:
           - not_null
-      - name: OEP_200
-        data_tests:
-          - not_null
       - name: OEP_1000
-        data_tests:
-          - not_null
-      - name: OEP_200
         data_tests:
           - not_null
       - name: AEP_200
