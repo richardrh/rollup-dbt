@@ -71,7 +71,12 @@ models:
         tests:
           - not_null
       - name: AAL
+        description: "Average Annual Loss from vendor model."
       - name: OEP_200
+        description: "Occurrence Exceedance Probability at 200-year return period."
       - name: OEP_1000
+        description: "Occurrence Exceedance Probability at 1000-year return period."
       - name: AEP_200
+        description: "Aggregate Exceedance Probability at 200-year return period."
       - name: AEP_1000
+        description: "Aggregate Exceedance Probability at 1000-year return period."

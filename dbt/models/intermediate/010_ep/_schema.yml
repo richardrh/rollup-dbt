@@ -12,8 +12,9 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('int_setup__dim_distinct_ylts')
-              field: aggregation_key
+              arguments:
+                to: ref('int_setup__dim_distinct_ylts')
+                field: aggregation_key
       - name: run_date
         description: "Run date extracted from hive partition (date=YYYY-MM-DD)."
         tests:
@@ -23,7 +24,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ["verisk", "risklink"]
+              arguments:
+                values: ["verisk", "risklink"]
       - name: source_file
         description: "Source parquet filename (basename only)."
       - name: analysis_id
@@ -35,7 +37,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ["AEP", "OEP", "AAL"]
+              arguments:
+                values: ["AEP", "OEP", "AAL"]
       - name: return_period
         description: "Return period in years. 0 for AAL rows."
         tests:
@@ -49,13 +52,15 @@ models:
         tests:
           - not_null
           - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
+              arguments:
+                min_value: 0
+                inclusive: true
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - aggregation_key
-            - source_vendor
-            - ep_type
-            - return_period
-            - rank_num
+          arguments:
+            combination_of_columns:
+              - aggregation_key
+              - source_vendor
+              - ep_type
+              - return_period
+              - rank_num

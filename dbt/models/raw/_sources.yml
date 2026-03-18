@@ -45,6 +45,10 @@ models:
         description: "Vendor-specific analysis identifier."
         tests:
           - not_null
+      - name: model_code
+        description: "Model code identifier."
+        tests:
+          - not_null
       - name: year_id
         description: "Simulation year identifier."
         tests:
@@ -68,7 +72,7 @@ models:
           - not_null
       - name: vendor
         description: "Vendor source extracted from hive partition folder (vendor=risklink|verisk)."
-        data_tests:
+        tests:
           - accepted_values:
               arguments:
                 values: ['verisk', 'risklink']
@@ -93,17 +97,17 @@ models:
       - name: is_official
         description: "If this is an analysis that should be in the final rollup"
       - name: AAL
-        data_tests:
+        tests:
           - not_null
       - name: OEP_200
-        data_tests:
+        tests:
           - not_null
       - name: OEP_1000
-        data_tests:
+        tests:
           - not_null
       - name: AEP_200
-        data_tests:
+        tests:
           - not_null
       - name: AEP_1000
-        data_tests:
+        tests:
           - not_null

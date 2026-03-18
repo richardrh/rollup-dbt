@@ -1,13 +1,26 @@
 version: 2
 models:
   - name: int_setup__dim_distinct_ylts
-    description: ""
+    description: "Dimension table providing human-readable labels for YLT aggregation keys. One row per unique aggregation_key."
     columns:
       - name: aggregation_key
+        description: "SHA-256 hash identifying unique YLT run dimensions."
         tests:
+          - unique
           - not_null
-      - name: aggregation_key
       - name: run_date
+        description: "Run date extracted from hive partition."
       - name: source_vendor
+        description: "Vendor source: risklink or verisk."
       - name: source_file
+        description: "Source parquet filename."
       - name: analysis_id
+        description: "Vendor-specific analysis identifier."
+      - name: modelled_lob
+        description: "Line of business being modelled."
+      - name: office
+        description: "Office name from HISCO org mapping."
+      - name: class
+        description: "Insurance class from HISCO org mapping."
+      - name: base_date
+        description: "Month-truncated date for forecast factor matching."

@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: final_rollup
+    description: >
+      Final consumer-facing mart containing forecasted blended EP curves.
+      One row per office/class/LOB/peril/EP-type/return-period/metric combination.
+      Metric_name is one of: risklink_annual_loss, verisk_annual_loss, blended_annual_loss.
+
+    columns:
+      - name: office
+        description: "Office name."
+        tests:
+          - not_null
+      - name: class
+        description: "Insurance class."
+        tests:
+          - not_null
+      - name: modelled_lob
+        description: "Modelled line of business."
+        tests:
+          - not_null
+      - name: peril
+        description: "Region-peril combination (e.g. US_HURRICANE)."
+        tests:
+          - not_null
+      - name: base_date
+        description: "Month-truncated base date for the run."
+        tests:
+          - not_null
+      - name: forecast_date
+        description: "Effective forecast date."
+      - name: ep_type
+        description: "EP curve type: AEP, OEP, or AAL."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["AEP", "OEP", "AAL"]
+      - name: return_period
+        description: "Return period in years (0 for AAL)."
+        tests:
+          - not_null
+      - name: metric_name
+        description: "Metric: risklink_annual_loss, verisk_annual_loss, or blended_annual_loss."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["risklink_annual_loss", "verisk_annual_loss", "blended_annual_loss"]
+      - name: original_value
+        description: "Unforecasted blended loss value."
+      - name: forecast_factor
+        description: "Multiplicative forecast factor applied."
+      - name: forecasted_value
+        description: "Final forecasted loss = original_value * forecast_factor."
+        tests:
+          - not_null
+      - name: air_blend
+        description: "AIR (Verisk) blend weight."
+      - name: rms_blend
+        description: "RMS (RiskLink) blend weight."

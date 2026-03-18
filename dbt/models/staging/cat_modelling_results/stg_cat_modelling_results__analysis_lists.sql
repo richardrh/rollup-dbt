@@ -19,7 +19,12 @@ renamed as (
         analysis_id,
         modelled_lob,
         region_peril,
-        is_official
+        is_official,
+        AAL,
+        OEP_200,
+        OEP_1000,
+        AEP_200,
+        AEP_1000
     from source
 )
 

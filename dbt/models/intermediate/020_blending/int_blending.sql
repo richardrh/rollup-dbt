@@ -41,10 +41,11 @@ ep_with_details as (
         ep.rank_num,
         ep.annual_loss,
         lkp.modelled_lob,
-        lkp.modelled_peril
+        lkp.region_peril as modelled_peril
     from ep_curves ep
     inner join analysis_lookup lkp
         on lkp.analysis_id = ep.analysis_id
+        and lkp.source_vendor = ep.source_vendor
 ),
 
 -- Split into vendor-specific CTEs

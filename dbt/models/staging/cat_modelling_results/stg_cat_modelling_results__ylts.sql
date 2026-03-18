@@ -7,7 +7,7 @@ with source as (
 keyed as (
     select
         {{ dbt_utils.generate_surrogate_key([
-        'source',
+        'vendor',
         'date',
         'model_code',
         'year_id',
@@ -15,17 +15,17 @@ keyed as (
         'analysis_id'
         ]) }} as pk,
 
-        sha256(concat_ws('|', analysis_id, model_code, source, filename, date))
+        sha256(concat_ws('|', analysis_id, model_code, vendor, filename, date))
         as aggregation_key,
 
-        source as source_vendor,
+        vendor as source_vendor,
         date as run_date,
         filename as source_file,
         analysis_id,
         model_code,
         year_id,
         event_id,
-        loss,
+        loss
 
     from source
 )

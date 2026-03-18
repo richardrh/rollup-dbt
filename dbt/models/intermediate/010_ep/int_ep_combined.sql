@@ -7,6 +7,7 @@
 /*
     Incremental EP curve calculation for both vendors using ep_curve_from_ylt macro.
     Only processes new/changed data on incremental runs.
+    Each vendor is calculated separately with its own simulation count.
 */
 
 with ylt_data as (
@@ -28,14 +29,26 @@ with ylt_data as (
     {% endif %}
 ),
 
+-- Filter Verisk data (10K simulations)
+verisk_data as (
+    select * from ylt_data
+    where source_vendor = 'verisk'
+),
+
+-- Filter RiskLink data (100K simulations)
+risklink_data as (
+    select * from ylt_data
+    where source_vendor = 'risklink'
+),
+
 -- Verisk EP calculation using macro (10K simulations)
 verisk_ep as (
-    {{ ep_curve_from_ylt('ylt_data', 'loss', 10000, 'aggregation_key') }}
+    {{ ep_curve_from_ylt('verisk_data', 'loss', 10000, 'aggregation_key') }}
 ),
 
 -- RiskLink EP calculation using macro (100K simulations)
 risklink_ep as (
-    {{ ep_curve_from_ylt('ylt_data', 'loss', 100000, 'aggregation_key') }}
+    {{ ep_curve_from_ylt('risklink_data', 'loss', 100000, 'aggregation_key') }}
 ),
 
 -- Combine both vendors' EP curves

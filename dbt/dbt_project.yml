@@ -46,11 +46,13 @@ vars:
     {%- endif -%}
 
 seeds:
-  hisco_org__forecast_factors:
-    +column_types:
-      class: varchar
-      office: varchar
-      office_iso2: varchar
-      base_date: date
-      forecast_date: date
-      forecast_factor: float
+  rollup:
+    hisco-org:
+      hisco_org__forecast_factors:
+        +column_types:
+          class: varchar
+          office: varchar
+          office_iso2: varchar
+          base_date: date
+          forecast_date: date
+          forecast_factor: float
