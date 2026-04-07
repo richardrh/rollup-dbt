@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+*.log
+*.duckdb
+*.parquet
+*.sqlite
+
+# MkDocs build output
+site/
+.mkdocs/
+
+.DS_Store
+
+.data/risklink
+
+# Environment variables (never commit)
+.env

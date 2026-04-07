@@ -1,0 +1,39 @@
+[sources]
+risklink_elt_csv = "elt.csv"
+verisk_ylt_csv = "//network/drive/verisk/ylt_data.csv"
+
+[staging]
+risklink_elts_table = "stg_risklink__elts"
+risklink_ylts_table = "stg_risklink__ylts"
+verisk_ylts_table = "stg_verisk__ylts"
+
+[schemas]
+raw_schema = "staging"
+analytics_schema = "cat_models"
+
+[database]
+host = "prod-group-uw"
+database = "CDS_Staging"
+driver = "ODBC Driver 18 for SQL Server"
+authentication = "ActiveDirectoryIntegrated"
+TrustServerCertificate = "yes"
+
+[simulation]
+n_simulations = 100000
+analysis_ids = []
+random_seed = 42
+distribution_type = "lognormal"
+
+[project]
+name = "laiter_rollup"
+environment = "development"
+version = "0.1.0"
+
+[validation]
+min_events = 100
+max_loss_ratio = 10.0
+check_event_ids = true
+
+[checkpoints]
+enabled = true
+auto_continue_timeout_minutes = -1

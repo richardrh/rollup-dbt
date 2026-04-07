@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: stg_reference__fx_rates
+    description: "Staging view of FX rates seed. One row per currency pair."
+    columns:
+      - name: fx_rate_id
+        description: "Surrogate key for the FX rate record."
+        tests:
+          - unique
+          - not_null
+      - name: base_ccy
+        description: "Base currency code."
+        tests:
+          - not_null
+      - name: target_ccy
+        description: "Target currency code."
+        tests:
+          - not_null
+      - name: rate
+        description: "Exchange rate from base to target currency."
+        tests:
+          - not_null
+
+  - name: stg_reference__hisco_org__forecast_factors
+    description: "Staging view of HISCO org forecast factors seed. One row per class/office/date combination."
+    columns:
+      - name: forecast_factor_id
+        description: "Surrogate key derived from class, office, and forecast_date."
+        tests:
+          - unique
+          - not_null
+      - name: class
+        description: "Insurance class (e.g. HH, FA, COMM)."
+        tests:
+          - not_null
+      - name: office
+        description: "Office name."
+      - name: office_iso2
+        description: "ISO2 country code for the office."
+      - name: forecast_date
+        description: "Effective date of the forecast factor."
+        tests:
+          - not_null
+      - name: forecast_factor
+        description: "Multiplicative forecast factor."
+
+  - name: stg_reference__hisco_org__lobs
+    description: "Staging view of HISCO lines of business seed. One row per modelled LOB."
+    columns:
+      - name: lob_id
+        description: "Surrogate key derived from lob_id and rollup_lob."
+        tests:
+          - unique
+          - not_null
+      - name: lob_id
+        description: "Original numeric LOB identifier."
+      - name: modelled_lob
+        description: "Unique identifier for the modelled LOB."
+        tests:
+          - unique
+          - not_null
+      - name: rollup_lob
+        description: "Standardised LOB rollup grouping."
+      - name: lob_type
+        description: "Type of LOB (e.g. prop, fa, mga)."
+      - name: cds_cat_class_name
+        description: "CDS catastrophe class name."
+      - name: office
+        description: "Office name."
+      - name: class
+        description: "Insurance class."
+
+  - name: stg_reference__vor_blending_factors
+    description: "Staging view of VOR model blending factors seed. One row per region-peril / sub-region-peril."
+    columns:
+      - name: blending_factor_id
+        description: "Surrogate key for the blending factor record."
+        tests:
+          - unique
+          - not_null
+      - name: id
+        description: "Original row identifier."
+      - name: blend_set_id
+        description: "Blend set identifier."
+      - name: region_peril_id
+        description: "Region-peril identifier."
+      - name: region_peril
+        description: "Region-peril name."
+      - name: sub_region_peril_id
+        description: "Sub-region-peril identifier."
+      - name: sub_region_peril
+        description: "Sub-region-peril name."
+      - name: air_blend
+        description: "AIR model blend weight."
+      - name: rms_blend
+        description: "RMS model blend weight."
+
+  - name: stg_reference__vor_ews_rate_factors
+    description: "Staging view of VOR EUWS rate factors seed. One row per model event."
+    columns:
+      - name: euws_rate_factor_id
+        description: "Surrogate key derived from model_event_id and occ_year."
+        tests:
+          - unique
+          - not_null
+      - name: model_event_id
+        description: "Model event identifier."
+        tests:
+          - not_null
+      - name: occ_year
+        description: "Occurrence year."
+      - name: factor
+        description: "Rate factor."
+        tests:
+          - not_null
