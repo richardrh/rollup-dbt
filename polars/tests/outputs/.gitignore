@@ -1,0 +1,4 @@
+# Everything here is produced by integration tests on real YLT data.
+# Keep the folder (so tests can write into it), ignore the files.
+*
+!.gitignore

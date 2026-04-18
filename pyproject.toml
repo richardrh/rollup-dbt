@@ -12,6 +12,7 @@ dependencies = [
     "rich>=14.3.2",
     "certifi>=2026.1.4",
     "python-certifi-win32>=1.6.1",
+    "polars>=1.20.0",
 ]
 
 [dependency-groups]

@@ -1,0 +1,28 @@
+peril_id,name,region,peril_family
+198,US & Canada Earthquake,US,EQ
+199,Hawaii Earthquake,HI,EQ
+200,Caribbean Earthquake,CAR,EQ
+201,US & Canada Convective Storm,US,CS
+202,Hawaii Tropical Cyclone,HI,TC
+203,US & Caribbean Hurricane,US,TC
+204,US & Canada Winterstorm,US,WS
+205,Europe Earthquake,EU,EQ
+206,Europe Winter Storm,EU,WS
+207,Australia Earthquake,AU,EQ
+208,Japan Earthquake,AP,EQ
+209,New Zealand Earthquake,NZ,EQ
+210,Southeast Asia Earthquake,AP,EQ
+211,Japan & SE Asia Typhoon,AP,TC
+212,Australia Cyclone,AU,TC
+213,Southeast Asia Typhoon,AP,TC
+214,Mexico Earthquake,MX,EQ
+215,South/Central America Earthquake,SA,EQ
+216,Europe Flood,EU,FL
+217,UK Flood,EU,FL
+231,US Inland Flood,US,FL
+311,US Wildfire,US,WF
+320,Europe Convective Storm,EU,CS
+321,India Earthquake,IN,EQ
+322,Australia Convective Storm,AU,CS
+323,India Flood,IN,FL
+325,China Earthquake,CN,EQ

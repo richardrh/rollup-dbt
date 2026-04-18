@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polars Rollup Pipeline — one process, one pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand:        #B22234;
+  --brand-dark:   #8A1A28;
+  --brand-soft:   #FDF3F5;
+  --brand-line:   #EED4D8;
+  --ink:          #0E1116;
+  --body:         #3E4651;
+  --muted:        #8A93A0;
+  --line:         #E6E9EE;
+  --card:         #FBFBFC;
+  --bg:           #FFFFFF;
+
+  --term-bg:      #12161F;
+  --term-bg-2:    #1A1F2B;
+  --term-line:    #2A2F3D;
+  --term-text:    #D8E0F0;
+  --term-dim:     #6C7896;
+  --term-green:   #A6D989;
+  --term-red:     #F0808C;
+  --term-cyan:    #7AC3E2;
+  --term-orange:  #E5B36B;
+  --term-yellow:  #E5D28A;
+  --term-path:    #E8C98F;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'ss01', 'cv05', 'cv11';
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Slide frame ─────────────────────────────────────────── */
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  padding: clamp(2.5rem, 5vw, 5rem) clamp(2.5rem, 7vw, 7rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
+.slide::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 88px;
+  background: var(--brand);
+}
+
+.slide-number {
+  position: absolute;
+  top: clamp(1.5rem, 3vw, 2.5rem);
+  right: clamp(2.5rem, 7vw, 7rem);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.eyebrow {
+  color: var(--brand);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 1.25rem;
+}
+
+h1 {
+  font-size: clamp(2.2rem, 4.5vw, 3.75rem);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.08;
+  margin-bottom: 1.25rem;
+  max-width: 22ch;
+}
+
+h1 .accent { color: var(--brand); }
+
+.subtitle {
+  font-size: clamp(1.05rem, 1.5vw, 1.25rem);
+  color: var(--body);
+  margin-bottom: clamp(2rem, 4vw, 3rem);
+  max-width: 62ch;
+  font-weight: 400;
+}
+
+.quote {
+  margin-top: clamp(1.75rem, 3vw, 2.75rem);
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--brand);
+  font-size: clamp(1rem, 1.3vw, 1.15rem);
+  color: var(--ink);
+  font-style: italic;
+  font-weight: 500;
+  max-width: 60ch;
+}
+
+/* ── Slide 1: comparison table ───────────────────────────── */
+.comparison {
+  width: 100%;
+  max-width: 1100px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.comparison th, .comparison td {
+  padding: 0.95rem 1.1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.comparison thead th {
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 0.75rem;
+}
+
+.comparison thead th.is-polars {
+  color: var(--brand);
+}
+
+.comparison td:first-child {
+  color: var(--body);
+  font-weight: 500;
+}
+
+.comparison .is-polars {
+  background: var(--brand-soft);
+  font-weight: 600;
+  color: var(--ink);
+  position: relative;
+}
+
+.comparison tbody tr:first-child .is-polars {
+  border-top: 2px solid var(--brand);
+}
+.comparison tbody tr:last-child .is-polars {
+  border-bottom: 2px solid var(--brand);
+}
+
+.yes  { color: #2F8C56; font-weight: 600; }
+.no   { color: #B54040; font-weight: 500; }
+
+/* ── Slide 2: code side-by-side ──────────────────────────── */
+.code-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 1.5rem 0 2rem;
+  max-width: 1100px;
+}
+
+.code-card {
+  background: #F9FAFB;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+.code-card .label {
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+  font-weight: 600;
+}
+
+.kw    { color: #9A3BA6; }
+.type  { color: #2E6DB4; }
+.str   { color: #7A4C1C; }
+.com   { color: #94A0B0; font-style: italic; }
+.mem   { color: var(--brand); font-weight: 500; }
+
+.bullets {
+  display: grid;
+  gap: 1.15rem;
+  max-width: 62ch;
+  margin-top: 0.5rem;
+}
+
+.bullet {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+}
+
+.bullet .n {
+  color: var(--brand);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+}
+
+.bullet strong { color: var(--ink); font-weight: 600; }
+.bullet p { color: var(--body); }
+
+/* ── Slide 3: terminal ───────────────────────────────────── */
+.terminal-wrap {
+  max-width: 980px;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.terminal {
+  background: var(--term-bg);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 30px 80px -20px rgba(10, 15, 30, 0.35),
+    0 10px 30px -12px rgba(178, 34, 52, 0.15);
+  border: 1px solid #0A0D14;
+}
+
+.terminal-chrome {
+  background: var(--term-bg-2);
+  padding: 0.7rem 1rem;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--term-line);
+}
+
+.tl-dots {
+  display: flex;
+  gap: 0.42rem;
+}
+
+.tl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.tl-dot.r { background: #FF5F57; }
+.tl-dot.y { background: #FEBC2E; }
+.tl-dot.g { background: #28C840; }
+
+.tl-title {
+  flex: 1;
+  text-align: center;
+  color: #8A93A8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.terminal-body {
+  padding: 1.6rem 1.8rem 1.8rem;
+  color: var(--term-text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.t-prompt { color: var(--term-green); }
+.t-cmd    { color: #FFFFFF; }
+.t-hdr    { color: var(--term-cyan); font-weight: 600; }
+.t-ok     { color: var(--term-green); font-weight: 600; }
+.t-fail   { color: var(--term-red); }
+.t-dim    { color: var(--term-dim); }
+.t-num    { color: var(--term-orange); font-weight: 500; }
+.t-path   { color: var(--term-path); }
+.t-ans    { color: #FFFFFF; font-weight: 600; }
+.t-note   { color: var(--term-dim); }
+.t-rule   { color: var(--term-line); }
+
+.caret {
+  display: inline-block;
+  width: 0.55rem;
+  height: 1rem;
+  background: var(--term-text);
+  vertical-align: -3px;
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* ── Slide 4: speed chart ────────────────────────────────── */
+.speed {
+  display: grid;
+  gap: 1.5rem;
+  margin: 1rem 0 2rem;
+  max-width: 960px;
+}
+
+.speed-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 180px;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.speed-label {
+  font-weight: 600;
+  font-size: 1.02rem;
+  color: var(--ink);
+}
+
+.speed-label .sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.speed-bar-track {
+  height: 36px;
+  background: #F3F4F7;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.speed-bar {
+  height: 100%;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.speed-bar.january { width: 82%; background: linear-gradient(90deg, #7A1422 0%, #9E1A2E 100%); }
+.speed-bar.dbt     { width: 96%; background: linear-gradient(90deg, #9E1A2E 0%, #C23D4F 100%); }
+.speed-bar.polars  { width: 4.5%; background: var(--brand); padding: 0 0.65rem; }
+
+.speed-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.speed-time.fast {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  max-width: 1100px;
+}
+
+.why {
+  padding: 1.25rem 1.25rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.why .n {
+  color: var(--brand);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+
+.why h4 {
+  font-size: 0.98rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--ink);
+}
+
+.why p {
+  font-size: 0.85rem;
+  color: var(--body);
+  line-height: 1.55;
+}
+
+/* ── Footer nav ──────────────────────────────────────────── */
+.progress {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.75rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.progress a {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: all 0.25s;
+  display: block;
+}
+
+.progress a:hover { background: var(--muted); }
+.progress a.active {
+  background: var(--brand);
+  width: 24px;
+  border-radius: 5px;
+}
+
+.hint {
+  position: fixed;
+  bottom: 1.6rem;
+  left: 1.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  z-index: 100;
+}
+
+.hint kbd {
+  background: #F1F3F6;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  color: var(--ink);
+}
+
+@media (max-width: 960px) {
+  .slide { padding: 2rem 1.5rem; }
+  .code-grid { grid-template-columns: 1fr; }
+  .speed-row { grid-template-columns: 1fr; gap: 0.4rem; }
+  .speed-label, .speed-time { text-align: left; }
+  .why-grid { grid-template-columns: 1fr 1fr; }
+  .progress, .hint { display: none; }
+  .slide-number { right: 1.5rem; }
+  h1 { max-width: none; }
+  .terminal-body { font-size: 0.72rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SLIDE 1 ══════════════ -->
+<section class="slide" id="s1">
+  <span class="slide-number">01 / 04</span>
+  <span class="eyebrow">Pipeline comparison</span>
+  <h1>Three pipelines, <span class="accent">one job.</span></h1>
+  <p class="subtitle">
+    Compute blended forecast EP curves from the RiskLink and Verisk YLTs,
+    fan them out to the 21 Hisco tables. Same inputs. Same numbers.
+    Radically different mechanics.
+  </p>
+
+  <table class="comparison">
+    <thead>
+      <tr>
+        <th></th>
+        <th>January DuckDB</th>
+        <th>dbt (finalised)</th>
+        <th class="is-polars">Polars</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Runtime model</td>
+        <td>Notebook driving a DuckDB file</td>
+        <td>Warehouse queries, dbt runner</td>
+        <td class="is-polars">Single Python process</td>
+      </tr>
+      <tr>
+        <td>Infrastructure</td>
+        <td>Local DuckDB on a file server</td>
+        <td>dbt + warehouse + adapters</td>
+        <td class="is-polars">Python + polars. That's it.</td>
+      </tr>
+      <tr>
+        <td>Schema safety at boundaries</td>
+        <td class="no">Silent drift</td>
+        <td class="no">Silent drift</td>
+        <td class="is-polars yes">Enforced per frame</td>
+      </tr>
+      <tr>
+        <td>Pre-flight data-quality check</td>
+        <td class="no">None</td>
+        <td class="no"><code>dbt test</code> (after the run)</td>
+        <td class="is-polars yes">Interactive CLI, before the run</td>
+      </tr>
+      <tr>
+        <td>Iteration loop</td>
+        <td>Re-run the notebook, wait</td>
+        <td>Compile → dispatch → wait</td>
+        <td class="is-polars"><code>pytest</code> in 1.4 s</td>
+      </tr>
+      <tr>
+        <td>Logic footprint</td>
+        <td>60+ SQL views, ~2 000 LOC</td>
+        <td>~600 lines SQL + Jinja</td>
+        <td class="is-polars">~350 lines of typed Python</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="quote">Same numbers. One binary. No warehouse. No Jinja.</p>
+</section>
+
+
+<!-- ══════════════ SLIDE 2 ══════════════ -->
+<section class="slide" id="s2">
+  <span class="slide-number">02 / 04</span>
+  <span class="eyebrow">Correctness</span>
+  <h1>Fail fast, <span class="accent">not three joins later.</span></h1>
+  <p class="subtitle">
+    Every column is an enum. Every frame has a declared schema.
+    Every stage validates its inputs and outputs at the boundary.
+    Drift blows up on the line where it happens &mdash; with a named diff.
+  </p>
+
+  <div class="code-grid">
+    <div class="code-card">
+      <span class="label">Column names as enum</span>
+<span class="kw">class</span> <span class="type">RefLobsCol</span>(StrEnum):
+    <span class="mem">LOB_ID</span>             = <span class="str">"lob_id"</span>
+    <span class="mem">MODELLED_LOB</span>       = <span class="str">"modelled_lob"</span>
+    <span class="mem">ROLLUP_LOB</span>         = <span class="str">"rollup_lob"</span>
+    <span class="mem">LOB_TYPE</span>           = <span class="str">"lob_type"</span>
+    <span class="mem">CDS_CAT_CLASS_NAME</span> = <span class="str">"cds_cat_class_name"</span>
+    <span class="mem">OFFICE</span>             = <span class="str">"office"</span>
+    <span class="mem">CLASS</span>              = <span class="str">"class"</span>
+    </div>
+    <div class="code-card">
+      <span class="label">Typed schema per frame</span>
+<span class="type">REF_LOBS</span>: pl.<span class="type">Schema</span> = pl.Schema({
+    RefLobsCol.<span class="mem">LOB_ID</span>:             pl.<span class="type">Int64</span>,
+    RefLobsCol.<span class="mem">MODELLED_LOB</span>:       pl.<span class="type">String</span>,
+    RefLobsCol.<span class="mem">ROLLUP_LOB</span>:         pl.<span class="type">String</span>,
+    RefLobsCol.<span class="mem">LOB_TYPE</span>:           pl.<span class="type">String</span>,
+    RefLobsCol.<span class="mem">CDS_CAT_CLASS_NAME</span>: pl.<span class="type">String</span>,
+    RefLobsCol.<span class="mem">OFFICE</span>:             pl.<span class="type">String</span>,
+    RefLobsCol.<span class="mem">CLASS</span>:              pl.<span class="type">String</span>,
+})
+    </div>
+  </div>
+
+  <div class="bullets">
+    <div class="bullet">
+      <span class="n">01</span>
+      <p><strong>Typos don't compile.</strong> Column names are Python enum members, not strings scattered across SQL files.</p>
+    </div>
+    <div class="bullet">
+      <span class="n">02</span>
+      <p><strong>Schema drift surfaces at the boundary.</strong> <code>validate_schema()</code> runs on every stage's inputs and outputs &mdash; errors name the frame, the missing columns, and the dtype mismatches.</p>
+    </div>
+    <div class="bullet">
+      <span class="n">03</span>
+      <p><strong>Seeds are schema-checked at load.</strong> A renamed column in a CSV stops the pipeline before any math runs.</p>
+    </div>
+    <div class="bullet">
+      <span class="n">04</span>
+      <p><strong>57 unit tests, 1.4 s.</strong> The whole contract is exercised on every change, not just in production.</p>
+    </div>
+  </div>
+
+  <p class="quote">If it's wrong, it fails loudly, at the line where it became wrong.</p>
+</section>
+
+
+<!-- ══════════════ SLIDE 3 ══════════════ -->
+<section class="slide" id="s3">
+  <span class="slide-number">03 / 04</span>
+  <span class="eyebrow">Ergonomics</span>
+  <h1>Know the run is right <span class="accent">before it starts.</span></h1>
+  <p class="subtitle">
+    One command inspects every file the pipeline will touch, validates its
+    schema, and reports status in plain language. Then it asks permission.
+  </p>
+
+  <div class="terminal-wrap">
+    <div class="terminal">
+      <div class="terminal-chrome">
+        <span class="tl-dots">
+          <span class="tl-dot r"></span>
+          <span class="tl-dot y"></span>
+          <span class="tl-dot g"></span>
+        </span>
+        <span class="tl-title">polars &mdash; rollup pipeline</span>
+      </div>
+<div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">python -m rollup.pipeline --dry-run</span>
+
+<span class="t-hdr">Pipeline plan</span>
+<span class="t-rule">─────────────</span>
+
+<span class="t-hdr">[seeds]</span>  <span class="t-path">polars/seeds</span>
+  <span class="t-ok">✓</span> lobs                            <span class="t-num">     62</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> blending_factors                <span class="t-num">     30</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> forecast_factors                <span class="t-num">     78</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> fx_rates                        <span class="t-num">      6</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> euws_rate_factors               <span class="t-num"> 69,212</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> dim_region_perils               <span class="t-num">  2,138</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> dim_risklink_analysis           <span class="t-num">  1,042</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> air_events                      <span class="t-num">410,024</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> fineart_adjustments             <span class="t-num">    186</span> rows   <span class="t-dim">schema OK</span>
+
+<span class="t-hdr">[ylt verisk]</span>    <span class="t-path">data/ylt/verisk/</span>    <span class="t-dim">air_ylt_*.parquet</span>       <span class="t-dim">n_simulations=</span><span class="t-num">10,000</span>
+  <span class="t-ok">✓</span> air_ylt_c1.parquet                       <span class="t-num">148.3 MB</span>
+  <span class="t-ok">✓</span> air_ylt_c2.parquet                       <span class="t-num">102.5 MB</span>
+
+<span class="t-hdr">[ylt risklink]</span>  <span class="t-path">data/ylt/risklink/</span>  <span class="t-dim">risklink_ylt_*.parquet</span>  <span class="t-dim">n_simulations=</span><span class="t-num">100,000</span>
+  <span class="t-ok">✓</span> risklink_ylt_01.parquet                    <span class="t-num">2.1 GB</span>
+
+<span class="t-hdr">[output]</span>  <span class="t-path">data/output/</span>
+  <span class="t-ok">✓</span> 21 Hisco tables will be written here
+
+<span class="t-dim">Seeds:</span> <span class="t-ok">11/11</span> <span class="t-dim">valid.</span>   <span class="t-dim">YLTs:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>   <span class="t-dim">EP summaries:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>
+
+<span class="t-ans">Proceed? [y/N]:</span> <span class="caret"></span></div>
+    </div>
+  </div>
+
+  <p class="quote">No surprises at row 3 million. Every input is accounted for on line one.</p>
+</section>
+
+
+<!-- ══════════════ SLIDE 4 ══════════════ -->
+<section class="slide" id="s4">
+  <span class="slide-number">04 / 04</span>
+  <span class="eyebrow">Speed</span>
+  <h1>Minutes becomes <span class="accent">seconds.</span></h1>
+  <p class="subtitle">
+    Measured on the production-sized input &mdash; 4.4M-row Verisk YLT plus the
+    full RiskLink YLT. Full chain, all 21 Hisco tables written.
+  </p>
+
+  <div class="speed">
+    <div class="speed-row">
+      <div class="speed-label">January DuckDB<span class="sub">local filesystem, 60+ views</span></div>
+      <div class="speed-bar-track">
+        <div class="speed-bar january">2 &ndash; 20 minutes</div>
+      </div>
+      <div class="speed-time">dinosaur-bound</div>
+    </div>
+    <div class="speed-row">
+      <div class="speed-label">dbt (finalised)<span class="sub">warehouse round-trip, per-model materialize</span></div>
+      <div class="speed-bar-track">
+        <div class="speed-bar dbt">longer than DuckDB, always</div>
+      </div>
+      <div class="speed-time">compile + dispatch tax</div>
+    </div>
+    <div class="speed-row">
+      <div class="speed-label">Polars lazy pipeline<span class="sub">single process, one optimisation pass</span></div>
+      <div class="speed-bar-track">
+        <div class="speed-bar polars">~3s</div>
+      </div>
+      <div class="speed-time fast">a couple of seconds</div>
+    </div>
+  </div>
+
+  <div class="why-grid">
+    <div class="why">
+      <div class="n">01</div>
+      <h4>One collect, 21 sinks</h4>
+      <p>The whole lazy graph is optimised once; shared work is computed once.</p>
+    </div>
+    <div class="why">
+      <div class="n">02</div>
+      <h4>Cached DAG node</h4>
+      <p>One-line <code>.cache()</code> replaces the DuckDB materialised-table trick.</p>
+    </div>
+    <div class="why">
+      <div class="n">03</div>
+      <h4>No SQL compile. No Jinja.</h4>
+      <p>Parquet in, parquet out. No warehouse dispatch, no network round-trip.</p>
+    </div>
+    <div class="why">
+      <div class="n">04</div>
+      <h4>Zero copies</h4>
+      <p>Polars operates on Arrow buffers end-to-end. No serialisation between steps.</p>
+    </div>
+  </div>
+
+  <p class="quote">Change a blending weight. Re-run. See the new Hisco numbers before your coffee settles.</p>
+</section>
+
+
+<!-- ══════════════ NAV ══════════════ -->
+<nav class="progress" aria-label="Slide navigation">
+  <a href="#s1" class="active" aria-label="Slide 1"></a>
+  <a href="#s2" aria-label="Slide 2"></a>
+  <a href="#s3" aria-label="Slide 3"></a>
+  <a href="#s4" aria-label="Slide 4"></a>
+</nav>
+
+<div class="hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>space</kbd> to navigate</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const dots   = document.querySelectorAll('.progress a');
+
+// Highlight active dot
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const i = Array.from(slides).indexOf(e.target);
+      dots.forEach((d, j) => d.classList.toggle('active', i === j));
+    }
+  });
+}, { threshold: 0.55 });
+
+slides.forEach(s => io.observe(s));
+
+// Keyboard navigation
+function currentIndex() {
+  const mid = window.scrollY + window.innerHeight / 2;
+  for (let i = 0; i < slides.length; i++) {
+    const top = slides[i].offsetTop;
+    const bot = top + slides[i].offsetHeight;
+    if (mid >= top && mid < bot) return i;
+  }
+  return 0;
+}
+
+function go(i) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  slides[i].scrollIntoView({ behavior: 'smooth' });
+}
+
+document.addEventListener('keydown', (e) => {
+  const i = currentIndex();
+  switch (e.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+    case 'PageDown':
+    case ' ':
+      e.preventDefault(); go(i + 1); break;
+    case 'ArrowLeft':
+    case 'ArrowUp':
+    case 'PageUp':
+      e.preventDefault(); go(i - 1); break;
+    case 'Home':
+      e.preventDefault(); go(0); break;
+    case 'End':
+      e.preventDefault(); go(slides.length - 1); break;
+  }
+});
+</script>
+
+</body>
+</html>
