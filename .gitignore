@@ -27,3 +27,4 @@ site/
 
 # Synthetic test fixture output (regenerated on each pytest run)
 polars/tests/data/
+jan-rollup/combined_table
