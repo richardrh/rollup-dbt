@@ -8,8 +8,6 @@ from .columns import (
     AllFactorsCol,
     AnalysesCol,
     BlendingWeightsCol,
-    DimRegionPerilCol,
-    DimRisklinkAnalysisCol,
     EpCurveCol,
     HiscoFanoutCol,
     MetricCol,
@@ -18,11 +16,9 @@ from .columns import (
     RawRisklinkYltCol,
     RawVeriskYltCol,
     RefAirEventsCol,
-    RefBlendingFactorsCol,
-    RefCdsRegionPerilCol,
+    RefEuwsRankOverridesCol,
     RefEuwsRateFactorsCol,
     RefFineartAdjCol,
-    RefFloodRl22Col,
     RefForecastFactorsCol,
     RefFxRatesCol,
     RefLobsCol,
@@ -65,29 +61,37 @@ RAW_VERISK_YLT: pl.Schema = pl.Schema({
 })
 
 
-# ----- dimension / reference -----
+# ----- dimension / reference (the OPTIMAL split — one table, one job) -----
 
-DIM_REGION_PERILS: pl.Schema = pl.Schema({
-    DimRegionPerilCol.ID:                                  pl.Int64,
-    DimRegionPerilCol.VENDOR:                              pl.String,
-    DimRegionPerilCol.MODELLED_REGION_PERIL:               pl.String,
-    DimRegionPerilCol.CLEANED_REGION_PERIL:                pl.String,
-    DimRegionPerilCol.ROLLUP_REGION_PERIL:                 pl.String,
-    DimRegionPerilCol.REGION:                              pl.String,
-    DimRegionPerilCol.PERIL:                               pl.String,
-    DimRegionPerilCol.ADJUSTMENTS:                         pl.String,
-    DimRegionPerilCol.EXCLUDES:                            pl.String,
-    DimRegionPerilCol.APPLIES_TO_MGA:                      pl.Int64,
-    DimRegionPerilCol.APPLIES_TO_PROP:                     pl.Int64,
-    DimRegionPerilCol.APPLIES_TO_FA:                       pl.Int64,
-    DimRegionPerilCol.BLENDING_FACTOR_REGION_PERIL_ID:     pl.Int64,
-    DimRegionPerilCol.BLENDING_FACTOR_SUB_REGION_PERIL_ID: pl.String,
+PERILS: pl.Schema = pl.Schema({
+    PerilsCol.PERIL_ID:     pl.Int64,
+    PerilsCol.NAME:         pl.String,
+    PerilsCol.REGION:       pl.String,
+    PerilsCol.PERIL_FAMILY: pl.String,
 })
 
-DIM_RISKLINK_ANALYSIS: pl.Schema = pl.Schema({
-    DimRisklinkAnalysisCol.RISKLINK_ANALYSIS_ID: pl.Int64,
-    DimRisklinkAnalysisCol.LOB:                  pl.String,
-    DimRisklinkAnalysisCol.REGION_PERIL:         pl.String,
+ANALYSES: pl.Schema = pl.Schema({
+    AnalysesCol.VENDOR:         pl.String,
+    AnalysesCol.ANALYSIS_ID:    pl.String,
+    AnalysesCol.MODELLED_LABEL: pl.String,
+    AnalysesCol.PERIL_ID:       pl.Int64,
+    AnalysesCol.LOB_ID:         pl.Int64,   # nullable for Verisk
+})
+
+BLENDING_WEIGHTS: pl.Schema = pl.Schema({
+    BlendingWeightsCol.PERIL_ID:    pl.Int64,
+    BlendingWeightsCol.PERIL_NAME:  pl.String,
+    BlendingWeightsCol.DESCRIPTION: pl.String,
+    BlendingWeightsCol.SUB_PERIL:   pl.String,
+    BlendingWeightsCol.VENDOR:      pl.String,
+    BlendingWeightsCol.WEIGHT:      pl.Float64,
+})
+
+ROLLUP_SCOPE: pl.Schema = pl.Schema({
+    RollupScopeCol.LOB_ID:      pl.Int64,
+    RollupScopeCol.VENDOR:      pl.String,
+    RollupScopeCol.ANALYSIS_ID: pl.String,
+    RollupScopeCol.IN_ROLLUP:   pl.Boolean,
 })
 
 REF_LOBS: pl.Schema = pl.Schema({
@@ -98,18 +102,6 @@ REF_LOBS: pl.Schema = pl.Schema({
     RefLobsCol.CDS_CAT_CLASS_NAME: pl.String,
     RefLobsCol.OFFICE:             pl.String,
     RefLobsCol.CLASS:              pl.String,
-})
-
-REF_BLENDING_FACTORS: pl.Schema = pl.Schema({
-    RefBlendingFactorsCol.ID:                  pl.Int64,
-    RefBlendingFactorsCol.BLEND_SET_ID:        pl.Int64,
-    RefBlendingFactorsCol.REGION_PERIL_ID:     pl.Int64,
-    RefBlendingFactorsCol.REGION_PERIL:        pl.String,
-    RefBlendingFactorsCol.SUB_REGION_PERIL_ID: pl.String,
-    RefBlendingFactorsCol.SUB_REGION_PERIL:    pl.String,
-    RefBlendingFactorsCol.AIR_BLEND:           pl.Float64,
-    RefBlendingFactorsCol.RMS_BLEND:           pl.Float64,
-    RefBlendingFactorsCol.KAT_RISK_BLEND:      pl.Float64,
 })
 
 REF_FORECAST_FACTORS: pl.Schema = pl.Schema({
@@ -134,19 +126,18 @@ REF_EUWS_RATE_FACTORS: pl.Schema = pl.Schema({
     RefEuwsRateFactorsCol.FACTOR:         pl.Float64,
 })
 
+REF_EUWS_RANK_OVERRIDES: pl.Schema = pl.Schema({
+    RefEuwsRankOverridesCol.ROLLUP_LOB: pl.String,
+    RefEuwsRankOverridesCol.MAX_RANK:   pl.Int64,
+    RefEuwsRankOverridesCol.FACTOR:     pl.Float64,
+})
+
 REF_AIR_EVENTS: pl.Schema = pl.Schema({
     RefAirEventsCol.EVENT_ID: pl.Int64,
     RefAirEventsCol.MODEL_ID: pl.Int64,
     RefAirEventsCol.EVENT:    pl.Int64,
     RefAirEventsCol.YEAR:     pl.Int64,
     RefAirEventsCol.DAY:      pl.Int64,
-})
-
-REF_CDS_REGION_PERIL: pl.Schema = pl.Schema({
-    RefCdsRegionPerilCol.ID:                   pl.Int64,
-    RefCdsRegionPerilCol.CDS_REGION_PERIL:     pl.String,
-    RefCdsRegionPerilCol.CDS_SUB_REGION_PERIL: pl.String,
-    RefCdsRegionPerilCol.CDS_MODEL_TO_USE:     pl.String,
 })
 
 REF_FINEART_ADJ: pl.Schema = pl.Schema({
@@ -156,47 +147,6 @@ REF_FINEART_ADJ: pl.Schema = pl.Schema({
     RefFineartAdjCol.ROLLUP_REGION_PERIL: pl.String,
     RefFineartAdjCol.AAL_FACTOR:          pl.Float64,
     RefFineartAdjCol.TAIL_FACTOR:         pl.Float64,
-})
-
-REF_FLOOD_RL22: pl.Schema = pl.Schema({
-    RefFloodRl22Col.MODEL_EVENT_PK:        pl.Int64,
-    RefFloodRl22Col.MODEL_PROVIDER_ID:     pl.Int64,
-    RefFloodRl22Col.MODEL_EVENT_ID:        pl.Int64,
-    RefFloodRl22Col.MODEL_OCCURRENCE_YEAR: pl.Int64,
-    RefFloodRl22Col.MODEL_OCCURRENCE_DATE: pl.Datetime(time_unit="us"),
-    RefFloodRl22Col.REGION_PERIL_ID:       pl.Int64,
-})
-
-
-# ----- OPTIMAL seed structure (replaces dim_region_perils + dim_risklink_analysis + blending_factors) -----
-
-PERILS: pl.Schema = pl.Schema({
-    PerilsCol.PERIL_ID:     pl.Int64,
-    PerilsCol.NAME:         pl.String,
-    PerilsCol.REGION:       pl.String,
-    PerilsCol.PERIL_FAMILY: pl.String,
-})
-
-ANALYSES: pl.Schema = pl.Schema({
-    AnalysesCol.VENDOR:         pl.String,
-    AnalysesCol.ANALYSIS_ID:    pl.String,
-    AnalysesCol.MODELLED_LABEL: pl.String,
-    AnalysesCol.PERIL_ID:       pl.Int64,
-    AnalysesCol.LOB_ID:         pl.Int64,
-})
-
-BLENDING_WEIGHTS: pl.Schema = pl.Schema({
-    BlendingWeightsCol.PERIL_ID:  pl.Int64,
-    BlendingWeightsCol.SUB_PERIL: pl.String,
-    BlendingWeightsCol.VENDOR:    pl.String,
-    BlendingWeightsCol.WEIGHT:    pl.Float64,
-})
-
-ROLLUP_SCOPE: pl.Schema = pl.Schema({
-    RollupScopeCol.LOB_ID:      pl.Int64,
-    RollupScopeCol.VENDOR:      pl.String,
-    RollupScopeCol.ANALYSIS_ID: pl.String,
-    RollupScopeCol.IN_ROLLUP:   pl.Boolean,
 })
 
 
@@ -229,9 +179,13 @@ NORMALIZED_YLT: pl.Schema = pl.Schema({
     NormalizedYltCol.ROLLUP_LOB:            pl.String,
     NormalizedYltCol.LOB_TYPE:              pl.String,
     NormalizedYltCol.CDS_CAT_CLASS_NAME:    pl.String,
+    NormalizedYltCol.OFFICE:                pl.String,
+    NormalizedYltCol.LOB_CLASS:             pl.String,
     NormalizedYltCol.REGION_PERIL_ID:       pl.Int64,
     NormalizedYltCol.MODELLED_REGION_PERIL: pl.String,
-    NormalizedYltCol.ROLLUP_REGION_PERIL:   pl.String,
+    NormalizedYltCol.PERIL_NAME:            pl.String,
+    NormalizedYltCol.REGION:                pl.String,
+    NormalizedYltCol.PERIL_FAMILY:          pl.String,
     NormalizedYltCol.MODEL_CODE:            pl.Int64,
     NormalizedYltCol.YEAR_ID:               pl.Int64,
     NormalizedYltCol.EVENT_ID:              pl.Int64,
@@ -243,7 +197,9 @@ EP_CURVE: pl.Schema = pl.Schema({
     EpCurveCol.LOB_ID:              pl.Int64,
     EpCurveCol.REGION_PERIL_ID:     pl.Int64,
     EpCurveCol.ROLLUP_LOB:          pl.String,
-    EpCurveCol.ROLLUP_REGION_PERIL: pl.String,
+    EpCurveCol.PERIL_NAME:          pl.String,
+    EpCurveCol.REGION:              pl.String,
+    EpCurveCol.PERIL_FAMILY:        pl.String,
     EpCurveCol.CDS_CAT_CLASS_NAME:  pl.String,
     EpCurveCol.EP_TYPE:             pl.String,
     EpCurveCol.RANK_NUM:            pl.Int64,
@@ -252,34 +208,40 @@ EP_CURVE: pl.Schema = pl.Schema({
 })
 
 # ALL_FACTORS = dim + factor scalars. Derived metrics are joined in via MetricCol.
+# Float64 throughout — losses run into hundreds of millions; Float32 is too thin.
 ALL_FACTORS: pl.Schema = pl.Schema({
-    AllFactorsCol.VENDOR:               pl.String,
-    AllFactorsCol.LOB_ID:               pl.Int64,
-    AllFactorsCol.ROLLUP_LOB:           pl.String,
-    AllFactorsCol.CDS_CAT_CLASS_NAME:   pl.String,
-    AllFactorsCol.REGION_PERIL_ID:      pl.Int64,
-    AllFactorsCol.ROLLUP_REGION_PERIL:  pl.String,
-    AllFactorsCol.BASE_MODEL:           pl.String,
-    AllFactorsCol.MODEL_CODE:           pl.Int64,
-    AllFactorsCol.MODEL_EVENT_ID:       pl.Int64,
-    AllFactorsCol.YEAR_ID:              pl.Int64,
-    AllFactorsCol.EVENT_ID:             pl.Int64,
-    AllFactorsCol.REQUIRED_CURRENCY:    pl.String,
-    AllFactorsCol.RATE_TO_GBP:          pl.Float64,
-    AllFactorsCol.LOSS:                 pl.Float64,
-    AllFactorsCol.RL_PROPORTION:        pl.Float32,
-    AllFactorsCol.VK_PROPORTION:        pl.Float32,
-    AllFactorsCol.UPLIFT_FACTOR:        pl.Float32,
-    AllFactorsCol.UPLIFT_FACTOR_CAPPED: pl.Float32,
-    # FIX: We dont' want this cols here this was the wide format from january
-    # We should have date variable and add validated dates which derive
-    # from the forecast factors seed table
-    AllFactorsCol.F_202601:             pl.Float64,
-    AllFactorsCol.F_202607:             pl.Float64,
-    AllFactorsCol.F_202701:             pl.Float64,
-    AllFactorsCol.EUWS_FACTOR:          pl.Float64,
-    AllFactorsCol.FA_GROSS_AAL_FACTOR:  pl.Float64,
-    AllFactorsCol.FA_GROSS_TAIL_FACTOR: pl.Float64,
+    AllFactorsCol.VENDOR:                pl.String,
+    AllFactorsCol.LOB_ID:                pl.Int64,
+    AllFactorsCol.MODELLED_LOB:          pl.String,
+    AllFactorsCol.ROLLUP_LOB:            pl.String,
+    AllFactorsCol.LOB_TYPE:              pl.String,
+    AllFactorsCol.OFFICE:                pl.String,
+    AllFactorsCol.LOB_CLASS:             pl.String,
+    AllFactorsCol.CDS_CAT_CLASS_NAME:    pl.String,
+    AllFactorsCol.REGION_PERIL_ID:       pl.Int64,
+    AllFactorsCol.MODELLED_REGION_PERIL: pl.String,
+    AllFactorsCol.PERIL_NAME:            pl.String,
+    AllFactorsCol.REGION:                pl.String,
+    AllFactorsCol.PERIL_FAMILY:          pl.String,
+    AllFactorsCol.BASE_MODEL:            pl.String,
+    AllFactorsCol.MODEL_CODE:            pl.Int64,
+    AllFactorsCol.MODEL_EVENT_ID:        pl.Int64,
+    AllFactorsCol.YEAR_ID:               pl.Int64,
+    AllFactorsCol.EVENT_ID:              pl.Int64,
+    AllFactorsCol.REQUIRED_CURRENCY:     pl.String,
+    AllFactorsCol.RATE_TO_GBP:           pl.Float64,
+    AllFactorsCol.LOSS:                  pl.Float64,
+    AllFactorsCol.RL_PROPORTION:         pl.Float64,
+    AllFactorsCol.VK_PROPORTION:         pl.Float64,
+    AllFactorsCol.UPLIFT_FACTOR:         pl.Float64,
+    AllFactorsCol.UPLIFT_FACTOR_CAPPED:  pl.Float64,
+    # Year-tagged forecast factor columns (f_{yyyymm}) are data-driven from the
+    # forecast_factors seed at runtime. validate_schema runs with strict=False
+    # against this schema so the extras pass through.
+    AllFactorsCol.RNK:                   pl.UInt32,
+    AllFactorsCol.EUWS_FACTOR:           pl.Float64,
+    AllFactorsCol.FA_GROSS_AAL_FACTOR:   pl.Float64,
+    AllFactorsCol.FA_GROSS_TAIL_FACTOR:  pl.Float64,
 })
 
 METRICS: pl.Schema = pl.Schema({m: pl.Float64 for m in MetricCol})

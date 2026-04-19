@@ -3,10 +3,10 @@
 One place that answers four questions:
 
   1. Who are the vendors, and how many simulation years does each have?
-     → `VERISK`, `RISKLINK` (both `Vendor` instances), `VENDORS`.
+     → `Vendor`, `_verisk()`, `_risklink()`.
   2. Where does data live on disk?
-     → `Config.seeds_dir`, `ep_summaries_dir`, `output_dir`, and each
-     vendor's `ylt_dir` + `ylt_glob`.
+     → `Config.seeds_dir`, `output_dir`, and each vendor's
+     `ylt_dir` + `ylt_glob` + `ep_summary_dir`.
   3. Are all the required inputs present and schema-valid?
      → `build_plan(config)` returns a `Plan` with per-file status.
   4. Does the user want to run?
@@ -32,6 +32,7 @@ Override any path with the corresponding `ROLLUP_*` env var.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -40,7 +41,89 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup.seeds import SEEDS
+from rollup.seeds import REQUIRED_SEEDS, SEEDS
+
+
+# --------------------------------------------------------------------------- #
+# Repo paths                                                                  #
+# --------------------------------------------------------------------------- #
+
+POLARS_ROOT = Path(__file__).resolve().parent.parent    # .../polars
+REPO_ROOT   = POLARS_ROOT.parent                        # .../rollup-dbt
+
+
+# --------------------------------------------------------------------------- #
+# Domain constants                                                            #
+# --------------------------------------------------------------------------- #
+
+class VendorName(StrEnum):
+    """Closed set of vendor identifiers — the string that appears in the
+    `vendor` column of the NormalizedYlt and in `base_model` after uplift.
+
+    StrEnum members ARE strings, so `pl.col(Y.VENDOR) == VendorName.VERISK`
+    and `pl.lit(VendorName.VERISK)` both work as drop-in replacements for
+    raw string literals. The short forms `vk` / `rl` are used as code-level
+    shorthand in working column names (`VK_PROPORTION`, `_vk_aal`) and
+    variable names (`vk_norm`, `n_sim_vk`) — never as data values.
+    """
+    VERISK   = "verisk"
+    RISKLINK = "risklink"
+
+
+class CurrencyCode(StrEnum):
+    """Closed set of currency codes that the pipeline derives in code
+    (`attach_currency`). The seed `fx_rates.csv` may contain other codes —
+    this enum only covers what the derivation logic emits.
+
+    Add a member here AND a row to `fx_rates.csv` (with target=GBP) when
+    extending the currency-derivation rule in `attach_currency`.
+    """
+    GBP = "GBP"
+    EUR = "EUR"
+
+
+# Peril families whose `base_model` is forced to RiskLink regardless of the
+# YLT row's vendor — Verisk does not model flood, so the blended AAL must
+# use the RiskLink AAL as denominator. Used in `attach_uplift` against
+# the row's `peril_family` (joined from perils.csv).
+#
+# Single semantic value: any peril whose family is "FL" gets risklink as
+# base. No region prefix. New flood region in perils.csv → no code change.
+FLOOD_FAMILY: str = "FL"
+
+
+class EnvVar(StrEnum):
+    """Every `ROLLUP_*` env var the pipeline reads — defined in one place.
+
+    StrEnum members ARE strings, so `os.getenv(EnvVar.LOG)` and
+    `monkeypatch.setenv(EnvVar.SEEDS_DIR, value)` both work. Use these
+    everywhere — never type the raw `"ROLLUP_*"` string in code or tests.
+    """
+    LOG               = "ROLLUP_LOG"
+    DATA_DIR          = "ROLLUP_DATA_DIR"
+    SEEDS_DIR         = "ROLLUP_SEEDS_DIR"
+    OUTPUT_DIR        = "ROLLUP_OUTPUT_DIR"
+    YLT_VERISK_DIR    = "ROLLUP_YLT_VERISK_DIR"
+    YLT_VERISK_GLOB   = "ROLLUP_YLT_VERISK_GLOB"
+    YLT_RISKLINK_DIR  = "ROLLUP_YLT_RISKLINK_DIR"
+    YLT_RISKLINK_GLOB = "ROLLUP_YLT_RISKLINK_GLOB"
+    EP_VERISK_DIR     = "ROLLUP_EP_VERISK_DIR"
+    EP_RISKLINK_DIR   = "ROLLUP_EP_RISKLINK_DIR"
+
+
+# --------------------------------------------------------------------------- #
+# Logging                                                                     #
+# --------------------------------------------------------------------------- #
+
+def setup_logging(level: str | None = None) -> None:
+    """Initialise the `rollup` logger. Silent by default (WARNING)."""
+    resolved = level or os.getenv(EnvVar.LOG, "WARNING")
+    logging.basicConfig(
+        level=resolved.upper(),
+        format="%(asctime)s  %(levelname)-5s  %(name)-22s  %(message)s",
+        datefmt="%H:%M:%S",
+        force=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -48,52 +131,46 @@ from rollup.seeds import SEEDS
 # --------------------------------------------------------------------------- #
 
 class Flavor(StrEnum):
-    """The minimum-viable Hisco flavour set.
+    """Two Hisco output flavours.
 
-    january had 21 fan-out variants including a tree of `_fix` / `_fl_fa_fix`
-    patch names. Those were workarounds for math that wasn't quite right;
-    with a clean pipeline we only need three semantic flavours:
+    Every factor (uplift, cap, FX, forecast, euws, fa_gross) is just a
+    multiplier in the chain. The `MAIN` flavour is the loss with the full
+    chain applied. `DIALSUP` is a sensitivity computed as a ratio applied
+    to the RAW loss.
 
-      * STANDARD — the default output: capped, local-ccy, forecast-adjusted,
-                   euws-adjusted. Does NOT apply fine-art gross-to-net.
-      * FAGROSS  — STANDARD plus the fine-art gross-to-net adjustment.
-      * DIALSUP  — sensitivity scenario: the composite forecast × euws ×
-                   fa_gross factor applied directly to the RAW loss,
-                   bypassing uplift / cap / FX.
-
-    Per vendor × forecast_date, we emit one of each by default. Flavours
-    can be added or removed by editing the `Vendor.flavors` field.
+      * MAIN    — the normal deliverable: capped, local-ccy, forecast-adjusted,
+                  euws-adjusted, fine-art correction applied. fa_gross is
+                  just one of the factors in the chain — not a first-class
+                  concept, the same way forecast and FX are just factors.
+      * DIALSUP — sensitivity scenario: the composite (forecast × euws ×
+                  fa_gross) factor applied directly to the raw loss,
+                  bypassing uplift / cap / FX.
     """
-    STANDARD = "standard"
-    FAGROSS  = "fagross"
-    DIALSUP  = "dialsup"
-
-
-POLARS_ROOT = Path(__file__).resolve().parent.parent    # .../polars
-REPO_ROOT   = POLARS_ROOT.parent                        # .../rollup-dbt
+    MAIN    = "main"
+    DIALSUP = "dialsup"
 
 
 # --------------------------------------------------------------------------- #
 # Vendors                                                                     #
 # --------------------------------------------------------------------------- #
 
-_DEFAULT_FLAVORS: tuple[Flavor, ...] = (Flavor.STANDARD, Flavor.FAGROSS, Flavor.DIALSUP)
+_DEFAULT_FLAVORS: tuple[Flavor, ...] = (Flavor.MAIN, Flavor.DIALSUP)
 
 
 @dataclass(frozen=True)
 class Vendor:
     """Everything that varies by vendor, in one place.
 
-    `name` is the string that appears in the YLT `vendor` column throughout
-    the pipeline. `hisco_label` only appears in output filenames
-    (`HiscoAIR_*` / `HiscoRMS_*`) — these are the external contract and
-    must stay as-is.
+    `name` is the `VendorName` enum member that appears in the YLT `vendor`
+    column throughout the pipeline. `hisco_label` only appears in output
+    filenames (`HiscoAIR_*` / `HiscoRMS_*`) — these are the external contract
+    and must stay as-is.
 
     `flavors` declares which Hisco flavours this vendor produces. Per
     vendor × forecast_date (from the `forecast_factors` seed) × flavor
     we emit one Hisco parquet.
     """
-    name:            str              # "verisk" | "risklink"
+    name:            VendorName
     hisco_label:     str              # "AIR" | "RMS" — output filename prefix
     n_simulations:   int              # 10_000 | 100_000
     ylt_dir:         Path
@@ -103,30 +180,30 @@ class Vendor:
     flavors:         tuple[Flavor, ...] = _DEFAULT_FLAVORS
 
 
-def _env_path(var: str, default: Path) -> Path:
+def _env_path(var: EnvVar, default: Path) -> Path:
     raw = os.getenv(var)
     return Path(raw).expanduser().resolve() if raw else default
 
 
 def _verisk(data_root: Path) -> Vendor:
     return Vendor(
-        name="verisk",
+        name=VendorName.VERISK,
         hisco_label="AIR",
         n_simulations=10_000,
-        ylt_dir=_env_path("ROLLUP_YLT_VERISK_DIR", data_root / "ylt" / "verisk"),
-        ylt_glob=os.getenv("ROLLUP_YLT_VERISK_GLOB", "air_ylt_*.parquet"),
-        ep_summary_dir=_env_path("ROLLUP_EP_VERISK_DIR", data_root / "ep_summaries" / "verisk"),
+        ylt_dir=_env_path(EnvVar.YLT_VERISK_DIR, data_root / "ylt" / VendorName.VERISK),
+        ylt_glob=os.getenv(EnvVar.YLT_VERISK_GLOB, "air_ylt_*.parquet"),
+        ep_summary_dir=_env_path(EnvVar.EP_VERISK_DIR, data_root / "ep_summaries" / VendorName.VERISK),
     )
 
 
 def _risklink(data_root: Path) -> Vendor:
     return Vendor(
-        name="risklink",
+        name=VendorName.RISKLINK,
         hisco_label="RMS",
         n_simulations=100_000,
-        ylt_dir=_env_path("ROLLUP_YLT_RISKLINK_DIR", data_root / "ylt" / "risklink"),
-        ylt_glob=os.getenv("ROLLUP_YLT_RISKLINK_GLOB", "risklink_ylt_*.parquet"),
-        ep_summary_dir=_env_path("ROLLUP_EP_RISKLINK_DIR", data_root / "ep_summaries" / "risklink"),
+        ylt_dir=_env_path(EnvVar.YLT_RISKLINK_DIR, data_root / "ylt" / VendorName.RISKLINK),
+        ylt_glob=os.getenv(EnvVar.YLT_RISKLINK_GLOB, "risklink_ylt_*.parquet"),
+        ep_summary_dir=_env_path(EnvVar.EP_RISKLINK_DIR, data_root / "ep_summaries" / VendorName.RISKLINK),
     )
 
 
@@ -140,7 +217,7 @@ class Config:
     output_dir: Path
     vendors:    tuple[Vendor, ...]
 
-    def vendor(self, name: str) -> Vendor:
+    def vendor(self, name: VendorName) -> Vendor:
         for v in self.vendors:
             if v.name == name:
                 return v
@@ -149,10 +226,10 @@ class Config:
 
 def resolve() -> Config:
     """Build a `Config` from env vars, falling back to repo defaults."""
-    data_root = _env_path("ROLLUP_DATA_DIR", REPO_ROOT / "data")
+    data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
     return Config(
-        seeds_dir=_env_path("ROLLUP_SEEDS_DIR", POLARS_ROOT / "seeds"),
-        output_dir=_env_path("ROLLUP_OUTPUT_DIR", data_root / "output"),
+        seeds_dir=_env_path(EnvVar.SEEDS_DIR, POLARS_ROOT / "seeds"),
+        output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),
         vendors=(_verisk(data_root), _risklink(data_root)),
     )
 
@@ -201,7 +278,13 @@ class Plan:
 # --------------------------------------------------------------------------- #
 
 def _check_seed(seeds_dir: Path, spec) -> Check:
-    """Verify a seed: file exists, column headers match, count rows."""
+    """Verify a seed: file exists, column headers match, count rows.
+
+    A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —
+    the pipeline would silently produce zero-row Hisco parquets otherwise.
+    Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
+    legitimately be empty stubs and are reported `ok=True` with `(stub)`.
+    """
     path = seeds_dir / spec.filename
     if not path.exists():
         return Check(label=spec.name, path=path, ok=False, note="missing")
@@ -216,33 +299,26 @@ def _check_seed(seeds_dir: Path, spec) -> Check:
             if extra:   bits.append(f"unexpected={sorted(extra)}")
             return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
         rows = pl.scan_csv(path, schema=spec.schema).select(pl.len()).collect().item()
+        if rows == 0 and spec.name in REQUIRED_SEEDS:
+            return Check(label=spec.name, path=path, ok=False, rows=0,
+                         note="REQUIRED seed is empty — pipeline would produce zero-row Hisco parquets")
         note = "schema OK" + (" (stub)" if rows == 0 else "")
         return Check(label=spec.name, path=path, ok=True, rows=rows, note=note)
     except Exception as e:
         return Check(label=spec.name, path=path, ok=False, note=f"parse error: {e}")
 
 
-def _check_ylt(vendor: Vendor) -> list[Check]:
-    if not vendor.ylt_dir.exists():
-        return [Check(label=vendor.ylt_glob, path=vendor.ylt_dir, ok=False,
-                      note="directory does not exist")]
-    files = sorted(vendor.ylt_dir.glob(vendor.ylt_glob))
+def _check_dir_glob(label: str, directory: Path, glob: str) -> list[Check]:
+    """Generic dir-pattern check used for both YLT parquets and EP-summary CSVs."""
+    if not directory.exists():
+        return [Check(label=glob, path=directory, ok=False, note="directory does not exist")]
+    files = sorted(directory.glob(glob))
     if not files:
-        return [Check(label=vendor.ylt_glob, path=vendor.ylt_dir, ok=False,
-                      note="no files match pattern")]
-    return [Check(label=p.name, path=p, ok=True,
-                  note=f"{p.stat().st_size / 1e6:.1f} MB") for p in files]
-
-
-def _check_ep_summary(vendor: Vendor) -> list[Check]:
-    if not vendor.ep_summary_dir.exists():
-        return [Check(label=vendor.ep_summary_glob, path=vendor.ep_summary_dir, ok=False,
-                      note="directory does not exist")]
-    files = sorted(vendor.ep_summary_dir.glob(vendor.ep_summary_glob))
-    if not files:
-        return [Check(label=vendor.ep_summary_glob, path=vendor.ep_summary_dir, ok=False,
-                      note="no files match pattern")]
-    return [Check(label=p.name, path=p, ok=True) for p in files]
+        return [Check(label=glob, path=directory, ok=False, note="no files match pattern")]
+    return [
+        Check(label=p.name, path=p, ok=True, note=f"{p.stat().st_size / 1e6:.1f} MB")
+        for p in files
+    ]
 
 
 def build_plan(config: Config) -> Plan:
@@ -260,14 +336,14 @@ def build_plan(config: Config) -> Plan:
             header=(f"{vendor.ylt_dir}  "
                     f"pattern={vendor.ylt_glob}  "
                     f"n_simulations={vendor.n_simulations:,}"),
-            checks=_check_ylt(vendor),
+            checks=_check_dir_glob(vendor.name, vendor.ylt_dir, vendor.ylt_glob),
         ))
 
     for vendor in config.vendors:
         sections.append(Section(
             title=f"ep_summaries {vendor.name}",
             header=f"{vendor.ep_summary_dir}  pattern={vendor.ep_summary_glob}",
-            checks=_check_ep_summary(vendor),
+            checks=_check_dir_glob(vendor.name, vendor.ep_summary_dir, vendor.ep_summary_glob),
         ))
 
     sections.append(Section(

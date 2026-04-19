@@ -1,96 +1,192 @@
-"""Staging: catches the id-collision bug that the pre-select fix resolved."""
+"""Staging: catches the lob_id / region_peril_id collision regression and
+verifies the analyses + perils + lobs join chain produces a clean
+NormalizedYlt for both vendors."""
 
 from __future__ import annotations
 
 import polars as pl
 
+from rollup.config import VendorName
 from rollup.schemas import frames as F
+from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import NormalizedYltCol as Y
-from rollup.stages.staging import normalize_risklink_ylt
+from rollup.schemas.columns import PerilsCol as P
+from rollup.schemas.columns import RawRisklinkYltCol as RLK
+from rollup.schemas.columns import RawVeriskYltCol as VK
+from rollup.schemas.columns import RefLobsCol as LB
+from rollup.stages.staging import normalize_risklink_ylt, normalize_verisk_ylt
 
+
+# --------------------------------------------------------------------------- #
+# Fixtures                                                                    #
+# --------------------------------------------------------------------------- #
 
 def _raw_risklink_ylt() -> pl.LazyFrame:
     return pl.DataFrame({
-        "SimulationSetId": [1],
-        "yearid": [2026],
-        "eventid": [100],
-        "date": ["2026-01-01"],
-        "p_value": [0.5],
-        "anlsid": [500],                 # → dim_risklink_analysis
-        "name": ["x"],
-        "description": ["x"],
-        "rate": [0.01],
-        "meanloss": [1.0],
-        "stddev": [0.1],
-        "expvalue": [1.0],
-        "loss": [123.45],
+        RLK.SIMULATION_SET_ID: [1],
+        RLK.YEAR_ID:           [2026],
+        RLK.EVENT_ID:          [100],
+        RLK.DATE:              ["2026-01-01"],
+        RLK.P_VALUE:           [0.5],
+        RLK.ANLS_ID:           [501],
+        RLK.NAME:              ["x"],
+        RLK.DESCRIPTION:       ["x"],
+        RLK.RATE:              [0.01],
+        RLK.MEAN_LOSS:         [1.0],
+        RLK.STD_DEV:           [0.1],
+        RLK.EXP_VALUE:         [1.0],
+        RLK.LOSS:              [123.45],
     }, schema=F.RAW_RISKLINK_YLT).lazy()
 
 
-def _dim_risklink_analysis() -> pl.LazyFrame:
+def _raw_verisk_ylt() -> pl.LazyFrame:
     return pl.DataFrame({
-        "risklink_analysis_id": [500],
-        "lob": ["lob_a"],
-        "region_peril": ["eu_ws"],
-    }, schema=F.DIM_RISKLINK_ANALYSIS).lazy()
+        VK.ANALYSIS:           ["EU_WS"],
+        VK.EXPOSURE_ATTRIBUTE: ["lob_a"],
+        VK.CATALOG_TYPE_CODE:  ["STC"],
+        VK.EVENT_ID:           [200],
+        VK.MODEL_CODE:         [41],
+        VK.YEAR_ID:            [2026],
+        VK.PERILSET_CODE:      [1],
+        VK.GROUND_UP_LOSS:     [120.0],
+        VK.GROSS_LOSS:         [110.0],
+        VK.NET_PRE_CAT_LOSS:   [100.0],
+        VK.FILENAME:           ["test"],
+    }, schema=F.RAW_VERISK_YLT).lazy()
 
 
-def _dim_region_perils() -> pl.LazyFrame:
-    """region_peril id=7 — must NOT leak into lob_id after the join."""
+def _analyses() -> pl.LazyFrame:
+    """One verisk + one risklink analysis pointing at peril 206 (EU_WS)."""
     return pl.DataFrame({
-        "id": [7],
-        "vendor": ["risklink"],
-        "modelled_region_peril": ["eu_ws"],
-        "cleaned_region_peril": ["eu_ws"],
-        "rollup_region_peril": ["EU_WS"],
-        "region": ["EU"],
-        "peril": ["WS"],
-        "adjustments": [""],
-        "excludes": [""],
-        "applies_to_mga": [1],
-        "applies_to_prop": [1],
-        "applies_to_fa": [0],
-        "blending_factor_region_peril_id": [1],
-        "blending_factor_sub_region_peril_id": ["EU_WS"],
-    }, schema=F.DIM_REGION_PERILS).lazy()
+        AN.VENDOR:         [VendorName.VERISK,   VendorName.RISKLINK],
+        AN.ANALYSIS_ID:    ["EU_WS",             "501"],
+        AN.MODELLED_LABEL: ["EU_WS",             "EU_WS"],
+        AN.PERIL_ID:       [206,                 206],
+        AN.LOB_ID:         [None,                42],   # NULL for verisk; populated for risklink
+    }, schema=F.ANALYSES).lazy()
+
+
+def _perils() -> pl.LazyFrame:
+    return pl.DataFrame({
+        P.PERIL_ID:     [206],
+        P.NAME:         ["Europe Winter Storm"],
+        P.REGION:       ["EU"],
+        P.PERIL_FAMILY: ["WS"],
+    }, schema=F.PERILS).lazy()
 
 
 def _lobs() -> pl.LazyFrame:
-    """lobs lob_id=42 — must land in lob_id (NOT the region-peril id=7)."""
     return pl.DataFrame({
-        "lob_id": [42],
-        "modelled_lob": ["lob_a"],
-        "rollup_lob": ["ROLLUP_A"],
-        "lob_type": ["prop"],
-        "cds_cat_class_name": ["class_a"],
-        "office": ["UK"],
-        "class": ["HH"],
+        LB.LOB_ID:             [42],
+        LB.MODELLED_LOB:       ["lob_a"],
+        LB.ROLLUP_LOB:         ["ROLLUP_A"],
+        LB.LOB_TYPE:           ["prop"],
+        LB.CDS_CAT_CLASS_NAME: ["class_a"],
+        LB.OFFICE:             ["UK"],
+        LB.CLASS:              ["HH"],
     }, schema=F.REF_LOBS).lazy()
 
 
-def test_normalize_risklink_ylt_does_not_confuse_lob_id_with_region_peril_id():
-    """Regression: both dim_region_perils AND lobs have a column called 'id'.
+# --------------------------------------------------------------------------- #
+# Tests                                                                       #
+# --------------------------------------------------------------------------- #
 
-    Pre-fix, polars would suffix one of them after the join and the projection
-    would silently pick the wrong 'id' for lob_id. Pre-selecting the right-side
-    frames with aliased keys eliminates the ambiguity entirely.
-    """
+def test_normalize_risklink_ylt_resolves_lob_via_analyses():
+    """RiskLink: lob_id is carried on the analyses row (not joined separately)."""
     out = normalize_risklink_ylt(
-        _raw_risklink_ylt(), _dim_risklink_analysis(), _dim_region_perils(), _lobs()
+        _raw_risklink_ylt(), _analyses(), _perils(), _lobs(),
     ).collect()
 
     assert out.height == 1
     row = out.row(0, named=True)
-    assert row[Y.LOB_ID]          == 42, "lob_id must come from lobs.lob_id, not dim_region_perils.id"
-    assert row[Y.REGION_PERIL_ID] == 7,  "region_peril_id must come from dim_region_perils.id"
-    assert row[Y.VENDOR]              == "risklink"
-    assert row[Y.ROLLUP_LOB]          == "ROLLUP_A"
-    assert row[Y.ROLLUP_REGION_PERIL] == "EU_WS"
-    assert row[Y.LOSS]                == 123.45
+    assert row[Y.LOB_ID]                == 42
+    assert row[Y.REGION_PERIL_ID]       == 206
+    assert row[Y.VENDOR]                == VendorName.RISKLINK
+    assert row[Y.ROLLUP_LOB]            == "ROLLUP_A"
+    assert row[Y.PERIL_NAME]            == "Europe Winter Storm"
+    assert row[Y.REGION]                == "EU"
+    assert row[Y.PERIL_FAMILY]          == "WS"
+    assert row[Y.MODELLED_REGION_PERIL] == "EU_WS"
+    assert row[Y.LOSS]                  == 123.45
 
 
-def test_normalize_risklink_ylt_output_matches_schema():
-    out = normalize_risklink_ylt(
-        _raw_risklink_ylt(), _dim_risklink_analysis(), _dim_region_perils(), _lobs()
+def test_normalize_verisk_ylt_resolves_lob_via_exposure_attribute():
+    """Verisk: lob_id comes from the lobs join via ExposureAttribute (analyses.lob_id is null)."""
+    out = normalize_verisk_ylt(
+        _raw_verisk_ylt(), _analyses(), _perils(), _lobs(),
     ).collect()
-    assert out.schema == F.NORMALIZED_YLT
+
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row[Y.LOB_ID]                == 42
+    assert row[Y.REGION_PERIL_ID]       == 206
+    assert row[Y.VENDOR]                == VendorName.VERISK
+    assert row[Y.ROLLUP_LOB]            == "ROLLUP_A"
+    assert row[Y.PERIL_NAME]            == "Europe Winter Storm"
+    assert row[Y.PERIL_FAMILY]          == "WS"
+    assert row[Y.MODELLED_REGION_PERIL] == "EU_WS"
+    assert row[Y.LOSS]                  == 100.0
+
+
+def test_normalized_outputs_match_schema():
+    rl = normalize_risklink_ylt(_raw_risklink_ylt(), _analyses(), _perils(), _lobs()).collect()
+    vk = normalize_verisk_ylt  (_raw_verisk_ylt(),   _analyses(), _perils(), _lobs()).collect()
+    assert rl.schema == F.NORMALIZED_YLT
+    assert vk.schema == F.NORMALIZED_YLT
+
+
+# --------------------------------------------------------------------------- #
+# apply_rollup_scope                                                          #
+# --------------------------------------------------------------------------- #
+
+from rollup.schemas.columns import RollupScopeCol as RS
+from rollup.schemas.columns import AllFactorsCol as AF
+from rollup.stages.staging import apply_rollup_scope
+
+
+def _scope(*rows: tuple[int, VendorName, str, bool]) -> pl.LazyFrame:
+    return pl.DataFrame({
+        RS.LOB_ID:      [r[0] for r in rows],
+        RS.VENDOR:      [r[1] for r in rows],
+        RS.ANALYSIS_ID: [r[2] for r in rows],
+        RS.IN_ROLLUP:   [r[3] for r in rows],
+    }, schema={
+        RS.LOB_ID:      pl.Int64,
+        RS.VENDOR:      pl.String,
+        RS.ANALYSIS_ID: pl.String,
+        RS.IN_ROLLUP:   pl.Boolean,
+    }).lazy()
+
+
+def _scoped_ylt(label: str, *, lob_id: int = 1,
+                vendor: VendorName = VendorName.VERISK) -> pl.LazyFrame:
+    """Minimal post-staging YLT row with the (lob_id, vendor, modelled_label)
+    triple that apply_rollup_scope joins on."""
+    return pl.DataFrame({
+        Y.LOB_ID:                [lob_id],
+        Y.VENDOR:                [vendor],
+        Y.MODELLED_REGION_PERIL: [label],
+    }, schema={
+        Y.LOB_ID:                pl.Int64,
+        Y.VENDOR:                pl.String,
+        Y.MODELLED_REGION_PERIL: pl.String,
+    }).lazy()
+
+
+def test_apply_rollup_scope_keeps_in_scope_rows():
+    ylt   = _scoped_ylt("EU_WS", lob_id=1, vendor=VendorName.VERISK)
+    scope = _scope((1, VendorName.VERISK, "EU_WS", True))
+    assert apply_rollup_scope(ylt, scope).collect().height == 1
+
+
+def test_apply_rollup_scope_drops_out_of_scope_rows():
+    ylt   = _scoped_ylt("EU_WS", lob_id=1, vendor=VendorName.VERISK)
+    scope = _scope((1, VendorName.VERISK, "EU_WS", False))
+    assert apply_rollup_scope(ylt, scope).collect().height == 0
+
+
+def test_apply_rollup_scope_drops_unlisted_rows():
+    """A (lob, vendor, analysis) triple absent from rollup_scope is dropped."""
+    ylt   = _scoped_ylt("EU_FL", lob_id=1, vendor=VendorName.VERISK)
+    scope = _scope((1, VendorName.VERISK, "EU_WS", True))   # only EU_WS in scope
+    assert apply_rollup_scope(ylt, scope).collect().height == 0

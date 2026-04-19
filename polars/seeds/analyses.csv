@@ -1,8 +1,1 @@
 vendor,analysis_id,modelled_label,peril_id,lob_id
-verisk,EU_EQ,EU_EQ,205,
-verisk,EU_FL,EU_FL,216,
-verisk,EU_WS,EU_WS,206,
-verisk,EU_WS_GCAdj,EU_WS_GCAdj,206,
-verisk,UK_FL,UK_FL,217,
-verisk,UK_WSSS,UK_WSSS,206,
-verisk,UK_WSSS_GCAdj,UK_WSSS_GCAdj,206,

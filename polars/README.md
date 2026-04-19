@@ -1,178 +1,133 @@
-# polars pipeline
+# polars rollup pipeline
 
-Single-process polars replica of the `jan-rollup` duckdb pipeline. Everything
-is a chain of `LazyFrame` expressions; nothing materializes until the
-orchestrator calls `pl.collect_all` at the sinks.
+Single-process polars replica of the `jan-rollup` duckdb pipeline. Reads raw
+YLT parquets + seed CSVs, applies a chain of factors, fans out to Hisco
+parquets. Everything is a `LazyFrame` expression; nothing materialises until
+`pl.collect_all` at the sinks.
 
-## Why `polars/` (folder) vs `rollup/` (package)
-
-A Python package named `polars` at this repo root would shadow `import polars`
-(the library). So the on-disk folder is `polars/` but the importable package
-inside is `rollup/`. All internal imports read `from rollup.X import Y`.
+## Run it
 
 ```bash
 cd polars
-python -m rollup.pipeline --dry-run        # show the plan, exit
-python -m rollup.pipeline                  # show plan, prompt y/N, then run
-python -m rollup.pipeline --yes            # skip prompt, run
-python -m pytest tests/
+uv run python -m rollup.pipeline --dry-run             # show the plan, exit
+uv run python -m rollup.pipeline                       # plan → y/N prompt → run
+uv run python -m rollup.pipeline --yes                 # skip prompt, run
+uv run python -m rollup.pipeline --yes --dump-interim  # also write audit parquets
+uv run python -m rollup.pipeline --yes --log-level INFO# show factor-chain trace
+uv run python -m pytest polars/                        # 96 tests, ~1.6s
 ```
 
-`conftest.py` adds this folder to `sys.path` so `import rollup` resolves.
+Need to know what data to provide before the run? See
+[`docs/data-requirements.md`](docs/data-requirements.md) — the canonical
+contract between the pipeline and the seeds + YLTs you supply.
+
+## Data flow
+
+```
+    raw YLTs                    seeds (11 CSVs)
+   ┌─────────┐                 ┌─────────────────────┐
+   │ verisk  │                 │ lobs                │
+   │risklink │                 │ perils              │  ← split-out
+   └────┬────┘                 │ analyses            │  ← god-table
+        │                      │ rollup_scope        │  ← gone
+        │                      │ blending_weights    │
+        │                      │ forecast / fx       │
+        │                      │ euws (+overrides)   │
+        │                      │ air_events / fa     │
+        │                      └──────────┬──────────┘
+        ▼                                 │
+   ┌──────────────────────────────────────▼───┐
+   │ 1. staging → NormalizedYlt (union)       │
+   │    + count_event_id_orphans (verisk)     │
+   └────────────────────┬─────────────────────┘
+                        │
+                        ▼
+   ┌──────────────────────────────────────────┐
+   │ 2. factor chain (one attach_* per factor)│
+   │    rollup_scope filter →                 │
+   │    FX → forecast(× N tags) → rank →      │
+   │    euws (+ rank-threshold overrides)     │
+   │    → fa_gross → uplift                   │
+   └────────────────────┬─────────────────────┘
+                        │
+                        ▼
+   ┌──────────────────────────────────────────┐
+   │ 3. metrics (column name traces chain)    │
+   │    loss_uplifted_capped_localccy_{tag}_  │
+   │    euws_fagross  +  dialsup_{tag}        │
+   └────────────────────┬─────────────────────┘
+                        │  .cache()  — single pass
+             ┌──────────┴──────────┐
+             ▼                     ▼
+      Hisco parquets        audit parquets (opt-in)
+      Hisco{AIR,RMS}_       audit_wide   (read-across)
+      {date}_{main,         audit_long   (pivot-ready)
+       dialsup}.parquet
+```
 
 ## Layout
 
 ```
 polars/
-├── README.md               # this file
-├── calculations.md         # every january → polars stage mapping with SQL
-├── RH-TODO-DATA.md         # pending duckdb exports needed to populate seeds
-├── conftest.py
+├── README.md                 # this file — overview + run + schematic
+├── docs/                     # detailed docs — see docs/README.md
 ├── rollup/
-│   ├── config.py           # Vendor dataclass + paths + plan reporter
-│   ├── seeds.py            # typed seed loaders (one per CSV)
-│   ├── validate.py         # validate_schema + SchemaError
-│   ├── pipeline.py         # orchestrator + interactive CLI
+│   ├── config.py             # Vendor + Flavor + Config + plan reporter + logging + FLOOD_FAMILY
+│   ├── seeds.py              # typed seed loaders (Seeds dataclass)
+│   ├── validate.py           # validate_schema + SchemaError
+│   ├── pipeline.py           # orchestrator + build_all_factors + audit + CLI
 │   ├── schemas/
-│   │   ├── columns.py      # StrEnum per logical frame
-│   │   └── frames.py       # pl.Schema per logical frame
+│   │   ├── columns.py        # StrEnum per logical frame
+│   │   └── frames.py         # pl.Schema per logical frame
 │   └── stages/
-│       ├── staging.py      # raw YLTs → NormalizedYlt (per vendor)
-│       └── ep.py           # YLT → EP curve (AEP / OEP / AAL)
-├── seeds/                  # git-versioned reference CSVs — see seeds/README.md
-└── tests/
-    ├── test_schemas.py · test_seeds.py · test_config.py
-    ├── test_staging.py · test_ep.py · test_pipeline.py
-    ├── test_integration_ep.py  # real YLT run, gated on parquet presence
-    └── outputs/            # gitignored; integration tests write CSVs here
+│       ├── staging.py        # raw YLTs → NormalizedYlt (per vendor)
+│       ├── factors.py        # attach_* functions (one per factor)
+│       └── ep.py             # YLT → EP curve (aux, not in main chain)
+├── seeds/                    # git-versioned reference CSVs — see seeds/README.md
+└── tests/                    # 96 tests including e2e
+    ├── test_e2e.py           # the synthetic end-to-end run
+    ├── build_test_data.py    # generator for tests/data/
+    └── data/                 # gitignored; test inputs + outputs
 ```
 
 ## Data layout (not in git)
 
 ```
-<repo>/data/
+<repo>/data/                  # overridable: ROLLUP_DATA_DIR
 ├── ylt/
-│   ├── verisk/*.parquet        # 10,000 simulation years (AIR)
-│   └── risklink/*.parquet      # 100,000 simulation years (RMS)
+│   ├── verisk/*.parquet      # 10,000 simulation years (AIR)
+│   └── risklink/*.parquet    # 100,000 simulation years (RMS)
 ├── ep_summaries/
-│   ├── verisk/*.csv            # per-LOB / per-peril EP tables
+│   ├── verisk/*.csv
 │   └── risklink/*.csv
-└── output/                     # pipeline writes HiscoAIR_* / HiscoRMS_*
+└── output/                   # pipeline writes Hisco{AIR,RMS}_*.parquet
 ```
 
-Every path is overridable via the corresponding `ROLLUP_*` env var — see
-`rollup/config.py`.
+Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
+`ROLLUP_YLT_RISKLINK_DIR`, `ROLLUP_OUTPUT_DIR`, `ROLLUP_LOG`, etc.
 
-## Vendors — one source of truth
+## Docs
 
-```python
-from rollup import config
-
-cfg = config.resolve()
-verisk   = cfg.vendor("verisk")    # Vendor(name, hisco_label='AIR', n_simulations=10_000,  ...)
-risklink = cfg.vendor("risklink")  # Vendor(name, hisco_label='RMS', n_simulations=100_000, ...)
-```
-
-`n_simulations` drives the return-period math in `ep_curve_from_ylt`.
-`hisco_label` is the external contract that shows up in output file names
-(`HiscoAIR_*.parquet`, `HiscoRMS_*.parquet`).
-
-## Typed columns
-
-- `rollup/schemas/columns.py` — one `StrEnum` per logical frame.
-- `rollup/schemas/frames.py` — one `pl.Schema` per logical frame, keyed by
-  the enum members.
-- `pl.col(C.FOO)` is the project standard — StrEnum members are strings, so
-  polars accepts them directly. Attribute shorthand `pl.col.foo` also works
-  but only for valid Python identifiers, and some vendor columns have spaces.
-
-## Schema validation everywhere data crosses a boundary
-
-- **At seed load**: `rollup/seeds.py` scans each CSV with its declared
-  `pl.Schema`; `validate_schema` runs on the result. Drift fails fast with a
-  column-level diff.
-- **At stage entry + exit**: every `stages/*.py` function calls
-  `validate_schema` on its inputs and outputs.
-- **In the plan reporter**: `config.build_plan(cfg)` sniffs each seed's
-  actual CSV header against its expected columns *before* the pipeline
-  starts, so a drifted seed is caught at the y/N prompt, not halfway through.
-
-## One cached marts node, many fan-outs
-
-The duckdb pipeline materialized `mts_tbl_ylt_combined_all_factors` because
-~20 downstream views read from it. We do the same with polars lazy `.cache()`:
-
-```python
-all_factors = build_all_factors(...).cache()          # computed exactly once
-outputs = [fanout_hisco(all_factors, v) for v in FANOUT_VARIANTS]
-collected = pl.collect_all(outputs)                   # single optimized pass
-for df, v in zip(collected, FANOUT_VARIANTS):
-    df.write_parquet(out / f"{v.name}.parquet")
-```
-
-## Seeds
-
-Reference data lives in `seeds/` as git-versioned CSVs. See
-[`seeds/README.md`](seeds/README.md) for full schema documentation.
-
-### Optimal dimensional structure
-
-Four new tables replace january's god-dimension (`dim_region_perils`):
-
-| file | rows | purpose |
-|---|---|---|
-| `perils.csv` | 27 | one row per rollup peril — `peril_id, name, region, peril_family` |
-| `analyses.csv` | 7+ | `(vendor, analysis_id)` → `peril_id` [+`lob_id` for RiskLink] |
-| `rollup_scope.csv` | stub | `(lob_id, vendor, analysis_id, in_rollup)` — which analyses are in scope per LOB |
-| `blending_weights.csv` | 50 | long-format `(peril_id, sub_peril, vendor, weight)` |
-
-The legacy seeds (`dim_region_perils.csv`, `dim_risklink_analysis.csv`) remain
-during transition. They will be retired once the optimal structure is wired
-through the staging code.
-
-Pending exports that will populate the stubs are tracked in
-[`RH-TODO-DATA.md`](RH-TODO-DATA.md).
-
-## Documentation
-
-- [`calculations.md`](calculations.md) — every january duckdb view mapped to a
-  polars stage, with the original SQL quoted. Includes the official-rollup
-  selection logic (section 9) and the reference-data source-of-truth notes
-  (section 10).
-- [`seeds/README.md`](seeds/README.md) — seed schema decisions, column-naming
-  rules, and per-file provenance.
-- [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — copy-pasteable duckdb SQL for each
-  pending seed export.
+- [`docs/data-requirements.md`](docs/data-requirements.md) — **start here**.
+  Every YLT, seed, and CSV the pipeline needs, with the duckdb `COPY` SQL to
+  produce each one. Also: failure-mode reference table.
+- [`docs/architecture.md`](docs/architecture.md) — code organisation, Vendor /
+  Flavor / VariantSpec abstractions, seed loading, schema validation layers.
+- [`docs/factor-chain.md`](docs/factor-chain.md) — how the factor chain works,
+  the cumulative column-naming convention, and the 5-step recipe to add a new
+  factor.
+- [`docs/calculations.md`](docs/calculations.md) — every january duckdb view
+  mapped to its polars replacement, with the source SQL quoted.
+- [`seeds/README.md`](seeds/README.md) — per-seed schema decisions, column
+  naming rules, provenance.
 
 ## Status
 
-Done:
-- Schemas: raw YLTs (RiskLink + Verisk), dim/ref tables, NormalizedYlt,
-  EpCurve, AllFactors, Metrics, Hisco.
-- `validate_schema` (strict and non-strict).
-- `load_raw_risklink_ylt`, `load_raw_verisk_ylt`, `normalize_risklink_ylt`.
-- `ep_curve_from_ylt` (validated on real 4.4M-row Verisk YLT).
-- `FANOUT_VARIANTS` (21 variants) + `fanout_hisco` projection.
-- `pipeline.main()` CLI: plan → prompt → run.
-- Typed seed loader bundle (`seeds.load_all`).
-- Per-seed schema validation in the plan reporter.
-- Optimal 4-table seed structure (`perils`, `analyses`, `rollup_scope`,
-  `blending_weights`) — schemas wired, CSVs seeded (analyses + rollup_scope
-  still partially stubbed pending duckdb exports).
+Pipeline runs end-to-end on synthetic data. The full chain (staging, factor
+attach, metrics, fan-out, audit dumps, interactive CLI) is implemented and
+tested. To run on real data, populate the four blocker seeds (perils,
+analyses, rollup_scope, blending_weights) listed in
+[`docs/data-requirements.md`](docs/data-requirements.md) and place the YLT
+parquets under `data/ylt/{verisk,risklink}/`.
 
-Stub (`NotImplementedError`):
-- `build_all_factors` — composes the 5 middle stages.
-
-TODO (middle stages, in dependency order):
-1. `stages/staging.py::normalize_verisk_ylt`
-2. `stages/funnel.py` — rank + bucket + validity filter
-3. `stages/blending.py` — vendor proportions → uplift factor clipped [0.1, 10]
-4. `stages/forecast.py` — forecast factors per LOB + FX to local ccy
-5. `stages/euws.py` — per-event EUWS factor
-6. `stages/fa_gross.py` — fine-art AAL / tail adjustments
-7. Wire `build_all_factors` to call the above in order
-
-See [`calculations.md`](calculations.md) for the full january → polars mapping
-with SQL and per-stage status.
-
-Tests: **68 passing** (`uv run --project .. python -m pytest tests/` from `polars/`).
+**96 passing tests in ~1.6s** (`uv run python -m pytest polars/`).

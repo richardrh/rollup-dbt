@@ -49,28 +49,71 @@ class RawVeriskYltCol(StrEnum):
 
 # ----- dimension / reference tables -----
 
-class DimRegionPerilCol(StrEnum):
-    ID                                  = "id"
-    VENDOR                              = "vendor"
-    MODELLED_REGION_PERIL               = "modelled_region_peril"
-    CLEANED_REGION_PERIL                = "cleaned_region_peril"
-    ROLLUP_REGION_PERIL                 = "rollup_region_peril"
-    REGION                              = "region"
-    PERIL                               = "peril"
-    ADJUSTMENTS                         = "adjustments"
-    EXCLUDES                            = "excludes"
-    APPLIES_TO_MGA                      = "applies_to_mga"
-    APPLIES_TO_PROP                     = "applies_to_prop"
-    APPLIES_TO_FA                       = "applies_to_fa"
-    BLENDING_FACTOR_REGION_PERIL_ID     = "blending_factor_region_peril_id"
-    BLENDING_FACTOR_SUB_REGION_PERIL_ID = "blending_factor_sub_region_peril_id"
+class PerilsCol(StrEnum):
+    """One row per rollup peril. Integer id is the canonical key shared across
+    vendors. Replaces the per-vendor duplication of `dim_region_perils`.
+
+    `peril_family` ("EQ", "TC", "FL", "WS", "CS", "WF") is the semantic
+    category — the pipeline uses this for the flood-base-model rule, NOT the
+    derived `region + family` string. If a new flood region is added, no
+    code change is needed.
+    """
+    PERIL_ID     = "peril_id"
+    NAME         = "name"           # display: "Europe Winter Storm"
+    REGION       = "region"         # "US", "EU", "AU", "AP", ...
+    PERIL_FAMILY = "peril_family"   # "EQ", "TC", "FL", "WS", "CS", "WF"
 
 
-class DimRisklinkAnalysisCol(StrEnum):
-    """Maps RiskLink analysis id → (lob, region_peril) strings for staging join."""
-    RISKLINK_ANALYSIS_ID = "risklink_analysis_id"
-    LOB                  = "lob"
-    REGION_PERIL         = "region_peril"
+class AnalysesCol(StrEnum):
+    """Vendor analysis label → peril_id (and lob_id for RiskLink) mapping.
+
+    Composite key (vendor, analysis_id). Replaces the union of
+    `dim_rl_analysis` + `dim_region_perils.modelled_region_peril` rows.
+
+    `lob_id` is populated for RiskLink (one analysis maps to one (lob, peril))
+    and NULL for Verisk (analysis is peril-only; lob lives on the YLT row's
+    `ExposureAttribute`).
+    """
+    VENDOR         = "vendor"           # "verisk" | "risklink"
+    ANALYSIS_ID    = "analysis_id"      # str — Verisk label, or stringified rl_analysis_id
+    MODELLED_LABEL = "modelled_label"   # display label (often same as analysis_id)
+    PERIL_ID       = "peril_id"         # FK into perils.csv
+    LOB_ID         = "lob_id"           # FK into lobs.csv; nullable for Verisk
+
+
+class BlendingWeightsCol(StrEnum):
+    """Per (peril_id, sub_peril, vendor) blend weight — long format.
+
+    Replaces the wide `air_blend` / `rms_blend` columns of `blending_factors`.
+    `sub_peril` is nullable — most perils don't need regional sub-splits.
+
+    `peril_name` + `description` are denormalised display columns: the
+    pipeline NEVER joins on them — the join is on `peril_id` only — but the
+    CSV stays human-readable (otherwise `(216, NULL, "rl", 0.5)` is opaque).
+    Treat `peril_name` as a hint mirrored from `perils.csv` and
+    `description` as free text describing why this row exists (e.g.
+    "Germany sub-peril split", "default 50/50 fallback for HU_EQ").
+    """
+    PERIL_ID    = "peril_id"
+    PERIL_NAME  = "peril_name"     # denormalised display, mirrors perils.name
+    DESCRIPTION = "description"    # free-text reason for this weight row
+    SUB_PERIL   = "sub_peril"
+    VENDOR      = "vendor"
+    WEIGHT      = "weight"
+
+
+class RollupScopeCol(StrEnum):
+    """Which (lob_id, vendor, analysis_id) triples are in the official rollup.
+
+    The grain is `analysis_id` — NOT `peril_id` — because two analyses can
+    share a peril_id (e.g. `UK_WSSS` and `UK_WSSS_GCAdj` are both peril 206
+    but only ONE is official per LOB). Replaces the
+    `applies_to_{mga,prop,fa}` flag fan-out of `dim_region_perils`.
+    """
+    LOB_ID      = "lob_id"
+    VENDOR      = "vendor"        # "verisk" | "risklink"
+    ANALYSIS_ID = "analysis_id"   # the modelled_label / wire label per vendor
+    IN_ROLLUP   = "in_rollup"
 
 
 class RefLobsCol(StrEnum):
@@ -86,19 +129,6 @@ class RefLobsCol(StrEnum):
     CDS_CAT_CLASS_NAME = "cds_cat_class_name"
     OFFICE             = "office"
     CLASS              = "class"
-
-
-class RefBlendingFactorsCol(StrEnum):
-    """Wide across vendors — `air_blend` and `rms_blend` are used together in staging."""
-    ID                  = "id"
-    BLEND_SET_ID        = "blend_set_id"
-    REGION_PERIL_ID     = "region_peril_id"
-    REGION_PERIL        = "region_peril"
-    SUB_REGION_PERIL_ID = "sub_region_peril_id"
-    SUB_REGION_PERIL    = "sub_region_peril"
-    AIR_BLEND           = "air_blend"
-    RMS_BLEND           = "rms_blend"
-    KAT_RISK_BLEND      = "kat_risk_blend"
 
 
 class RefForecastFactorsCol(StrEnum):
@@ -133,19 +163,24 @@ class RefEuwsRateFactorsCol(StrEnum):
     FACTOR         = "factor"
 
 
+class RefEuwsRankOverridesCol(StrEnum):
+    """Per-LOB rank threshold overrides for the EUWS factor.
+
+    When rollup_lob matches AND rnk <= max_rank, euws_factor is replaced with
+    `factor` instead of the joined euws_rate_factors value. Absence = no override.
+    Add a row here to override a new LOB without any code change.
+    """
+    ROLLUP_LOB = "rollup_lob"
+    MAX_RANK   = "max_rank"
+    FACTOR     = "factor"
+
+
 class RefAirEventsCol(StrEnum):
     EVENT_ID = "event_id"
     MODEL_ID = "model_id"
     EVENT    = "event"
     YEAR     = "year"
     DAY      = "day"
-
-
-class RefCdsRegionPerilCol(StrEnum):
-    ID                   = "id"
-    CDS_REGION_PERIL     = "cds_region_peril"
-    CDS_SUB_REGION_PERIL = "cds_sub_region_peril"
-    CDS_MODEL_TO_USE     = "cds_model_to_use"
 
 
 class RefFineartAdjCol(StrEnum):
@@ -155,80 +190,6 @@ class RefFineartAdjCol(StrEnum):
     ROLLUP_REGION_PERIL = "rollup_region_peril"
     AAL_FACTOR          = "aal_factor"
     TAIL_FACTOR         = "tail_factor"
-
-
-# ----- OPTIMAL seed structure (new, replacing dim_region_perils + dim_risklink_analysis + blending_factors) -----
-
-class PerilsCol(StrEnum):
-    """One row per rollup peril. Integer id, string labels for display.
-
-    Replaces the label-rollup columns of january's `dim_region_perils`.
-    `peril_id` values preserve january's `RegionPerilID` integers so that
-    any external reference still resolves.
-    """
-    PERIL_ID     = "peril_id"
-    NAME         = "name"
-    REGION       = "region"        # "US", "EU", "AU", "AP", ...
-    PERIL_FAMILY = "peril_family"  # "EQ", "TC", "FL", "WS", "CS", "WF"
-
-
-class AnalysesCol(StrEnum):
-    """Vendor analysis label → peril_id mapping. Composite key (vendor, analysis_id).
-
-    Replaces january's `dim_rl_analysis` + vendor rows of `dim_region_perils`.
-    `lob_id` is populated for RiskLink (analysis is 1:1 with a (lob, peril))
-    and NULL for Verisk (analysis is peril-only; lob lives on the YLT row).
-    """
-    VENDOR         = "vendor"          # "verisk" | "risklink"
-    ANALYSIS_ID    = "analysis_id"     # string — either the Verisk label or stringified anlsid
-    MODELLED_LABEL = "modelled_label"  # display label (often same as analysis_id)
-    PERIL_ID       = "peril_id"        # FK into perils.csv
-    LOB_ID         = "lob_id"          # FK into lobs.csv; nullable for Verisk
-
-
-class BlendingWeightsCol(StrEnum):
-    """Per (peril_id, sub_peril, vendor) blend weight — long format.
-
-    Replaces the wide AIRBlend/RMSBlend/KatRiskBlend columns of january's
-    `blending_factors`. `sub_peril` is nullable — most perils don't need
-    regional sub-splits.
-    """
-    PERIL_ID  = "peril_id"
-    SUB_PERIL = "sub_peril"
-    VENDOR    = "vendor"
-    WEIGHT    = "weight"
-
-
-class RollupScopeCol(StrEnum):
-    """Which (lob_id, vendor, analysis_id) triples are in the official rollup.
-
-    The grain is `analysis_id` — NOT `peril_id` — because two analyses can
-    share a peril_id (e.g. `UK_WSSS` and `UK_WSSS_GCAdj` are both peril 206
-    but only ONE is official per LOB). In january this was implicit in the
-    `applies_to_{mga,prop,fa}` flags on each `dim_region_perils` row; the
-    non-selected variant simply had `applies_to_*=0` for all LOB types.
-
-    Replaces january's:
-        CASE lob_type WHEN 'mga'  THEN applies_to_mga
-                      WHEN 'prop' THEN applies_to_prop
-                      WHEN 'fa'   THEN applies_to_fa
-                      ELSE 0 END AS official_rollup
-    """
-    LOB_ID      = "lob_id"
-    VENDOR      = "vendor"        # "verisk" | "risklink"
-    ANALYSIS_ID = "analysis_id"   # the modelled_label / wire label per vendor
-    IN_ROLLUP   = "in_rollup"
-
-
-# ----- legacy / to-retire once OPTIMAL seeds have full data -----
-
-class RefFloodRl22Col(StrEnum):
-    MODEL_EVENT_PK        = "model_event_pk"
-    MODEL_PROVIDER_ID     = "model_provider_id"
-    MODEL_EVENT_ID        = "model_event_id"
-    MODEL_OCCURRENCE_YEAR = "model_occurrence_year"
-    MODEL_OCCURRENCE_DATE = "model_occurrence_date"
-    REGION_PERIL_ID       = "region_peril_id"
 
 
 # ----- raw EP summaries (one row per RP × ep_type × lob × region_peril) -----
@@ -255,16 +216,26 @@ class StgVeriskEpCol(StrEnum):
 # ----- internal canonical frames -----
 
 class NormalizedYltCol(StrEnum):
-    """Canonical YLT — both vendors land here with identical shape."""
+    """Canonical YLT — both vendors land here with identical shape.
+
+    `office` and `lob_class` ride along from the lobs join in staging.
+    `peril_name` / `region` / `peril_family` come from the perils join so
+    downstream factor stages have semantic dims (the flood-base-model
+    rule keys on `peril_family == "FL"`, not a derived label string).
+    """
     VENDOR                = "vendor"
     LOB_ID                = "lob_id"
     MODELLED_LOB          = "modelled_lob"
     ROLLUP_LOB            = "rollup_lob"
     LOB_TYPE              = "lob_type"
     CDS_CAT_CLASS_NAME    = "cds_cat_class_name"
-    REGION_PERIL_ID       = "region_peril_id"
-    MODELLED_REGION_PERIL = "modelled_region_peril"
-    ROLLUP_REGION_PERIL   = "rollup_region_peril"
+    OFFICE                = "office"
+    LOB_CLASS             = "lob_class"
+    REGION_PERIL_ID       = "region_peril_id"   # = perils.peril_id (canonical)
+    MODELLED_REGION_PERIL = "modelled_region_peril"  # = analyses.modelled_label
+    PERIL_NAME            = "peril_name"        # = perils.name (display)
+    REGION                = "region"            # = perils.region
+    PERIL_FAMILY          = "peril_family"      # = perils.peril_family
     MODEL_CODE            = "model_code"
     YEAR_ID               = "year_id"
     EVENT_ID              = "event_id"
@@ -277,7 +248,9 @@ class EpCurveCol(StrEnum):
     LOB_ID              = "lob_id"
     REGION_PERIL_ID     = "region_peril_id"
     ROLLUP_LOB          = "rollup_lob"
-    ROLLUP_REGION_PERIL = "rollup_region_peril"
+    PERIL_NAME          = "peril_name"
+    REGION              = "region"
+    PERIL_FAMILY        = "peril_family"
     CDS_CAT_CLASS_NAME  = "cds_cat_class_name"
     EP_TYPE             = "ep_type"
     RANK_NUM            = "rank_num"
@@ -285,59 +258,78 @@ class EpCurveCol(StrEnum):
     ANNUAL_LOSS         = "annual_loss"
 
 
+class EpType(StrEnum):
+    """Closed set of values that appear in `EpCurveCol.EP_TYPE`.
+
+    These strings are also used as intermediate column names inside
+    `ep_curve_from_ylt` (the per-year aggregates are aliased to AEP/OEP
+    before being unpivoted into EP_TYPE rows).
+    """
+    AAL = "AAL"
+    AEP = "AEP"
+    OEP = "OEP"
+
+
 class AllFactorsCol(StrEnum):
     """Wide per-event frame: dims + raw loss + blending + per-stage factors.
 
-    Equivalent to duckdb `mts_tbl_ylt_combined_all_factors` MINUS the 13
-    derived loss metrics — those live in `MetricCol` (joined via the same
-    row id). This is the node we `.cache()` before the Hisco fan-out.
+    The forecast factors (`f_{yyyymm}`) and their downstream year-tagged
+    metrics are NOT enumerated here — they are data-driven. Tags come from
+    `seeds.forecast_factors.forecast_date` at pipeline runtime. Adding a
+    date to the seed = new `f_{tag}` column + new metric columns
+    automatically; no code change.
+
+    `FA_GROSS_TAIL_FACTOR` is carried for audit transparency only — it is
+    NOT multiplied into any metric in the current chain. The fine-art
+    AAL/tail split exists for future tail-loss adjustments; today only
+    `FA_GROSS_AAL_FACTOR` is applied. If you start using tail, multiply it
+    in `_compute_metrics` and add a new column suffix (`_fagrosstail`).
     """
     # dims
-    VENDOR              = "vendor"
-    LOB_ID              = "lob_id"
-    ROLLUP_LOB          = "rollup_lob"
-    CDS_CAT_CLASS_NAME  = "cds_cat_class_name"
-    REGION_PERIL_ID     = "region_peril_id"
-    ROLLUP_REGION_PERIL = "rollup_region_peril"
-    BASE_MODEL          = "base_model"
-    MODEL_CODE          = "model_code"
-    MODEL_EVENT_ID      = "model_event_id"
-    YEAR_ID             = "year_id"
-    EVENT_ID            = "event_id"
-    REQUIRED_CURRENCY   = "required_currency"
-    RATE_TO_GBP         = "rate_to_gbp"
+    VENDOR                = "vendor"
+    LOB_ID                = "lob_id"
+    MODELLED_LOB          = "modelled_lob"
+    ROLLUP_LOB            = "rollup_lob"
+    LOB_TYPE              = "lob_type"
+    OFFICE                = "office"
+    LOB_CLASS             = "lob_class"
+    CDS_CAT_CLASS_NAME    = "cds_cat_class_name"
+    REGION_PERIL_ID       = "region_peril_id"
+    MODELLED_REGION_PERIL = "modelled_region_peril"
+    PERIL_NAME            = "peril_name"
+    REGION                = "region"
+    PERIL_FAMILY          = "peril_family"
+    BASE_MODEL            = "base_model"
+    MODEL_CODE            = "model_code"
+    MODEL_EVENT_ID        = "model_event_id"
+    YEAR_ID               = "year_id"
+    EVENT_ID              = "event_id"
+    REQUIRED_CURRENCY     = "required_currency"
+    RATE_TO_GBP           = "rate_to_gbp"
     # raw + blending
     LOSS                 = "loss"
     RL_PROPORTION        = "rl_proportion"
     VK_PROPORTION        = "vk_proportion"
     UPLIFT_FACTOR        = "uplift_factor_on_base_model"
     UPLIFT_FACTOR_CAPPED = "uplift_factor_on_base_model_capped"
-    # per-stage factor scalars
-    F_202601             = "f_202601"
-    F_202607             = "f_202607"
-    F_202701             = "f_202701"
+    # year-invariant factor scalars
+    RNK                  = "rnk"
     EUWS_FACTOR          = "euws_factor"
     FA_GROSS_AAL_FACTOR  = "fa_gross_aal_factor"
     FA_GROSS_TAIL_FACTOR = "fa_gross_tail_factor"
 
 
 class MetricCol(StrEnum):
-    """13 derived loss metrics — one of these feeds Hisco.ModelGrossLoss.
-
-    Name = chain of factors applied: uplifted → capped → localccy → year → euws → fagross.
+    """Year-invariant derived loss metrics. Year-tagged metric column names
+    are data-driven and built by the chain registry in `rollup/chain.py` —
+    use `chain.col_after(stage, tag)` / `chain.main_loss_col(tag)` /
+    `chain.dialsup_col(tag)` / `chain.forecast_factor_col(tag)` to look them
+    up. Never hand-build the `loss_uplifted_capped_localccy_..._fagross`
+    f-string — the registry IS the source of truth.
     """
-    LOSS_UPLIFTED                                  = "loss_uplifted"
-    LOSS_UPLIFTED_CAPPED                           = "loss_uplifted_capped"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY                  = "loss_uplifted_capped_localccy"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202601           = "loss_uplifted_capped_localccy_202601"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202607           = "loss_uplifted_capped_localccy_202607"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202701           = "loss_uplifted_capped_localccy_202701"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202601_EUWS      = "loss_uplifted_capped_localccy_202601_euws"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202607_EUWS      = "loss_uplifted_capped_localccy_202607_euws"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202701_EUWS      = "loss_uplifted_capped_localccy_202701_euws"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202601_EUWS_FAGROSS = "loss_uplifted_capped_localccy_202601_euws_fagross"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202607_EUWS_FAGROSS = "loss_uplifted_capped_localccy_202607_euws_fagross"
-    LOSS_UPLIFTED_CAPPED_LOCALCCY_202701_EUWS_FAGROSS = "loss_uplifted_capped_localccy_202701_euws_fagross"
+    LOSS_UPLIFTED                 = "loss_uplifted"
+    LOSS_UPLIFTED_CAPPED          = "loss_uplifted_capped"
+    LOSS_UPLIFTED_CAPPED_LOCALCCY = "loss_uplifted_capped_localccy"
 
 
 class HiscoFanoutCol(StrEnum):

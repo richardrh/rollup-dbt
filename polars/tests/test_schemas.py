@@ -5,6 +5,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
+from rollup.config import VendorName
 from rollup.schemas import frames as F
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
@@ -48,15 +49,19 @@ def test_rename_with_strenum():
 
 def _normalized_ylt_frame(**overrides) -> pl.DataFrame:
     base = {
-        Y.VENDOR: ["risklink"],
+        Y.VENDOR: [VendorName.RISKLINK],
         Y.LOB_ID: [1],
         Y.MODELLED_LOB: ["x"],
         Y.ROLLUP_LOB: ["x"],
         Y.LOB_TYPE: ["prop"],
         Y.CDS_CAT_CLASS_NAME: ["x"],
-        Y.REGION_PERIL_ID: [1],
-        Y.MODELLED_REGION_PERIL: ["x"],
-        Y.ROLLUP_REGION_PERIL: ["x"],
+        Y.OFFICE: ["UK"],
+        Y.LOB_CLASS: ["HH"],
+        Y.REGION_PERIL_ID: [206],
+        Y.MODELLED_REGION_PERIL: ["EU_WS"],
+        Y.PERIL_NAME: ["Europe Winter Storm"],
+        Y.REGION: ["EU"],
+        Y.PERIL_FAMILY: ["WS"],
         Y.MODEL_CODE: [0],
         Y.YEAR_ID: [1],
         Y.EVENT_ID: [1],

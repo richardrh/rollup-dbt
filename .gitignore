@@ -24,3 +24,6 @@ site/
 # Environment variables (never commit)
 .env
 .dual-graph/
+
+# Synthetic test fixture output (regenerated on each pytest run)
+polars/tests/data/

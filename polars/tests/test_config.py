@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from rollup import config
-from rollup.seeds import SEEDS
+from rollup.config import EnvVar, VendorName
+from rollup.seeds import REQUIRED_SEEDS, SEEDS
 
 
 # -----------------------------------------------------------------------------
@@ -17,32 +18,24 @@ from rollup.seeds import SEEDS
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    for var in (
-        "ROLLUP_DATA_DIR",
-        "ROLLUP_SEEDS_DIR",
-        "ROLLUP_OUTPUT_DIR",
-        "ROLLUP_YLT_VERISK_DIR", "ROLLUP_YLT_VERISK_GLOB",
-        "ROLLUP_YLT_RISKLINK_DIR", "ROLLUP_YLT_RISKLINK_GLOB",
-        "ROLLUP_EP_VERISK_DIR",
-        "ROLLUP_EP_RISKLINK_DIR",
-    ):
+    for var in EnvVar:
         monkeypatch.delenv(var, raising=False)
 
 
 def test_resolve_has_two_vendors():
     cfg = config.resolve()
-    assert tuple(v.name for v in cfg.vendors) == ("verisk", "risklink")
+    assert tuple(v.name for v in cfg.vendors) == (VendorName.VERISK, VendorName.RISKLINK)
 
 
 def test_verisk_n_simulations_is_10k():
-    v = config.resolve().vendor("verisk")
+    v = config.resolve().vendor(VendorName.VERISK)
     assert v.n_simulations == 10_000
     assert v.hisco_label == "AIR"
     assert v.ylt_glob == "air_ylt_*.parquet"
 
 
 def test_risklink_n_simulations_is_100k():
-    v = config.resolve().vendor("risklink")
+    v = config.resolve().vendor(VendorName.RISKLINK)
     assert v.n_simulations == 100_000
     assert v.hisco_label == "RMS"
     assert v.ylt_glob == "risklink_ylt_*.parquet"
@@ -52,22 +45,24 @@ def test_paths_default_under_repo_root():
     cfg = config.resolve()
     assert cfg.seeds_dir == config.POLARS_ROOT / "seeds"
     assert cfg.output_dir == config.REPO_ROOT / "data" / "output"
-    assert cfg.vendor("verisk").ylt_dir == config.REPO_ROOT / "data" / "ylt" / "verisk"
-    assert cfg.vendor("risklink").ylt_dir == config.REPO_ROOT / "data" / "ylt" / "risklink"
+    assert cfg.vendor(VendorName.VERISK).ylt_dir   == config.REPO_ROOT / "data" / "ylt" / VendorName.VERISK
+    assert cfg.vendor(VendorName.RISKLINK).ylt_dir == config.REPO_ROOT / "data" / "ylt" / VendorName.RISKLINK
 
 
 def test_env_overrides_win(monkeypatch, tmp_path):
-    monkeypatch.setenv("ROLLUP_SEEDS_DIR", str(tmp_path / "s"))
-    monkeypatch.setenv("ROLLUP_YLT_VERISK_DIR", str(tmp_path / "v"))
+    monkeypatch.setenv(EnvVar.SEEDS_DIR,     str(tmp_path / "s"))
+    monkeypatch.setenv(EnvVar.YLT_VERISK_DIR, str(tmp_path / "v"))
     cfg = config.resolve()
     assert cfg.seeds_dir == (tmp_path / "s").resolve()
-    assert cfg.vendor("verisk").ylt_dir == (tmp_path / "v").resolve()
+    assert cfg.vendor(VendorName.VERISK).ylt_dir == (tmp_path / "v").resolve()
 
 
 def test_unknown_vendor_raises():
+    """Runtime check survives even if a caller bypasses the type system."""
+    from typing import cast
     cfg = config.resolve()
     with pytest.raises(KeyError):
-        cfg.vendor("katrisk")
+        cfg.vendor(cast(VendorName, "katrisk"))
 
 
 # -----------------------------------------------------------------------------
@@ -90,22 +85,47 @@ def _cfg_with_seeds(tmp_path: Path, populate: bool = True) -> config.Config:
         seeds_dir=seeds_dir,
         output_dir=tmp_path / "out",
         vendors=(
-            config.Vendor("verisk",   "AIR", 10_000,  tmp_path / "ylt" / "verisk",
-                          "air_ylt_*.parquet",       tmp_path / "ep" / "verisk"),
-            config.Vendor("risklink", "RMS", 100_000, tmp_path / "ylt" / "risklink",
-                          "risklink_ylt_*.parquet",  tmp_path / "ep" / "risklink"),
+            config.Vendor(VendorName.VERISK,   "AIR", 10_000,
+                          tmp_path / "ylt" / VendorName.VERISK,
+                          "air_ylt_*.parquet",
+                          tmp_path / "ep" / VendorName.VERISK),
+            config.Vendor(VendorName.RISKLINK, "RMS", 100_000,
+                          tmp_path / "ylt" / VendorName.RISKLINK,
+                          "risklink_ylt_*.parquet",
+                          tmp_path / "ep" / VendorName.RISKLINK),
         ),
     )
 
 
 def test_build_plan_validates_every_seed_schema(tmp_path):
+    """Every seed parses and matches its declared schema. Required seeds that
+    are stub-empty in the prod folder are surfaced as not-ok by design — the
+    pre-flight blocker. This test confirms there are no PARSE / SCHEMA errors;
+    empty-required failures are tested separately."""
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     seeds = plan.seeds_section
     assert len(seeds.checks) == len(SEEDS)
-    assert all(c.ok for c in seeds.checks), [
-        (c.label, c.note) for c in seeds.checks if not c.ok
+    schema_failures = [
+        (c.label, c.note) for c in seeds.checks
+        if not c.ok and "REQUIRED seed is empty" not in c.note
     ]
-    assert plan.all_seeds_ok
+    assert schema_failures == [], schema_failures
+
+
+def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
+    """A required seed (e.g. rollup_scope) that is schema-valid but empty is
+    flagged not-ok. Without this guard the pipeline would silently produce
+    zero-row Hisco parquets."""
+    plan = config.build_plan(_cfg_with_seeds(tmp_path))
+    empty_required = {
+        c.label for c in plan.seeds_section.checks
+        if c.label in REQUIRED_SEEDS and c.rows == 0
+    }
+    not_ok = {c.label for c in plan.seeds_section.checks if not c.ok}
+    assert empty_required.issubset(not_ok), (
+        f"required seeds with zero rows that aren't flagged: {empty_required - not_ok}"
+    )
+    assert not plan.all_seeds_ok
 
 
 def test_missing_seed_flagged(tmp_path):
@@ -133,13 +153,13 @@ def test_seed_schema_drift_flagged(tmp_path):
 
 def test_ylt_section_lists_globbed_files(tmp_path):
     cfg = _cfg_with_seeds(tmp_path)
-    v = cfg.vendor("verisk")
+    v = cfg.vendor(VendorName.VERISK)
     v.ylt_dir.mkdir(parents=True)
     (v.ylt_dir / "air_ylt_c1.parquet").write_bytes(b"x" * 1024)
     (v.ylt_dir / "air_ylt_c2.parquet").write_bytes(b"x" * 2048)
     (v.ylt_dir / "ignore.txt").write_text("nope")
     plan = config.build_plan(cfg)
-    sec = next(s for s in plan.sections if s.title == "ylt verisk")
+    sec = next(s for s in plan.sections if s.title == f"ylt {VendorName.VERISK}")
     labels = [c.label for c in sec.checks]
     assert "air_ylt_c1.parquet" in labels
     assert "air_ylt_c2.parquet" in labels
@@ -149,15 +169,17 @@ def test_ylt_section_lists_globbed_files(tmp_path):
 
 def test_missing_ylt_directory_flagged(tmp_path):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
-    sec = next(s for s in plan.sections if s.title == "ylt verisk")
+    sec = next(s for s in plan.sections if s.title == f"ylt {VendorName.VERISK}")
     assert all(not c.ok for c in sec.checks)
 
 
 def test_format_plan_contains_every_section(tmp_path):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     text = config.format_plan(plan)
-    for title in ("seeds", "ylt verisk", "ylt risklink",
-                  "ep_summaries verisk", "ep_summaries risklink", "output"):
+    for title in ("seeds",
+                  f"ylt {VendorName.VERISK}",          f"ylt {VendorName.RISKLINK}",
+                  f"ep_summaries {VendorName.VERISK}", f"ep_summaries {VendorName.RISKLINK}",
+                  "output"):
         assert f"[{title}]" in text
     assert "Seeds:" in text
     assert "YLTs:" in text

@@ -26,8 +26,10 @@ import polars as pl
 import pytest
 
 from rollup import config
+from rollup.config import VendorName
 from rollup.schemas import frames as F
 from rollup.schemas.columns import EpCurveCol as EP
+from rollup.schemas.columns import EpType
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.stages.ep import ep_curve_from_ylt
@@ -38,7 +40,7 @@ REPO_ROOT   = Path(__file__).resolve().parents[2]
 JAN_ROLLUP  = REPO_ROOT / "jan-rollup"
 OUTPUTS_DIR = Path(__file__).resolve().parent / "outputs"
 
-VERISK = next(v for v in config.resolve().vendors if v.name == "verisk")
+VERISK = next(v for v in config.resolve().vendors if v.name == VendorName.VERISK)
 
 
 def _verisk_parquets() -> list[Path]:
@@ -72,15 +74,19 @@ def _project_to_normalized(raw: pl.LazyFrame) -> pl.LazyFrame:
             pl.col(VK.ANALYSIS).rank("dense").cast(pl.Int64).alias(Y.REGION_PERIL_ID),
         )
         .select(
-            pl.lit("verisk").alias(Y.VENDOR),
+            pl.lit(VendorName.VERISK).alias(Y.VENDOR),
             pl.col(Y.LOB_ID),
             pl.col(VK.EXPOSURE_ATTRIBUTE).alias(Y.MODELLED_LOB),
-            pl.col(VK.EXPOSURE_ATTRIBUTE).alias(Y.ROLLUP_LOB),        # passthrough until seeds wired
-            pl.lit("prop").alias(Y.LOB_TYPE),                          # placeholder
-            pl.col(VK.EXPOSURE_ATTRIBUTE).alias(Y.CDS_CAT_CLASS_NAME), # placeholder
+            pl.col(VK.EXPOSURE_ATTRIBUTE).alias(Y.ROLLUP_LOB),         # passthrough until seeds wired
+            pl.lit("prop").alias(Y.LOB_TYPE),                           # placeholder
+            pl.col(VK.EXPOSURE_ATTRIBUTE).alias(Y.CDS_CAT_CLASS_NAME),  # placeholder
+            pl.lit("UK").alias(Y.OFFICE),                               # placeholder
+            pl.lit("HH").alias(Y.LOB_CLASS),                            # placeholder
             pl.col(Y.REGION_PERIL_ID),
             pl.col(VK.ANALYSIS).alias(Y.MODELLED_REGION_PERIL),
-            pl.col(VK.ANALYSIS).alias(Y.ROLLUP_REGION_PERIL),          # passthrough
+            pl.col(VK.ANALYSIS).alias(Y.PERIL_NAME),                    # placeholder
+            pl.lit("EU").alias(Y.REGION),                               # placeholder
+            pl.lit("WS").alias(Y.PERIL_FAMILY),                         # placeholder
             pl.col(VK.MODEL_CODE).alias(Y.MODEL_CODE),
             pl.col(VK.YEAR_ID).alias(Y.YEAR_ID),
             pl.col(VK.EVENT_ID).alias(Y.EVENT_ID),
@@ -124,7 +130,7 @@ def test_ep_curve_runs_and_writes_csv(normalized_ylt):
     # Materialize once, with stable sort so diffs against excel are reproducible.
     df = (
         ep.collect()
-        .sort(by=[EP.ROLLUP_LOB, EP.ROLLUP_REGION_PERIL, EP.EP_TYPE, EP.RANK_NUM])
+        .sort(by=[EP.ROLLUP_LOB, EP.PERIL_NAME, EP.EP_TYPE, EP.RANK_NUM])
     )
 
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,7 +142,7 @@ def test_ep_curve_runs_and_writes_csv(normalized_ylt):
     # Every (lob, peril) pair should have at least an AAL row and some AEP/OEP rows.
     by_type = df.group_by(EP.EP_TYPE).agg(pl.len().alias("n"))
     types_present = {row[EP.EP_TYPE] for row in by_type.iter_rows(named=True)}
-    assert types_present == {"AAL", "AEP", "OEP"}, f"missing ep_type variants: {types_present}"
+    assert types_present == {EpType.AAL, EpType.AEP, EpType.OEP}, f"missing ep_type variants: {types_present}"
 
     print(f"\n[integration] wrote {df.height:,} rows to {out_path}")
 
@@ -152,7 +158,9 @@ def test_overall_ep_curve_for_excel_diff(normalized_ylt):
             pl.lit("ALL").alias(Y.MODELLED_LOB),
             pl.lit("ALL").alias(Y.ROLLUP_LOB),
             pl.lit("ALL").alias(Y.MODELLED_REGION_PERIL),
-            pl.lit("ALL").alias(Y.ROLLUP_REGION_PERIL),
+            pl.lit("ALL").alias(Y.PERIL_NAME),
+            pl.lit("ALL").alias(Y.REGION),
+            pl.lit("ALL").alias(Y.PERIL_FAMILY),
             pl.lit("ALL").alias(Y.CDS_CAT_CLASS_NAME),
         )
     )
@@ -164,7 +172,7 @@ def test_overall_ep_curve_for_excel_diff(normalized_ylt):
     out_path = OUTPUTS_DIR / "air_ep_curve_overall.csv"
     df.write_csv(out_path)
 
-    aal_row = df.filter(pl.col(EP.EP_TYPE) == "AAL").row(0, named=True)
+    aal_row = df.filter(pl.col(EP.EP_TYPE) == EpType.AAL).row(0, named=True)
     aal_from_curve = aal_row[EP.ANNUAL_LOSS]
 
     # Independent sanity: AAL from the curve must equal sum(loss)/n_sims.

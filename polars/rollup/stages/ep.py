@@ -9,6 +9,7 @@ import polars as pl
 
 from rollup.schemas import frames as F
 from rollup.schemas.columns import EpCurveCol as EP
+from rollup.schemas.columns import EpType
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.validate import validate_schema
 
@@ -19,11 +20,7 @@ DEFAULT_RETURN_PERIODS: list[int] = [
 
 # Grouping key + dims that are constant within a key (first() == any()).
 _KEY  = [Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID]
-_DIMS = [Y.ROLLUP_LOB, Y.ROLLUP_REGION_PERIL, Y.CDS_CAT_CLASS_NAME]
-
-
-def _cols(*names: str) -> list[pl.Expr]:
-    return [pl.col(n) for n in names]
+_DIMS = [Y.ROLLUP_LOB, Y.PERIL_NAME, Y.REGION, Y.PERIL_FAMILY, Y.CDS_CAT_CLASS_NAME]
 
 
 def ep_curve_from_ylt(
@@ -45,8 +42,8 @@ def ep_curve_from_ylt(
         ylt
         .group_by([*_KEY, Y.YEAR_ID])
         .agg(
-            pl.sum(Y.LOSS).alias("AEP"),
-            pl.max(Y.LOSS).alias("OEP"),
+            pl.sum(Y.LOSS).alias(EpType.AEP),
+            pl.max(Y.LOSS).alias(EpType.OEP),
             *[pl.first(c).alias(c) for c in _DIMS],
         )
     )
@@ -55,7 +52,7 @@ def ep_curve_from_ylt(
     aep_oep = (
         per_year
         .unpivot(
-            on=["AEP", "OEP"],
+            on=[EpType.AEP, EpType.OEP],
             index=[*_KEY, *_DIMS],
             variable_name=EP.EP_TYPE,
             value_name=EP.ANNUAL_LOSS,
@@ -83,13 +80,13 @@ def ep_curve_from_ylt(
             (pl.sum(Y.LOSS) / n_simulations).alias(EP.ANNUAL_LOSS),
         )
         .with_columns(
-            pl.lit("AAL").alias(EP.EP_TYPE),
+            pl.lit(EpType.AAL).alias(EP.EP_TYPE),
             pl.lit(0, dtype=pl.Int64).alias(EP.RANK_NUM),
             pl.lit(0, dtype=pl.Int64).alias(EP.RETURN_PERIOD),
         )
     )
 
-    projection = _cols(*_KEY, *_DIMS, EP.EP_TYPE, EP.RANK_NUM, EP.RETURN_PERIOD, EP.ANNUAL_LOSS)
+    projection = [pl.col(n) for n in (*_KEY, *_DIMS, EP.EP_TYPE, EP.RANK_NUM, EP.RETURN_PERIOD, EP.ANNUAL_LOSS)]
     out = pl.concat([aep_oep.select(projection), aal.select(projection)])
 
     validate_schema(out, F.EP_CURVE, name="ep.ep_curve_output")

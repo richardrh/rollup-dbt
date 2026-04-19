@@ -1,13 +1,13 @@
 # Calculations — january (duckdb) → polars
 
 Every calc that lives in `jan-rollup/duckdb_schema/view_definitions.csv`,
-mapped to the polars stage that will replace it.
+mapped to the polars stage that replaces it.
 
 Notation:
 
 - **duckdb object** `schema.view_or_table` — the duckdb definition.
 - **polars** — the stage module + function that replaces it.
-- **status** — `done` / `stub` / `todo`.
+- **status** — `done` (real math) / `stub` (placeholder math, runs end-to-end) / `todo`.
 
 Column-name convention: january used the wire names (`yearid`, `eventid`,
 `"Rate to GBP"`, etc.); polars canonicalises these at the staging boundary into
@@ -17,12 +17,12 @@ snake_case (`year_id`, `event_id`, `rate_to_gbp`). See `rollup/schemas/columns.p
 
 ## 0. Inputs
 
-| january                              | polars                               | status |
-| ------------------------------------ | ------------------------------------ | ------ |
-| `stg_rl_ylt` (RiskLink YLT)          | `stages.staging.load_raw_risklink_ylt` | done |
-| `stg_vk_ylt` (Verisk YLT)            | `stages.staging.load_raw_vk_ylt`     | todo   |
-| `stg_rl_ep`, `stg_vk_ep` (EP summaries) | `stages.staging.load_ep_summaries` | todo   |
-| `reference.*` seeds                  | `stages.staging.load_seeds`          | todo (per-frame loaders exist conceptually, orchestrator missing) |
+| january                                 | polars                                 | status |
+| --------------------------------------- | -------------------------------------- | ------ |
+| `stg_rl_ylt` (RiskLink YLT)             | `stages.staging.load_raw_risklink_ylt` | done   |
+| `stg_vk_ylt` (Verisk YLT)               | `stages.staging.load_raw_verisk_ylt`   | done   |
+| `stg_rl_ep`, `stg_vk_ep` (EP summaries) | `stages.staging.load_ep_summaries`     | todo   |
+| `reference.*` seeds                     | `rollup.seeds.load_all`                | done   |
 
 January used **RiskLink YLTs from a DocDB dump**; we are now using **AIR
 simulation YLTs** (`jan-rollup/air_ylt_c1.parquet` + `air_ylt_c2.parquet`).
@@ -59,7 +59,7 @@ polars: `stages/staging.py::normalize_risklink_ylt`. Same triple join, with righ
 frames pre-selected so their `id` columns are aliased before the join (avoids
 `dim_region_perils.id` colliding with `lobs.id`).
 
-### 1.2 `int_vw_vk_ylt` → `normalize_vk_ylt` — **todo**
+### 1.2 `int_vw_vk_ylt` → `normalize_verisk_ylt` — **done**
 
 duckdb:
 ```sql
@@ -68,23 +68,24 @@ SELECT lobs.id AS lob_id, ..., model_code, yearid, eventid,
 FROM stg_vk_ylt stg
 INNER JOIN reference.lobs lobs       ON lobs.modelled_lob = stg.lob
 INNER JOIN dim_region_perils rps     ON rps.modelled_region_peril = stg.analysis
-WHERE rps.vendor = 'vk' AND catalog_type_code = 'STC';
+WHERE rps.vendor = 'verisk' AND catalog_type_code = 'STC';
 ```
 
-polars: mirrors RL but joins on `analysis` (not `anlsid → rl_analysis_id`)
-and filters `catalog_type_code = 'STC'`. `MODEL_CODE` comes from `stg_vk_ylt`
-(not hard-coded `0`).
+polars: `stages/staging.py::normalize_verisk_ylt`. Mirrors RL but joins on
+`Analysis` (the raw parquet column) → `dim_region_perils.modelled_region_peril`
+for vendor='verisk' rows, and filters `CatalogTypeCode='STC'`. `MODEL_CODE`
+comes straight from the raw parquet's `ModelCode` column.
 
-### 1.3 YLT union + ranking (`int_vw_funnel_ylt_combined_ranked*`)
+### 1.3 YLT union + ranking (`int_vw_funnel_ylt_combined_ranked*`) — **partial**
 
 duckdb stitches the two vendors together then ranks losses within
 (vendor, lob_id, region_peril_id):
 
 ```sql
 WITH ylt AS (
-    SELECT 'vk' AS vendor, ..., loss FROM int_vw_vk_ylt
+    SELECT 'verisk' AS vendor, ..., loss FROM int_vw_vk_ylt
     UNION ALL
-    SELECT 'rl' AS vendor, ..., 0 AS model_code, ..., loss FROM int_vw_rl_ylt
+    SELECT 'risklink' AS vendor, ..., 0 AS model_code, ..., loss FROM int_vw_rl_ylt
 )
 SELECT row_number() OVER (
          PARTITION BY vendor, lob_id, region_peril_id
@@ -94,25 +95,17 @@ SELECT row_number() OVER (
 FROM ylt;
 ```
 
-Then buckets:
-```sql
-CASE WHEN vendor='rl' THEN CAST(100000.0 / rnk AS INTEGER)
-     WHEN vendor='vk' THEN CAST(10000.0  / rnk AS INTEGER) END AS rp,
-CASE WHEN rp<200 THEN 0
-     WHEN rp<1000 THEN 200
-     WHEN rp<10000 THEN 1000
-     ELSE 10000 END AS rp_bucket
-```
+polars: the **union** is done via `pl.concat([rl_norm, vk_norm])` inside
+`build_all_factors`. The **ranking** is `stages/factors.py::attach_rank`,
+which produces the `rnk` column that `attach_euws` needs for the
+HIC_HH_UK special case.
 
-polars: `stages.funnel.rank_and_bucket(ylt)` — **todo**. Use
-`pl.concat([vk, rl])`, `pl.col("loss").rank(method="ordinal", descending=True).over([...])`,
-then `when/then/otherwise` for bucketing.
+The `rp` / `rp_bucket` numeric bucketing is **todo** — not needed yet
+because the fan-out currently filters by vendor, not by rp_bucket. Sim
+counts (10 000 / 100 000) live on `Vendor.n_simulations` in
+`rollup/config.py`.
 
-Note: `100000` and `10000` are the simulation year counts for RL and VK
-respectively. These should be parameters (`n_simulations_rl`, `n_simulations_vk`),
-not magic numbers.
-
-### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`)
+### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) — **todo**
 
 duckdb keeps only (lob_id, region_peril_id) pairs that have an AAL row
 in `vw_ep` AND `official_rollup = 1`:
@@ -123,8 +116,10 @@ FROM vw_ep
 WHERE ep_type='AAL' AND official_rollup=1;
 ```
 
-polars: `stages.funnel.filter_valid(ranked, ep_frame)` — **todo**. Inner
-join the ranked YLT against the distinct valid keys from the EP frame.
+polars: once `rollup_scope.csv` is populated (see §9 + `RH-TODO-DATA.md`),
+this becomes an inner join of the YLT against the rollup-scope seed. See
+§9 for the current schema and the variant-selection issue this filter
+addresses.
 
 ---
 
@@ -136,7 +131,7 @@ Unions RL + VK EP summaries and enriches with `lobs`, `dim_region_perils`,
 plus the computed `official_rollup` flag:
 
 ```sql
-SELECT 'rl' AS vendor, rp, ep_type, modelled_lob, rollup_lob, lob_type,
+SELECT 'risklink' AS vendor, rp, ep_type, modelled_lob, rollup_lob, lob_type,
        modelled_region_peril, ..., rollup_region_peril, region, peril,
        CASE lob_type
          WHEN 'mga'  THEN applies_to_mga
@@ -149,7 +144,7 @@ SELECT 'rl' AS vendor, rp, ep_type, modelled_lob, rollup_lob, lob_type,
        cds_cat_class_name, gl
 FROM stg_rl_ep INNER JOIN modelled_lobs ... INNER JOIN region_perils ...
 UNION ALL
-SELECT 'vk' AS vendor, ... FROM stg_vk_ep ...;
+SELECT 'verisk' AS vendor, ... FROM stg_vk_ep ...;
 ```
 
 polars: `stages.ep_summary.build_vw_ep(rl_ep, vk_ep, lobs, dim_region_perils)`.
@@ -180,8 +175,9 @@ WHERE official_rollup=1 AND ep_type IN ('AAL','OEP')
 ```
 
 polars: `stages.blending.vendor_proportions(vw_ep)` — **todo**.
-One frame, `.filter(vendor=='rl')` and `.filter(vendor=='vk')`, then inner
-join + arithmetic.
+One frame, `.filter(vendor=='risklink')` and `.filter(vendor=='verisk')`, then
+inner join + arithmetic. Currently stubbed as a pass-through in
+`attach_uplift` (rl_proportion=vk_proportion=0.5, uplift=1.0).
 
 ### 3.2 `int_vw_blending_factors_applied`
 
@@ -191,28 +187,28 @@ Joins `reference.blending_factors` and computes the uplift factor:
 rl_blended_contribution = COALESCE(rl_loss,1) * RMSBlend
 vk_blended_contribution = COALESCE(vk_loss,1) * AIRBlend
 blended_target_loss     = rl_blended_contribution + vk_blended_contribution
-base_model              = if rollup_region_peril IN ('EU_FL','UK_FL') then 'rl' else 'vk'
-base_model_loss         = if base_model='rl' then rl_loss else vk_loss
+base_model              = if rollup_region_peril IN ('EU_FL','UK_FL') then 'risklink' else 'verisk'
+base_model_loss         = if base_model='risklink' then rl_loss else vk_loss
 uplift_factor_on_base_model        = blended_target_loss / base_model_loss
 uplift_factor_on_base_model_capped = CLAMP(uplift, 0.1, 10.0)
 ```
 
-polars: `stages.blending.apply_blending_factors(props, blending_factors)`.
-Clamp = `pl.col.uplift.clip(lower_bound=0.1, upper_bound=10.0)`.
+polars: `stages.blending.apply_blending_factors(props, blending_factors)` —
+**todo**. Clamp will be `pl.col.uplift.clip(lower_bound=0.1, upper_bound=10.0)`.
+Currently `attach_uplift` stubs this as a pass-through (uplift_factor=1.0,
+uplift_factor_capped=1.0, base_model=vendor).
 
-The two EU_FL / UK_FL rollup_region_perils use RL as base because Verisk
-doesn't model European flood (per the schema author's note from january).
+The two EU_FL / UK_FL rollup_region_perils use RiskLink as base because
+Verisk doesn't model European flood (per the schema author's note from
+january).
 
-### 3.3 `int_vw_blending_factors_with_forecast`
+### 3.3 `int_vw_blending_factors_with_forecast` — **done**
 
 Joins `reference.forecast_factors_with_lobs_to_apply` on `lob_id`, bringing
-`f_202601`, `f_202607`, `f_202701` — forecast factors at three future base
-dates (Jan 2026, July 2026, Jan 2027). `COALESCE(_, 1.0)` so lobs without
-a mapped forecast factor are passthrough.
+the `f_{yyyymm}` forecast factors. `COALESCE(_, 1.0)` so lobs without
+a mapped forecast factor are pass-through.
 
-`reference.forecast_factors_with_lobs_to_apply` is itself a view over
-`reference.lobs_with_class_office`, which **parses `rollup_lob` by `_`**
-to derive `office` and `class`:
+january **parses `rollup_lob` by `_`** to derive `office` and `class`:
 
 ```sql
 rollup_lob_split = split(rollup_lob, '_')
@@ -220,12 +216,16 @@ office = rollup_lob_split[last]
 class  = if len>1 then rollup_lob_split[2] else rollup_lob_split[1]
 ```
 
-Join keys then are (office == office_iso2, class == class).
+polars: **`office` and `class` are pre-computed columns on `lobs.csv`** —
+the runtime parse is skipped. `stages/factors.py::attach_forecast_factors`
+joins on `(office, class)` directly.
 
-polars: `stages.forecast.join_forecast_factors(blended, forecast_factors, lobs)`
-— **todo**. Implement the `rollup_lob` split with `pl.col.rollup_lob.str.split('_')`.
+The forecast **dates** are data-driven from `forecast_factors.csv` — not
+hardcoded `f_202601/202607/202701` as in january. Add a row with a new
+`forecast_date` to the seed and a new `f_{yyyymm}` column appears in the
+output, a new set of metric columns, and new Hisco variants. No code change.
 
-### 3.4 `int_vw_blending_factors_with_forecast_ccy`
+### 3.4 `int_vw_blending_factors_with_forecast_ccy` — **done**
 
 Picks `required_currency` from `cds_cat_class_name`:
 
@@ -235,9 +235,10 @@ CASE WHEN cds_cat_class_name LIKE '% UK %' THEN 'GBP'
      ELSE 'GBP'  END AS required_currency
 ```
 
-Joins `reference.fx_rates` filtered to (USD, EUR, GBP), attaches `rate_to_gbp`.
+Joins `reference.fx_rates` filtered to `target_currency='GBP'`, attaches
+`rate_to_gbp`.
 
-polars: `stages.forecast.attach_currency(frame, fx_rates)`.
+polars: `stages/factors.py::attach_currency(ylt, fx_rates)`.
 
 ### 3.5 `int_vw_blending_factors_with_forecast_ccy_ylt_ready`
 
@@ -273,7 +274,9 @@ original_ylt_loss_uplifted_capped_localccy_202701 = above * f_202701
 
 (6 derived metrics — 7 including the pass-through original.)
 
-polars: `stages.combine.apply_factors_to_ylt(ylt, factors)` — **todo**.
+polars: `rollup.pipeline._compute_metrics(ylt, tags)` — **done** for the
+year-tagged chain. Uplift + cap are still stubbed as pass-through (1.0)
+until `stages/blending.py` lands.
 
 ### 4.2 `mts_vw_ylt_combined_with_blending_factors_fx_forecasted_euws_applied`
 
@@ -305,11 +308,18 @@ original_ylt_loss_uplifted_capped_localccy_euws        = localccy * euws_factor
 original_ylt_loss_uplifted_capped_localccy_{year}_euws = localccy_{year} * euws_factor   (×3 years)
 ```
 
-polars: `stages.euws.apply_euws_factor(frame, air_events, euws_rate_factors)` — **todo**.
+polars: `stages/factors.py::attach_euws(ylt, euws_rate_factors)` — **done**.
 
-The special-case `HIC_HH_UK AND rnk<=100 → 1.0` is important. It only kicks
-in for the top-100 UK household events; the rationale (from january) was
-that euws factors aren't meaningful for the largest UK HH tail events.
+The special-case `HIC_HH_UK AND rnk<=100 → 1.0` is implemented with a
+`pl.when().then().otherwise()` inside `attach_euws`. It only kicks in for
+the top-100 UK household events; the rationale (from january) was that
+euws factors aren't meaningful for the largest UK HH tail events.
+
+Note: current polars implementation joins on `(event_id, year_id)` and
+COALESCEs missing euws rows to 1.0 — it does NOT currently go through
+`air_events` as an intermediate lookup (january did). Need the air_events
+seed populated (see `RH-TODO-DATA.md`) before revisiting this to match
+january exactly.
 
 ### 4.3 `mts_vw_ylt_combined_with_blending_factors_fx_forecasted_euws_applied_fagross`
 
@@ -328,72 +338,79 @@ original_ylt_loss_uplifted_capped_localccy_{year}_euws_fagross =
     END                              (×3 years)
 ```
 
-polars: `stages.fa_gross.apply_fineart_adjustments(frame, fa_adj)` — **todo**.
+polars: `stages/factors.py::attach_fagross(ylt, fineart_adjustments)` —
+**partial**. Joins `fineart_adjustments` and attaches `fa_gross_aal_factor`
++ `fa_gross_tail_factor`. The current metrics loop multiplies by
+`fa_gross_aal_factor` unconditionally — the `rp_bucket` split (aal_factor
+for AAL, tail_factor for high RPs) is **todo** once the bucketing from
+§1.3 lands.
 
-### 4.4 `mts_tbl_ylt_combined_all_factors` (the physical cache)
+### 4.4 `mts_tbl_ylt_combined_all_factors` (the cached DAG node) — **done**
 
 duckdb materialises the output of 4.3 as a **BASE TABLE**. Every downstream
-view reads from `..._from_cachetbl` variants to avoid recomputing. January's
+view reads from `..._from_cachetbl` variants to avoid recomputing. january's
 readme notes this was added because recomputing the fan tree for 20+
 downstream tables was too slow.
 
-polars equivalent: `build_all_factors(...).cache()` at orchestrator level
-(see `rollup/pipeline.py::run`). `.cache()` ensures the `LazyFrame` is
-computed exactly once even when read by all 21 fan-out sinks.
+polars equivalent: `build_all_factors(cfg, seeds).cache()` in
+`rollup/pipeline.py::run`. `.cache()` ensures the `LazyFrame` is computed
+exactly once even when read by all 12 fan-out sinks + 2 audit dumps.
 
-This is the `AllFactorsCol` + `MetricCol` node in our schemas: the wide
-table of dims + 6 derived loss metrics + (implicitly) the pre-joined factor
-columns.
+This is the `AllFactorsCol` + dynamic year-tagged metric columns node: the
+wide table of dims + the three year-invariant MetricCol members + three
+year-tagged metric columns per forecast tag + dialsup columns per tag.
 
 ---
 
 ## 5. Long-form + aggregation for fan-out
 
-### 5.1 `mts_vw_ylt_combined_all_factors_long_from_cachetbl`
+### 5.1 UNPIVOT to long form — **done** (audit parquet)
 
-UNPIVOT the wide cache into long format — one row per (key, metric):
+january: `mts_vw_ylt_combined_all_factors_long_from_cachetbl` unpivots the
+wide cache into `(metric_name, value)` pairs.
 
-```sql
-UNPIVOT (value FOR metric IN (
-  'original_ylt_loss', 'original_ylt_loss_uplifted', ...13 total...
-))
-```
+polars: `rollup.pipeline.audit_long(all_factors, tags)` produces exactly
+this shape. Written to `<output_dir>/debug/audit_long.parquet` when
+`--dump-interim` is set. `metric_name` is a VALUE not an enum, so adding
+more metrics (new forecast tags, new factors) adds new metric_name values
+automatically.
 
-polars: `frame.unpivot(on=[metric names], index=[keys], variable_name='metric',
-value_name='value')`.
+### 5.2 Aggregation to Hisco grain — **not needed at current grain**
 
-### 5.2 `..._aggd_for_cds_from_cachetbl`
+january groups to `(base_model, model_eventid, yearid, eventid, ccy, cds_cat_class_name, metric)`.
 
-Group to the Hisco grain (model_eventid, yearid, eventid, ccy, cds class):
+polars: no separate aggregation step — the wide `all_factors` frame is
+already one row per YLT event (staging produced it that way), so
+`fanout_hisco` projects directly without aggregating. If grouping becomes
+necessary (e.g. multiple YLT rows per event_id appear), add a
+`.group_by(...).agg(pl.sum(metric))` before `fanout_hisco`.
 
-```sql
-SELECT base_model, model_eventid, yearid, eventid,
-       required_currency AS ccy, 0 AS yoa,
-       cds_cat_class_name, metric,
-       SUM(value) AS value
-GROUP BY base_model, model_eventid, yearid, eventid, ccy, cds_cat_class_name, metric;
-```
+### 5.3 Fan-out to Hisco tables — **done**
 
-polars: `.group_by([...]).agg(pl.sum('value'))`.
+polars: `rollup.pipeline.fanout_hisco(all_factors, variant)`. Filters by
+`base_model == variant.vendor.name`, picks the `variant.loss_metric` column
+as `ModelGrossLoss`, validates against `HISCO_FANOUT` schema, writes one
+parquet per variant.
 
-### 5.3 Fan-out to Hisco tables
-
-Two variants:
-- **AIR** (`fanout_air`): filter `base_model='vk'`, left-join `air_events`
-  on `model_eventid = EventID` for `ModelEventDay = ae."Day"`.
-- **RL** (`fanout_rl_nodayid` / `_withdayid`): filter `base_model='rl'`,
-  `ModelEventID = eventid` (note: uses `eventid`, not `model_eventid`);
-  `_withdayid` additionally joins `flood_rl22_model_events` on
-  (ModelEventID, ModelYear = ModelOccurrenceYear) and computes
+`ModelEventDay` — **still hardcoded to 0**. The real computation is:
+- **AIR** variants: left-join `air_events` on `model_event_id = EventID`
+  for `ModelEventDay = ae."Day"`.
+- **RiskLink flood** variants: left-join `flood_rl22_model_events` on
+  (ModelEventID, ModelYear = ModelOccurrenceYear), compute
   `ModelEventDay = date_part('doy', ModelOccurrenceDate)`.
 
-Then a final filter per Hisco flavour picks one metric as
-`ModelGrossLoss` (the flavour → metric mapping is in
-`rollup/pipeline.py::_METRIC_BY_FLAVOR`).
+Both joins need their seeds populated (see `RH-TODO-DATA.md`).
 
-polars: `stages.fanout.fanout_hisco(agg, variant)` — already wired in
-`pipeline.fanout_hisco`. The `ModelEventDay` computation (AIR `"Day"`, RL
-from `flood_rl22_model_events`) is **todo** — currently hard-coded to 0.
+### 5.4 Flavors
+
+No per-variant SQL flavour mess like january's `_fix` / `_fl_fa_fix` /
+`_domestic_euws_fix`. polars has exactly two flavours:
+
+- **`Flavor.MAIN`** — loss_metric = `loss_uplifted_capped_localccy_{tag}_euws_fagross`
+- **`Flavor.DIALSUP`** — loss_metric = `dialsup_{tag}`
+
+fa_gross is a factor, not a flavour. See `rollup/config.py::Flavor` for
+the rationale.
 
 ---
 
@@ -407,12 +424,12 @@ per_year(key, yearid) = sum(value)       -- for AEP
                       | max(value)       -- for OEP
 rnk = row_number(per_year) order by value desc, partition by key
 AAL = CASE base_model
-        WHEN 'rl' THEN sum(value)/100000.0
-        WHEN 'vk' THEN sum(value)/10000.0
+        WHEN 'risklink' THEN sum(value)/100000.0
+        WHEN 'verisk' THEN sum(value)/10000.0
       END
 rp  = CASE base_model
-        WHEN 'rl' THEN 100000/rnk
-        WHEN 'vk' THEN 10000/rnk
+        WHEN 'risklink' THEN 100000/rnk
+        WHEN 'verisk' THEN 10000/rnk
       END
 ```
 
@@ -427,21 +444,20 @@ enumerate integer `n/rnk`. We should confirm those two vendor RP sets match
 
 ---
 
-## 7. Dials-up funnel (`mts_vw_ylt_dialsup__funnel`)
+## 7. Dials-up funnel (`mts_vw_ylt_dialsup__funnel`) — **done**
 
-The "dials-up" flavour computes per-event ratios of each forecasted metric
-to its local-ccy baseline, then applies those ratios back to
-`original_ylt_loss`:
+The DIALSUP flavour computes per-event ratios of the fully-factored metric
+to the localccy baseline, then applies those ratios back to `loss_raw`:
 
 ```
-f1 = localccy_202601_euws_fagross / localccy
-f2 = localccy_202607_euws_fagross / localccy
-f3 = localccy_202701_euws_fagross / localccy
-dialsup_{year} = f_{year} * original_ylt_loss
+f_ratio_{tag} = loss_uplifted_capped_localccy_{tag}_euws_fagross
+              / loss_uplifted_capped_localccy
+dialsup_{tag} = f_ratio_{tag} × loss_raw
 ```
 
-polars: `stages.dialsup.build_dialsup(agg_long)` — **todo**. Pivot long→wide,
-compute ratios, pivot back.
+polars: `rollup.pipeline._compute_dialsup(ylt, tags)`. One `dialsup_{tag}`
+column per forecast tag, handling divide-by-zero via `pl.when`. The
+`Flavor.DIALSUP` variant picks this column as its `ModelGrossLoss`.
 
 ---
 
@@ -460,7 +476,11 @@ rather than views:
 | `verisk_ylt_analysis_not_in_dim_region_perils`     | every `stg_vk_ylt.analysis` is a known modelled_region_peril       |
 | `vw_ep_blending_factor_id_is_in_blending_factor_table` | every vw_ep blending_factor_region_peril_id exists in blending_factors |
 
-polars: `tests/test_invariants.py` — **todo**.
+polars: `tests/test_invariants.py` — **todo**. One started:
+`count_event_id_orphans` in `rollup/pipeline.py` counts YLT rows whose
+`(year_id, event_id, model_code)` triple is not in `air_events`. Logs a
+warning and returns the count; observation-only by design (the rollup math
+doesn't depend on `air_events`).
 
 ---
 
@@ -585,18 +605,25 @@ easier to keep in sync with whatever the analysis team is actually using.
 
 ## 11. Summary: stage → calc → file
 
-| # | polars module              | calcs replaced                                                      | status |
-| - | -------------------------- | ------------------------------------------------------------------- | ------ |
-| 1 | `stages/staging.py`        | `int_vw_rl_ylt`, `int_vw_vk_ylt`                                    | rl done, vk todo |
-| 2 | `stages/ep_summary.py`     | `vw_ep`                                                             | todo   |
-| 3 | `stages/funnel.py`         | `int_vw_funnel_ylt_combined_ranked*`, `..._valid`                   | todo   |
-| 4 | `stages/blending.py`       | `int_vw_blending__vendor_proportions_all_rps_pre_factors`, `..._applied` | todo   |
-| 5 | `stages/forecast.py`       | `int_vw_blending_factors_with_forecast{,_ccy,_ylt_ready}`           | todo   |
-| 6 | `stages/combine.py`        | `mts_vw_ylt_combined_with_blending_factors_fx_applied`              | todo   |
-| 7 | `stages/euws.py`           | `..._fx_forecasted_euws_applied`                                    | todo   |
-| 8 | `stages/fa_gross.py`       | `..._fx_forecasted_euws_applied_fagross`                            | todo   |
-| 9 | `pipeline.build_all_factors` | cache the above as `mts_tbl_ylt_combined_all_factors` equivalent  | stub   |
-|10 | `stages/fanout.py`         | `marts.*fanout_air`, `*fanout_rl_nodayid`, `*fanout_rl_withdayid`   | skeleton in `pipeline.fanout_hisco` (ModelEventDay still TODO) |
-|11 | `stages/ep.py`             | `mts_vw_ep_combined_all_factors*`                                   | done (scalar version per (vendor, lob, region_peril)); by_cds_class / by_lob slices are simple group_by variants |
-|12 | `stages/dialsup.py`        | `mts_vw_ylt_dialsup__funnel` + fanouts                              | todo   |
-|13 | `tests/test_invariants.py` | `verify.*`                                                          | todo   |
+| # | polars location                                      | calcs replaced                                                                        | status |
+| - | ---------------------------------------------------- | ------------------------------------------------------------------------------------- | ------ |
+| 1 | `stages/staging.py::normalize_{risklink,verisk}_ylt` | `int_vw_rl_ylt`, `int_vw_vk_ylt`                                                      | done   |
+| 2 | `stages/ep_summary.py` (does not exist yet)          | `vw_ep`                                                                               | todo   |
+| 3 | `stages/factors.py::attach_rank`                     | ranking part of `int_vw_funnel_ylt_combined_ranked*`                                  | done   |
+| 3b| `rp_bucket` + validity filter                        | bucketing + `int_vw_analysis_is_valid`                                                | todo (needs rollup_scope populated) |
+| 4 | `stages/blending.py` (not yet created)               | `int_vw_blending__vendor_proportions_*`, `..._applied`                                | todo (`attach_uplift` stubs with 1.0) |
+| 5 | `stages/factors.py::attach_forecast_factors`         | `int_vw_blending_factors_with_forecast`                                               | done   |
+| 5b| `stages/factors.py::attach_currency`                 | `int_vw_blending_factors_with_forecast_ccy`                                           | done   |
+| 6 | `pipeline.py::_compute_metrics`                      | `mts_vw_ylt_combined_with_blending_factors_fx_applied` metric cascade                 | done (year-tagged); uplift is 1.0 stub |
+| 7 | `stages/factors.py::attach_euws`                     | `..._fx_forecasted_euws_applied` incl. HIC_HH_UK rnk<=100 special case                | done   |
+| 8 | `stages/factors.py::attach_fagross`                  | `..._fx_forecasted_euws_applied_fagross`                                              | partial (aal_factor applied; tail_factor split by rp_bucket = todo) |
+| 9 | `pipeline.py::build_all_factors`                     | cache equivalent to `mts_tbl_ylt_combined_all_factors`                                | done (`.cache()`) |
+|10 | `pipeline.py::fanout_hisco`                          | `marts.*fanout_air`, `*fanout_rl_nodayid`, `*fanout_rl_withdayid`                     | done (ModelEventDay still hardcoded 0 pending air_events + flood seeds) |
+|11 | `stages/ep.py::ep_curve_from_ylt`                    | `mts_vw_ep_combined_all_factors*`                                                     | done (scalar, any `n_simulations`; used by integration tests) |
+|12 | `pipeline.py::_compute_dialsup`                      | `mts_vw_ylt_dialsup__funnel` + fanouts                                                | done   |
+|13 | `pipeline.py::count_event_id_orphans`                | part of `verify.*` — eventid orphan count (observation-only)                          | done   |
+|13b| `tests/test_invariants.py`                           | the rest of `verify.*`                                                                | todo   |
+
+**Overall**: end-to-end pipeline runs (see `tests/test_e2e.py`). Blending
+uplift is the only "real math" stub; every other stage applies its factor
+multiplicatively, falling back to 1.0 where reference data is missing.
