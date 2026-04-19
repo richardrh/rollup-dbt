@@ -42,23 +42,29 @@ left-to-right and verify the arithmetic step by step.
 `pipeline.build_all_factors` is the composition. It reads top-down:
 
 ```python
-# 1. staging — raw YLTs → NormalizedYlt union (carries office + lob_class)
-rl_norm = normalize_risklink_ylt(...)
-vk_norm = normalize_verisk_ylt(...)
+# 1. staging — raw YLTs → NormalizedYlt union (carries office, lob_class,
+#    peril_name, region, peril_family)
+rl_norm = normalize_risklink_ylt(load_raw_risklink_ylt(...),
+                                  seeds.analyses, seeds.perils, seeds.lobs)
+vk_norm = normalize_verisk_ylt  (load_raw_verisk_ylt(...),
+                                  seeds.analyses, seeds.perils, seeds.lobs)
 ylt = pl.concat([rl_norm, vk_norm])
 
 # 2. observation — orphan count for downstream alerting
-count_event_id_orphans(ylt, seeds.air_events, vendor_filter="verisk")
+count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
 
-# 3. factors — one function per factor, each ~15 LOC in stages/factors.py
+# 3. scope filter — drop rows not officially in the rollup
+ylt = apply_rollup_scope(ylt, seeds.rollup_scope)
+
+# 4. factors — one function per factor, each ~15 LOC in stages/factors.py
 ylt = attach_currency        (ylt, seeds.fx_rates)
 ylt = attach_forecast_factors(ylt, seeds.forecast_factors, tags)
-ylt = attach_rank            (ylt)
+ylt = attach_rank            (ylt)                                      # must precede attach_euws
 ylt = attach_euws            (ylt, seeds.euws_rate_factors, seeds.euws_rank_overrides)
 ylt = attach_fagross         (ylt, seeds.fineart_adjustments)
-ylt = attach_uplift          (ylt, seeds.blending_factors, seeds.dim_region_perils)
+ylt = attach_uplift          (ylt, seeds.blending_weights, n_sim=n_sim)
 
-# 4. metrics — materialise the cumulative chain as columns
+# 5. metrics — walk chain.CHAIN; multiply each stage's factor into the prev
 ylt = _compute_metrics(ylt, tags)
 ylt = _compute_dialsup(ylt, tags)
 ```
@@ -72,7 +78,8 @@ Each `attach_*` is a pure function in `rollup/stages/factors.py`:
   dropping FX would inflate losses.
 - Optionally a special-case (`attach_euws` applies rank-threshold overrides
   from `euws_rank_overrides.csv`; `attach_uplift` consults
-  `config.FLOOD_PERILS` to force `base_model='risklink'` for EU/UK flood).
+  `config.FLOOD_FAMILY` to force `base_model='risklink'` for any peril
+  whose `peril_family == "FL"`).
 
 That's it. Adding a new factor is adding one function and one call site.
 
@@ -80,14 +87,16 @@ That's it. Adding a new factor is adding one function and one call site.
 
 | | dynamic? | what it takes to add one |
 |---|---|---|
-| Forecast **dates** | ✅ fully | Add a row to `forecast_factors.csv`. Runtime reads the new date and emits `f_{yyyymm}` + three new metric columns + new Hisco variants. Zero code change. |
-| A new **factor with per-tag multiplication** (year-varying) | ⚠ half | `attach_X()` + extend the metrics loop to chain it per tag. One new function + one edit. |
-| A new **flat factor** (year-invariant) | ⚠ half | `attach_X()` + call it in `build_all_factors` + one multiplication in `_compute_metrics`. |
-| The **chain order** | ❌ code | Intentional — order is semantic, not data. |
+| Forecast **dates** | ✅ fully | Add a row to `forecast_factors.csv`. Runtime reads the new date and emits `f_{yyyymm}` + cumulative metric columns + new Hisco variants. Zero code change. |
+| A new **per-tag factor** (year-varying) | ⚠ half | `attach_X()` + ONE entry in `chain.CHAIN`. The metrics walker / audit layout / variant-spec all pick it up automatically. |
+| A new **flat factor** (year-invariant) — applied OUTSIDE the year-tagged chain | ⚠ half | `attach_X()` + extend the year-invariant block in `_compute_metrics` (the uplift → cap → fx prelude). |
+| The **chain order** | ❌ data | Order is the insertion order of `chain.CHAIN`. Reorder the dict, the column suffixes + audit layout follow. |
 
 ## The 5-step recipe
 
-Adding a new factor — call it `broker_commission_factor` for concreteness:
+Adding a new factor — call it `broker_commission_factor` for concreteness.
+This walks through the year-tagged case (the most common); year-invariant
+factors skip step 5 and edit `_compute_metrics`'s prelude instead.
 
 **1. Seed file + schema**
 
@@ -100,7 +109,8 @@ Adding a new factor — call it `broker_commission_factor` for concreteness:
    Register it:
    - `polars/rollup/schemas/columns.py` — new `RefBrokerCommissionsCol` StrEnum.
    - `polars/rollup/schemas/frames.py` — new `REF_BROKER_COMMISSIONS` schema.
-   - `polars/rollup/seeds.py` — add `SeedSpec` entry + field on `Seeds` dataclass.
+   - `polars/rollup/seeds.py` — add `SeedSpec` entry + field on `Seeds` dataclass
+     (and add to `REQUIRED_SEEDS` if a real run can't proceed without it).
 
 **2. AllFactorsCol member**
 
@@ -131,45 +141,56 @@ Adding a new factor — call it `broker_commission_factor` for concreteness:
 **4. Call it from `build_all_factors`**
 
    In `pipeline.py`, pick the right chain position. Broker commission feels
-   late in the chain (after all technical factors, before the final audit):
+   late in the chain (after all technical factors):
    ```python
-   ylt = attach_fagross(ylt, seeds.fineart_adjustments)
-   ylt = attach_broker_commission(ylt, seeds.broker_commissions)  # new line
-   ylt = attach_uplift(ylt)
+   .pipe(attach_fagross,            seeds.fineart_adjustments)
+   .pipe(attach_broker_commission,  seeds.broker_commissions)   # new line
+   .pipe(attach_uplift,             seeds.blending_weights, n_sim=n_sim)
    ```
 
-**5. Pick a column suffix + chain the multiplication**
+**5. Add ONE entry to `chain.CHAIN` — the only edit that affects the chain**
 
-   Convention: one-word suffix appended to the cumulative metric name. For
-   broker commission use `_brokercomm`. In `_compute_metrics`:
+   In `rollup/chain.py`:
    ```python
-   for tag in tags:
-       ...
-       localccy_fa_bc = f"loss_uplifted_capped_localccy_{tag}_euws_fagross_brokercomm"
-       ylt = ylt.with_columns(
-           (pl.col(localccy_fa) * pl.col(AF.BROKER_COMMISSION_FACTOR)).alias(localccy_fa_bc),
-       )
+   CHAIN: dict[str, ChainStage] = {
+       "forecast":  {...},
+       "euws":      {...},
+       "fagross":   {...},
+       "brokercomm": {                                    # ← new entry
+           "suffix":     "_brokercomm",
+           "factor_col": AF.BROKER_COMMISSION_FACTOR,
+           "is_per_tag": False,
+           "ancillary_before": (),
+           "ancillary_after":  (),
+       },
+   }
    ```
-   Update `audit_wide`'s column ordering so the new factor sits next to its
-   metric (next to `fa_gross_*` in this case). Update `VariantSpec.loss_metric`
-   if this is the new canonical "main" metric.
 
-That's the whole recipe. Every factor is the same five steps.
+   That's it. `_compute_metrics` walks `CHAIN` and multiplies the new
+   factor into the prev cumulative column to produce
+   `loss_uplifted_capped_localccy_{tag}_euws_fagross_brokercomm`.
+   `_metric_cols_for`, `audit_wide`, and `VariantSpec.loss_metric` (which
+   reads `chain.main_loss_col(tag)` = the LAST chain entry's column) all
+   pick up the new factor automatically. **No edits in `pipeline.py`.**
 
 ## What NOT to do
 
 - **Don't add `if vendor == 'verisk'` branches inside factor functions.** If
   a factor only applies to one vendor, filter at the seed level (rows for
   one vendor only, other vendor rows get `fill_null(1.0)` pass-through). The
-  one exception: `attach_uplift` consults `config.FLOOD_PERILS` to force
-  the base model — promoted to a config constant precisely so it isn't a
-  hidden branch inside the function body.
-- **Don't change column-naming order.** `loss_uplifted_capped_localccy_{tag}_euws_fagross`
-  reads strictly in chain order. Breaking this breaks the audit.
+  one exception: `attach_uplift` consults `config.FLOOD_FAMILY` to force
+  the base model when `peril_family == "FL"` — promoted to a config
+  constant precisely so it isn't a hidden branch inside the function body.
+- **Don't hand-build the column-name f-string anywhere.** `chain.col_after`,
+  `chain.main_loss_col`, `chain.dialsup_col`, `chain.forecast_factor_col`
+  are the only sanctioned builders. New f-string sites = future drift bugs.
+- **Don't change the chain naming convention** (`{base}_{tag}{suffix1}{suffix2}...`).
+  The audit reads strictly left-to-right in chain order; the convention is
+  the contract.
 - **Don't drop `fill_null(1.0)`** in the multiplicative factors (forecast,
   euws, fa_gross). Missing reference rows pass through as 1.0 by design.
   *Exception*: FX is not a multiplicative factor — a missing rate is a real
-  problem, so `attach_currency` raises rather than fills.
+  problem, so `attach_currency` raises `MissingFxRateError` rather than fills.
 - **Don't split one factor into multiple stages.** If your factor has a
   special case (like euws's rank-threshold override), keep the case inside
   the same `attach_*` function — that's where the reviewer expects to find it.
