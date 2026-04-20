@@ -24,7 +24,7 @@ from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.seeds import load_all
 
 
-SEEDS_DIR = Path(__file__).resolve().parent.parent / "seeds"
+SEEDS_DIR = Path(__file__).resolve().parents[2] / "data" / "seeds"
 
 
 # -----------------------------------------------------------------------------

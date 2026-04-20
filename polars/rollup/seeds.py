@@ -1,4 +1,4 @@
-"""Typed loaders for every CSV under `polars/seeds/`.
+"""Typed loaders for every CSV under `data/seeds/`.
 
 Each loader:
   1. scans the CSV lazily (`pl.scan_csv`) with its `pl.Schema` applied;

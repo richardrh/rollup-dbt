@@ -11,7 +11,7 @@ ADDING A NEW FACTOR — the 5-step recipe
 
 Say you want to add a `broker_commission_factor`. Do this:
 
-  1. Add the seed: `polars/seeds/broker_commissions.csv` with columns
+  1. Add the seed: `data/seeds/broker_commissions.csv` with columns
      (lob_id, commission_factor). Add a `SeedSpec` in `rollup/seeds.py` +
      a `pl.Schema` in `rollup/schemas/frames.py` + a `StrEnum` in
      `rollup/schemas/columns.py`.

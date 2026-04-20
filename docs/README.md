@@ -15,6 +15,6 @@ everything deeper lives here.
 
 ## Also relevant (outside docs/)
 
-- [`../polars/seeds/README.md`](../polars/seeds/README.md) — per-seed schema, source, and population status.
+- [`../data/seeds/README.md`](../data/seeds/README.md) — per-seed schema, source, and population status.
 - [`../polars/rollup/stages/factors.py`](../polars/rollup/stages/factors.py) — the factor-attach functions. The comment block at the top duplicates the 5-step recipe for people in the code.
 - [`../polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md) — concrete TODO list for the data-export pass.

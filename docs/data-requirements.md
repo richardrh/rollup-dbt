@@ -13,9 +13,9 @@ doc.
 
 ```
 <repo>/
-├── polars/
-│   └── seeds/                ← versioned reference CSVs (this folder, in git)
-└── data/                     ← NOT in git; you populate this
+├── polars/                   ← SOURCE CODE — nothing for you to touch here
+└── data/                     ← ALL user-owned input/output
+    ├── seeds/                ← reference CSVs (git-tracked; 4 stubs need populating)
     ├── ylt/
     │   ├── verisk/*.parquet
     │   └── risklink/*.parquet
@@ -24,6 +24,10 @@ doc.
     │   └── risklink/*.csv
     └── output/               ← pipeline writes here
 ```
+
+See [`../polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md) for the
+simple collect-these-files checklist — this doc is the detailed schema
+reference the checklist points at.
 
 Override any path with `ROLLUP_DATA_DIR`, `ROLLUP_SEEDS_DIR`,
 `ROLLUP_OUTPUT_DIR`, `ROLLUP_YLT_VERISK_DIR`, `ROLLUP_YLT_RISKLINK_DIR`,
@@ -81,7 +85,7 @@ If `n_simulations` differs from 10 000 / 100 000, override
 
 ---
 
-## B. Seeds — `polars/seeds/*.csv` (11 files, all required)
+## B. Seeds — `data/seeds/*.csv` (11 files, all required)
 
 The pre-run plan reporter flags any seed that is missing or whose header
 doesn't match the declared schema. The pipeline will not run if
@@ -142,13 +146,13 @@ COPY (
   FROM loader.main.dim_region_perils
   GROUP BY blending_factor_region_peril_id
   ORDER BY peril_id
-) TO 'polars/seeds/perils.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/perils.csv' WITH (HEADER, DELIMITER ',');
 ```
 
 **After exporting, sanity-check uniqueness**:
 ```sql
 -- Should return zero rows.
-SELECT peril_id, COUNT(*) FROM read_csv('polars/seeds/perils.csv')
+SELECT peril_id, COUNT(*) FROM read_csv('data/seeds/perils.csv')
 GROUP BY peril_id HAVING COUNT(*) > 1;
 ```
 
@@ -184,7 +188,7 @@ COPY (
   FROM loader.main.dim_region_perils
   WHERE vendor = 'verisk'
   ORDER BY modelled_region_peril
-) TO 'polars/seeds/analyses_verisk.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/analyses_verisk.csv' WITH (HEADER, DELIMITER ',');
 
 -- RiskLink rows: one per (rl_analysis_id, lob)
 COPY (
@@ -200,11 +204,11 @@ COPY (
   INNER JOIN reference.lobs AS lobs
     ON lobs.modelled_lob = dra.lob
   ORDER BY dra.rl_analysis_id
-) TO 'polars/seeds/analyses_risklink.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/analyses_risklink.csv' WITH (HEADER, DELIMITER ',');
 
 -- Concatenate (header from one, body of both)
--- $ cat analyses_verisk.csv > polars/seeds/analyses.csv
--- $ tail -n +2 analyses_risklink.csv >> polars/seeds/analyses.csv
+-- $ cat analyses_verisk.csv > data/seeds/analyses.csv
+-- $ tail -n +2 analyses_risklink.csv >> data/seeds/analyses.csv
 ```
 
 **NULL handling**: DuckDB COPY writes `NULL::BIGINT` as an empty CSV
@@ -218,7 +222,7 @@ CSV — that's correct.
 -- Verisk lob_id should always be NULL, RiskLink lob_id should never be NULL.
 SELECT vendor, COUNT(*) FILTER (WHERE lob_id IS NULL)  AS null_lob,
                 COUNT(*) FILTER (WHERE lob_id IS NOT NULL) AS populated_lob
-FROM read_csv('polars/seeds/analyses.csv')
+FROM read_csv('data/seeds/analyses.csv')
 GROUP BY vendor;
 -- Expect: verisk → null_lob = N, populated_lob = 0
 --         risklink → null_lob = 0, populated_lob = N
@@ -252,7 +256,7 @@ COPY (
   FROM reference.lobs AS lobs
   CROSS JOIN loader.main.dim_region_perils AS rp
   ORDER BY lobs.id, rp.vendor, rp.modelled_region_peril
-) TO 'polars/seeds/rollup_scope.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/rollup_scope.csv' WITH (HEADER, DELIMITER ',');
 ```
 
 #### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
@@ -305,7 +309,7 @@ COPY (
          sub_peril, 'risklink' AS vendor, rms_blend AS weight
   FROM bf
   ORDER BY peril_id, sub_peril, vendor
-) TO 'polars/seeds/blending_weights.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/blending_weights.csv' WITH (HEADER, DELIMITER ',');
 ```
 
 If your duckdb version doesn't have `DISTINCT ON`, swap that subquery
@@ -334,7 +338,7 @@ COPY (
          "Event" AS event, "Year" AS year, "Day" AS day
   FROM reference.air_events
   ORDER BY event_id
-) TO 'polars/seeds/air_events.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/air_events.csv' WITH (HEADER, DELIMITER ',');
 ```
 
 ### Optional but improves output
@@ -361,7 +365,7 @@ COPY (
          aal_factor, tail_factor
   FROM reference.fineart_gross_to_net_adjustment2
   ORDER BY lob_id, region_peril_id
-) TO 'polars/seeds/fineart_adjustments.csv' WITH (HEADER, DELIMITER ',');
+) TO 'data/seeds/fineart_adjustments.csv' WITH (HEADER, DELIMITER ',');
 ```
 
 ---
@@ -400,7 +404,7 @@ dump for `f_{tag}` columns that are all 1.0 — that's the diagnostic.
 
 Cheapest change in the codebase. To add `2027-07-01`:
 
-1. Edit `polars/seeds/forecast_factors.csv` and add one row per
+1. Edit `data/seeds/forecast_factors.csv` and add one row per
    `(class, office)` combination with `forecast_date=2027-07-01`.
 2. Run the pipeline. New `f_202707` column + three new metric columns +
    two new Hisco parquets per vendor.
@@ -445,7 +449,7 @@ production run), and asserts:
 
 | symptom | cause | fix |
 | ------- | ----- | --- |
-| `seed 'X' missing at /…/X.csv` | a seed file isn't where the loader expected | put the file at `polars/seeds/X.csv` (or set `ROLLUP_SEEDS_DIR`). |
+| `seed 'X' missing at /…/X.csv` | a seed file isn't where the loader expected | put the file at `data/seeds/X.csv` (or set `ROLLUP_SEEDS_DIR`). |
 | `[seed.X] missing columns: [...]` | seed CSV header drifted | rename headers in the CSV to match the schema in `rollup/schemas/columns.py`. |
 | `[seed.X] dtype mismatches` | seed has the right column names but wrong types | re-export from duckdb with explicit casts, or fix the CSV. |
 | `MissingFxRateError: fx_rates.csv has no GBP rate for currencies: ['EUR']` | a YLT row needs a currency you haven't supplied | add a row to `fx_rates.csv`. |

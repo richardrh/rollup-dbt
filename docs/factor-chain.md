@@ -100,7 +100,7 @@ factors skip step 5 and edit `_compute_metrics`'s prelude instead.
 
 **1. Seed file + schema**
 
-   `polars/seeds/broker_commissions.csv`:
+   `data/seeds/broker_commissions.csv`:
    ```
    lob_id,commission_factor
    1,0.85

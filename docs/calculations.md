@@ -485,7 +485,7 @@ Inner-join keyed on `(lob_id, vendor, modelled_region_peril)` keeping
 
 ## 10. Reference data — current source-of-truth
 
-The seeds folder (`polars/seeds/`) is the canonical store for
+The seeds folder (`data/seeds/`) is the canonical store for
 reference data the polars pipeline reads. Eleven seeds total; see
 [`data-requirements.md`](data-requirements.md) for shape, source, and
 SQL to re-export from january's duckdb when refreshing.

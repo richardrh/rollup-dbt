@@ -1,21 +1,26 @@
-# polars/seeds
+# data/seeds
 
-Reference / dimension data for the polars rollup pipeline. CSVs follow the
-dbt convention: git-friendly, diff-able, one row per natural record, header
-in snake_case to match the schema enums in `rollup/schemas/columns.py`.
+Reference / dimension data for the polars rollup pipeline. CSVs follow
+the dbt convention: diff-friendly, one row per natural record, header in
+snake_case to match the schema enums in `polars/rollup/schemas/columns.py`.
 
-## What "seed" means here
+Git-tracked so the pipeline ships with working fixtures, but **user-owned**.
+Refresh the stub files from your source data before a real run. The
+pipeline enforces one-job seeds: `data/seeds/` is where reference data
+lives; `data/ylt/`, `data/ep_summaries/`, `data/output/` are siblings for
+simulation input/output.
 
-A seed is a small, versioned reference table that feeds the pipeline. It is
-**not** simulation output (YLTs), **not** the EP-summary dumps, **not** any
-analyst-provided working file. Those live outside `seeds/` — see
-[`../../docs/data-requirements.md`](../../docs/data-requirements.md) for the full
-contract (schema, source SQL, failure-mode table).
+## What to do if you need to populate these for a real run
 
-Each CSV has a corresponding `pl.Schema` in `rollup/schemas/frames.py`.
-`rollup/seeds.py` loads each CSV through `pl.scan_csv(..., schema=...)` and
-validates at the boundary so shape drift is caught immediately, not in the
-middle of a stage ten joins later.
+Start at [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md) —
+a simple "collect these files and put them here" checklist. That
+document has the column schemas you need to give your data source.
+
+Each CSV has a corresponding `pl.Schema` in
+`polars/rollup/schemas/frames.py`. `polars/rollup/seeds.py` loads each
+through `pl.scan_csv(..., schema=...)` and validates at the boundary so
+shape drift is caught immediately, not in the middle of a stage ten
+joins later.
 
 ## The 11 seeds
 
@@ -47,9 +52,8 @@ fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
 | `air_events.csv`           | **stub (0)**        | duckdb export — recommended |
 | `fineart_adjustments.csv`  | **stub (0)**        | duckdb export — optional |
 
-The full population SQL for each stub seed (and what happens when it stays
-empty) lives in
-[`../../docs/data-requirements.md`](../../docs/data-requirements.md).
+The full column schemas for the stub seeds (and what happens when they
+stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md).
 
 ## One table, one job
 

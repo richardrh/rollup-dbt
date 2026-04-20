@@ -16,7 +16,7 @@ from rollup.schemas.columns import RefLobsCol as LB
 from rollup.validate import SchemaError
 
 
-SEEDS_DIR = Path(__file__).resolve().parent.parent / "seeds"
+SEEDS_DIR = Path(__file__).resolve().parents[2] / "data" / "seeds"
 
 
 # -----------------------------------------------------------------------------

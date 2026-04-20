@@ -43,7 +43,7 @@ def test_risklink_n_simulations_is_100k():
 
 def test_paths_default_under_repo_root():
     cfg = config.resolve()
-    assert cfg.seeds_dir == config.POLARS_ROOT / "seeds"
+    assert cfg.seeds_dir == config.REPO_ROOT / "data" / "seeds"
     assert cfg.output_dir == config.REPO_ROOT / "data" / "output"
     assert cfg.vendor(VendorName.VERISK).ylt_dir   == config.REPO_ROOT / "data" / "ylt" / VendorName.VERISK
     assert cfg.vendor(VendorName.RISKLINK).ylt_dir == config.REPO_ROOT / "data" / "ylt" / VendorName.RISKLINK
@@ -78,7 +78,7 @@ def _cfg_with_seeds(tmp_path: Path, populate: bool = True) -> config.Config:
     seeds_dir = tmp_path / "seeds"
     seeds_dir.mkdir()
     if populate:
-        real_seeds = config.POLARS_ROOT / "seeds"
+        real_seeds = config.REPO_ROOT / "data" / "seeds"
         for spec in SEEDS:
             shutil.copy(real_seeds / spec.filename, seeds_dir / spec.filename)
     return config.Config(

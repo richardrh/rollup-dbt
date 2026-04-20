@@ -65,54 +65,53 @@ contract between the pipeline and the seeds + YLTs you supply.
        dialsup}.parquet
 ```
 
-## Layout
+## Layout — source code vs user-owned data
 
 ```
 <repo>/
-├── docs/                     # detailed docs — see ../docs/README.md
+├── docs/                       # detailed docs — see ../docs/README.md
 │   ├── README.md
-│   ├── data-requirements.md  # the contract for a real run
+│   ├── data-requirements.md    # the contract for a real run
 │   ├── architecture.md
 │   ├── factor-chain.md
 │   └── calculations.md
-└── polars/
-    ├── README.md             # this file — overview + run + schematic
-    ├── RH-TODO-DATA.md       # punch list for getting real data exported
-    ├── rollup/
-    │   ├── chain.py          # year-tagged factor chain registry (TypedDict)
-    │   ├── config.py         # Vendor + Flavor + VendorName + EnvVar + FLOOD_FAMILY
-    │   ├── seeds.py          # typed seed loaders + REQUIRED_SEEDS gate
-    │   ├── validate.py       # validate_schema + SchemaError
-    │   ├── pipeline.py       # orchestrator + build_all_factors + audit + CLI
-    │   ├── schemas/
-    │   │   ├── columns.py    # StrEnum per logical frame
-    │   │   └── frames.py     # pl.Schema per logical frame
-    │   └── stages/
-    │       ├── staging.py    # raw YLTs → NormalizedYlt + apply_rollup_scope
-    │       ├── factors.py    # attach_* functions (one per factor)
-    │       └── ep.py         # YLT → EP curve (aux, not in main chain)
-    ├── seeds/                # git-versioned reference CSVs — see seeds/README.md
-    └── tests/                # 97 tests including e2e
-        ├── test_e2e.py       # the synthetic end-to-end run
-        ├── build_test_data.py # generator for tests/data/
-        └── data/             # gitignored; test inputs + outputs
-```
-
-## Data layout (not in git)
-
-```
-<repo>/data/                  # overridable: ROLLUP_DATA_DIR
-├── ylt/
-│   ├── verisk/*.parquet      # 10,000 simulation years (AIR)
-│   └── risklink/*.parquet    # 100,000 simulation years (RMS)
-├── ep_summaries/
-│   ├── verisk/*.csv
-│   └── risklink/*.csv
-└── output/                   # pipeline writes Hisco{AIR,RMS}_*.parquet
+│
+├── polars/                     # SOURCE CODE — don't put data in here
+│   ├── README.md               # this file
+│   ├── RH-TODO-DATA.md         # checklist for collecting real data
+│   ├── rollup/
+│   │   ├── chain.py            # year-tagged factor chain registry (TypedDict)
+│   │   ├── config.py           # Vendor + Flavor + VendorName + EnvVar + FLOOD_FAMILY
+│   │   ├── seeds.py            # typed seed loaders + REQUIRED_SEEDS gate
+│   │   ├── validate.py         # validate_schema + SchemaError
+│   │   ├── pipeline.py         # orchestrator + build_all_factors + audit + CLI
+│   │   ├── schemas/
+│   │   │   ├── columns.py      # StrEnum per logical frame
+│   │   │   └── frames.py       # pl.Schema per logical frame
+│   │   └── stages/
+│   │       ├── staging.py      # raw YLTs → NormalizedYlt + apply_rollup_scope
+│   │       ├── factors.py      # attach_* functions (one per factor)
+│   │       └── ep.py           # YLT → EP curve (aux, not in main chain)
+│   └── tests/                  # 97 tests including e2e
+│       ├── test_e2e.py         # the synthetic end-to-end run
+│       ├── build_test_data.py  # generator for tests/data/
+│       └── data/               # gitignored; test inputs + outputs
+│
+└── data/                       # USER-OWNED — this is what you populate
+    ├── seeds/                  # reference CSVs — see data/seeds/README.md
+    │                             + RH-TODO-DATA.md for the 4 blockers
+    ├── ylt/
+    │   ├── verisk/*.parquet    # 10,000 simulation years (AIR)
+    │   └── risklink/*.parquet  # 100,000 simulation years (RMS)
+    ├── ep_summaries/           # optional; only used by integration tests
+    │   ├── verisk/*.csv
+    │   └── risklink/*.csv
+    └── output/                 # pipeline writes Hisco{AIR,RMS}_*.parquet
 ```
 
 Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
-`ROLLUP_YLT_RISKLINK_DIR`, `ROLLUP_OUTPUT_DIR`, `ROLLUP_LOG`, etc.
+`ROLLUP_YLT_RISKLINK_DIR`, `ROLLUP_OUTPUT_DIR`, `ROLLUP_LOG`, etc. See
+`rollup/config.py::EnvVar` for the full list.
 
 ## Docs
 
@@ -126,18 +125,18 @@ Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
   factor.
 - [`../docs/calculations.md`](../docs/calculations.md) — every january duckdb view
   mapped to its polars replacement, with the source SQL quoted.
-- [`seeds/README.md`](seeds/README.md) — per-seed schema decisions, column
-  naming rules, provenance.
-- [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — punch list of duckdb exports the
-  user needs to do before a real run.
+- [`../data/seeds/README.md`](../data/seeds/README.md) — per-seed schema
+  decisions, column naming rules, provenance.
+- [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — **simple checklist for the
+  data-collection pass** (what files, what columns, where to put them).
 
 ## Status
 
 Pipeline runs end-to-end on synthetic data. The full chain (staging, factor
 attach, metrics, fan-out, audit dumps, interactive CLI) is implemented and
-tested. To run on real data, populate the four blocker seeds (perils,
-analyses, rollup_scope, blending_weights) listed in
-[`../docs/data-requirements.md`](../docs/data-requirements.md) and place the YLT
-parquets under `data/ylt/{verisk,risklink}/`.
+tested. To run on real data, work through
+[`RH-TODO-DATA.md`](RH-TODO-DATA.md) — collect the four blocker seed
+CSVs into `data/seeds/` and drop the YLT parquets under
+`data/ylt/{verisk,risklink}/`.
 
 **97 passing tests in ~1.6s** (`uv run python -m pytest polars/`).

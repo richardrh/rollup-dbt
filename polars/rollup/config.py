@@ -16,9 +16,9 @@ Default layout:
 
     <repo>/
     ├── polars/
-    │   ├── rollup/              ← this package
-    │   └── seeds/               ← versioned reference CSVs
-    └── data/                    ← NOT in git; populated by the user
+    │   └── rollup/              ← this package (source code only)
+    └── data/                    ← all user-owned input/output
+        ├── seeds/               ← reference CSVs (git-tracked — refreshed periodically)
         ├── ylt/
         │   ├── verisk/*.parquet (≈ 10 000 simulation years)
         │   └── risklink/*.parquet (≈ 100 000 simulation years)
@@ -228,7 +228,7 @@ def resolve() -> Config:
     """Build a `Config` from env vars, falling back to repo defaults."""
     data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
     return Config(
-        seeds_dir=_env_path(EnvVar.SEEDS_DIR, POLARS_ROOT / "seeds"),
+        seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),
         output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),
         vendors=(_verisk(data_root), _risklink(data_root)),
     )
