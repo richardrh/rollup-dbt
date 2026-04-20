@@ -14,11 +14,11 @@ uv run python -m rollup.pipeline                       # plan → y/N prompt →
 uv run python -m rollup.pipeline --yes                 # skip prompt, run
 uv run python -m rollup.pipeline --yes --dump-interim  # also write audit parquets
 uv run python -m rollup.pipeline --yes --log-level INFO# show factor-chain trace
-uv run python -m pytest polars/                        # 96 tests, ~1.6s
+uv run python -m pytest polars/                        # 97 tests, ~1.6s
 ```
 
 Need to know what data to provide before the run? See
-[`docs/data-requirements.md`](docs/data-requirements.md) — the canonical
+[`../docs/data-requirements.md`](../docs/data-requirements.md) — the canonical
 contract between the pipeline and the seeds + YLTs you supply.
 
 ## Data flow
@@ -68,26 +68,34 @@ contract between the pipeline and the seeds + YLTs you supply.
 ## Layout
 
 ```
-polars/
-├── README.md                 # this file — overview + run + schematic
-├── docs/                     # detailed docs — see docs/README.md
-├── rollup/
-│   ├── config.py             # Vendor + Flavor + Config + plan reporter + logging + FLOOD_FAMILY
-│   ├── seeds.py              # typed seed loaders (Seeds dataclass)
-│   ├── validate.py           # validate_schema + SchemaError
-│   ├── pipeline.py           # orchestrator + build_all_factors + audit + CLI
-│   ├── schemas/
-│   │   ├── columns.py        # StrEnum per logical frame
-│   │   └── frames.py         # pl.Schema per logical frame
-│   └── stages/
-│       ├── staging.py        # raw YLTs → NormalizedYlt (per vendor)
-│       ├── factors.py        # attach_* functions (one per factor)
-│       └── ep.py             # YLT → EP curve (aux, not in main chain)
-├── seeds/                    # git-versioned reference CSVs — see seeds/README.md
-└── tests/                    # 96 tests including e2e
-    ├── test_e2e.py           # the synthetic end-to-end run
-    ├── build_test_data.py    # generator for tests/data/
-    └── data/                 # gitignored; test inputs + outputs
+<repo>/
+├── docs/                     # detailed docs — see ../docs/README.md
+│   ├── README.md
+│   ├── data-requirements.md  # the contract for a real run
+│   ├── architecture.md
+│   ├── factor-chain.md
+│   └── calculations.md
+└── polars/
+    ├── README.md             # this file — overview + run + schematic
+    ├── RH-TODO-DATA.md       # punch list for getting real data exported
+    ├── rollup/
+    │   ├── chain.py          # year-tagged factor chain registry (TypedDict)
+    │   ├── config.py         # Vendor + Flavor + VendorName + EnvVar + FLOOD_FAMILY
+    │   ├── seeds.py          # typed seed loaders + REQUIRED_SEEDS gate
+    │   ├── validate.py       # validate_schema + SchemaError
+    │   ├── pipeline.py       # orchestrator + build_all_factors + audit + CLI
+    │   ├── schemas/
+    │   │   ├── columns.py    # StrEnum per logical frame
+    │   │   └── frames.py     # pl.Schema per logical frame
+    │   └── stages/
+    │       ├── staging.py    # raw YLTs → NormalizedYlt + apply_rollup_scope
+    │       ├── factors.py    # attach_* functions (one per factor)
+    │       └── ep.py         # YLT → EP curve (aux, not in main chain)
+    ├── seeds/                # git-versioned reference CSVs — see seeds/README.md
+    └── tests/                # 97 tests including e2e
+        ├── test_e2e.py       # the synthetic end-to-end run
+        ├── build_test_data.py # generator for tests/data/
+        └── data/             # gitignored; test inputs + outputs
 ```
 
 ## Data layout (not in git)
@@ -108,18 +116,20 @@ Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
 
 ## Docs
 
-- [`docs/data-requirements.md`](docs/data-requirements.md) — **start here**.
+- [`../docs/data-requirements.md`](../docs/data-requirements.md) — **start here**.
   Every YLT, seed, and CSV the pipeline needs, with the duckdb `COPY` SQL to
   produce each one. Also: failure-mode reference table.
-- [`docs/architecture.md`](docs/architecture.md) — code organisation, Vendor /
+- [`../docs/architecture.md`](../docs/architecture.md) — code organisation, Vendor /
   Flavor / VariantSpec abstractions, seed loading, schema validation layers.
-- [`docs/factor-chain.md`](docs/factor-chain.md) — how the factor chain works,
+- [`../docs/factor-chain.md`](../docs/factor-chain.md) — how the factor chain works,
   the cumulative column-naming convention, and the 5-step recipe to add a new
   factor.
-- [`docs/calculations.md`](docs/calculations.md) — every january duckdb view
+- [`../docs/calculations.md`](../docs/calculations.md) — every january duckdb view
   mapped to its polars replacement, with the source SQL quoted.
 - [`seeds/README.md`](seeds/README.md) — per-seed schema decisions, column
   naming rules, provenance.
+- [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — punch list of duckdb exports the
+  user needs to do before a real run.
 
 ## Status
 
@@ -127,7 +137,7 @@ Pipeline runs end-to-end on synthetic data. The full chain (staging, factor
 attach, metrics, fan-out, audit dumps, interactive CLI) is implemented and
 tested. To run on real data, populate the four blocker seeds (perils,
 analyses, rollup_scope, blending_weights) listed in
-[`docs/data-requirements.md`](docs/data-requirements.md) and place the YLT
+[`../docs/data-requirements.md`](../docs/data-requirements.md) and place the YLT
 parquets under `data/ylt/{verisk,risklink}/`.
 
-**96 passing tests in ~1.6s** (`uv run python -m pytest polars/`).
+**97 passing tests in ~1.6s** (`uv run python -m pytest polars/`).

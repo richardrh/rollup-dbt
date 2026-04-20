@@ -197,8 +197,10 @@ factors skip step 5 and edit `_compute_metrics`'s prelude instead.
 
 ## See also
 
-- [`../rollup/stages/factors.py`](../rollup/stages/factors.py) — the
+- [`../polars/rollup/stages/factors.py`](../polars/rollup/stages/factors.py) — the
   functions themselves, with the 5-step recipe repeated in the module
   header for code readers.
+- [`../polars/rollup/chain.py`](../polars/rollup/chain.py) — the year-tagged
+  `CHAIN` registry the metrics walker reads.
 - [`calculations.md`](calculations.md) — per-factor mapping to january's
   duckdb views, with the original SQL quoted.

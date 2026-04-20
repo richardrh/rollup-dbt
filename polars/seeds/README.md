@@ -9,7 +9,7 @@ in snake_case to match the schema enums in `rollup/schemas/columns.py`.
 A seed is a small, versioned reference table that feeds the pipeline. It is
 **not** simulation output (YLTs), **not** the EP-summary dumps, **not** any
 analyst-provided working file. Those live outside `seeds/` — see
-[`../docs/data-requirements.md`](../docs/data-requirements.md) for the full
+[`../../docs/data-requirements.md`](../../docs/data-requirements.md) for the full
 contract (schema, source SQL, failure-mode table).
 
 Each CSV has a corresponding `pl.Schema` in `rollup/schemas/frames.py`.
@@ -49,7 +49,7 @@ fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
 
 The full population SQL for each stub seed (and what happens when it stays
 empty) lives in
-[`../docs/data-requirements.md`](../docs/data-requirements.md).
+[`../../docs/data-requirements.md`](../../docs/data-requirements.md).
 
 ## One table, one job
 

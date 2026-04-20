@@ -1,7 +1,7 @@
 # docs
 
-Detailed documentation for the polars rollup pipeline. The project-root
-[`README.md`](../README.md) is the overview + schematic + run commands;
+Detailed documentation for the polars rollup pipeline. The polars project
+[`README.md`](../polars/README.md) is the overview + schematic + run commands;
 everything deeper lives here.
 
 ## Index
@@ -15,5 +15,6 @@ everything deeper lives here.
 
 ## Also relevant (outside docs/)
 
-- [`../seeds/README.md`](../seeds/README.md) — per-seed schema, source, and population status.
-- [`../rollup/stages/factors.py`](../rollup/stages/factors.py) — the factor-attach functions. The comment block at the top duplicates the 5-step recipe for people in the code.
+- [`../polars/seeds/README.md`](../polars/seeds/README.md) — per-seed schema, source, and population status.
+- [`../polars/rollup/stages/factors.py`](../polars/rollup/stages/factors.py) — the factor-attach functions. The comment block at the top duplicates the 5-step recipe for people in the code.
+- [`../polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md) — concrete TODO list for the data-export pass.

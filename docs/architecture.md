@@ -1,7 +1,7 @@
 # Architecture
 
 How the code is organised, and why. For the high-level overview + run
-commands see [`../README.md`](../README.md); for the factor chain see
+commands see [`../polars/README.md`](../polars/README.md); for the factor chain see
 [`factor-chain.md`](factor-chain.md).
 
 ## Why `polars/` (folder) vs `rollup/` (package)
