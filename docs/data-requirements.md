@@ -123,17 +123,39 @@ carries as `region_peril_id` after staging. `peril_family` ("FL", "WS",
 | `region`       | String  | `EU`, `UK`, `US`, … |
 | `peril_family` | String  | `WS`, `FL`, `EQ`, `TC`, `CS`, `WF`. **Used for the flood check** — case sensitive. |
 
+**The output must have one row per `peril_id`** — the staging join
+(`_peril_dim` in `staging.py`) is keyed on `peril_id` and will multiply
+YLT rows if there are duplicates. `dim_region_perils` has multiple rows
+per `blending_factor_region_peril_id` (one per vendor, plus per
+modelled-label-variant like `UK_WSSS` vs `UK_WSSS_GCAdj`). The query
+below collapses those with a `GROUP BY` so you get exactly one row per
+peril. `peril_family` is also normalised to upper-case + trimmed to
+guarantee the flood check (`peril_family == "FL"`) matches.
+
 ```sql
 COPY (
-  SELECT DISTINCT
-    blending_factor_region_peril_id   AS peril_id,
-    rollup_region_peril               AS name,
-    region,
-    peril                             AS peril_family
+  SELECT
+    blending_factor_region_peril_id              AS peril_id,
+    MIN(rollup_region_peril)                     AS name,
+    MIN(region)                                  AS region,
+    UPPER(TRIM(MIN(peril)))                      AS peril_family
   FROM loader.main.dim_region_perils
+  GROUP BY blending_factor_region_peril_id
   ORDER BY peril_id
 ) TO 'polars/seeds/perils.csv' WITH (HEADER, DELIMITER ',');
 ```
+
+**After exporting, sanity-check uniqueness**:
+```sql
+-- Should return zero rows.
+SELECT peril_id, COUNT(*) FROM read_csv('polars/seeds/perils.csv')
+GROUP BY peril_id HAVING COUNT(*) > 1;
+```
+
+If `MIN(rollup_region_peril)` picks an unwanted variant for any
+peril (e.g. `UK_WSSS` instead of `UK_WSSS_GCAdj`), edit the CSV
+manually after export — `name` is display-only, the pipeline doesn't
+join on it.
 
 #### 2. `analyses.csv` — vendor analysis → peril (+ lob for RiskLink) (REQUIRED)
 
@@ -185,6 +207,23 @@ COPY (
 -- $ tail -n +2 analyses_risklink.csv >> polars/seeds/analyses.csv
 ```
 
+**NULL handling**: DuckDB COPY writes `NULL::BIGINT` as an empty CSV
+cell. Polars parses empty cells as `null` for `Int64` columns when an
+explicit schema is provided — which `seeds.py` always does. So the
+verisk rows look like `verisk,EU_WS,EU_WS,206,` (trailing comma) in the
+CSV — that's correct.
+
+**Sanity-check after export**:
+```sql
+-- Verisk lob_id should always be NULL, RiskLink lob_id should never be NULL.
+SELECT vendor, COUNT(*) FILTER (WHERE lob_id IS NULL)  AS null_lob,
+                COUNT(*) FILTER (WHERE lob_id IS NOT NULL) AS populated_lob
+FROM read_csv('polars/seeds/analyses.csv')
+GROUP BY vendor;
+-- Expect: verisk → null_lob = N, populated_lob = 0
+--         risklink → null_lob = 0, populated_lob = N
+```
+
 #### 3. `rollup_scope.csv` — which (lob, vendor, analysis) triples are official (REQUIRED)
 
 Replaces january's `applies_to_{mga,prop,fa}` flag fan-out. The pipeline
@@ -222,25 +261,57 @@ Replaces the wide `air_blend` / `rms_blend` / `kat_risk_blend` columns of
 `blending_factors`. One row per (peril_id, sub_peril, vendor). `sub_peril`
 is nullable — most perils don't need regional sub-splits.
 
-| column      | type    | notes |
-| ----------- | ------- | ----- |
-| `peril_id`  | Int64   | FK into `perils.csv`. |
-| `sub_peril` | String  | regional split label (`216a`, `216b`, …); NULL for the unconditional weight. |
-| `vendor`    | String  | `'verisk'` or `'risklink'`. (other vendors are silently ignored by `attach_uplift`.) |
-| `weight`    | Float64 | the blend weight, 0..1. |
+| column        | type    | notes |
+| ------------- | ------- | ----- |
+| `peril_id`    | Int64   | FK into `perils.csv`. |
+| `peril_name`  | String  | denormalised from `perils.name` for human readability — pipeline NEVER joins on this; populate from the same source row as `peril_id`. |
+| `description` | String  | free-text reason this row exists (e.g. `"default 50/50"` or `"Germany sub-peril split"`). Empty string is fine. |
+| `sub_peril`   | String  | regional split label (`216a`, `216b`, …); NULL for the unconditional weight. |
+| `vendor`      | String  | `'verisk'` or `'risklink'`. (other vendors are silently ignored by `attach_uplift`.) |
+| `weight`      | Float64 | the blend weight, 0..1. |
+
+The `peril_name` and `description` columns are required by the schema
+(strict validation at seed load) but are **never used in joins** — they
+exist so the CSV is browsable. Pipe `''` (empty string) into
+`description` if you have nothing meaningful to say.
 
 ```sql
--- Long-pivot the wide air_blend/rms_blend columns.
+-- Long-pivot the wide air_blend/rms_blend columns. Joins dim_region_perils
+-- to bring in the human-readable `peril_name`. Adjust the description text
+-- per row if you want — empty string is acceptable.
 COPY (
-  SELECT region_peril_id AS peril_id, sub_region_peril_id AS sub_peril,
-         'verisk' AS vendor, air_blend AS weight
-  FROM loader.main.blending_factors
+  WITH bf AS (
+    SELECT bf.region_peril_id      AS peril_id,
+           drp.rollup_region_peril AS peril_name,
+           bf.sub_region_peril_id  AS sub_peril,
+           bf.air_blend, bf.rms_blend
+    FROM loader.main.blending_factors AS bf
+    -- pick ONE drp row per peril_id (any vendor, any modelled label) just for the display name
+    LEFT JOIN (
+      SELECT DISTINCT ON (blending_factor_region_peril_id)
+             blending_factor_region_peril_id AS peril_id,
+             rollup_region_peril
+      FROM loader.main.dim_region_perils
+      ORDER BY blending_factor_region_peril_id
+    ) AS drp ON drp.peril_id = bf.region_peril_id
+  )
+  SELECT peril_id, peril_name,
+         '' AS description,
+         sub_peril, 'verisk' AS vendor, air_blend AS weight
+  FROM bf
   UNION ALL
-  SELECT region_peril_id, sub_region_peril_id, 'risklink', rms_blend
-  FROM loader.main.blending_factors
+  SELECT peril_id, peril_name,
+         '' AS description,
+         sub_peril, 'risklink' AS vendor, rms_blend AS weight
+  FROM bf
   ORDER BY peril_id, sub_peril, vendor
 ) TO 'polars/seeds/blending_weights.csv' WITH (HEADER, DELIMITER ',');
 ```
+
+If your duckdb version doesn't have `DISTINCT ON`, swap that subquery
+for `(SELECT peril_id, MIN(rollup_region_peril) AS rollup_region_peril
+FROM loader.main.dim_region_perils GROUP BY blending_factor_region_peril_id)`
+or similar.
 
 ### Recommended (silences a warning)
 
