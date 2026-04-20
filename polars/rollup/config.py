@@ -23,8 +23,8 @@ Default layout:
         │   ├── verisk/*.parquet (≈ 10 000 simulation years)
         │   └── risklink/*.parquet (≈ 100 000 simulation years)
         ├── ep_summaries/
-        │   ├── verisk/*.csv
-        │   └── risklink/*.csv
+        │   ├── verisk/        ← reference AIR comparators (xlsx or csv)
+        │   └── risklink/      ← reference RMS comparators (xlsx or csv)
         └── output/              ← Hisco parquets written here
 
 Override any path with the corresponding `ROLLUP_*` env var.
@@ -176,7 +176,7 @@ class Vendor:
     ylt_dir:         Path
     ylt_glob:        str
     ep_summary_dir:  Path
-    ep_summary_glob: str              = "*.csv"
+    ep_summary_glob: str              = "*"   # reference comparators (xlsx or csv); not a pipeline input
     flavors:         tuple[Flavor, ...] = _DEFAULT_FLAVORS
 
 

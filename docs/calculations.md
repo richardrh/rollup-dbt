@@ -32,13 +32,14 @@ split, not the legacy duckdb table. See
 | `reference.*` seeds                     | `rollup.seeds.load_all`                | done   |
 
 January used **RiskLink YLTs from a DocDB dump**; we are now using **AIR
-simulation YLTs** (`jan-rollup/air_ylt_c1.parquet` + `air_ylt_c2.parquet`).
-Those two files are halves of one dataset — `pl.scan_parquet([c1, c2])`
-(or `pl.scan_parquet("jan-rollup/air_ylt_c*.parquet")`) concatenates them
-transparently.
+simulation YLTs** (`data/ylt/verisk/air_ylt_c1.parquet` +
+`air_ylt_c2.parquet`). Those two files are halves of one dataset —
+`pl.scan_parquet([c1, c2])` (or
+`pl.scan_parquet("data/ylt/verisk/air_ylt_c*.parquet")`) concatenates
+them transparently.
 
 EP summaries are currently in excel
-(`jan-rollup/ep_summaries/rms_ep_summary.xlsx` etc.). January derived
+(`data/ep_summaries/risklink/rms_ep_summary.xlsx` etc.). January derived
 `rl_proportion` / `vk_proportion` for blending from these. The polars
 pipeline now sources blend proportions directly from
 `blending_weights.csv` — EP summaries are no longer required for the main

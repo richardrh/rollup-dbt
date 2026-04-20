@@ -1,10 +1,12 @@
 """End-to-end EP curve run against the real AIR YLT parquets.
 
-Gated on the files existing (`jan-rollup/air_ylt_c*.parquet`). Skips silently
-if the parquets aren't checked out, so the rest of the suite stays cheap.
+Gated on the files existing under `data/ylt/verisk/` (resolved from
+`config.resolve()` so `ROLLUP_YLT_VERISK_DIR` overrides are honoured).
+Skips silently if the parquets aren't checked out, so the rest of the
+suite stays cheap.
 
 What this test does:
-  1. Glob-loads every `air_ylt_*.parquet` in `jan-rollup/`.
+  1. Glob-loads every `air_ylt_*.parquet` in the configured Verisk YLT dir.
   2. Filters to `CatalogTypeCode = 'STC'` (matches january `int_vw_vk_ylt`).
   3. Projects into `NormalizedYlt` shape — without real dim tables, lob_id /
      region_peril_id are dense-ranked ints per unique (ExposureAttribute,
@@ -14,8 +16,8 @@ What this test does:
      sanity against excel totals.
   5. Writes CSV outputs to `polars/tests/outputs/`.
 
-The CSVs in `tests/outputs/` are what you diff against the excel summaries
-in `jan-rollup/ep_summaries/`. Everything in that folder is gitignored.
+The CSVs in `tests/outputs/` are what you diff against the reference RMS
+spreadsheets in `data/ep_summaries/risklink/`.
 """
 
 from __future__ import annotations
@@ -36,20 +38,18 @@ from rollup.stages.ep import ep_curve_from_ylt
 from rollup.stages.staging import load_raw_verisk_ylt
 
 
-REPO_ROOT   = Path(__file__).resolve().parents[2]
-JAN_ROLLUP  = REPO_ROOT / "jan-rollup"
 OUTPUTS_DIR = Path(__file__).resolve().parent / "outputs"
 
 VERISK = next(v for v in config.resolve().vendors if v.name == VendorName.VERISK)
 
 
 def _verisk_parquets() -> list[Path]:
-    return sorted(JAN_ROLLUP.glob(VERISK.ylt_glob))
+    return sorted(VERISK.ylt_dir.glob(VERISK.ylt_glob))
 
 
 pytestmark = pytest.mark.skipif(
     not _verisk_parquets(),
-    reason="jan-rollup/air_ylt_*.parquet not present — integration test skipped",
+    reason=f"{VERISK.ylt_dir}/{VERISK.ylt_glob} not present — integration test skipped",
 )
 
 
@@ -101,7 +101,7 @@ def _project_to_normalized(raw: pl.LazyFrame) -> pl.LazyFrame:
 
 @pytest.fixture(scope="module")
 def normalized_ylt() -> pl.LazyFrame:
-    raw = load_raw_verisk_ylt(JAN_ROLLUP, glob=VERISK.ylt_glob)
+    raw = load_raw_verisk_ylt(VERISK.ylt_dir, glob=VERISK.ylt_glob)
     return _project_to_normalized(raw)
 
 
@@ -111,7 +111,7 @@ def normalized_ylt() -> pl.LazyFrame:
 
 def test_verisk_parquet_wire_schema_matches(normalized_ylt):
     """Sanity: the parquet still has the columns we built the VK enum against."""
-    schema = pl.scan_parquet(str(JAN_ROLLUP / VERISK.ylt_glob)).collect_schema()
+    schema = pl.scan_parquet(str(VERISK.ylt_dir / VERISK.ylt_glob)).collect_schema()
     expected = set(F.RAW_VERISK_YLT.names())
     missing = expected - set(schema.names())
     assert not missing, f"raw Verisk parquet missing expected columns: {missing}"
