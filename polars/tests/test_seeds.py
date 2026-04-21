@@ -50,15 +50,10 @@ def test_populated_seeds_have_rows():
     assert bundle.fx_rates.collect().height == 6
 
 
-def test_stub_seeds_are_empty_but_valid():
-    """Header-only CSVs scan fine and produce zero-row frames.
-
-    These are the seeds the user must populate from duckdb before a real
-    production run — see polars/docs/data-requirements.md.
-    """
+def test_optional_stub_seeds_are_valid():
+    """air_events and fineart_adjustments are intentionally stub-empty but schema-valid."""
     bundle = seeds.load_all(SEEDS_DIR)
-    for name in ("perils", "analyses", "rollup_scope", "blending_weights",
-                 "air_events", "fineart_adjustments"):
+    for name in ("air_events", "fineart_adjustments"):
         assert getattr(bundle, name).collect().height == 0, f"{name} should be stub-empty"
 
 

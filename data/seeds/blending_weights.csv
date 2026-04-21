@@ -1,1 +1,11 @@
 peril_id,peril_name,description,sub_peril,vendor,weight
+1,Europe Earthquake,placeholder — replace with real weights,,verisk,0.5
+1,Europe Earthquake,placeholder — replace with real weights,,risklink,0.5
+2,Europe Flood,placeholder — replace with real weights,,verisk,0.5
+2,Europe Flood,placeholder — replace with real weights,,risklink,0.5
+3,Europe Winter Storm,placeholder — replace with real weights,,verisk,0.5
+3,Europe Winter Storm,placeholder — replace with real weights,,risklink,0.5
+4,UK Flood,placeholder — replace with real weights,,verisk,0.5
+4,UK Flood,placeholder — replace with real weights,,risklink,0.5
+5,UK Winter Storm,placeholder — replace with real weights,,verisk,0.5
+5,UK Winter Storm,placeholder — replace with real weights,,risklink,0.5
