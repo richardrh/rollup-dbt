@@ -1,0 +1,12 @@
+# Local pipeline configuration — copy to config.py (gitignored, never committed).
+# Values here are used when the corresponding ROLLUP_* env var is not set.
+
+# SQL Server target — Windows auth, no password needed.
+# The pipeline writes one table per Hisco variant alongside the parquet output.
+# Comment out or leave as None to skip SQL Server (parquet-only run).
+MSSQL_CONN_STR = "mssql+pyodbc://your-server/your-database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
+
+# Optional path overrides
+# ROLLUP_DATA_DIR    = r"C:\path\to\data"
+# ROLLUP_OUTPUT_DIR  = r"C:\path\to\output"
+# ROLLUP_SEEDS_DIR   = r"C:\path\to\seeds"

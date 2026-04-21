@@ -28,7 +28,7 @@ Default layout:
         └── output/              ← Hisco parquets written here
 
 Override any path with the corresponding `ROLLUP_*` env var, or set them
-in a `.env` file at the repo root (gitignored — never committed).
+in `config.py` at the repo root (gitignored — never committed).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from dotenv import load_dotenv
+import importlib.util
 
 import polars as pl
 
@@ -229,15 +229,34 @@ class Config:
         raise KeyError(f"unknown vendor: {name!r}")
 
 
+def _load_local_config():
+    """Import `config.py` from the repo root if it exists, else return None."""
+    path = REPO_ROOT / "config.py"
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("_rollup_local_config", path)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def resolve() -> Config:
-    """Build a `Config` from env vars (or `.env` file), falling back to repo defaults."""
-    load_dotenv(REPO_ROOT / ".env", override=False)   # no-op if file absent
+    """Build a `Config` from `config.py` or env vars, falling back to repo defaults.
+
+    Values in `config.py` are used when the corresponding env var is absent.
+    Env vars always win (useful for CI overrides).
+    """
+    _cfg = _load_local_config()
+
+    def _getval(var: EnvVar, attr: str) -> str | None:
+        return os.getenv(var) or (getattr(_cfg, attr, None) if _cfg else None)
+
     data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
     return Config(
         seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),
         output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),
         vendors=(_verisk(data_root), _risklink(data_root)),
-        mssql_conn_str=os.getenv(EnvVar.MSSQL_CONN_STR),
+        mssql_conn_str=_getval(EnvVar.MSSQL_CONN_STR, "MSSQL_CONN_STR"),
     )
 
 

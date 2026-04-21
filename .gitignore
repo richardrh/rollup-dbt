@@ -21,8 +21,8 @@ site/
 
 .data/risklink
 
-# Environment variables (never commit)
-.env
+# Local config (never commit — contains connection strings etc.)
+config.py
 .dual-graph/
 
 # Synthetic test fixture output (regenerated on each pytest run)
