@@ -103,17 +103,20 @@ class BlendingWeightsCol(StrEnum):
 
 
 class RollupScopeCol(StrEnum):
-    """Which (lob_id, vendor, analysis_id) triples are in the official rollup.
+    """Which (modelled_lob, vendor, analysis_id) triples are in the official rollup.
 
     The grain is `analysis_id` — NOT `peril_id` — because two analyses can
     share a peril_id (e.g. `UK_WSSS` and `UK_WSSS_GCAdj` are both peril 206
     but only ONE is official per LOB). Replaces the
     `applies_to_{mga,prop,fa}` flag fan-out of `dim_region_perils`.
+
+    `modelled_lob` is the natural key from `lobs.csv` — readable without a
+    join, unlike the opaque integer `lob_id`.
     """
-    LOB_ID      = "lob_id"
-    VENDOR      = "vendor"        # "verisk" | "risklink"
-    ANALYSIS_ID = "analysis_id"   # the modelled_label / wire label per vendor
-    IN_ROLLUP   = "in_rollup"
+    MODELLED_LOB = "modelled_lob"
+    VENDOR       = "vendor"        # "verisk" | "risklink"
+    ANALYSIS_ID  = "analysis_id"   # the modelled_label / wire label per vendor
+    IN_ROLLUP    = "in_rollup"
 
 
 class RefLobsCol(StrEnum):
@@ -179,6 +182,12 @@ class RefAirEventsCol(StrEnum):
     EVENT_ID = "event_id"
     MODEL_ID = "model_id"
     EVENT    = "event"
+    YEAR     = "year"
+    DAY      = "day"
+
+
+class RefRisklinkEventsCol(StrEnum):
+    EVENT_ID = "event_id"
     YEAR     = "year"
     DAY      = "day"
 

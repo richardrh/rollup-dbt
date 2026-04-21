@@ -33,6 +33,7 @@ from rollup.schemas.columns import RefFineartAdjCol as FA
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.schemas.columns import RollupScopeCol as RS
 from rollup.schemas.columns import StgRisklinkEpCol as REP
 from rollup.schemas.columns import StgVeriskEpCol as VEP
@@ -72,16 +73,16 @@ ANALYSES = [
     (VendorName.RISKLINK, "502",    "EU_FL",  216, 2),
 ]
 
-# Every (lob, vendor, modelled_label) the YLT could carry — all in scope.
+# Every (modelled_lob, vendor, modelled_label) the YLT could carry — all in scope.
 # `analysis_id` here is the modelled_label (what staging exposes as
 # MODELLED_REGION_PERIL), not the raw RiskLink integer anlsid.
 ROLLUP_SCOPE = [
-    (1, VendorName.VERISK,   "EU_WS", True),
-    (1, VendorName.VERISK,   "EU_FL", True),
-    (2, VendorName.VERISK,   "EU_WS", True),
-    (2, VendorName.VERISK,   "EU_FL", True),
-    (1, VendorName.RISKLINK, "EU_WS", True),
-    (2, VendorName.RISKLINK, "EU_FL", True),
+    ("HIC_HH_UK",    VendorName.VERISK,   "EU_WS", True),
+    ("HIC_HH_UK",    VendorName.VERISK,   "EU_FL", True),
+    ("HSA_FA_EU_FR", VendorName.VERISK,   "EU_WS", True),
+    ("HSA_FA_EU_FR", VendorName.VERISK,   "EU_FL", True),
+    ("HIC_HH_UK",    VendorName.RISKLINK, "EU_WS", True),
+    ("HSA_FA_EU_FR", VendorName.RISKLINK, "EU_FL", True),
 ]
 
 # Simple 50/50 blend on both perils. sub_peril=None → applies to all sub-perils.
@@ -132,52 +133,54 @@ AIR_EVENTS: list[tuple[int, int, int, int, int]] = []
 # --------------------------------------------------------------------------- #
 
 def _mkdirs() -> None:
-    for p in [SEEDS, YLT_V, YLT_R, EP_V, EP_R, OUTPUT]:
+    for p in [
+        SEEDS / "business", SEEDS / "vor", SEEDS / "adjustments", SEEDS / "validation",
+        YLT_V, YLT_R, EP_V, EP_R, OUTPUT,
+    ]:
         p.mkdir(parents=True, exist_ok=True)
 
 
 def _write_seeds() -> None:
+    # business/
     pl.DataFrame(LOBS, orient="row", schema=[
         LB.LOB_ID, LB.MODELLED_LOB, LB.ROLLUP_LOB, LB.LOB_TYPE,
         LB.CDS_CAT_CLASS_NAME, LB.OFFICE, LB.CLASS,
-    ]).write_csv(SEEDS / "lobs.csv")
+    ]).write_csv(SEEDS / "business/lobs.csv")
 
     pl.DataFrame(PERILS, orient="row", schema=[
         P.PERIL_ID, P.NAME, P.REGION, P.PERIL_FAMILY,
-    ]).write_csv(SEEDS / "perils.csv")
+    ]).write_csv(SEEDS / "business/perils.csv")
 
     pl.DataFrame(ANALYSES, orient="row", schema=[
         AN.VENDOR, AN.ANALYSIS_ID, AN.MODELLED_LABEL, AN.PERIL_ID, AN.LOB_ID,
-    ]).write_csv(SEEDS / "analyses.csv")
+    ]).write_csv(SEEDS / "business/analyses.csv")
 
     pl.DataFrame(ROLLUP_SCOPE, orient="row", schema=[
-        RS.LOB_ID, RS.VENDOR, RS.ANALYSIS_ID, RS.IN_ROLLUP,
-    ]).write_csv(SEEDS / "rollup_scope.csv")
+        RS.MODELLED_LOB, RS.VENDOR, RS.ANALYSIS_ID, RS.IN_ROLLUP,
+    ]).write_csv(SEEDS / "business/rollup_scope.csv")
 
+    # vor/
     pl.DataFrame(BLENDING_WEIGHTS, orient="row", schema=[
         BW.PERIL_ID, BW.PERIL_NAME, BW.DESCRIPTION, BW.SUB_PERIL, BW.VENDOR, BW.WEIGHT,
-    ]).write_csv(SEEDS / "blending_weights.csv")
+    ]).write_csv(SEEDS / "vor/blending_weights.csv")
 
     pl.DataFrame(FORECAST_FACTORS, orient="row", schema=[
         FF.CLASS, FF.OFFICE, FF.OFFICE_ISO2, FF.BASE_DATE, FF.FORECAST_DATE, FF.FACTOR,
-    ]).write_csv(SEEDS / "forecast_factors.csv")
+    ]).write_csv(SEEDS / "vor/forecast_factors.csv")
 
     pl.DataFrame(FX_RATES, orient="row", schema=[
         FX.CURRENCY_CODE, FX.TARGET_CURRENCY, FX.RATE_DATE, FX.RATE,
-    ]).write_csv(SEEDS / "fx_rates.csv")
+    ]).write_csv(SEEDS / "vor/fx_rates.csv")
 
     pl.DataFrame(EUWS_ROWS, orient="row", schema=[
         EU.MODEL_EVENT_ID, EU.OCC_YEAR, EU.FACTOR,
-    ]).write_csv(SEEDS / "euws_rate_factors.csv")
+    ]).write_csv(SEEDS / "vor/euws_rate_factors.csv")
 
+    # adjustments/
     pl.DataFrame(EUWS_RANK_OVERRIDES, orient="row", schema=[
         EO.ROLLUP_LOB, EO.MAX_RANK, EO.FACTOR,
-    ]).write_csv(SEEDS / "euws_rank_overrides.csv")
+    ]).write_csv(SEEDS / "adjustments/euws_rank_overrides.csv")
 
-    # fineart_adjustments is a header-only stub in the synthetic bundle — the
-    # FA LOB is included but we don't exercise gross-to-net adjustment math in
-    # the e2e (factor=1.0 via fill_null is the right behaviour for non-FA rows).
-    # air_events is populated by `_write_air_events` after the YLTs are known.
     pl.DataFrame(schema={
         FA.LOB_ID:              pl.Int64,
         FA.REGION_PERIL_ID:     pl.Int64,
@@ -185,7 +188,14 @@ def _write_seeds() -> None:
         FA.ROLLUP_REGION_PERIL: pl.String,
         FA.AAL_FACTOR:          pl.Float64,
         FA.TAIL_FACTOR:         pl.Float64,
-    }).write_csv(SEEDS / "fineart_adjustments.csv")
+    }).write_csv(SEEDS / "adjustments/fineart_adjustments.csv")
+
+    # validation/ stubs — air_events populated by _write_air_events after YLTs are known
+    pl.DataFrame(schema={
+        RLE.EVENT_ID: pl.Int64,
+        RLE.YEAR:     pl.Int64,
+        RLE.DAY:      pl.Int64,
+    }).write_csv(SEEDS / "validation/risklink_events.csv")
 
 
 def _write_verisk_ylt() -> list[tuple[int, int, int]]:
@@ -265,7 +275,7 @@ def _write_air_events(verisk_triples: list[tuple[int, int, int]]) -> None:
     pl.DataFrame(rows, schema={
         AE.EVENT_ID: pl.Int64, AE.MODEL_ID: pl.Int64, AE.EVENT: pl.Int64,
         AE.YEAR: pl.Int64, AE.DAY: pl.Int64,
-    }).write_csv(SEEDS / "air_events.csv")
+    }).write_csv(SEEDS / "validation/air_events.csv")
 
 
 def _write_ep_summaries() -> None:

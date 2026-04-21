@@ -45,22 +45,25 @@ class SeedSpec:
 
 
 SEEDS: list[SeedSpec] = [
-    # ----- LOB + peril dimension (the OPTIMAL split) -----
-    SeedSpec("lobs",             "lobs.csv",             F.REF_LOBS),
-    SeedSpec("perils",           "perils.csv",           F.PERILS),
-    SeedSpec("analyses",         "analyses.csv",         F.ANALYSES),
-    SeedSpec("rollup_scope",     "rollup_scope.csv",     F.ROLLUP_SCOPE),
-    SeedSpec("blending_weights", "blending_weights.csv", F.BLENDING_WEIGHTS),
+    # ----- business: LOB + peril dimension -----
+    SeedSpec("lobs",             "business/lobs.csv",             F.REF_LOBS),
+    SeedSpec("perils",           "business/perils.csv",           F.PERILS),
+    SeedSpec("analyses",         "business/analyses.csv",         F.ANALYSES),
+    SeedSpec("rollup_scope",     "business/rollup_scope.csv",     F.ROLLUP_SCOPE),
 
-    # ----- per-vendor adjustment data -----
-    SeedSpec("forecast_factors",    "forecast_factors.csv",    F.REF_FORECAST_FACTORS),
-    SeedSpec("fx_rates",            "fx_rates.csv",            F.REF_FX_RATES),
-    SeedSpec("euws_rate_factors",   "euws_rate_factors.csv",   F.REF_EUWS_RATE_FACTORS),
-    SeedSpec("euws_rank_overrides", "euws_rank_overrides.csv", F.REF_EUWS_RANK_OVERRIDES),
+    # ----- vor: vendor / blending / FX / forecast -----
+    SeedSpec("blending_weights",  "vor/blending_weights.csv",  F.BLENDING_WEIGHTS),
+    SeedSpec("forecast_factors",  "vor/forecast_factors.csv",  F.REF_FORECAST_FACTORS),
+    SeedSpec("fx_rates",          "vor/fx_rates.csv",          F.REF_FX_RATES),
+    SeedSpec("euws_rate_factors", "vor/euws_rate_factors.csv", F.REF_EUWS_RATE_FACTORS),
 
-    # ----- event / adjustment reference -----
-    SeedSpec("air_events",          "air_events.csv",          F.REF_AIR_EVENTS),
-    SeedSpec("fineart_adjustments", "fineart_adjustments.csv", F.REF_FINEART_ADJ),
+    # ----- adjustments: fine-art + EUWS rank overrides -----
+    SeedSpec("euws_rank_overrides", "adjustments/euws_rank_overrides.csv", F.REF_EUWS_RANK_OVERRIDES),
+    SeedSpec("fineart_adjustments", "adjustments/fineart_adjustments.csv", F.REF_FINEART_ADJ),
+
+    # ----- validation: event catalogues (stubs until real data provided) -----
+    SeedSpec("air_events",       "validation/air_events.csv",       F.REF_AIR_EVENTS),
+    SeedSpec("risklink_events",  "validation/risklink_events.csv",  F.REF_RISKLINK_EVENTS),
 ]
 
 
@@ -101,8 +104,9 @@ class Seeds:
     fx_rates:            pl.LazyFrame
     euws_rate_factors:   pl.LazyFrame
     euws_rank_overrides: pl.LazyFrame
-    air_events:          pl.LazyFrame
     fineart_adjustments: pl.LazyFrame
+    air_events:          pl.LazyFrame
+    risklink_events:     pl.LazyFrame
 
 
 def load_all(seeds_dir: Path) -> Seeds:

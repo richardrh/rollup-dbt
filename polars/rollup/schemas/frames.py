@@ -22,6 +22,7 @@ from .columns import (
     RefForecastFactorsCol,
     RefFxRatesCol,
     RefLobsCol,
+    RefRisklinkEventsCol,
     RollupScopeCol,
     StgRisklinkEpCol,
     StgVeriskEpCol,
@@ -88,10 +89,10 @@ BLENDING_WEIGHTS: pl.Schema = pl.Schema({
 })
 
 ROLLUP_SCOPE: pl.Schema = pl.Schema({
-    RollupScopeCol.LOB_ID:      pl.Int64,
-    RollupScopeCol.VENDOR:      pl.String,
-    RollupScopeCol.ANALYSIS_ID: pl.String,
-    RollupScopeCol.IN_ROLLUP:   pl.Boolean,
+    RollupScopeCol.MODELLED_LOB: pl.String,
+    RollupScopeCol.VENDOR:       pl.String,
+    RollupScopeCol.ANALYSIS_ID:  pl.String,
+    RollupScopeCol.IN_ROLLUP:    pl.Boolean,
 })
 
 REF_LOBS: pl.Schema = pl.Schema({
@@ -138,6 +139,12 @@ REF_AIR_EVENTS: pl.Schema = pl.Schema({
     RefAirEventsCol.EVENT:    pl.Int64,
     RefAirEventsCol.YEAR:     pl.Int64,
     RefAirEventsCol.DAY:      pl.Int64,
+})
+
+REF_RISKLINK_EVENTS: pl.Schema = pl.Schema({
+    RefRisklinkEventsCol.EVENT_ID: pl.Int64,
+    RefRisklinkEventsCol.YEAR:     pl.Int64,
+    RefRisklinkEventsCol.DAY:      pl.Int64,
 })
 
 REF_FINEART_ADJ: pl.Schema = pl.Schema({

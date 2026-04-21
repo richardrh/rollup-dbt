@@ -220,7 +220,7 @@ def normalize_verisk_ylt(
 # --------------------------------------------------------------------------- #
 
 def apply_rollup_scope(ylt: pl.LazyFrame, rollup_scope: pl.LazyFrame) -> pl.LazyFrame:
-    """Inner-join `rollup_scope` to keep only (lob_id, vendor, analysis_id)
+    """Inner-join `rollup_scope` to keep only (modelled_lob, vendor, analysis_id)
     triples whose `in_rollup` is True. Lives in staging because it is a
     gate, not a factor — produces no new column, only filters rows.
 
@@ -235,18 +235,18 @@ def apply_rollup_scope(ylt: pl.LazyFrame, rollup_scope: pl.LazyFrame) -> pl.Lazy
         rollup_scope
         .filter(pl.col(RS.IN_ROLLUP))
         .select(
-            pl.col(RS.LOB_ID),
+            pl.col(RS.MODELLED_LOB),
             pl.col(RS.VENDOR),
             pl.col(RS.ANALYSIS_ID).alias(Y.MODELLED_REGION_PERIL),
         )
     )
-    # Keyed on the analysis label (string), NOT region_peril_id (int): two
-    # analyses can share a peril_id (e.g. UK_WSSS and UK_WSSS_GCAdj are both
-    # peril 206 but only one is official per LOB). See RollupScopeCol docstring.
+    # Keyed on (modelled_lob, vendor, analysis_label) — readable without a join
+    # to lobs.csv. Two analyses can share a peril_id (e.g. UK_WSSS and
+    # UK_WSSS_GCAdj are both peril 206 but only one is official per LOB).
     out = ylt.join(
         in_scope,
-        left_on=[Y.LOB_ID, Y.VENDOR, Y.MODELLED_REGION_PERIL],
-        right_on=[RS.LOB_ID, RS.VENDOR, Y.MODELLED_REGION_PERIL],
+        left_on=[Y.MODELLED_LOB, Y.VENDOR, Y.MODELLED_REGION_PERIL],
+        right_on=[RS.MODELLED_LOB, RS.VENDOR, Y.MODELLED_REGION_PERIL],
         how="inner",
     )
     log.info("rollup_scope: filtered YLT to in_rollup=True triples")

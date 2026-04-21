@@ -144,49 +144,49 @@ from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.stages.staging import apply_rollup_scope
 
 
-def _scope(*rows: tuple[int, VendorName, str, bool]) -> pl.LazyFrame:
+def _scope(*rows: tuple[str, VendorName, str, bool]) -> pl.LazyFrame:
     return pl.DataFrame({
-        RS.LOB_ID:      [r[0] for r in rows],
-        RS.VENDOR:      [r[1] for r in rows],
-        RS.ANALYSIS_ID: [r[2] for r in rows],
-        RS.IN_ROLLUP:   [r[3] for r in rows],
+        RS.MODELLED_LOB: [r[0] for r in rows],
+        RS.VENDOR:       [r[1] for r in rows],
+        RS.ANALYSIS_ID:  [r[2] for r in rows],
+        RS.IN_ROLLUP:    [r[3] for r in rows],
     }, schema={
-        RS.LOB_ID:      pl.Int64,
-        RS.VENDOR:      pl.String,
-        RS.ANALYSIS_ID: pl.String,
-        RS.IN_ROLLUP:   pl.Boolean,
+        RS.MODELLED_LOB: pl.String,
+        RS.VENDOR:       pl.String,
+        RS.ANALYSIS_ID:  pl.String,
+        RS.IN_ROLLUP:    pl.Boolean,
     }).lazy()
 
 
-def _scoped_ylt(label: str, *, lob_id: int = 1,
+def _scoped_ylt(label: str, *, modelled_lob: str = "HIC_HH_UK",
                 vendor: VendorName = VendorName.VERISK) -> pl.LazyFrame:
-    """Minimal post-staging YLT row with the (lob_id, vendor, modelled_label)
+    """Minimal post-staging YLT row with the (modelled_lob, vendor, modelled_label)
     triple that apply_rollup_scope joins on."""
     return pl.DataFrame({
-        Y.LOB_ID:                [lob_id],
+        Y.MODELLED_LOB:          [modelled_lob],
         Y.VENDOR:                [vendor],
         Y.MODELLED_REGION_PERIL: [label],
     }, schema={
-        Y.LOB_ID:                pl.Int64,
+        Y.MODELLED_LOB:          pl.String,
         Y.VENDOR:                pl.String,
         Y.MODELLED_REGION_PERIL: pl.String,
     }).lazy()
 
 
 def test_apply_rollup_scope_keeps_in_scope_rows():
-    ylt   = _scoped_ylt("EU_WS", lob_id=1, vendor=VendorName.VERISK)
-    scope = _scope((1, VendorName.VERISK, "EU_WS", True))
+    ylt   = _scoped_ylt("EU_WS", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
+    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", True))
     assert apply_rollup_scope(ylt, scope).collect().height == 1
 
 
 def test_apply_rollup_scope_drops_out_of_scope_rows():
-    ylt   = _scoped_ylt("EU_WS", lob_id=1, vendor=VendorName.VERISK)
-    scope = _scope((1, VendorName.VERISK, "EU_WS", False))
+    ylt   = _scoped_ylt("EU_WS", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
+    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", False))
     assert apply_rollup_scope(ylt, scope).collect().height == 0
 
 
 def test_apply_rollup_scope_drops_unlisted_rows():
-    """A (lob, vendor, analysis) triple absent from rollup_scope is dropped."""
-    ylt   = _scoped_ylt("EU_FL", lob_id=1, vendor=VendorName.VERISK)
-    scope = _scope((1, VendorName.VERISK, "EU_WS", True))   # only EU_WS in scope
+    """A (modelled_lob, vendor, analysis) triple absent from rollup_scope is dropped."""
+    ylt   = _scoped_ylt("EU_FL", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
+    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", True))   # only EU_WS in scope
     assert apply_rollup_scope(ylt, scope).collect().height == 0

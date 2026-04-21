@@ -80,7 +80,9 @@ def _cfg_with_seeds(tmp_path: Path, populate: bool = True) -> config.Config:
     if populate:
         real_seeds = config.REPO_ROOT / "data" / "seeds"
         for spec in SEEDS:
-            shutil.copy(real_seeds / spec.filename, seeds_dir / spec.filename)
+            dest = seeds_dir / spec.filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(real_seeds / spec.filename, dest)
     return config.Config(
         seeds_dir=seeds_dir,
         output_dir=tmp_path / "out",
@@ -121,7 +123,7 @@ def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
     """
     cfg = _cfg_with_seeds(tmp_path)
     # Blank rollup_scope to header-only — still schema-valid, but empty
-    (cfg.seeds_dir / "rollup_scope.csv").write_text("lob_id,vendor,analysis_id,in_rollup\n")
+    (cfg.seeds_dir / "business/rollup_scope.csv").write_text("modelled_lob,vendor,analysis_id,in_rollup\n")
     plan = config.build_plan(cfg)
     empty_required = {
         c.label for c in plan.seeds_section.checks
@@ -136,7 +138,7 @@ def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
 
 def test_missing_seed_flagged(tmp_path):
     cfg = _cfg_with_seeds(tmp_path)
-    (cfg.seeds_dir / "lobs.csv").unlink()
+    (cfg.seeds_dir / "business/lobs.csv").unlink()
     plan = config.build_plan(cfg)
     lobs_check = next(c for c in plan.seeds_section.checks if c.label == "lobs")
     assert not lobs_check.ok
@@ -147,7 +149,7 @@ def test_missing_seed_flagged(tmp_path):
 def test_seed_schema_drift_flagged(tmp_path):
     """Rename a column in a seed CSV — plan reports 'unexpected=[...]' or 'missing=[...]'."""
     cfg = _cfg_with_seeds(tmp_path)
-    bad_file = cfg.seeds_dir / "lobs.csv"
+    bad_file = cfg.seeds_dir / "business/lobs.csv"
     content = bad_file.read_text().splitlines()
     content[0] = content[0].replace("lob_id", "renamed_col")
     bad_file.write_text("\n".join(content))
