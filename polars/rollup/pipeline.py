@@ -395,8 +395,8 @@ def _write_to_sql(df: pl.DataFrame, table_name: str, conn_str: str) -> None:
     and recreated on every run — no DDL management required. Set
     `ROLLUP_MSSQL_CONN_STR` to enable; absent = silent skip.
 
-    Connection string format:
-        mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server
+    Connection string format (Windows auth — no credentials needed):
+        mssql+pyodbc://server/database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes
     """
     df.write_database(
         table_name=table_name,

@@ -393,11 +393,13 @@ def format_plan(plan: Plan) -> str:
     lines.append(f"YLTs:  {ylt_ready}/{len(plan.config.vendors)} vendors have data.")
     lines.append(f"EP summaries: {ep_ready}/{len(plan.config.vendors)} vendors have data.")
     if plan.config.mssql_conn_str:
-        # Redact credentials from display: show up to the @ only
+        # Redact user:pass@ if present (SQL auth); Windows auth strings have no credentials
         display = plan.config.mssql_conn_str
-        if "@" in display:
+        if "://" in display:
             scheme, rest = display.split("://", 1)
-            display = f"{scheme}://...@{rest.split('@', 1)[1]}"
+            if "@" in rest and not rest.startswith("@"):
+                rest = f"...@{rest.split('@', 1)[1]}"
+            display = f"{scheme}://{rest}"
         lines.append(f"SQL Server: {display}")
     else:
         lines.append("SQL Server: not configured (parquet-only run)")
