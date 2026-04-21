@@ -6,3 +6,420 @@ verisk,EU_WS_GCAdj,EU_WS_GCAdj,3,
 verisk,UK_FL,UK_FL,4,
 verisk,UK_WSSS,UK_WSSS,5,
 verisk,UK_WSSS_GCAdj,UK_WSSS_GCAdj,5,
+risklink,1,EU FL HD,2,38
+risklink,2,EUxESGB EQ Adj,1,38
+risklink,3,GB FL HD,4,29
+risklink,4,GB WSSS,5,29
+risklink,5,EUxESGB EQ Adj,1,8
+risklink,6,GB FL HD,4,8
+risklink,7,EU FL HD,2,17
+risklink,8,GB FL HD,4,17
+risklink,9,GB FL HD,4,31
+risklink,10,GB WSSS,5,3
+risklink,11,DE FL,2,54
+risklink,12,EUxGB WS CVV (FlrArea),3,54
+risklink,13,EUxGB WS,3,16
+risklink,14,DE FL,2,44
+risklink,15,GB WSSS (FlrArea),5,25
+risklink,16,EUxESGB EQ Adj,1,21
+risklink,17,GB FL,4,41
+risklink,18,GB FL HD,4,41
+risklink,19,DE FL,2,39
+risklink,20,EUxGB WS CVV,3,39
+risklink,21,EU FL HD,2,62
+risklink,22,GB FL HD,4,11
+risklink,23,DE FL,2,7
+risklink,24,EUxGB WS,3,7
+risklink,25,EU FL HD,2,42
+risklink,26,EUxESGB EQ Adj,1,14
+risklink,27,GB WSSS,5,14
+risklink,28,EU FL HD,2,6
+risklink,29,BE FL,2,37
+risklink,30,GB FL,4,37
+risklink,31,EUxGB WS,3,13
+risklink,32,EUxESGB EQ,1,58
+risklink,33,EUxESGB EQ Adj,1,15
+risklink,34,EUxESGB EQ Adj,1,24
+risklink,35,EUxGB WS,3,24
+risklink,36,EUxESGB EQ,1,26
+risklink,37,EUxESGB EQ Adj,1,26
+risklink,38,EUxESGB EQ,1,4
+risklink,39,GB FL HD,4,10
+risklink,40,EUxESGB EQ,1,32
+risklink,41,EUxGB WS CVV,3,32
+risklink,42,EUxESGB EQ,1,43
+risklink,43,EUxGB WS CVV,3,43
+risklink,44,EUxESGB EQ Adj,1,47
+risklink,45,EUxESGB EQ Adj,1,55
+risklink,46,EUxESGB EQ Adj,1,20
+risklink,47,EUxGB WS,3,20
+risklink,48,EUxESGB EQ Adj,1,48
+risklink,49,EUxGB WS,3,38
+risklink,50,GB FL HD,4,60
+risklink,51,GB FL,4,29
+risklink,52,EU FL HD,2,8
+risklink,53,EUxESGB EQ,1,3
+risklink,54,GB WSSS,5,38
+risklink,55,GB WSSS CVV (FlrArea),5,3
+risklink,56,GB WSSS (FlrArea),5,38
+risklink,57,BE FL,2,54
+risklink,58,EU FL HD,2,16
+risklink,59,BE FL,2,25
+risklink,60,GB FL HD,4,25
+risklink,61,EUxGB WS CVV (FlrArea),3,21
+risklink,62,EUxGB WS,3,8
+risklink,63,GB WSSS,5,41
+risklink,64,EUxESGB EQ,1,7
+risklink,65,GB FL,4,7
+risklink,66,GB WSSS CVV,5,7
+risklink,67,EUxESGB EQ Adj,1,52
+risklink,68,EUxGB WS CVV (FlrArea),3,3
+risklink,69,GB WSSS (FlrArea),5,3
+risklink,70,GB FL HD,4,52
+risklink,71,EUxESGB EQ Adj,1,54
+risklink,72,EUxESGB EQ,1,16
+risklink,73,EUxESGB EQ Adj,1,16
+risklink,74,EUxGB WS (FlrArea),3,16
+risklink,75,EUxESGB EQ,1,25
+risklink,76,EUxGB WS,3,49
+risklink,77,GB FL,4,21
+risklink,78,EUxESGB EQ Adj,1,41
+risklink,79,EUxGB WS CVV,3,6
+risklink,80,GB FL,4,39
+risklink,81,EUxESGB EQ Adj,1,37
+risklink,82,BE FL,2,11
+risklink,83,GB FL HD,4,37
+risklink,84,GB WSSS CVV,5,52
+risklink,85,GB WSSS CVV (FlrArea),5,37
+risklink,86,EUxGB WS,3,6
+risklink,87,EUxESGB EQ,1,51
+risklink,88,EUxGB WS (FlrArea),3,13
+risklink,89,GB WSSS (FlrArea),5,51
+risklink,90,EUxESGB EQ Adj,1,57
+risklink,91,GB WSSS,5,57
+risklink,92,BE FL,2,1
+risklink,93,EU FL HD,2,15
+risklink,94,EUxGB WS (FlrArea),3,15
+risklink,95,EUxGB WS CVV (FlrArea),3,15
+risklink,96,GB FL,4,15
+risklink,97,GB WSSS,5,15
+risklink,98,EUxGB WS CVV,3,5
+risklink,99,EUxESGB EQ Adj,1,1
+risklink,100,EU FL HD,2,45
+risklink,101,EUxGB WS CVV,3,24
+risklink,102,EU FL HD,2,2
+risklink,103,BE FL,2,4
+risklink,104,EUxGB WS,3,32
+risklink,105,GB FL HD,4,1
+risklink,106,GB WSSS CVV,5,43
+risklink,107,EUxGB WS CVV (FlrArea),3,16
+risklink,108,EUxESGB EQ Adj,1,44
+risklink,109,EUxGB WS (FlrArea),3,25
+risklink,110,EUxESGB EQ,1,47
+risklink,111,GB WSSS CVV (FlrArea),5,1
+risklink,112,EUxGB WS (FlrArea),3,20
+risklink,113,BE FL,2,41
+risklink,114,EUxGB WS (FlrArea),3,48
+risklink,115,GB FL,4,34
+risklink,116,GB FL HD,4,39
+risklink,117,EUxGB WS (FlrArea),3,30
+risklink,118,GB WSSS CVV,5,39
+risklink,119,EUxESGB EQ Adj,1,7
+risklink,120,GB WSSS,5,58
+risklink,121,EUxGB WS CVV,3,7
+risklink,122,GB WSSS,5,7
+risklink,123,BE FL,2,8
+risklink,124,EUxGB WS CVV,3,52
+risklink,125,DE FL,2,8
+risklink,126,EUxESGB EQ Adj,1,49
+risklink,127,DE FL,2,4
+risklink,128,EUxESGB EQ,1,8
+risklink,129,DE FL,2,3
+risklink,130,EUxGB WS CVV,3,49
+risklink,131,EUxGB WS,3,4
+risklink,132,EUxESGB EQ Adj,1,3
+risklink,133,GB FL,4,3
+risklink,134,GB FL HD,4,3
+risklink,135,EUxGB WS CVV,3,14
+risklink,136,EUxGB WS (FlrArea),3,54
+risklink,137,EUxGB WS CVV,3,4
+risklink,138,GB FL HD,4,14
+risklink,139,GB WSSS,5,51
+risklink,140,GB WSSS,5,54
+risklink,141,EUxESGB EQ,1,44
+risklink,142,GB WSSS CVV (FlrArea),5,51
+risklink,143,EUxESGB EQ Adj,1,32
+risklink,144,EUxGB WS,3,40
+risklink,145,EUxGB WS (FlrArea),3,40
+risklink,146,EU FL HD,2,59
+risklink,147,EUxGB WS (FlrArea),3,59
+risklink,148,EUxGB WS CVV (FlrArea),3,44
+risklink,149,EU FL HD,2,25
+risklink,150,EUxGB WS (FlrArea),3,21
+risklink,151,EU FL HD,2,13
+risklink,152,GB FL HD,4,21
+risklink,153,EU FL HD,2,41
+risklink,154,EUxGB WS,3,39
+risklink,155,GB FL,4,13
+risklink,156,DE FL,2,11
+risklink,157,EUxESGB EQ,1,57
+risklink,158,EU FL HD,2,52
+risklink,159,EUxGB WS (FlrArea),3,57
+risklink,160,EU FL HD,2,49
+risklink,161,GB WSSS,5,1
+risklink,162,BE FL,2,58
+risklink,163,DE FL,2,58
+risklink,164,GB FL,4,49
+risklink,165,GB WSSS (FlrArea),5,58
+risklink,166,GB WSSS,5,49
+risklink,167,EUxESGB EQ,1,6
+risklink,168,GB FL,4,8
+risklink,169,EU FL HD,2,31
+risklink,170,EUxESGB EQ,1,54
+risklink,171,EUxESGB EQ,1,37
+risklink,172,EUxGB WS,3,44
+risklink,173,EUxGB WS (FlrArea),3,44
+risklink,174,EUxGB WS,3,15
+risklink,175,EUxGB WS CVV (FlrArea),3,38
+risklink,176,EUxGB WS (FlrArea),3,37
+risklink,177,DE FL,2,33
+risklink,178,EUxESGB EQ Adj,1,25
+risklink,179,EUxGB WS CVV (FlrArea),3,37
+risklink,180,EUxGB WS,3,25
+risklink,181,EUxGB WS CVV,3,8
+risklink,182,EUxGB WS (FlrArea),3,33
+risklink,183,DE FL,2,51
+risklink,184,EUxGB WS,3,21
+risklink,185,GB FL HD,4,13
+risklink,186,EUxGB WS CVV (FlrArea),3,33
+risklink,187,EUxGB WS,3,54
+risklink,188,GB WSSS (FlrArea),5,21
+risklink,189,EU FL HD,2,1
+risklink,190,GB FL HD,4,38
+risklink,191,GB WSSS CVV,5,60
+risklink,192,GB WSSS CVV (FlrArea),5,15
+risklink,193,GB WSSS CVV (FlrArea),5,21
+risklink,194,EUxESGB EQ Adj,1,33
+risklink,195,GB WSSS (FlrArea),5,29
+risklink,196,GB WSSS CVV (FlrArea),5,54
+risklink,197,GB WSSS CVV (FlrArea),5,29
+risklink,198,GB WSSS,5,25
+risklink,199,GB WSSS,5,8
+risklink,200,GB WSSS CVV (FlrArea),5,25
+risklink,201,EUxESGB EQ,1,5
+risklink,202,GB WSSS CVV,5,41
+risklink,203,EUxGB WS CVV,3,56
+risklink,204,EU FL HD,2,39
+risklink,205,EUxESGB EQ Adj,1,4
+risklink,206,GB WSSS CVV,5,8
+risklink,207,EU FL HD,2,10
+risklink,208,DE FL,2,25
+risklink,209,GB WSSS,5,21
+risklink,210,GB FL,4,25
+risklink,211,EUxESGB EQ,1,41
+risklink,212,EUxESGB EQ,1,28
+risklink,213,EUxGB WS CVV,3,41
+risklink,214,GB WSSS,5,43
+risklink,215,EUxESGB EQ,1,39
+risklink,216,GB FL HD,4,46
+risklink,217,EUxESGB EQ Adj,1,11
+risklink,218,EUxGB WS (FlrArea),3,47
+risklink,219,GB WSSS,5,11
+risklink,220,GB FL,4,4
+risklink,221,GB FL HD,4,7
+risklink,222,EU FL HD,2,55
+risklink,223,GB WSSS CVV,5,49
+risklink,224,EUxESGB EQ,1,55
+risklink,225,GB FL HD,4,62
+risklink,226,EUxGB WS (FlrArea),3,55
+risklink,227,EU FL HD,2,7
+risklink,228,GB FL,4,14
+risklink,229,DE FL,2,21
+risklink,230,BE FL,2,6
+risklink,231,EUxGB WS,3,37
+risklink,232,EUxESGB EQ Adj,1,40
+risklink,233,EU FL HD,2,51
+risklink,234,EUxESGB EQ,1,20
+risklink,235,EUxESGB EQ Adj,1,51
+risklink,236,GB FL HD,4,35
+risklink,237,EU FL HD,2,21
+risklink,238,GB FL,4,52
+risklink,239,EUxESGB EQ Adj,1,39
+risklink,240,EUxGB WS CVV (FlrArea),3,51
+risklink,241,GB FL HD,4,22
+risklink,242,EUxGB WS CVV (FlrArea),3,20
+risklink,243,EUxGB WS,3,47
+risklink,244,EU FL HD,2,11
+risklink,245,GB FL,4,38
+risklink,246,GB FL HD,4,49
+risklink,247,EUxGB WS,3,55
+risklink,248,EU FL HD,2,27
+risklink,249,EUxESGB EQ,1,14
+risklink,250,EUxGB WS CVV (FlrArea),3,27
+risklink,251,EUxGB WS (FlrArea),3,27
+risklink,252,EUxESGB EQ Adj,1,6
+risklink,253,EUxGB WS CVV (FlrArea),3,48
+risklink,254,EUxESGB EQ,1,48
+risklink,255,GB WSSS (FlrArea),5,37
+risklink,256,GB WSSS CVV (FlrArea),5,34
+risklink,257,EUxESGB EQ,1,30
+risklink,258,EUxGB WS,3,51
+risklink,259,EUxGB WS,3,30
+risklink,260,GB FL,4,51
+risklink,261,EUxGB WS,3,11
+risklink,262,GB WSSS,5,60
+risklink,263,BE FL,2,3
+risklink,264,BE FL,2,7
+risklink,265,EUxGB WS,3,3
+risklink,266,GB WSSS,5,52
+risklink,267,EUxGB WS (FlrArea),3,3
+risklink,268,BE FL,2,49
+risklink,269,EU FL HD,2,54
+risklink,270,DE FL,2,49
+risklink,271,GB WSSS,5,13
+risklink,272,EUxESGB EQ,1,49
+risklink,273,GB FL HD,4,51
+risklink,274,GB FL,4,54
+risklink,275,GB WSSS CVV (FlrArea),5,30
+risklink,276,EU FL HD,2,57
+risklink,277,EU FL HD,2,14
+risklink,278,GB WSSS CVV (FlrArea),5,13
+risklink,279,EUxGB WS CVV (FlrArea),3,57
+risklink,280,GB WSSS CVV,5,14
+risklink,281,GB FL,4,57
+risklink,282,EUxGB WS,3,1
+risklink,283,EUxESGB EQ,1,21
+risklink,284,EUxGB WS (FlrArea),3,1
+risklink,285,EUxGB WS,3,58
+risklink,286,BE FL,2,39
+risklink,287,DE FL,2,37
+risklink,288,EUxGB WS CVV (FlrArea),3,58
+risklink,289,GB FL,4,1
+risklink,290,EU FL HD,2,37
+risklink,291,GB FL HD,4,58
+risklink,292,GB WSSS (FlrArea),5,1
+risklink,293,EUxESGB EQ Adj,1,58
+risklink,294,GB FL,4,58
+risklink,295,GB WSSS,5,39
+risklink,296,EUxGB WS,3,5
+risklink,297,EUxGB WS (FlrArea),3,51
+risklink,298,EU FL HD,2,56
+risklink,299,GB FL HD,4,15
+risklink,300,GB WSSS (FlrArea),5,13
+risklink,301,EUxESGB EQ,1,11
+risklink,302,EUxGB WS,3,57
+risklink,303,GB FL HD,4,4
+risklink,304,GB FL HD,4,57
+risklink,305,EUxGB WS CVV,3,11
+risklink,306,EUxESGB EQ,1,1
+risklink,307,GB WSSS CVV (FlrArea),5,58
+risklink,308,GB WSSS,5,4
+risklink,309,GB WSSS (FlrArea),5,15
+risklink,310,EUxGB WS,3,43
+risklink,311,EU FL HD,2,33
+risklink,312,EUxGB WS,3,28
+risklink,313,EUxGB WS,3,33
+risklink,314,EUxESGB EQ,1,24
+risklink,315,EUxGB WS,3,56
+risklink,316,EUxESGB EQ Adj,1,28
+risklink,317,EU FL HD,2,35
+risklink,318,EU FL HD,2,47
+risklink,319,EUxGB WS,3,48
+risklink,320,EUxGB WS CVV (FlrArea),3,55
+risklink,321,GB FL,4,11
+risklink,322,EUxESGB EQ,1,34
+risklink,323,EUxGB WS,3,26
+risklink,324,EUxESGB EQ,1,52
+risklink,325,EU FL HD,2,20
+risklink,326,EUxGB WS,3,27
+risklink,327,DE FL,2,6
+risklink,328,GB WSSS,5,48
+risklink,329,EUxGB WS CVV (FlrArea),3,47
+risklink,330,GB FL HD,4,34
+risklink,331,EU FL HD,2,40
+risklink,332,EU FL HD,2,30
+risklink,333,GB FL HD,4,30
+risklink,334,BE FL,2,51
+risklink,335,EUxGB WS CVV (FlrArea),3,34
+risklink,336,GB WSSS (FlrArea),5,30
+risklink,337,EUxGB WS CVV (FlrArea),3,59
+risklink,338,EUxESGB EQ Adj,1,13
+risklink,339,EUxESGB EQ,1,40
+risklink,340,BE FL,2,57
+risklink,341,EUxESGB EQ,1,27
+risklink,342,GB WSSS CVV (FlrArea),5,57
+risklink,343,EUxESGB EQ Adj,1,27
+risklink,344,EUxGB WS CVV (FlrArea),3,1
+risklink,345,EU FL HD,2,48
+risklink,346,EU FL HD,2,58
+risklink,347,EUxGB WS (FlrArea),3,58
+risklink,348,GB FL HD,4,48
+risklink,349,EUxESGB EQ,1,15
+risklink,350,GB WSSS CVV (FlrArea),5,48
+risklink,351,GB FL,4,30
+risklink,352,EUxESGB EQ,1,33
+risklink,353,EU FL HD,2,5
+risklink,354,EUxESGB EQ Adj,1,5
+risklink,355,EU FL HD,2,24
+risklink,356,EU FL HD,2,28
+risklink,357,EU FL HD,2,26
+risklink,358,EU FL HD,2,4
+risklink,359,EU FL HD,2,43
+risklink,360,EUxESGB EQ Adj,1,43
+risklink,361,EUxGB WS CVV (FlrArea),3,40
+risklink,362,EUxGB WS,3,34
+risklink,363,EUxGB WS (FlrArea),3,34
+risklink,364,GB WSSS (FlrArea),5,34
+risklink,365,EUxGB WS,3,59
+risklink,366,EUxGB WS CVV (FlrArea),3,30
+risklink,367,EUxESGB EQ,1,38
+risklink,368,EUxGB WS (FlrArea),3,38
+risklink,369,GB WSSS CVV (FlrArea),5,38
+risklink,370,GB FL,4,60
+risklink,371,EU FL HD,2,3
+risklink,372,GB FL HD,4,54
+risklink,373,GB WSSS (FlrArea),5,54
+risklink,374,BE FL,2,44
+risklink,375,EU FL HD,2,44
+risklink,376,EUxGB WS CVV (FlrArea),3,25
+risklink,377,BE FL,2,21
+risklink,378,DE FL,2,41
+risklink,379,EUxGB WS,3,41
+risklink,380,EU FL HD,2,50
+risklink,381,GB WSSS CVV,5,11
+risklink,382,EU FL HD,2,53
+risklink,383,EU FL HD,2,61
+risklink,384,BE FL,2,52
+risklink,385,EUxGB WS,3,52
+risklink,386,EUxGB WS,3,14
+risklink,387,GB WSSS,5,37
+risklink,388,EUxESGB EQ,1,13
+risklink,389,EUxGB WS CVV (FlrArea),3,13
+risklink,390,GB WSSS (FlrArea),5,57
+risklink,391,EUxGB WS CVV,3,28
+risklink,392,EUxGB WS CVV,3,26
+risklink,393,EUxESGB EQ,1,56
+risklink,394,EUxESGB EQ Adj,1,56
+risklink,395,GB WSSS CVV,5,4
+risklink,396,GB FL,4,43
+risklink,397,GB FL,4,48
+risklink,398,GB WSSS (FlrArea),5,48
+risklink,399,EU FL HD,2,34
+risklink,400,EUxESGB EQ Adj,1,34
+risklink,401,GB WSSS,5,34
+risklink,402,EUxESGB EQ,1,59
+risklink,403,EUxESGB EQ Adj,1,59
+risklink,404,EUxESGB EQ Adj,1,30
+risklink,405,GB WSSS,5,30
+risklink,407,GB WSSS CVV,5,18
+risklink,408,GB WSSS CVV,5,9
+risklink,409,GB WSSS CVV,5,23
+risklink,410,GB FL HD,4,23
+risklink,411,GB FL HD,4,9
+risklink,412,GB FL HD,4,18
+risklink,413,GB WSSS,5,23
+risklink,414,GB WSSS,5,9
+risklink,415,GB WSSS,5,18
+risklink,416,GB FL,4,23
+risklink,417,GB FL,4,9
+risklink,418,GB FL,4,18
