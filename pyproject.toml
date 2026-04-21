@@ -13,6 +13,8 @@ dependencies = [
     "certifi>=2026.1.4",
     "python-certifi-win32>=1.6.1",
     "polars>=1.20.0",
+    "sqlalchemy>=2.0",
+    "pyodbc",
     "ibis>=3.3.0",
     "datafusion>=53.0.0",
 ]

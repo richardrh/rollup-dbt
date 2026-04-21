@@ -109,6 +109,7 @@ class EnvVar(StrEnum):
     YLT_RISKLINK_GLOB = "ROLLUP_YLT_RISKLINK_GLOB"
     EP_VERISK_DIR     = "ROLLUP_EP_VERISK_DIR"
     EP_RISKLINK_DIR   = "ROLLUP_EP_RISKLINK_DIR"
+    MSSQL_CONN_STR    = "ROLLUP_MSSQL_CONN_STR"
 
 
 # --------------------------------------------------------------------------- #
@@ -213,9 +214,10 @@ def _risklink(data_root: Path) -> Vendor:
 
 @dataclass(frozen=True)
 class Config:
-    seeds_dir:  Path
-    output_dir: Path
-    vendors:    tuple[Vendor, ...]
+    seeds_dir:      Path
+    output_dir:     Path
+    vendors:        tuple[Vendor, ...]
+    mssql_conn_str: str | None = None   # None → parquet-only run
 
     def vendor(self, name: VendorName) -> Vendor:
         for v in self.vendors:
@@ -231,6 +233,7 @@ def resolve() -> Config:
         seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),
         output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),
         vendors=(_verisk(data_root), _risklink(data_root)),
+        mssql_conn_str=os.getenv(EnvVar.MSSQL_CONN_STR),
     )
 
 
@@ -389,6 +392,15 @@ def format_plan(plan: Plan) -> str:
     lines.append(f"Seeds: {seed_ok}/{seed_total} valid.")
     lines.append(f"YLTs:  {ylt_ready}/{len(plan.config.vendors)} vendors have data.")
     lines.append(f"EP summaries: {ep_ready}/{len(plan.config.vendors)} vendors have data.")
+    if plan.config.mssql_conn_str:
+        # Redact credentials from display: show up to the @ only
+        display = plan.config.mssql_conn_str
+        if "@" in display:
+            scheme, rest = display.split("://", 1)
+            display = f"{scheme}://...@{rest.split('@', 1)[1]}"
+        lines.append(f"SQL Server: {display}")
+    else:
+        lines.append("SQL Server: not configured (parquet-only run)")
     lines.append("")
     return "\n".join(lines)
 

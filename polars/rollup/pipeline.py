@@ -385,6 +385,29 @@ def fanout_hisco(all_factors: pl.LazyFrame, variant: VariantSpec) -> pl.LazyFram
 
 
 # --------------------------------------------------------------------------- #
+# SQL Server output                                                           #
+# --------------------------------------------------------------------------- #
+
+def _write_to_sql(df: pl.DataFrame, table_name: str, conn_str: str) -> None:
+    """Write a Hisco DataFrame to a SQL Server table (full replace each run).
+
+    Uses polars `write_database` backed by sqlalchemy. The table is dropped
+    and recreated on every run — no DDL management required. Set
+    `ROLLUP_MSSQL_CONN_STR` to enable; absent = silent skip.
+
+    Connection string format:
+        mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server
+    """
+    df.write_database(
+        table_name=table_name,
+        connection=conn_str,
+        if_table_exists="replace",
+        engine="sqlalchemy",
+    )
+    log.info(f"sql: wrote {df.height:,} rows → {table_name}")
+
+
+# --------------------------------------------------------------------------- #
 # Entry point                                                                 #
 # --------------------------------------------------------------------------- #
 
@@ -417,6 +440,8 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
         out_path = cfg.output_dir / f"{variant.name}.parquet"
         df.write_parquet(out_path)
         log.info(f"fanout: wrote {variant.name}.parquet ({df.height:,} rows)")
+        if cfg.mssql_conn_str:
+            _write_to_sql(df, variant.name, cfg.mssql_conn_str)
 
     if dump_interim:
         debug_dir = cfg.output_dir / _AUDIT_SUBDIR
