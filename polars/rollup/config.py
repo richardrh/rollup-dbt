@@ -27,7 +27,8 @@ Default layout:
         │   └── risklink/      ← reference RMS comparators (xlsx or csv)
         └── output/              ← Hisco parquets written here
 
-Override any path with the corresponding `ROLLUP_*` env var.
+Override any path with the corresponding `ROLLUP_*` env var, or set them
+in a `.env` file at the repo root (gitignored — never committed).
 """
 
 from __future__ import annotations
@@ -38,6 +39,8 @@ import sys
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 import polars as pl
 
@@ -227,7 +230,8 @@ class Config:
 
 
 def resolve() -> Config:
-    """Build a `Config` from env vars, falling back to repo defaults."""
+    """Build a `Config` from env vars (or `.env` file), falling back to repo defaults."""
+    load_dotenv(REPO_ROOT / ".env", override=False)   # no-op if file absent
     data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
     return Config(
         seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),

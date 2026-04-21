@@ -15,6 +15,7 @@ dependencies = [
     "polars>=1.20.0",
     "sqlalchemy>=2.0",
     "pyodbc",
+    "python-dotenv>=1.0",
     "ibis>=3.3.0",
     "datafusion>=53.0.0",
 ]
