@@ -1,0 +1,376 @@
+/*-- scss:defaults --*/
+$font-family-sans-serif:           'Inter', system-ui, -apple-system, sans-serif;
+$font-family-monospace:            'JetBrains Mono', monospace;
+$body-bg:                          #ffffff;
+$body-color:                       #0E1116;
+$link-color:                       #B22234;
+$presentation-heading-color:       #0E1116;
+$presentation-heading-font:        'Inter', system-ui, -apple-system, sans-serif;
+$presentation-heading-font-weight: 700;
+$presentation-font-size-root:      26px;
+$code-block-font-size:             0.72em;
+
+/*-- scss:rules --*/
+
+:root {
+  --brand:       #B22234;
+  --brand-soft:  #FDF3F5;
+  --brand-line:  #EED4D8;
+  --ink:         #0E1116;
+  --body:        #3E4651;
+  --muted:       #8A93A0;
+  --line:        #E6E9EE;
+  --card:        #FBFBFC;
+  --term-bg:     #12161F;
+  --term-bg-2:   #1A1F2B;
+  --term-line:   #2A2F3D;
+  --term-text:   #D8E0F0;
+  --term-dim:    #6C7896;
+  --term-green:  #A6D989;
+  --term-cyan:   #7AC3E2;
+  --term-orange: #E5B36B;
+  --term-path:   #E8C98F;
+}
+
+/* ── Slide container ──────────────────────────────────────────
+   align-items: stretch makes all children fill the slide width
+   (flex-start would make them shrink to content width, breaking grids)
+──────────────────────────────────────────────────────────────── */
+.reveal section.slide.level2 {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;   /* children fill full width */
+  justify-content: flex-start !important;
+  text-align: left !important;
+  padding: 2rem 3.5rem !important;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-top: 3px solid var(--brand);
+}
+
+/* title slide stays centered */
+.reveal section#title-slide {
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+/* ── Eyebrow: flex order -1 puts it visually above h2 ──────── */
+.reveal section.slide.level2 .eyebrow {
+  order: -1;
+  color: var(--brand);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0 0 0.35rem;
+}
+.reveal .eyebrow p { margin: 0; }
+
+/* ── Slide heading ────────────────────────────────────────── */
+.reveal section.slide.level2 h2 {
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  text-align: left;
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+  width: 100%;
+}
+.reveal h2 .accent,
+.accent { color: var(--brand); }
+
+/* ── Lead paragraph ───────────────────────────────────────── */
+.reveal .lead > p {
+  font-size: 0.88rem;
+  color: var(--body);
+  max-width: 64ch;
+  margin: 0 0 0.9rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* ── Blockquote ───────────────────────────────────────────── */
+.reveal section.slide.level2 blockquote {
+  border-left: 3px solid var(--brand);
+  padding: 0.3rem 1rem;
+  background: none;
+  box-shadow: none;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--ink);
+  margin: 0.6rem 0 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.reveal section.slide.level2 blockquote p { margin: 0; }
+
+/* ── Comparison table ─────────────────────────────────────── */
+.reveal section.slide.level2 table {
+  font-size: 0.73rem;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 0.5rem;
+}
+.reveal section.slide.level2 table th {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 2px solid var(--line);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.reveal section.slide.level2 table th:last-child { color: var(--brand); }
+.reveal section.slide.level2 table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  text-align: left;
+}
+.reveal section.slide.level2 table td:first-child {
+  color: var(--body);
+  font-weight: 500;
+}
+.reveal section.slide.level2 table td:last-child {
+  background: var(--brand-soft);
+  font-weight: 600;
+  color: var(--ink);
+}
+.reveal section.slide.level2 table tbody tr:first-child td:last-child {
+  border-top: 2px solid var(--brand);
+}
+.reveal section.slide.level2 table tbody tr:last-child td:last-child {
+  border-bottom: 2px solid var(--brand);
+}
+.yes { color: #2F8C56; font-weight: 600; }
+.no  { color: #B54040; font-weight: 500; }
+
+/* ── Code grid (slide 2) ──────────────────────────────────── */
+.reveal .code-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  width: 100%;
+  margin: 0.2rem 0 0.7rem;
+  box-sizing: border-box;
+}
+.reveal .code-card {
+  background: #F9FAFB;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem 0.9rem;
+  overflow: hidden;
+  min-width: 0;   /* prevents pre content blowing out the grid column */
+  box-sizing: border-box;
+}
+/* label lives inside an auto-generated <p> */
+.reveal .code-card > p:first-child {
+  margin: 0 0 0.4rem;
+  line-height: 1;
+}
+.reveal .card-label {
+  display: block;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.57rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* strip the default code-block chrome inside cards */
+.reveal .code-card div.sourceCode {
+  margin: 0;
+  overflow: auto;
+}
+.reveal .code-card pre.sourceCode {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+.reveal .code-card code { padding: 0 !important; }
+/* hide the copy button in presentation context */
+.reveal .code-card .code-copy-button { display: none; }
+
+/* ── Numbered list (slide 2) ──────────────────────────────── */
+.reveal section.slide.level2 ol {
+  counter-reset: branded;
+  list-style: none !important;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+  width: 100%;
+}
+.reveal section.slide.level2 ol > li {
+  counter-increment: branded;
+  display: grid !important;
+  grid-template-columns: 2.2ch 1fr;
+  gap: 0.65rem;
+  font-size: 0.79rem;
+  color: var(--body);
+  align-items: baseline;
+  margin: 0 !important;
+}
+.reveal section.slide.level2 ol > li::before {
+  content: counter(branded, decimal-leading-zero);
+  color: var(--brand);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.reveal section.slide.level2 ol > li strong { color: var(--ink); font-weight: 600; }
+
+/* ── Terminal (slide 3) ───────────────────────────────────── */
+.terminal-wrap {
+  width: 100%;
+  margin-top: 0.2rem;
+  box-sizing: border-box;
+}
+.terminal {
+  background: var(--term-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #0A0D14;
+  box-shadow: 0 16px 48px -12px rgba(10, 15, 30, 0.45);
+}
+.terminal-chrome {
+  background: var(--term-bg-2);
+  padding: 0.4rem 0.75rem;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--term-line);
+}
+.tl-dots { display: flex; gap: 0.32rem; }
+.tl-dot  { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.tl-dot.r { background: #FF5F57; }
+.tl-dot.y { background: #FEBC2E; }
+.tl-dot.g { background: #28C840; }
+.tl-title {
+  flex: 1;
+  text-align: center;
+  color: #8A93A8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+}
+.terminal-body {
+  padding: 0.85rem 1.1rem;
+  color: var(--term-text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  line-height: 1.65;
+  white-space: pre;
+  overflow-x: auto;
+}
+.t-prompt { color: var(--term-green); }
+.t-cmd    { color: #FFFFFF; }
+.t-hdr    { color: var(--term-cyan); font-weight: 600; }
+.t-ok     { color: var(--term-green); font-weight: 600; }
+.t-dim    { color: var(--term-dim); }
+.t-num    { color: var(--term-orange); font-weight: 500; }
+.t-path   { color: var(--term-path); }
+.t-ans    { color: #FFFFFF; font-weight: 600; }
+.caret {
+  display: inline-block;
+  width: 0.46rem;
+  height: 0.78rem;
+  background: var(--term-text);
+  vertical-align: -2px;
+  margin-left: 1px;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Speed chart (slide 4) ────────────────────────────────── */
+.speed {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0.4rem 0 0.85rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+.speed-row {
+  display: grid;
+  grid-template-columns: 175px 1fr 165px;
+  align-items: center;
+  gap: 0.9rem;
+}
+.speed-row > * { min-width: 0; }
+.speed-label { font-weight: 600; font-size: 0.8rem; color: var(--ink); }
+.speed-label .sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.speed-bar-track {
+  height: 27px;
+  background: #F3F4F7;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.speed-bar {
+  height: 100%;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 0.7rem;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.68rem;
+}
+.speed-bar.january { width: 82%; background: linear-gradient(90deg, #7A1422, #9E1A2E); }
+.speed-bar.dbt     { width: 96%; background: linear-gradient(90deg, #9E1A2E, #C23D4F); }
+.speed-bar.polars  { width: 4.5%; background: var(--brand); padding: 0 0.4rem; }
+.speed-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--body);
+  font-size: 0.76rem;
+}
+.speed-time.fast { color: var(--brand); font-weight: 700; }
+
+/* ── Why cards (slide 4) ──────────────────────────────────── */
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.8rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+.why {
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  min-width: 0;
+}
+.why .n {
+  color: var(--brand);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.22rem;
+}
+.why h4 {
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-bottom: 0.18rem;
+  color: var(--ink);
+}
+.why p {
+  font-size: 0.66rem;
+  color: var(--body);
+  line-height: 1.5;
+  margin: 0;
+}

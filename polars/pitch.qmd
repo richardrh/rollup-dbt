@@ -1,0 +1,402 @@
+---
+format:
+  html:
+    page-layout: custom
+    theme: none
+    document-css: false
+    toc: false
+    anchor-sections: false
+    embed-resources: true
+    css: pitch.css
+title: "Polars Rollup Pipeline — one process, one pass"
+---
+
+<!-- ══════════════ SLIDE 1 ══════════════ -->
+::: {#s1 .slide}
+
+[01 / 06]{.slide-number}
+
+[Pipeline comparison]{.eyebrow}
+
+## Architecture
+
+::: {.subtitle}
+Compute blended forecast EP curves from the RiskLink and Verisk YLTs,
+fan them out to the 21 Hisco tables. 
+
+Different mechanics.
+:::
+
+|                               | January DuckDB                    | dbt (finalised)                    | Polars                                  |
+|-------------------------------|-----------------------------------|------------------------------------|----------------------------------------|
+| Runtime model                 | DuckDB in process views    | Duckdb with dbt      | Single Python process                   |
+| Infrastructure                | Local DuckDB on a file server     | dbt + DuckDB + dbt cli         | Python + polars.             |
+| Schema safety at boundaries   | [Silent drift]{.no}               | [Silent drift]{.no}                | [Enforced per frame]{.yes}              |
+| Pre-flight data-quality check | [None]{.no}                       | [`dbt test` (after the run)]{.no}  | [Interactive CLI, before the run]{.yes} |
+| Iteration loop                | Re-run the notebook, wait         | Compile → dispatch → wait          | `pytest` in 1.4 s                       |
+| Logic footprint               | 60+ SQL views, ~2 000 LOC         | ~600 lines SQL + Jinja             | ~350 lines of typed Python              |
+| Performance characteristics   | No materialized views done manually         | Dbt controlls materialization | In memory caching and automatic query optimizer|
+
+> No untyped sql, no jinja macros. 
+
+:::
+
+
+<!-- ══════════════ SLIDE 2 ══════════════ -->
+::: {#s2 .slide}
+
+[02 / 06]{.slide-number}
+
+[Correctness]{.eyebrow}
+
+## Fail fast, [not three joins later.]{.accent}
+
+::: {.subtitle}
+Typed Python.
+Every column is an enum. Every frame has a declared schema.
+Every stage validates its inputs and outputs at the boundary.
+Schema drift blows up the pipeline where it happened.
+:::
+
+:::: {.code-grid}
+::: {.code-card}
+[Column names as enum]{.card-label}
+
+```python
+class RefLobsCol(StrEnum):
+    LOB_ID             = "lob_id"
+    MODELLED_LOB       = "modelled_lob"
+    ROLLUP_LOB         = "rollup_lob"
+    LOB_TYPE           = "lob_type"
+    CDS_CAT_CLASS_NAME = "cds_cat_class_name"
+    OFFICE             = "office"
+    CLASS              = "class"
+```
+:::
+
+::: {.code-card}
+[Typed schema per frame]{.card-label}
+
+```python
+REF_LOBS: pl.Schema = pl.Schema({
+    RefLobsCol.LOB_ID:             pl.Int64,
+    RefLobsCol.MODELLED_LOB:       pl.String,
+    RefLobsCol.ROLLUP_LOB:         pl.String,
+    RefLobsCol.LOB_TYPE:           pl.String,
+    RefLobsCol.CDS_CAT_CLASS_NAME: pl.String,
+    RefLobsCol.OFFICE:             pl.String,
+    RefLobsCol.CLASS:              pl.String,
+})
+```
+:::
+::::
+
+1. **Typos don't compile.** Column names are Python enum members, not strings scattered across SQL files.
+2. **Schema drift surfaces at the boundary.** `validate_schema()` runs on every stage's inputs and outputs — errors name the frame, the missing columns, and the dtype mismatches.
+3. **Seeds are schema-checked at load.** A renamed column in a CSV stops the pipeline before any math runs.
+4. **57 unit tests, 1.4 s.** The whole contract is exercised on every change, not just in production.
+
+> If it's wrong, it fails loudly, at the line where it became wrong.
+
+:::
+
+
+<!-- ══════════════ SLIDE 3 ══════════════ -->
+::: {#s3 .slide}
+
+[03 / 06]{.slide-number}
+
+[Ergonomics]{.eyebrow}
+
+## Gain confidence [before it starts.]{.accent}
+
+::: {.subtitle}
+One command inspects every file the pipeline will touch, validates its
+schema, and reports status in plain language. Then it asks permission.
+:::
+
+```{=html}
+<div class="terminal-wrap"><div class="terminal">
+<div class="terminal-chrome">
+  <span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span>
+  <span class="tl-title">polars — rollup pipeline</span>
+</div>
+<div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">python -m rollup.pipeline --dry-run</span>
+
+<span class="t-hdr">[seeds]</span>  <span class="t-path">polars/seeds</span>
+  <span class="t-ok">✓</span> lobs                            <span class="t-num">     62</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> blending_factors                <span class="t-num">     30</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> forecast_factors                <span class="t-num">     78</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> fx_rates                        <span class="t-num">      6</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> euws_rate_factors               <span class="t-num"> 69,212</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> dim_region_perils               <span class="t-num">  2,138</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> dim_risklink_analysis           <span class="t-num">  1,042</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> air_events                      <span class="t-num">410,024</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> fineart_adjustments             <span class="t-num">    186</span> rows   <span class="t-dim">schema OK</span>
+
+<span class="t-hdr">[ylt verisk]</span>    <span class="t-path">data/ylt/verisk/</span>    <span class="t-dim">air_ylt_*.parquet</span>       <span class="t-dim">n_simulations=</span><span class="t-num">10,000</span>
+  <span class="t-ok">✓</span> air_ylt_c1.parquet                       <span class="t-num">148.3 MB</span>
+  <span class="t-ok">✓</span> air_ylt_c2.parquet                       <span class="t-num">102.5 MB</span>
+
+<span class="t-hdr">[ylt risklink]</span>  <span class="t-path">data/ylt/risklink/</span>  <span class="t-dim">risklink_ylt_*.parquet</span>  <span class="t-dim">n_simulations=</span><span class="t-num">100,000</span>
+  <span class="t-ok">✓</span> risklink_ylt_01.parquet                    <span class="t-num">2.1 GB</span>
+
+<span class="t-dim">Seeds:</span> <span class="t-ok">11/11</span> <span class="t-dim">valid.</span>   <span class="t-dim">YLTs:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>   <span class="t-dim">EP summaries:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>
+
+<span class="t-ans">Proceed? [y/N]:</span> <span class="caret"></span></div>
+</div></div>
+```
+
+> No surprises at row 3 million. Every input is accounted for on line one.
+
+:::
+
+
+<!-- ══════════════ SLIDE 4 ══════════════ -->
+::: {#s4 .slide}
+
+[04 / 06]{.slide-number}
+
+[Speed]{.eyebrow}
+
+## Minutes becomes [seconds.]{.accent}
+
+::: {.subtitle}
+Measured on the production-sized input — 4.4M-row Verisk YLT plus the
+full RiskLink YLT. Full chain, all 21 Hisco tables written.
+:::
+
+```{=html}
+<div class="speed">
+<div class="speed-row">
+<div class="speed-label">Pre-January SQL Server<span class="sub">bespoke warehouse queries, manual extract</span></div>
+<div class="speed-bar-track"><div class="speed-bar sql-server">unknown — likely hours</div></div>
+<div class="speed-time">unknown · &gt; 1–2 hrs</div>
+</div>
+<div class="speed-row">
+<div class="speed-label">January DuckDB<span class="sub">local filesystem, 60+ views</span></div>
+<div class="speed-bar-track"><div class="speed-bar january">2 – 20 minutes</div></div>
+<div class="speed-time">dinosaur-bound</div>
+</div>
+<div class="speed-row">
+<div class="speed-label">dbt (finalised)<span class="sub">warehouse round-trip, per-model materialize</span></div>
+<div class="speed-bar-track"><div class="speed-bar dbt">longer than DuckDB, always</div></div>
+<div class="speed-time">compile + dispatch tax</div>
+</div>
+<div class="speed-row">
+<div class="speed-label">Polars lazy pipeline<span class="sub">single process, one optimisation pass</span></div>
+<div class="speed-bar-track"><div class="speed-bar polars">~3s</div></div>
+<div class="speed-time fast">a couple of seconds</div>
+</div>
+</div>
+<div class="why-grid">
+<div class="why">
+<div class="n">01</div>
+<h4>One collect, 21 sinks</h4>
+<p>The whole lazy graph is optimised once; shared work is computed once.</p>
+</div>
+<div class="why">
+<div class="n">02</div>
+<h4>Cached DAG node</h4>
+<p>One-line <code>.cache()</code> replaces the DuckDB materialised-table trick.</p>
+</div>
+<div class="why">
+<div class="n">03</div>
+<h4>No SQL compile. No Jinja.</h4>
+<p>Parquet in, parquet out. No warehouse dispatch, no network round-trip.</p>
+</div>
+<div class="why">
+<div class="n">04</div>
+<h4>Zero copies</h4>
+<p>Polars operates on Arrow buffers end-to-end. No serialisation between steps.</p>
+</div>
+</div>
+```
+
+> Change a blending weight. Re-run.
+
+:::
+
+
+<!-- ══════════════ SLIDE 5 ══════════════ -->
+::: {#s5 .slide}
+
+[05 / 06]{.slide-number}
+
+[Future]{.eyebrow}
+
+## Integrate with [Validnator]{.accent}
+
+::: {.subtitle}
+Schema validation catches the wrong shape. Validnator catches the wrong values —
+FK integrity, range bounds, uniqueness, cross-column constraints — all declared in YAML,
+all checked before the pipeline touches a single loss row.
+:::
+
+:::: {.future-grid}
+::: {.future-col}
+[Today — shape only]{.card-label}
+
+| Check | Caught by |
+|---|---|
+| Missing column | `validate_schema()` |
+| Wrong dtype | `validate_schema()` |
+| Extra column | `validate_schema()` |
+| Value out of range | [Not checked]{.no} |
+| Broken FK (`peril_id` unknown) | [Not checked]{.no} |
+| Weights don't sum to 1.0 | [Not checked]{.no} |
+| Duplicate key | [Not checked]{.no} |
+
+:::
+::: {.future-col}
+[With validnator — values too]{.card-label}
+
+```yaml
+rules:
+  - code: W01
+    column: weight
+    check: valid_range
+    params: {min: 0.0, max: 1.0}
+
+  - code: E01
+    column: peril_id
+    check: referential_integrity
+    params: {reference: seeds/perils.csv,
+             reference_column: peril_id}
+
+  - code: E02
+    columns: [peril_id, vendor]
+    check: is_unique_composite
+
+  - code: E03
+    column: weight
+    check: sum
+    params: {expected: 1.0, group_by: peril_id}
+```
+
+:::
+::::
+
+> Run validnator on every seed CSV in CI. Broken data never reaches the pipeline.
+
+:::
+
+
+<!-- ══════════════ SLIDE 6 ══════════════ -->
+::: {#s6 .slide}
+
+[06 / 06]{.slide-number}
+
+[Scope]{.eyebrow}
+
+## What this pipeline [does not do.]{.accent}
+
+::: {.subtitle}
+The pipeline owns the blending and the EP maths. These four jobs sit
+outside that boundary — they are inputs or downstream consumers, not
+steps in the chain.
+:::
+
+```{=html}
+<div class="out-of-scope">
+
+<div class="oos-row">
+  <div class="oos-n">01</div>
+  <div class="oos-body">
+    <h4>Extract RDM results</h4>
+    <p>RDM output must be pulled and converted to Parquet before the pipeline starts.
+    The pipeline reads YLTs; it does not connect to RDM or trigger any model run.</p>
+  </div>
+</div>
+
+<div class="oos-row">
+  <div class="oos-n">02</div>
+  <div class="oos-body">
+    <h4>Produce clean summary EP curves</h4>
+    <p>The pipeline writes per-event loss rows to the 21 Hisco parquets.
+    Aggregating those into summary EP curves for consumption (charts, reports) is a
+    separate downstream step.</p>
+  </div>
+</div>
+
+<div class="oos-row">
+  <div class="oos-n">03</div>
+  <div class="oos-body">
+    <h4>Run the RiskLink simulation</h4>
+    <p>RiskLink analysis IDs are declared in <code>seeds/analyses.csv</code>.
+    The pipeline expects the corresponding YLT parquets to already exist on disk —
+    it does not invoke RiskLink or manage any simulation jobs.</p>
+  </div>
+</div>
+
+<div class="oos-row">
+  <div class="oos-n">04</div>
+  <div class="oos-body">
+    <h4>Push results to CDS automatically</h4>
+    <p>Hisco parquets are written locally. Uploading them to CDS is a manual step
+    today — or a thin wrapper around the pipeline, not part of the pipeline itself.</p>
+  </div>
+</div>
+
+</div>
+```
+
+> All can be extended because rollup is a self contained pipeline of queries
+
+:::
+
+
+<!-- ══════════════ NAV ══════════════ -->
+<nav class="progress" aria-label="Slide navigation">
+  <a href="#s1" class="active" aria-label="Slide 1"></a>
+  <a href="#s2" aria-label="Slide 2"></a>
+  <a href="#s3" aria-label="Slide 3"></a>
+  <a href="#s4" aria-label="Slide 4"></a>
+  <a href="#s5" aria-label="Slide 5"></a>
+  <a href="#s6" aria-label="Slide 6"></a>
+</nav>
+
+<div class="hint"><kbd>←</kbd> <kbd>→</kbd> <kbd>space</kbd> to navigate</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const dots   = document.querySelectorAll('.progress a');
+
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const i = Array.from(slides).indexOf(e.target);
+      dots.forEach((d, j) => d.classList.toggle('active', i === j));
+    }
+  });
+}, { threshold: 0.55 });
+
+slides.forEach(s => io.observe(s));
+
+function currentIndex() {
+  const mid = window.scrollY + window.innerHeight / 2;
+  for (let i = 0; i < slides.length; i++) {
+    const top = slides[i].offsetTop;
+    const bot = top + slides[i].offsetHeight;
+    if (mid >= top && mid < bot) return i;
+  }
+  return 0;
+}
+
+function go(i) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  slides[i].scrollIntoView({ behavior: 'smooth' });
+}
+
+document.addEventListener('keydown', (e) => {
+  const i = currentIndex();
+  switch (e.key) {
+    case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ':
+      e.preventDefault(); go(i + 1); break;
+    case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+      e.preventDefault(); go(i - 1); break;
+    case 'Home': e.preventDefault(); go(0); break;
+    case 'End':  e.preventDefault(); go(slides.length - 1); break;
+  }
+});
+</script>
