@@ -36,6 +36,9 @@ Different mechanics.
 | Iteration loop                | Re-run the notebook, wait         | Compile → dispatch → wait          | `pytest` in 1.4 s                       |
 | Logic footprint               | 60+ SQL views, ~2 000 LOC         | ~600 lines SQL + Jinja             | ~350 lines of typed Python              |
 | Performance characteristics   | No materialized views done manually         | Dbt controlls materialization | In memory caching and automatic query optimizer|
+| Tooling | Useless LSP/Dbeaver views         | LSP Ineffective with jinja + sql macros | Multiple LSPs + SCA mypy ruff |
+| Extensible? | No because sql dialect differs{.no}         | Yes because dbt adapts between sql dialect  | Recode to DataFusion or IBIS |
+
 
 > No untyped sql, no jinja macros. 
 
