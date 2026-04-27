@@ -10,7 +10,6 @@ wheels/
 .venv
 *.log
 *.duckdb
-*.parquet
 *.sqlite
 
 # MkDocs build output
