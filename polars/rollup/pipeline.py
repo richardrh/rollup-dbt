@@ -307,6 +307,7 @@ _IDENTITY_COLS: tuple[str, ...] = (
     AF.REGION_PERIL_ID, AF.MODELLED_REGION_PERIL,
     AF.PERIL_NAME, AF.REGION, AF.PERIL_FAMILY,
     AF.YEAR_ID, AF.EVENT_ID, AF.MODEL_EVENT_ID, AF.MODEL_CODE,
+    AF.RL_PROPORTION, AF.VK_PROPORTION, AF.BASE_MODEL,
 )
 
 
@@ -334,9 +335,8 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     cols: list[pl.Expr] = [pl.col(c) for c in _IDENTITY_COLS]
     cols.append(pl.col(Y.LOSS).alias("loss_raw"))
 
-    # Year-invariant chain: blend → uplift → cap → fx
+    # Year-invariant chain: uplift → cap → fx  (blend factors already in _IDENTITY_COLS)
     cols += [
-        pl.col(AF.RL_PROPORTION), pl.col(AF.VK_PROPORTION), pl.col(AF.BASE_MODEL),
         pl.col(AF.UPLIFT_FACTOR), pl.col(AF.UPLIFT_FACTOR_CAPPED),
         pl.col(M.LOSS_UPLIFTED), pl.col(M.LOSS_UPLIFTED_CAPPED),
         pl.col(AF.REQUIRED_CURRENCY), pl.col(AF.RATE_TO_GBP),
@@ -442,10 +442,11 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
 
     all_factors = build_all_factors(cfg, seeds).cache()
 
-    fanout_lfs = [fanout_hisco(all_factors, v) for v in variants]
-    audit_lfs  = [audit_wide(all_factors, tags), audit_long(all_factors, tags)] if dump_interim else []
+    fanout_lfs      = [fanout_hisco(all_factors, v) for v in variants]
+    default_long_lf = audit_long(all_factors, tags)
+    debug_lfs       = [audit_wide(all_factors, tags), audit_long(all_factors, tags)] if dump_interim else []
 
-    collected = pl.collect_all(fanout_lfs + audit_lfs)
+    collected = pl.collect_all(fanout_lfs + [default_long_lf] + debug_lfs)
 
     for df, variant in zip(collected[:len(variants)], variants, strict=True):
         out_path = cfg.output_dir / f"{variant.name}.parquet"
@@ -454,11 +455,15 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
         if cfg.mssql_conn_str:
             _write_to_sql(df, variant.name, cfg.mssql_conn_str)
 
+    default_long_path = cfg.output_dir / "mts_tbl_ylt_combined_all_factors.parquet"
+    collected[len(fanout_lfs)].write_parquet(default_long_path)
+    log.info(f"wrote {default_long_path.name} ({collected[len(fanout_lfs)].height:,} rows)")
+
     if dump_interim:
         debug_dir = cfg.output_dir / _AUDIT_SUBDIR
         debug_dir.mkdir(parents=True, exist_ok=True)
-        collected[len(variants)    ].write_parquet(debug_dir / _AUDIT_WIDE_FILE)
-        collected[len(variants) + 1].write_parquet(debug_dir / _AUDIT_LONG_FILE)
+        collected[len(variants) + 1].write_parquet(debug_dir / _AUDIT_WIDE_FILE)
+        collected[len(variants) + 2].write_parquet(debug_dir / _AUDIT_LONG_FILE)
         log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
         log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
 
@@ -466,8 +471,14 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry: resolve config, print the plan, prompt, then run."""
     import argparse
+    from pathlib import Path
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--log-level", default=None, metavar="LEVEL",
+                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                        help="verbosity (default WARNING; also settable via ROLLUP_LOG env var)")
+
+    # Default-flow flags (no subcommand) — keep current behaviour.
     parser.add_argument("-y", "--yes", action="store_true",
                         help="skip the interactive y/N confirmation")
     parser.add_argument("--dry-run", action="store_true",
@@ -475,11 +486,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-d", "--dump-interim", action="store_true",
                         help="also write audit_wide.parquet + audit_long.parquet "
                              "to <output_dir>/debug/ for read-across verification")
-    parser.add_argument("--log-level", default=None, metavar="LEVEL",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                        help="verbosity (default WARNING; also settable via ROLLUP_LOG env var)")
+
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    # Subcommand: ep-summary-to-csv
+    subparsers.add_parser(
+        "ep-summary-to-csv",
+        help="Convert wide EP-summary xlsx files under data/ep_summaries/{vendor}/ "
+             "into long-format CSVs next to them.",
+    )
+
     args = parser.parse_args(argv)
 
+    if args.cmd == "ep-summary-to-csv":
+        from rollup.io.ep_summary import convert_ep_summaries_to_csv
+        config.setup_logging(args.log_level)
+        cfg = config.resolve()
+        written: list[Path] = []
+        for vendor in cfg.vendors:
+            written.extend(
+                convert_ep_summaries_to_csv(vendor.ep_summary_dir, vendor.name)
+            )
+        for p in written:
+            print(f"wrote {p}")
+        print(f"total: {len(written)} csv file(s)")
+        return 0
+
+    # Default flow: dry-run / run.
     config.setup_logging(args.log_level)
     cfg  = config.resolve()
     plan = config.build_plan(cfg)
