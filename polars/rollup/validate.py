@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 import polars as pl
 
 
 class SchemaError(AssertionError):
     """Frame schema does not match the expected pl.Schema."""
+
+
+@dataclass(frozen=True)
+class ColumnDiff:
+    column: str
+    kind:   Literal["missing", "unexpected", "wrong_dtype"]
+    detail: str   # expected dtype for missing; actual dtype for unexpected; "Float64→Int64" for wrong_dtype
+
+
+def column_diff(actual: pl.Schema, expected: pl.Schema) -> list[ColumnDiff]:
+    """Return ColumnDiff entries: missing first, then wrong_dtype, then unexpected.
+    Each group sorted alphabetically by column name."""
+    actual_cols   = set(actual.names())
+    expected_cols = set(expected.names())
+    missing    = sorted(str(c) for c in expected_cols - actual_cols)
+    unexpected = sorted(str(c) for c in actual_cols - expected_cols)
+    wrong      = sorted(str(c) for c in (actual_cols & expected_cols) if actual[c] != expected[c])
+    out: list[ColumnDiff] = []
+    for c in missing:
+        out.append(ColumnDiff(c, "missing", str(expected[c])))
+    for c in wrong:
+        out.append(ColumnDiff(c, "wrong_dtype", f"{expected[c]}→{actual[c]}"))
+    for c in unexpected:
+        out.append(ColumnDiff(c, "unexpected", str(actual[c])))
+    return out
 
 
 def validate_schema(

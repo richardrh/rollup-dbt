@@ -56,7 +56,7 @@ def test_pipeline_run_produces_all_hisco_parquets(cfg, data_root):
 
     seeds         = load_all(cfg.seeds_dir)
     variants      = build_variants(forecast_dates_from_seed(seeds), cfg.vendors)
-    expected_names = {f"{v.name}.parquet" for v in variants}
+    expected_names = {f"{v.name}.parquet" for v in variants} | {"mts_tbl_ylt_combined_all_factors.parquet"}
     actual_names   = {p.name for p in output_dir.glob("*.parquet")}
 
     assert actual_names == expected_names, (
@@ -69,6 +69,8 @@ def test_pipeline_run_produces_all_hisco_parquets(cfg, data_root):
 def test_every_hisco_parquet_matches_schema(cfg, data_root):
     output_dir = data_root / "output"
     for path in sorted(output_dir.glob("*.parquet")):
+        if path.name == "mts_tbl_ylt_combined_all_factors.parquet":
+            continue
         df = pl.read_parquet(path)
         assert df.schema == F.HISCO_FANOUT, (
             f"{path.name} schema mismatch:\n"
@@ -84,6 +86,8 @@ def test_at_least_one_variant_has_real_numbers(cfg, data_root):
     total_rows = 0
     nonzero_loss_rows = 0
     for path in output_dir.glob("*.parquet"):
+        if path.name == "mts_tbl_ylt_combined_all_factors.parquet":
+            continue
         df = pl.read_parquet(path)
         total_rows += df.height
         nonzero_loss_rows += df.filter(pl.col(H.MODEL_GROSS_LOSS) > 0).height
@@ -116,6 +120,29 @@ def test_variant_count_matches_plan(cfg, data_root):
     print(f"\n[e2e] built {len(variants)} Hisco variants "
           f"({len(cfg.vendors)} vendors × {len(fc_dates)} forecast dates main + "
           f"{n_dialsup} dialsup)")
+
+
+def test_long_format_audit_written_by_default(cfg, data_root):
+    """mts_tbl_ylt_combined_all_factors.parquet is written by default,
+    contains identity cols + (metric_name, value), and includes blending factors."""
+    output_path = data_root / "output" / "mts_tbl_ylt_combined_all_factors.parquet"
+    assert output_path.exists(), "default long-format parquet was not written"
+
+    df = pl.scan_parquet(output_path).collect()
+    assert "metric_name" in df.columns
+    assert "value" in df.columns
+    assert "rl_proportion" in df.columns
+    assert "vk_proportion" in df.columns
+    assert "base_model" in df.columns
+    assert df.height > 0, "long-format parquet has zero rows"
+
+    metrics = set(df["metric_name"].unique().to_list())
+    assert "dialsup" in metrics, f"dialsup not in metrics: {sorted(metrics)}"
+    assert any(m.startswith("loss_uplifted_capped_localccy_2") for m in metrics), (
+        f"no tagged main-chain metric found in: {sorted(metrics)}"
+    )
+    print(f"\n[e2e] mts_tbl_ylt_combined_all_factors: {df.height:,} rows, "
+          f"{df['metric_name'].n_unique()} distinct metrics")
 
 
 def test_dump_interim_produces_audit_parquets(cfg, data_root):

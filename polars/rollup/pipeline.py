@@ -496,6 +496,19 @@ def main(argv: list[str] | None = None) -> int:
              "into long-format CSVs next to them.",
     )
 
+    # Subcommand: derive-blending
+    blend_parser = subparsers.add_parser(
+        "derive-blending",
+        help="Derive blending_weights.csv from EP-summary long CSVs (run ep-summary-to-csv first).",
+    )
+    blend_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Where to write the blending_weights CSV. "
+             "Default: <seeds_dir>/vor/blending_weights.csv (overwrites the existing seed).",
+    )
+
     args = parser.parse_args(argv)
 
     if args.cmd == "ep-summary-to-csv":
@@ -512,16 +525,47 @@ def main(argv: list[str] | None = None) -> int:
         print(f"total: {len(written)} csv file(s)")
         return 0
 
+    if args.cmd == "derive-blending":
+        from rollup.stages.blending import derive_blending_weights
+        from rollup.seeds import load_all as _load_all
+        config.setup_logging(args.log_level)
+        cfg = config.resolve()
+        output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
+
+        rl_csv = cfg.vendor(VendorName.RISKLINK).ep_summary_dir / "rms_ep_summary.long.csv"
+        vk_csv = cfg.vendor(VendorName.VERISK).ep_summary_dir / "verisk_ep_summary.long.csv"
+        if not rl_csv.exists() and not vk_csv.exists():
+            print(
+                "error: no EP-summary long CSVs found. Run `ep-summary-to-csv` first.",
+                file=sys.stderr,
+            )
+            return 2
+
+        seeds_obj = _load_all(cfg.seeds_dir)
+        analyses = seeds_obj.analyses.collect()
+        perils   = seeds_obj.perils.collect()
+
+        df = derive_blending_weights(rl_csv, vk_csv, analyses, perils)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        df.write_csv(output)
+        print(f"wrote {output}  ({df.height:,} rows)")
+        print(df.head(20))
+        return 0
+
     # Default flow: dry-run / run.
     config.setup_logging(args.log_level)
     cfg  = config.resolve()
     plan = config.build_plan(cfg)
 
     if args.dry_run:
-        print(config.format_plan(plan))
+        if sys.stdout.isatty():
+            config.print_plan(plan)
+        else:
+            print(config.format_plan(plan))
         return 0
 
     if not plan.all_seeds_ok:
+        # On stderr we always use plain text — colour codes leak in CI logs.
         print(config.format_plan(plan), file=sys.stderr)
         print("aborting: one or more seeds failed schema validation", file=sys.stderr)
         return 2

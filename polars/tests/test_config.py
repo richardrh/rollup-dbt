@@ -208,3 +208,67 @@ def test_confirm_non_interactive_returns_true(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(""))  # stdin.isatty() → False
     monkeypatch.setattr("builtins.input", lambda _: pytest.fail("input() called"))
     assert config.confirm(plan, assume_yes=False, stream=io.StringIO()) is True
+
+
+# -----------------------------------------------------------------------------
+# Schema-diff reporting: YLT parquets + seed dtype drift
+# -----------------------------------------------------------------------------
+
+def test_ylt_section_reports_schema_mismatch(tmp_path):
+    """A parquet with a renamed column triggers a schema-diff check failure."""
+    import polars as pl
+    cfg = _cfg_with_seeds(tmp_path)
+    v = cfg.vendor(VendorName.VERISK)
+    v.ylt_dir.mkdir(parents=True)
+    # Build a parquet whose schema is a wrong shape: rename 'EventID' → 'OOPS'
+    bad = pl.DataFrame({
+        "Analysis": ["x"], "ExposureAttribute": ["y"], "CatalogTypeCode": ["z"],
+        "OOPS": [1], "ModelCode": [1], "YearID": [1], "PerilSetCode": [1],
+        "GroundUpLoss": [0.0], "GrossLoss": [0.0], "NetOfPreCatLoss": [0.0],
+        "filename": ["f"],
+    })
+    bad.write_parquet(v.ylt_dir / "air_ylt_c1.parquet")
+    plan = config.build_plan(cfg)
+    sec = next(s for s in plan.sections if s.title == f"ylt {VendorName.VERISK}")
+    chk = next(c for c in sec.checks if c.label == "air_ylt_c1.parquet")
+    assert not chk.ok
+    assert "missing=" in chk.note and "EventID" in chk.note
+    assert "unexpected=" in chk.note and "OOPS" in chk.note
+
+
+def test_ylt_section_reports_dtype_drift(tmp_path):
+    """A parquet column with the wrong dtype is reported as wrong_dtype."""
+    import polars as pl
+    cfg = _cfg_with_seeds(tmp_path)
+    v = cfg.vendor(VendorName.VERISK)
+    v.ylt_dir.mkdir(parents=True)
+    # GrossLoss should be Float64; write Int64 instead (every other column correct).
+    bad = pl.DataFrame({
+        "Analysis": ["x"], "ExposureAttribute": ["y"], "CatalogTypeCode": ["z"],
+        "EventID": [1], "ModelCode": [1], "YearID": [1], "PerilSetCode": [1],
+        "GroundUpLoss": [0.0], "GrossLoss": [0],   # Int64 instead of Float64
+        "NetOfPreCatLoss": [0.0], "filename": ["f"],
+    })
+    bad.write_parquet(v.ylt_dir / "air_ylt_c1.parquet")
+    plan = config.build_plan(cfg)
+    sec = next(s for s in plan.sections if s.title == f"ylt {VendorName.VERISK}")
+    chk = next(c for c in sec.checks if c.label == "air_ylt_c1.parquet")
+    assert not chk.ok
+    assert "wrong_dtype=" in chk.note
+    assert "GrossLoss" in chk.note
+
+
+def test_seed_section_reports_dtype_drift(tmp_path):
+    """A seed CSV whose header matches but dtype is wrong reports wrong_dtype."""
+    cfg = _cfg_with_seeds(tmp_path)
+    # lobs.csv: lob_id is Int64 in REF_LOBS. Write a value that won't coerce.
+    bad = cfg.seeds_dir / "business" / "lobs.csv"
+    bad.write_text(
+        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class\n"
+        "abc,foo,bar,baz,quux,L,X\n"  # 'abc' isn't an Int64
+    )
+    plan = config.build_plan(cfg)
+    chk = next(c for c in plan.seeds_section.checks if c.label == "lobs")
+    assert not chk.ok
+    # The note should reference dtype drift OR a parse error mentioning lob_id.
+    assert "wrong_dtype" in chk.note or "lob_id" in chk.note

@@ -43,8 +43,27 @@ from pathlib import Path
 import importlib.util
 
 import polars as pl
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
+from rollup.schemas import frames as F
 from rollup.seeds import NEAR_MISSES, REQUIRED_SEEDS, discover as discover_seeds
+from rollup.validate import ColumnDiff, column_diff
+
+
+# Hiscox-y colour palette — used by the Rich renderer below. Plain
+# `format_plan` (used by tests / file dumps) ignores these.
+_BRAND       = "bold #B22234"
+_BRAND_DIM   = "#8A1A28"
+_OK          = "bold green"
+_FAIL        = "bold red"
+_DIM         = "dim white"
+_HEADER      = "bold #7AC3E2"
+_SECTION     = "bold #E5B36B"
+_NUM         = "#E5B36B"
+_PATH        = "#A6D989"
 
 
 # --------------------------------------------------------------------------- #
@@ -337,6 +356,9 @@ def _check_seed(seeds_dir: Path, spec) -> Check:
             if missing: bits.append(f"missing={sorted(missing)}")
             if extra:   bits.append(f"unexpected={sorted(extra)}")
             return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
+        # Header matches; validate dtypes by reading the first row with the declared
+        # schema — this surfaces coercion failures (e.g. "abc" in an Int64 column).
+        pl.read_csv(path, schema=spec.schema, n_rows=1)
         rows = pl.scan_csv(path, schema=spec.schema).select(pl.len()).collect().item()
         if rows == 0 and spec.name in REQUIRED_SEEDS:
             return Check(label=spec.name, path=path, ok=False, rows=0,
@@ -347,17 +369,63 @@ def _check_seed(seeds_dir: Path, spec) -> Check:
         return Check(label=spec.name, path=path, ok=False, note=f"parse error: {e}")
 
 
-def _check_dir_glob(label: str, directory: Path, glob: str) -> list[Check]:
-    """Generic dir-pattern check used for both YLT parquets and EP-summary CSVs."""
+def _format_diffs(diffs: list[ColumnDiff]) -> str:
+    """Group ColumnDiff entries by kind and produce a compact human-readable string.
+
+    Produces entries like:
+      missing=['col1', 'col2'], wrong_dtype=['col3:Float64→Int64'], unexpected=['col4']
+    Empty groups are omitted.
+    """
+    missing     = [str(d.column) for d in diffs if d.kind == "missing"]
+    wrong_dtype = [f"{d.column}:{d.detail}" for d in diffs if d.kind == "wrong_dtype"]
+    unexpected  = [str(d.column) for d in diffs if d.kind == "unexpected"]
+    parts: list[str] = []
+    if missing:
+        parts.append(f"missing={missing!r}")
+    if wrong_dtype:
+        parts.append(f"wrong_dtype={wrong_dtype!r}")
+    if unexpected:
+        parts.append(f"unexpected={unexpected!r}")
+    return ", ".join(parts)
+
+
+def _check_ylt_parquet(path: Path, expected_schema: pl.Schema, name: str) -> Check:
+    """Check one YLT parquet: read its schema and compare against expected."""
+    try:
+        actual = pl.scan_parquet(path).collect_schema()
+    except Exception as e:
+        return Check(label=name, path=path, ok=False, note=f"parse error: {e}")
+    size_mb = path.stat().st_size / 1e6
+    diffs = column_diff(actual, expected_schema)
+    if not diffs:
+        return Check(label=name, path=path, ok=True, note=f"{size_mb:.1f} MB | schema OK")
+    return Check(label=name, path=path, ok=False, note=f"{size_mb:.1f} MB | {_format_diffs(diffs)}")
+
+
+def _check_dir_glob(
+    label: str,
+    directory: Path,
+    glob: str,
+    parquet_schema: pl.Schema | None = None,
+) -> list[Check]:
+    """Generic dir-pattern check used for both YLT parquets and EP-summary CSVs.
+
+    When `parquet_schema` is provided, each `.parquet` file is validated against
+    that schema via `_check_ylt_parquet`. Other file types (CSV, xlsx) retain the
+    original size-only check.
+    """
     if not directory.exists():
         return [Check(label=glob, path=directory, ok=False, note="directory does not exist")]
     files = sorted(directory.glob(glob))
     if not files:
         return [Check(label=glob, path=directory, ok=False, note="no files match pattern")]
-    return [
-        Check(label=p.name, path=p, ok=True, note=f"{p.stat().st_size / 1e6:.1f} MB")
-        for p in files
-    ]
+    checks: list[Check] = []
+    for p in files:
+        if parquet_schema is not None and p.suffix == ".parquet":
+            checks.append(_check_ylt_parquet(p, parquet_schema, p.name))
+        else:
+            checks.append(Check(label=p.name, path=p, ok=True, note=f"{p.stat().st_size / 1e6:.1f} MB"))
+    return checks
 
 
 def build_plan(config: Config) -> Plan:
@@ -370,13 +438,23 @@ def build_plan(config: Config) -> Plan:
                 for spec in discover_seeds(config.seeds_dir)],
     ))
 
+    _YLT_SCHEMAS: dict[VendorName, pl.Schema] = {
+        VendorName.VERISK:   F.RAW_VERISK_YLT,
+        VendorName.RISKLINK: F.RAW_RISKLINK_YLT,
+    }
+
     for vendor in config.vendors:
         sections.append(Section(
             title=f"ylt {vendor.name}",
             header=(f"{vendor.ylt_dir}  "
                     f"pattern={vendor.ylt_glob}  "
                     f"n_simulations={vendor.n_simulations:,}"),
-            checks=_check_dir_glob(vendor.name, vendor.ylt_dir, vendor.ylt_glob),
+            checks=_check_dir_glob(
+                vendor.name,
+                vendor.ylt_dir,
+                vendor.ylt_glob,
+                parquet_schema=_YLT_SCHEMAS.get(vendor.name),
+            ),
         ))
 
     for vendor in config.vendors:
@@ -444,24 +522,132 @@ def format_plan(plan: Plan) -> str:
     return "\n".join(lines)
 
 
+def print_plan(plan: Plan, console: Console | None = None) -> None:
+    """Render the plan with Rich — colour, tables, glyphs.
+
+    For non-tty / piped output use `format_plan(plan)` instead (returns a
+    plain string). The Rich renderer is for interactive terminals; tests
+    that compare against `format_plan` keep working unchanged.
+    """
+    if console is None:
+        console = Console()
+
+    title = Text("polars rollup pipeline", style=_BRAND)
+    subtitle = Text("pre-flight plan", style=_DIM)
+    console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style=_BRAND_DIM))
+
+    for section in plan.sections:
+        # Section header row: title + path/glob meta.
+        head = Text.assemble(
+            (f"[{section.title}]", _SECTION),
+            "  ",
+            (section.header, _DIM),
+        )
+        console.print(head)
+
+        table = Table(
+            show_header=False,
+            box=None,
+            pad_edge=False,
+            padding=(0, 1),
+            expand=False,
+        )
+        table.add_column(justify="left",  width=2)         # ✓/✘ glyph
+        table.add_column(justify="left",  min_width=30)    # label
+        table.add_column(justify="right", min_width=10)    # rows
+        table.add_column(justify="left",  no_wrap=False)   # note
+
+        for c in section.checks:
+            mark_style = _OK if c.ok else _FAIL
+            mark = "✓" if c.ok else "✘"
+            rows_text = f"{c.rows:>8,} rows" if c.rows else ""
+            note_style = _DIM if c.ok else _FAIL
+            table.add_row(
+                Text(mark, style=mark_style),
+                Text(c.label, style="white" if c.ok else _FAIL),
+                Text(rows_text, style=_NUM),
+                Text(c.note, style=note_style),
+            )
+        console.print(table)
+        console.print()
+
+    # Summary line — coloured counts.
+    seed_ok = sum(1 for c in plan.seeds_section.checks if c.ok)
+    seed_total = len(plan.seeds_section.checks)
+    ylt_ready = sum(
+        1 for v in plan.config.vendors
+        if any(c.ok for s in plan.sections if s.title == f"ylt {v.name}" for c in s.checks)
+    )
+    ep_ready = sum(
+        1 for v in plan.config.vendors
+        if any(c.ok for s in plan.sections if s.title == f"ep_summaries {v.name}" for c in s.checks)
+    )
+    n_vendors = len(plan.config.vendors)
+
+    def _ratio(ok: int, total: int) -> Text:
+        style = _OK if ok == total else (_FAIL if ok == 0 else _SECTION)
+        return Text(f"{ok}/{total}", style=style)
+
+    summary = Table(show_header=False, box=None, pad_edge=False, padding=(0, 2))
+    summary.add_column(style=_DIM)
+    summary.add_column()
+    summary.add_row("seeds",        _ratio(seed_ok, seed_total))
+    summary.add_row("YLTs",         _ratio(ylt_ready, n_vendors))
+    summary.add_row("EP summaries", _ratio(ep_ready, n_vendors))
+    if plan.config.mssql_conn_str:
+        display = plan.config.mssql_conn_str
+        if "://" in display:
+            scheme, rest = display.split("://", 1)
+            if "@" in rest and not rest.startswith("@"):
+                rest = f"...@{rest.split('@', 1)[1]}"
+            display = f"{scheme}://{rest}"
+        summary.add_row("SQL Server", Text(display, style=_PATH))
+    else:
+        summary.add_row("SQL Server", Text("not configured (parquet-only run)", style=_DIM))
+    console.print(summary)
+    console.print()
+
+
 def confirm(plan: Plan, *, assume_yes: bool = False, stream=sys.stdout) -> bool:
     """Print the plan, ask y/N. Returns True if the user accepts.
 
     `assume_yes=True` skips the prompt (for CI and tests). Non-interactive
     stdin (`stdin.isatty() is False`) also returns True — callers that need
     strict confirmation in pipes should check `sys.stdin.isatty()` themselves.
+
+    Uses the Rich renderer when the stream is a tty; falls back to the
+    plain `format_plan` for piped / non-tty output (tests, CI, file dumps).
     """
-    print(format_plan(plan), file=stream)
+    use_rich = getattr(stream, "isatty", lambda: False)() and stream is sys.stdout
+    if use_rich:
+        print_plan(plan, console=Console(file=stream))
+    else:
+        print(format_plan(plan), file=stream)
+
     if not plan.all_seeds_ok:
-        print("! seeds have errors — fix before running.", file=stream)
+        if use_rich:
+            Console(file=stream).print(
+                Text("! seeds have errors — fix before running.", style=_FAIL)
+            )
+        else:
+            print("! seeds have errors — fix before running.", file=stream)
     if assume_yes:
-        print("(--yes) proceeding", file=stream)
+        if use_rich:
+            Console(file=stream).print(Text("(--yes) proceeding", style=_OK))
+        else:
+            print("(--yes) proceeding", file=stream)
         return True
     if not sys.stdin.isatty():
         print("(non-interactive stdin) proceeding", file=stream)
         return True
     try:
-        reply = input("Proceed? [y/N]: ").strip().lower()
+        prompt = "Proceed? [y/N]: "
+        if use_rich:
+            console = Console(file=stream)
+            console.print(Text(prompt, style=_BRAND), end="")
+            reply = input().strip().lower()
+        else:
+            reply = input(prompt).strip().lower()
     except EOFError:
         return False
     return reply in {"y", "yes"}
