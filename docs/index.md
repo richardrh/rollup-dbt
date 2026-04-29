@@ -18,8 +18,8 @@ uv run pytest -q                                     # 98 tests, ~4s
 
 ```bash
 # from repo root
-uv run mkdocs serve   # live-reload dev server at http://127.0.0.1:8000
-uv run mkdocs build   # write static site to site/
+uv run zensical serve   # live-reload dev server at http://localhost:8000
+uv run zensical build   # write static site to site/
 ```
 
 ## Documentation index
