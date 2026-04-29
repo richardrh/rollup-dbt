@@ -8,14 +8,19 @@ parquets. Everything is a `LazyFrame` expression; nothing materialises until
 ## Run it
 
 ```bash
-cd polars
-uv run python -m rollup.pipeline --dry-run             # show the plan, exit
-uv run python -m rollup.pipeline                       # plan → y/N prompt → run
-uv run python -m rollup.pipeline --yes                 # skip prompt, run
-uv run python -m rollup.pipeline --yes --dump-interim  # also write audit parquets
-uv run python -m rollup.pipeline --yes --log-level INFO# show factor-chain trace
-uv run python -m pytest polars/                        # 97 tests, ~1.6s
+# from repo root
+uv run rollup --dry-run                  # show the plan, exit
+uv run rollup                            # plan → y/N prompt → run
+uv run rollup --yes                      # skip prompt, run
+uv run rollup --yes --dump-interim       # also write audit parquets
+uv run rollup --yes --log-level INFO     # show factor-chain trace
+uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
+uv run rollup derive-blending            # rewrite blending_weights from EP AALs
+uv run pytest -q                         # 112 tests, ~5s
 ```
+
+`python -m rollup` and `python -m rollup.pipeline` also work — the
+console-script `rollup` is just the easiest entry point.
 
 Need to know what data to provide before the run? See
 [`../docs/data-requirements.md`](../docs/data-requirements.md) — the canonical

@@ -31,6 +31,9 @@ dev = [
 [tool.uv]
 default-groups = ["dev"]
 
+[project.scripts]
+rollup = "rollup.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

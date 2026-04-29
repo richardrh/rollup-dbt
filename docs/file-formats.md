@@ -5,7 +5,7 @@ Quick reference for every file the pipeline reads. Each section lists the
 deeper *why* and the SQL recipes for populating the seeds, see
 [`data-requirements.md`](data-requirements.md).
 
-The pre-flight check (`uv run -m rollup.pipeline --dry-run`) validates
+The pre-flight check (`uv run rollup --dry-run`) validates
 every file listed here against its declared schema and reports any drift
 with `filename | column | reason`.
 
@@ -106,7 +106,7 @@ under `data/seeds/` doesn't matter. The 12 schemas below are the contract.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
-Long format. Generate with `uv run -m rollup.pipeline derive-blending`
+Long format. Generate with `uv run rollup derive-blending`
 once `ep-summary-to-csv` has run.
 
 | column        | dtype   | notes |
@@ -197,14 +197,14 @@ RiskLink event catalogue. Optional stub.
 Vendor-supplied xlsx (multi-row header, wide RP columns) — **not** a
 direct pipeline input. Convert to long format with:
 
-    uv run -m rollup.pipeline ep-summary-to-csv
+    uv run rollup ep-summary-to-csv
 
 The resulting `<stem>.long.csv` has `(id, rp, ep_type, lob, region_peril, gl)`
 for risklink (`STG_RISKLINK_EP` schema).
 
 Then derive blending weights:
 
-    uv run -m rollup.pipeline derive-blending
+    uv run rollup derive-blending
 
 This rewrites `data/seeds/vor/blending_weights.csv` from the AAL totals.
 
@@ -226,7 +226,7 @@ The pipeline writes here. **Created on run.**
 ## Validating before a run
 
 ```bash
-uv run -m rollup.pipeline --dry-run
+uv run rollup --dry-run
 ```
 
 Per file the plan reports:

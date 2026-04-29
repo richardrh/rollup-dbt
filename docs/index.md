@@ -8,10 +8,12 @@ is the overview + schematic + run commands.
 
 ```bash
 # from repo root
-uv run -m rollup.pipeline --dry-run                  # plan only — no data read
-uv run -m rollup.pipeline --yes                      # full run
-uv run -m rollup.pipeline --yes --log-level INFO     # full run, with stage logs
-uv run pytest -q                                     # 98 tests, ~4s
+uv run rollup --dry-run                              # plan only — no data read
+uv run rollup --yes                                  # full run
+uv run rollup --yes --log-level INFO                 # full run, with stage logs
+uv run rollup ep-summary-to-csv                      # convert wide xlsx → long CSV
+uv run rollup derive-blending                        # rewrite blending_weights from EP AALs
+uv run pytest -q                                     # 112 tests, ~5s
 ```
 
 ## Build the docs

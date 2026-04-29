@@ -1,11 +1,11 @@
 # Data requirements — what you need to provide for a real run
 
 This is the contract between the pipeline and the data you supply. If every
-file listed below exists in the right shape, `python -m rollup.pipeline --yes`
+file listed below exists in the right shape, `rollup --yes`
 runs end-to-end and writes 12 (= 2 vendors × N forecast dates × 2 flavours)
 `Hisco{AIR,RMS}_{date}_{flavour}.parquet` files under `data/output/`.
 
-The pipeline's preflight (`python -m rollup.pipeline --dry-run`) reports the
+The pipeline's preflight (`rollup --dry-run`) reports the
 status of every file mentioned here. Read its output before re-checking this
 doc.
 
@@ -41,7 +41,7 @@ The vendor-supplied EP-summary xlsx files use a multi-row header and wide
 RP columns. To convert them into long-format CSVs that match the
 `STG_RISKLINK_EP` / `STG_VERISK_EP` schemas, run:
 
-    uv run -m rollup.pipeline ep-summary-to-csv
+    uv run rollup ep-summary-to-csv
 
 For each xlsx found under `data/ep_summaries/{vendor}/`, a sibling
 `<stem>.long.csv` is written. The long format is `(id, rp, ep_type, lob,
@@ -54,7 +54,7 @@ AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 
 After converting xlsx to long CSV (above), regenerate the blending seed:
 
-    uv run -m rollup.pipeline derive-blending
+    uv run rollup derive-blending
 
 Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
 computes per-peril AAL totals, and writes
@@ -552,9 +552,9 @@ No code change. No test change.
 
 ```bash
 cd polars
-uv run python -m rollup.pipeline --dry-run        # plan: every seed + YLT + EP file checked
-uv run python -m rollup.pipeline --yes            # full run
-uv run python -m rollup.pipeline --yes -d         # also write audit_{wide,long}.parquet
+uv run rollup --dry-run        # plan: every seed + YLT + EP file checked
+uv run rollup --yes            # full run
+uv run rollup --yes --dump-interim         # also write audit_{wide,long}.parquet
 ```
 
 If everything is green:
