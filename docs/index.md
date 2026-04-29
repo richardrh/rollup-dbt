@@ -14,10 +14,19 @@ uv run -m rollup.pipeline --yes --log-level INFO     # full run, with stage logs
 uv run pytest -q                                     # 98 tests, ~4s
 ```
 
+## Build the docs
+
+```bash
+# from repo root
+uv run mkdocs serve   # live-reload dev server at http://127.0.0.1:8000
+uv run mkdocs build   # write static site to site/
+```
+
 ## Documentation index
 
 | doc | what it covers |
 |---|---|
+| [File formats](file-formats.md) | **Quick reference.** Every input file's columns + dtypes — YLT parquets, all 12 seed CSVs, EP summaries. Pair with `--dry-run` for instant feedback. |
 | [Data requirements](data-requirements.md) | **The contract for a real run.** YLT wire schemas, every seed CSV, currency-derivation rule, forecast-factor join contract, failure-mode reference. **Includes which RiskLink analyses you actually need to export.** |
 | [Architecture](architecture.md) | Code organisation. `Vendor` / `Flavor` / `VariantSpec`, seed loading, schema validation layers, the audit parquets, logging. |
 | [Factor chain](factor-chain.md) | The factor-chain mental model, cumulative column-naming convention, and the **5-step recipe to add a new factor**. |

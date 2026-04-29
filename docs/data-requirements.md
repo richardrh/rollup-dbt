@@ -50,6 +50,22 @@ region_peril, gl)` for risklink.
 AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 (e.g. `2`, `5`, ..., `10000`).
 
+### Deriving blending weights from EP summaries
+
+After converting xlsx to long CSV (above), regenerate the blending seed:
+
+    uv run -m rollup.pipeline derive-blending
+
+Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
+computes per-peril AAL totals, and writes
+`data/seeds/vor/blending_weights.csv` with proportions:
+
+    rl_proportion = rl_aal / (rl_aal + vk_aal)
+    vk_proportion = 1 - rl_proportion
+
+The CSV is the contract the pipeline reads — re-run `ep-summary-to-csv`
+and `derive-blending` whenever the EP summaries are refreshed.
+
 ---
 
 ## A. YLT parquets — the actual loss tables
