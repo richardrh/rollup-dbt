@@ -143,7 +143,6 @@ class RefForecastFactorsCol(StrEnum):
     CLASS         = "class"
     OFFICE        = "office"
     OFFICE_ISO2   = "office_iso2"
-    BASE_DATE     = "base_date"
     FORECAST_DATE = "forecast_date"
     FACTOR        = "factor"
 

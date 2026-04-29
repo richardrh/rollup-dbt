@@ -96,12 +96,12 @@ BLENDING_WEIGHTS = [
 
 # Three arbitrary forecast dates — the pipeline picks them up from the seed.
 FORECAST_DATES = [date(2026, 1, 1), date(2026, 7, 1), date(2027, 1, 1)]
-# (class, office, office_iso2, base_date, forecast_date, factor)
+# (class, office, office_iso2, forecast_date, factor)
 FORECAST_FACTORS = []
 for fd in FORECAST_DATES:
     FORECAST_FACTORS += [
-        ("HH", "UK", "UK", date(2026, 1, 1), fd, 1.05 if fd.year == 2026 else 1.10),
-        ("FA", "FR", "FR", date(2026, 1, 1), fd, 1.02 if fd.year == 2026 else 1.06),
+        ("HH", "UK", "UK", fd, 1.05 if fd.year == 2026 else 1.10),
+        ("FA", "FR", "FR", fd, 1.02 if fd.year == 2026 else 1.06),
     ]
 
 FX_RATES = [
@@ -165,7 +165,7 @@ def _write_seeds() -> None:
     ]).write_csv(SEEDS / "vor/blending_weights.csv")
 
     pl.DataFrame(FORECAST_FACTORS, orient="row", schema=[
-        FF.CLASS, FF.OFFICE, FF.OFFICE_ISO2, FF.BASE_DATE, FF.FORECAST_DATE, FF.FACTOR,
+        FF.CLASS, FF.OFFICE, FF.OFFICE_ISO2, FF.FORECAST_DATE, FF.FACTOR,
     ]).write_csv(SEEDS / "vor/forecast_factors.csv")
 
     pl.DataFrame(FX_RATES, orient="row", schema=[

@@ -109,7 +109,6 @@ REF_FORECAST_FACTORS: pl.Schema = pl.Schema({
     RefForecastFactorsCol.CLASS:         pl.String,
     RefForecastFactorsCol.OFFICE:        pl.String,
     RefForecastFactorsCol.OFFICE_ISO2:   pl.String,
-    RefForecastFactorsCol.BASE_DATE:     pl.Date,
     RefForecastFactorsCol.FORECAST_DATE: pl.Date,
     RefForecastFactorsCol.FACTOR:        pl.Float64,
 })

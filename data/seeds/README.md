@@ -88,7 +88,7 @@ where the axis is extensible:
 | seed                 | january shape                                         | polars shape                                                   |
 | -------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
 | `fx_rates`           | wide: `CurrencyCode, "Rate to USD", "Rate to GBP"`    | long: `currency_code, target_currency, rate_date, rate`        |
-| `forecast_factors`   | wide: `class, office, f_202601, f_202607, f_202701`   | long: `class, office, office_iso2, base_date, forecast_date, factor` |
+| `forecast_factors`   | wide: `class, office, f_202601, f_202607, f_202701`   | long: `class, office, office_iso2, forecast_date, factor` |
 | `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | long: `peril_id, sub_peril, vendor, weight`                    |
 | `euws_rate_factors`  | long already                                          | long (`model_event_id, occ_year, factor`)                      |
 | `lobs`               | one row per lob                                       | one row per lob (+ `office`, `class` from january's `lobs_with_class_office` view) |

@@ -130,14 +130,12 @@ def _forecast_seed(forecast_date: str, factor: float) -> pl.LazyFrame:
         FF.CLASS:         ["HH"],
         FF.OFFICE:        ["UK"],
         FF.OFFICE_ISO2:   ["UK"],
-        FF.BASE_DATE:     ["2026-01-01"],
         FF.FORECAST_DATE: [forecast_date],
         FF.FACTOR:        [factor],
     }, schema={
         FF.CLASS:         pl.String,
         FF.OFFICE:        pl.String,
         FF.OFFICE_ISO2:   pl.String,
-        FF.BASE_DATE:     pl.Date,
         FF.FORECAST_DATE: pl.Date,
         FF.FACTOR:        pl.Float64,
     }).lazy()
