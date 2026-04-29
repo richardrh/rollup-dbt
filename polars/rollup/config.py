@@ -30,6 +30,8 @@ Default layout:
 Override any path with the corresponding `ROLLUP_*` env var, or set them
 in `config.py` at the repo root (gitignored — never committed).
 """
+# TODO: Are we loading from .env here? we probably do not need a .env as this
+#is a locally run analysis tool. better to just load from a toml
 
 from __future__ import annotations
 

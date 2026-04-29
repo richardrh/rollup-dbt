@@ -1,5 +1,14 @@
 # Data collection checklist
 
+# TODO: I don't know if i have done it right or not? i have
+# dropped a risklink parquet file into./data/ylt/risklink - it contains GB Flood
+# and GB Wind but not yet BE or DE Flood which we originally mapped to Europe FLood
+# the EP Summaries - i need to know what format we need. They originally came
+# from excel spreadsheets but i think we should define what format we want
+# in csv format. then the user knows what they need to produce.
+# e.g. see ./rms_analysis_list.csv ? 
+
+
 Put these files in the right place and ping me. That's it.
 
 All paths below are inside the **repo root** (`rollup-dbt/`) — the same folder that contains `polars/`, `jan-rollup/`, etc.

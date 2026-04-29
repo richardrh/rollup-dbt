@@ -44,6 +44,12 @@ class SeedSpec:
     schema: pl.Schema
 
 
+# TODO: Is there a way of dynamically loading seed files instead ofg hard coding them?
+# the challenge will be to determine where they join onto? but we could have a feature
+# that automatically loads seed files into a registry and applies their multiplacative 
+# factors in sequence.
+# anythng that is not multiplacative gets put into a different directory and is not
+# auto loaded?
 SEEDS: list[SeedSpec] = [
     # ----- business: LOB + peril dimension -----
     SeedSpec("lobs",             "business/lobs.csv",             F.REF_LOBS),

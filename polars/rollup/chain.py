@@ -22,6 +22,14 @@ walk this registry — no other call site hand-builds the column names.
 Its column-name builder lives here for co-location but it walks zero
 registry entries.
 """
+#TODO: Can we make the cumulative loss chain names mroe like a sha256/blake3 hash
+# of the content of that chain? e.g. the typed registry dict of the chains
+# contains the order of the chain e.g. element 0, 1, 2 in the dict + the name
+# of the transform. Should we hash that and call the metric the hashable value?
+# Reason is although the text based metric name is human readable it is also error prone
+# we can also join the hashed value back to the registry to obtain what was applied
+# in the metric. so the marts output contaisn the hashable metric value
+# and a column with e.g. { order: x, transformName: y } ?
 
 from __future__ import annotations
 
