@@ -98,13 +98,24 @@ def test_at_least_one_variant_has_real_numbers(cfg, data_root):
 
 
 def test_variant_count_matches_plan(cfg, data_root):
+    """Variant count: MAIN → n_vendors × n_dates; DIALSUP → n_vendors × 1.
+
+    DIALSUP is tag-independent (``loss / rate_to_gbp``) so one file per vendor
+    is sufficient. For 2 vendors × 3 dates that gives 6 main + 2 dialsup = 8.
+    """
+    from rollup.config import Flavor
     seeds    = load_all(cfg.seeds_dir)
     fc_dates = forecast_dates_from_seed(seeds)
     variants = build_variants(fc_dates, cfg.vendors)
-    expected = sum(len(v.flavors) for v in cfg.vendors) * len(fc_dates)
+
+    n_main    = sum(f == Flavor.MAIN    for v in cfg.vendors for f in v.flavors) * len(fc_dates)
+    n_dialsup = sum(f == Flavor.DIALSUP for v in cfg.vendors for f in v.flavors)
+    expected  = n_main + n_dialsup
+
     assert len(variants) == expected
     print(f"\n[e2e] built {len(variants)} Hisco variants "
-          f"({len(cfg.vendors)} vendors × {len(fc_dates)} forecast dates × flavours)")
+          f"({len(cfg.vendors)} vendors × {len(fc_dates)} forecast dates main + "
+          f"{n_dialsup} dialsup)")
 
 
 def test_dump_interim_produces_audit_parquets(cfg, data_root):
@@ -131,7 +142,8 @@ def test_dump_interim_produces_audit_parquets(cfg, data_root):
         assert cols.index("euws_factor") < cols.index(f"loss_uplifted_capped_localccy_{y}_euws")
 
     # Long: N events × M metrics, all non-null.
-    assert long["metric_name"].n_unique() >= 1 + 3 + 3 * len(tags) + len(tags)
+    # Metric columns: loss + 3 year-invariant + 3 chain stages × n_tags + 1 dialsup
+    assert long["metric_name"].n_unique() >= 1 + 3 + 3 * len(tags) + 1
     assert long.filter(pl.col("value").is_null()).height == 0
 
     print(f"\n[e2e] audit_wide: {wide.shape}, {len(wide.columns)} cols")

@@ -61,7 +61,16 @@ def test_variant_loss_metric_per_flavor():
     dialsup = VariantSpec(v, date(2026, 1, 1), Flavor.DIALSUP).loss_metric
     # fa_gross IS in the column name — it's the last factor in the chain, not a flavour.
     assert main    == "loss_uplifted_capped_localccy_202601_euws_fagross"
-    assert dialsup == "dialsup_202601"
+    # dialsup is tag-independent: loss / rate_to_gbp, so no forecast tag in the column name.
+    assert dialsup == "dialsup"
+
+
+def test_variant_dialsup_name_has_no_forecast_tag():
+    """DIALSUP output file name omits the forecast tag — one file per vendor."""
+    v = _fake_vendor(VendorName.VERISK, "AIR")
+    spec = VariantSpec(vendor=v, forecast_date=date(2026, 1, 1), flavor=Flavor.DIALSUP)
+    assert spec.name == "HiscoAIR_dialsup"
+    assert "202601" not in spec.name
 
 
 # -----------------------------------------------------------------------------
@@ -72,8 +81,8 @@ def test_build_variants_cross_product_count():
     vendors = (_fake_vendor(VendorName.VERISK, "AIR"), _fake_vendor(VendorName.RISKLINK, "RMS"))
     dates = [date(2026, 1, 1), date(2026, 7, 1), date(2027, 1, 1)]
     variants = build_variants(dates, vendors)
-    # 2 vendors × 3 dates × 2 flavors
-    assert len(variants) == 2 * 3 * 2
+    # 2 vendors × 3 dates × 1 main  +  2 vendors × 1 dialsup  =  6 + 2 = 8
+    assert len(variants) == 2 * 3 + 2 * 1
 
 
 def test_build_variants_respects_per_vendor_flavors():
@@ -93,13 +102,17 @@ def test_build_variants_names_are_all_unique():
 
 
 def test_build_variants_names_match_hisco_pattern():
-    """Every name is HiscoXXX_yyyyMM_<flavor>."""
+    """MAIN names include the forecast tag; DIALSUP names do not."""
     vendors = (_fake_vendor(VendorName.VERISK, "AIR"), _fake_vendor(VendorName.RISKLINK, "RMS"))
     variants = build_variants([date(2026, 1, 1)], vendors)
     for v in variants:
         assert v.name.startswith(f"Hisco{v.vendor.hisco_label}_")
-        assert v.forecast_tag in v.name
         assert v.flavor.value in v.name
+        if v.flavor == Flavor.MAIN:
+            assert v.forecast_tag in v.name
+        else:
+            # DIALSUP: one file per vendor — no date in the filename
+            assert v.forecast_tag not in v.name
 
 
 # -----------------------------------------------------------------------------
@@ -183,27 +196,40 @@ def test_count_event_id_orphans_counts_unmatched_rows():
 
 
 # -----------------------------------------------------------------------------
-# _compute_dialsup: zero-guard semantics
+# _compute_dialsup: loss / rate_to_gbp (no factors)
 # -----------------------------------------------------------------------------
 
-def test_compute_dialsup_returns_zero_when_localccy_loss_is_zero():
-    """Documents the zero-guard: a row with zero local-ccy loss yields dialsup=0,
-    not divide-by-zero. The composite factor is still meaningful but applied to
-    a raw loss that is also zero, so the answer is zero either way."""
+def test_compute_dialsup_single_column_named_dialsup():
+    """_compute_dialsup adds exactly one column called 'dialsup', not per-tag."""
     ylt = pl.DataFrame({
-        Y.LOSS:                              [0.0],
-        M.LOSS_UPLIFTED_CAPPED_LOCALCCY:     [0.0],
-        "loss_uplifted_capped_localccy_202601_euws_fagross": [0.0],
+        Y.LOSS:         [100.0],
+        AF.RATE_TO_GBP: [1.25],
     }).lazy()
     out = _compute_dialsup(ylt, ["202601"]).collect()
-    assert out["dialsup_202601"][0] == 0.0
+    assert "dialsup" in out.columns
+    # No per-tag columns should exist
+    assert not any(col.startswith("dialsup_") for col in out.columns)
 
 
-def test_compute_dialsup_computes_ratio_when_localccy_nonzero():
+def test_compute_dialsup_equals_loss_div_fx():
+    """dialsup == loss / rate_to_gbp exactly — currency conversion only, no factors."""
     ylt = pl.DataFrame({
-        Y.LOSS:                              [100.0],
-        M.LOSS_UPLIFTED_CAPPED_LOCALCCY:     [50.0],
-        "loss_uplifted_capped_localccy_202601_euws_fagross": [60.0],   # composite = 60/50 = 1.2
+        Y.LOSS:         [1000.0, 500.0, 250.0],
+        AF.RATE_TO_GBP: [1.25,   0.88,  1.0],
     }).lazy()
     out = _compute_dialsup(ylt, ["202601"]).collect()
-    assert out["dialsup_202601"][0] == pytest.approx(100.0 * 1.2)
+    assert out["dialsup"][0] == pytest.approx(1000.0 / 1.25)
+    assert out["dialsup"][1] == pytest.approx(500.0  / 0.88)
+    assert out["dialsup"][2] == pytest.approx(250.0  / 1.0)
+
+
+def test_dialsup_equals_loss_div_fx():
+    """Synthetic AllFactors frame: every row's dialsup equals loss / rate_to_gbp."""
+    ylt = pl.DataFrame({
+        Y.LOSS:         [800.0, 200.0],
+        AF.RATE_TO_GBP: [0.80,  1.00],
+    }).lazy()
+    out = _compute_dialsup(ylt, []).collect()  # tags unused
+    expected = [800.0 / 0.80, 200.0 / 1.00]
+    for i, exp in enumerate(expected):
+        assert out["dialsup"][i] == pytest.approx(exp), f"row {i}: expected {exp}"

@@ -90,37 +90,54 @@ class VariantSpec(NamedTuple):
 
     @property
     def name(self) -> str:
-        """Output filename (no extension), e.g. `HiscoAIR_202601_fagross`."""
-        return f"Hisco{self.vendor.hisco_label}_{self.forecast_tag}_{self.flavor.value}"
+        """Output filename (no extension).
+
+        MAIN    → ``HiscoAIR_202601_main``   (includes forecast tag)
+        DIALSUP → ``HiscoAIR_dialsup``       (no forecast tag — one file per vendor)
+        """
+        match self.flavor:
+            case Flavor.MAIN:    return f"Hisco{self.vendor.hisco_label}_{self.forecast_tag}_{self.flavor.value}"
+            case Flavor.DIALSUP: return f"Hisco{self.vendor.hisco_label}_{self.flavor.value}"
 
     @property
     def loss_metric(self) -> str:
         """The column in `all_factors` that feeds `Hisco.ModelGrossLoss`.
 
         MAIN    → final cumulative chain column (per `chain.CHAIN`).
-        DIALSUP → `dialsup_{yyyymm}` sensitivity (separate formula).
+        DIALSUP → ``"dialsup"`` — currency-converted raw loss, no factors applied.
         """
         match self.flavor:
             case Flavor.MAIN:    return main_loss_col(self.forecast_tag)
-            case Flavor.DIALSUP: return dialsup_col(self.forecast_tag)
+            case Flavor.DIALSUP: return dialsup_col()
 
 
 def build_variants(
     forecast_dates: Sequence[date],
     vendors: Sequence[Vendor],
 ) -> list[VariantSpec]:
-    """Cross-product of (vendor × forecast_date × flavor), sorted.
+    """Build the set of Hisco fan-out outputs.
 
-    `forecast_dates` come from the `forecast_factors` seed at runtime;
-    `vendors` from `config.resolve().vendors`. Each vendor's own
-    `flavors` tuple controls which Hisco outputs it emits.
+    For ``Flavor.MAIN``: one variant per (vendor × forecast_date).
+    For ``Flavor.DIALSUP``: one variant per vendor only — the dialsup column
+    is ``loss / rate_to_gbp``, independent of forecast date, so there is no
+    reason to write one file per date.
+
+    ``forecast_dates`` come from the ``forecast_factors`` seed at runtime;
+    ``vendors`` from ``config.resolve().vendors``. Each vendor's own
+    ``flavors`` tuple controls which Hisco outputs it emits.
     """
-    return [
-        VariantSpec(vendor=v, forecast_date=d, flavor=f)
-        for v in vendors
-        for d in sorted(forecast_dates)
-        for f in v.flavors
-    ]
+    dates = sorted(forecast_dates)
+    variants: list[VariantSpec] = []
+    for v in vendors:
+        for f in v.flavors:
+            if f == Flavor.DIALSUP:
+                # One dialsup file per vendor — forecast_date is stored on the
+                # spec (required field) but not used in the name or loss_metric.
+                variants.append(VariantSpec(vendor=v, forecast_date=dates[0], flavor=f))
+            else:
+                for d in dates:
+                    variants.append(VariantSpec(vendor=v, forecast_date=d, flavor=f))
+    return variants
 
 
 def forecast_dates_from_seed(seeds: Seeds) -> list[date]:
@@ -219,7 +236,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(_compute_metrics,        tags)                                # needs all attach_* outputs
         .pipe(_compute_dialsup,        tags)                                # needs _compute_metrics output
     )
-    log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + {len(tags)} dialsup columns")
+    log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
     return all_factors
 
@@ -251,25 +268,19 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
 
 
 def _compute_dialsup(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
-    """Sensitivity variant: composite factor applied to raw loss, per tag.
+    """Currency-conversion only — raw loss divided by FX rate.
 
-    `dialsup = loss * (loss_..._fagross / loss_..._localccy)`. The bracket
-    is the composite (forecast × euws × fa_gross) factor applied at GBP.
+    ``dialsup = loss / rate_to_gbp``
 
-    Zero-guard: when `loss_..._localccy == 0` the row's raw loss is also
-    zero (the chain only multiplies and uplift_capped is clipped ≥ 0.1),
-    so dialsup = 0 is the right answer. The guard exists to avoid a
-    divide-by-zero — not as a fallback that hides bugs.
+    No uplift, no cap, no forecast factor, no euws, no fa_gross. A single
+    column ``"dialsup"`` is added — all forecast dates would be identical
+    under this definition, so there is no per-tag emission.
+
+    ``tags`` is accepted for call-site compatibility but is not used.
     """
-    for tag in tags:
-        composite_col = main_loss_col(tag)   # last column in CHAIN — the composite-factor numerator
-        ylt = ylt.with_columns(
-            pl.when(pl.col(CHAIN_BASE) != 0)
-              .then(pl.col(Y.LOSS) * (pl.col(composite_col) / pl.col(CHAIN_BASE)))
-              .otherwise(pl.lit(0.0))
-              .alias(dialsup_col(tag)),
-        )
-    return ylt
+    return ylt.with_columns(
+        (pl.col(Y.LOSS) / pl.col(AF.RATE_TO_GBP)).alias(dialsup_col()),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -307,7 +318,7 @@ def _metric_cols_for(tags: Sequence[str]) -> list[str]:
     ]
     for stage_name in CHAIN:
         cols += [col_after(stage_name, t) for t in tags]
-    cols += [dialsup_col(t) for t in tags]
+    cols.append(dialsup_col())
     return cols
 
 
@@ -335,8 +346,8 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     # Year-tagged chain — driven by the registry, not by hand-listed columns
     cols += [pl.col(c) for c in audit_layout_cols(list(tags))]
 
-    # Dialsup sensitivity per tag (separate from CHAIN — different formula)
-    cols += [pl.col(dialsup_col(t)) for t in tags]
+    # Dialsup sensitivity — single column (no per-tag emission; formula is tag-independent)
+    cols.append(pl.col(dialsup_col()))
 
     return all_factors.select(cols).sort(
         [Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID],

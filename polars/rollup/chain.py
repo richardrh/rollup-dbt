@@ -98,9 +98,14 @@ def main_loss_col(tag: str) -> str:
     return col_after(next(reversed(CHAIN)), tag)
 
 
-def dialsup_col(tag: str) -> str:
-    """Sensitivity column for the DIALSUP flavour. Not part of CHAIN — different formula."""
-    return f"dialsup_{tag}"
+def dialsup_col() -> str:
+    """Sensitivity column for the DIALSUP flavour. Not part of CHAIN — different formula.
+
+    Returns the literal string ``"dialsup"`` — there is one dialsup column per event,
+    not one per forecast tag. All forecast dates would give the same value
+    (``loss / rate_to_gbp``) so a single column is emitted.
+    """
+    return "dialsup"
 
 
 def forecast_factor_col(tag: str) -> str:
@@ -119,6 +124,9 @@ def audit_layout_cols(tags: list[str]) -> list[str]:
     layout order. Per-tag stages emit (factor, metric) per tag inline; static
     stages emit (ancillary_before*, factor, ancillary_after*) once, then their
     metric per tag. Single source of truth for the audit factor-chain layout.
+
+    The ``dialsup`` column is NOT included here — it is appended separately in
+    ``audit_wide`` because it is not part of ``CHAIN``.
     """
     out: list[str] = []
     for stage_name, stage in CHAIN.items():
