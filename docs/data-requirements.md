@@ -83,6 +83,93 @@ If `n_simulations` differs from 10 000 / 100 000, override
 `Vendor.n_simulations` in `rollup/config.py` — it drives the AAL division in
 `attach_uplift`.
 
+### Which RiskLink analyses do you actually need to export?
+
+You don't need a per-event YLT for every RiskLink analysis under the sun.
+Two pieces of pipeline logic determine the scope:
+
+#### 1. The `base_model` rule (which event_ids end up in the output)
+
+`attach_uplift` in `polars/rollup/stages/factors.py` assigns one `base_model`
+per `(lob_id, region_peril_id)` group:
+
+```
+base_model = 'risklink'  if peril_family == 'FL'   (i.e. any flood peril)
+base_model = 'verisk'    otherwise                 (wind, EQ, etc.)
+```
+
+**The `base_model` choice decides which vendor's `event_id` appears in the
+final Hisco fanout.** For flood, the RMS Hisco files report RiskLink
+`event_id`s and dates. For wind / EQ / everything else, they report Verisk
+`event_id`s. So:
+
+> **Per-event RiskLink YLTs are only strictly needed for `peril_family = 'FL'`** —
+> i.e. every analysis in `analyses.csv` whose `peril_id` resolves to a
+> flood peril (Europe Flood = 2, UK Flood = 4, plus EU sub-perils like
+> `BE FL`, `DE FL`).
+
+#### 2. The blending weights (which AALs go into the blend)
+
+`attach_uplift` also computes:
+
+```
+blended_AAL = vk_proportion × vk_AAL + rl_proportion × rl_AAL
+uplift_factor = blended_AAL / base_model_AAL
+```
+
+So even for non-flood perils, **if `blending_weights.weight > 0` for
+`vendor='risklink'`**, the pipeline still needs an `rl_AAL` for that peril
+— and computing that today requires per-event RiskLink YLT data.
+
+If `blending_weights` for a non-flood peril sets `risklink.weight = 0`,
+`rl_AAL` contributes nothing and the RiskLink YLT for that peril is
+optional.
+
+#### Practical guidance for the data-export request
+
+Send the exporter **two lists**, both derived from the seeds:
+
+1. **Required (per-event YLT):** every analysis_id where `peril_id`
+   resolves to `peril_family = 'FL'`. These drive the RMS event-by-event
+   output — every flood event in the rollup must be present.
+2. **Optional (per-event YLT or summary AAL):** every analysis_id whose
+   peril has `blending_weights.weight > 0` for risklink AND
+   `peril_family != 'FL'`. The pipeline today needs per-event data; if
+   you set `risklink.weight = 0` for those perils in `blending_weights`,
+   you can skip them entirely.
+
+Use this query to enumerate the lists:
+
+```sql
+-- Required (flood perils — base_model='risklink')
+SELECT a.analysis_id, a.modelled_label, p.peril_id, p.name AS peril_name
+FROM analyses a
+JOIN perils  p ON a.peril_id = p.peril_id
+WHERE a.vendor = 'risklink' AND p.peril_family = 'FL'
+ORDER BY p.peril_id, a.analysis_id;
+
+-- Optional (non-flood, only if blending_weights.risklink > 0)
+SELECT a.analysis_id, a.modelled_label, p.peril_id, p.name, bw.weight AS rl_weight
+FROM analyses a
+JOIN perils  p  ON a.peril_id = p.peril_id
+JOIN blending_weights bw
+  ON bw.peril_id = p.peril_id AND bw.vendor = 'risklink'
+WHERE a.vendor = 'risklink' AND p.peril_family != 'FL' AND bw.weight > 0
+ORDER BY p.peril_id, a.analysis_id;
+```
+
+#### What the parquet must look like
+
+- **One row per `(yearid, eventid, anlsid)`** — *not* a per-period summary.
+  We received a year-aggregated summary export earlier; the pipeline cannot
+  use it because OEP requires the largest event in a year, not the year total.
+- **Filter to `PERSPCODE = 'RL'`** (ground-up loss) before exporting; the
+  pipeline assumes a single perspective.
+- **Parquet preferred**, CSV acceptable.
+- All 13 columns in the wire schema must be present; passthrough columns
+  (`p_value`, `meanloss`, `stddev`, `expvalue`, `rate`, `name`, `description`)
+  may be null/zero if the export tool can't supply them.
+
 ---
 
 ## B. Seeds — `data/seeds/*.csv` (11 files, all required)

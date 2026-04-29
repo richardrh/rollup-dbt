@@ -94,3 +94,9 @@ S33_FA_EU_NL,verisk,EU_WS_GCAdj,true
 HIC_FA_UK,verisk,UK_FL,true
 HIC_FA_UK,verisk,UK_WSSS,true
 HIC_FA_UK,verisk,UK_WSSS_GCAdj,true
+HIC_COMM_UK,risklink,EU FL HD,true
+HIC_HH_UK,risklink,GB FL HD,true
+HIC_HH_UK,risklink,GB WSSS,true
+HSA_COMM_EU_DE,risklink,DE FL,true
+HSA_COMM_EU_ES,risklink,EUxGB WS,true
+HSA_HH_EU_BE,risklink,BE FL,true

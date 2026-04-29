@@ -30,8 +30,6 @@ Default layout:
 Override any path with the corresponding `ROLLUP_*` env var, or set them
 in `config.py` at the repo root (gitignored — never committed).
 """
-# TODO: Are we loading from .env here? we probably do not need a .env as this
-#is a locally run analysis tool. better to just load from a toml
 
 from __future__ import annotations
 
@@ -46,7 +44,7 @@ import importlib.util
 
 import polars as pl
 
-from rollup.seeds import REQUIRED_SEEDS, SEEDS
+from rollup.seeds import NEAR_MISSES, REQUIRED_SEEDS, discover as discover_seeds
 
 
 # --------------------------------------------------------------------------- #
@@ -313,6 +311,19 @@ def _check_seed(seeds_dir: Path, spec) -> Check:
     Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
     legitimately be empty stubs and are reported `ok=True` with `(stub)`.
     """
+    if not spec.filename:
+        # Discovery walked seeds_dir but found no CSV whose header matches
+        # this seed's schema. If a near-miss was recorded, surface the diff.
+        if spec.name in NEAR_MISSES:
+            near_path, near_header = NEAR_MISSES[spec.name]
+            expected = set(spec.schema.names())
+            missing = expected - set(near_header)
+            extra   = set(near_header) - expected
+            bits = []
+            if missing: bits.append(f"missing={sorted(missing)}")
+            if extra:   bits.append(f"unexpected={sorted(extra)}")
+            return Check(label=spec.name, path=near_path, ok=False, note=", ".join(bits))
+        return Check(label=spec.name, path=seeds_dir, ok=False, note="missing")
     path = seeds_dir / spec.filename
     if not path.exists():
         return Check(label=spec.name, path=path, ok=False, note="missing")
@@ -355,7 +366,8 @@ def build_plan(config: Config) -> Plan:
     sections.append(Section(
         title="seeds",
         header=str(config.seeds_dir),
-        checks=[_check_seed(config.seeds_dir, spec) for spec in SEEDS],
+        checks=[_check_seed(config.seeds_dir, spec)
+                for spec in discover_seeds(config.seeds_dir)],
     ))
 
     for vendor in config.vendors:

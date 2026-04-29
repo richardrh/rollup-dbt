@@ -19,6 +19,14 @@ These replace january's god-table `dim_region_perils` (which mixed peril
 display labels, vendor mapping, blending FKs, and per-LOB applies-to flags
 into one wide row). One table, one job — the new structure is what the
 pipeline consumes.
+
+## Adding a new seed
+
+1. Declare the column enum in `schemas/columns.py`.
+2. Declare the `pl.Schema` in `schemas/frames.py`.
+3. Add a `name → schema` row to `SCHEMA_REGISTRY` below.
+4. Drop the CSV anywhere under `data/seeds/` — the loader finds it by
+   header match. No file path coding required.
 """
 
 from __future__ import annotations
@@ -38,39 +46,34 @@ log = logging.getLogger("rollup.seeds")
 
 @dataclass(frozen=True)
 class SeedSpec:
-    """File-to-schema mapping. Lets the plan reporter list every seed once."""
-    name: str
-    filename: str
-    schema: pl.Schema
+    """File-to-schema mapping. `filename` is populated by `discover()`."""
+    name:     str
+    filename: str           # relative to seeds_dir; empty when not on disk
+    schema:   pl.Schema
 
 
-# TODO: Is there a way of dynamically loading seed files instead ofg hard coding them?
-# the challenge will be to determine where they join onto? but we could have a feature
-# that automatically loads seed files into a registry and applies their multiplacative 
-# factors in sequence.
-# anythng that is not multiplacative gets put into a different directory and is not
-# auto loaded?
-SEEDS: list[SeedSpec] = [
-    # ----- business: LOB + peril dimension -----
-    SeedSpec("lobs",             "business/lobs.csv",             F.REF_LOBS),
-    SeedSpec("perils",           "business/perils.csv",           F.PERILS),
-    SeedSpec("analyses",         "business/analyses.csv",         F.ANALYSES),
-    SeedSpec("rollup_scope",     "business/rollup_scope.csv",     F.ROLLUP_SCOPE),
+# ---------------------------------------------------------------------------
+# Schema registry — single source of truth for which seeds exist
+# ---------------------------------------------------------------------------
 
-    # ----- vor: vendor / blending / FX / forecast -----
-    SeedSpec("blending_weights",  "vor/blending_weights.csv",  F.BLENDING_WEIGHTS),
-    SeedSpec("forecast_factors",  "vor/forecast_factors.csv",  F.REF_FORECAST_FACTORS),
-    SeedSpec("fx_rates",          "vor/fx_rates.csv",          F.REF_FX_RATES),
-    SeedSpec("euws_rate_factors", "vor/euws_rate_factors.csv", F.REF_EUWS_RATE_FACTORS),
-
-    # ----- adjustments: fine-art + EUWS rank overrides -----
-    SeedSpec("euws_rank_overrides", "adjustments/euws_rank_overrides.csv", F.REF_EUWS_RANK_OVERRIDES),
-    SeedSpec("fineart_adjustments", "adjustments/fineart_adjustments.csv", F.REF_FINEART_ADJ),
-
-    # ----- validation: event catalogues (stubs until real data provided) -----
-    SeedSpec("air_events",       "validation/air_events.csv",       F.REF_AIR_EVENTS),
-    SeedSpec("risklink_events",  "validation/risklink_events.csv",  F.REF_RISKLINK_EVENTS),
-]
+SCHEMA_REGISTRY: dict[str, pl.Schema] = {
+    # business: LOB + peril dimension
+    "lobs":                F.REF_LOBS,
+    "perils":              F.PERILS,
+    "analyses":            F.ANALYSES,
+    "rollup_scope":        F.ROLLUP_SCOPE,
+    # vor: vendor blending / FX / forecast
+    "blending_weights":    F.BLENDING_WEIGHTS,
+    "forecast_factors":    F.REF_FORECAST_FACTORS,
+    "fx_rates":            F.REF_FX_RATES,
+    "euws_rate_factors":   F.REF_EUWS_RATE_FACTORS,
+    # adjustments
+    "euws_rank_overrides": F.REF_EUWS_RANK_OVERRIDES,
+    "fineart_adjustments": F.REF_FINEART_ADJ,
+    # validation: event catalogues (stubs until real data provided)
+    "air_events":          F.REF_AIR_EVENTS,
+    "risklink_events":     F.REF_RISKLINK_EVENTS,
+}
 
 
 # Seeds that MUST have rows for a real run — empty data here means the
@@ -89,6 +92,107 @@ REQUIRED_SEEDS: frozenset[str] = frozenset({
     "euws_rank_overrides",
 })
 
+
+# ---------------------------------------------------------------------------
+# Discovery — match CSVs under seeds_dir to schemas by header
+# ---------------------------------------------------------------------------
+
+def discover(seeds_dir: Path) -> list[SeedSpec]:
+    """Walk `seeds_dir` for `*.csv` and match each against `SCHEMA_REGISTRY`
+    by exact column-set equality on the header. Returns one `SeedSpec` per
+    logical seed name in registry order; `filename` is empty for any seed
+    that wasn't found on disk.
+
+    For seeds without an exact match, a *near-miss* file is recorded under
+    `NEAR_MISSES` so callers (e.g. the plan reporter) can show a
+    column-level diff instead of a generic "missing".
+
+    Multiple exact matches for the same schema is treated as an error —
+    the first wins and a warning is logged for any duplicates.
+    Files whose headers don't match any registered schema are silently
+    ignored (they may be stub files from another tool).
+    """
+    NEAR_MISSES.clear()
+    by_name: dict[str, Path] = {}
+    candidates_by_name: dict[str, list[tuple[int, Path, list[str]]]] = {}
+
+    if seeds_dir.exists():
+        for csv in sorted(seeds_dir.rglob("*.csv")):
+            try:
+                header = pl.scan_csv(csv).collect_schema().names()
+            except Exception as e:
+                log.warning(f"seed scan failed for {csv}: {e}")
+                continue
+            header_set = set(header)
+            matches = [
+                name for name, schema in SCHEMA_REGISTRY.items()
+                if set(schema.names()) == header_set
+            ]
+            if matches:
+                if len(matches) > 1:
+                    raise ValueError(
+                        f"seed {csv} matches multiple schemas: {matches}"
+                    )
+                name = matches[0]
+                if name in by_name:
+                    log.warning(
+                        f"seed {name!r}: duplicate match — keeping {by_name[name]}, "
+                        f"ignoring {csv}"
+                    )
+                    continue
+                by_name[name] = csv
+                continue
+
+            # Near-miss: file overlaps significantly with one schema but not
+            # exactly. Score = size of symmetric difference; lower = closer.
+            for name, schema in SCHEMA_REGISTRY.items():
+                expected = set(schema.names())
+                overlap = len(expected & header_set)
+                if overlap == 0:
+                    continue
+                score = len(expected ^ header_set)
+                candidates_by_name.setdefault(name, []).append((score, csv, header))
+
+    # Populate NEAR_MISSES with the closest near-miss per registered seed
+    # that has no exact match.
+    for name in SCHEMA_REGISTRY:
+        if name in by_name:
+            continue
+        if name in candidates_by_name:
+            best = min(candidates_by_name[name], key=lambda t: t[0])
+            NEAR_MISSES[name] = (best[1], best[2])
+
+    return [
+        SeedSpec(
+            name=name,
+            filename=(str(by_name[name].relative_to(seeds_dir))
+                      if name in by_name else ""),
+            schema=schema,
+        )
+        for name, schema in SCHEMA_REGISTRY.items()
+    ]
+
+
+# Populated by `discover()`. Maps seed-name → (path, header columns) of the
+# closest CSV that did NOT exact-match any schema. Lets the plan reporter
+# produce a "missing=[...] / unexpected=[...]" diff instead of "missing".
+NEAR_MISSES: dict[str, tuple[Path, list[str]]] = {}
+
+
+# ---------------------------------------------------------------------------
+# Module-level convenience: the SEEDS list, computed against the repo's
+# default seeds dir at import time. `config.build_plan` and `load_all`
+# both call `discover()` directly against their own `seeds_dir` — this
+# constant exists for tests that want to enumerate the canonical seed set.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_SEEDS_DIR: Path = Path(__file__).resolve().parents[2] / "data" / "seeds"
+SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)
+
+
+# ---------------------------------------------------------------------------
+# Loaders
+# ---------------------------------------------------------------------------
 
 def _load(path: Path, schema: pl.Schema, *, name: str) -> pl.LazyFrame:
     if not path.exists():
@@ -116,9 +220,16 @@ class Seeds:
 
 
 def load_all(seeds_dir: Path) -> Seeds:
-    """Load every seed in `SEEDS` from `seeds_dir`. Fail fast on any gap."""
-    log.info(f"loading {len(SEEDS)} seeds from {seeds_dir}")
-    return Seeds(**{
-        spec.name: _load(seeds_dir / spec.filename, spec.schema, name=spec.name)
-        for spec in SEEDS
-    })
+    """Discover every seed under `seeds_dir`, load it, validate, return.
+
+    A seed missing from disk raises `FileNotFoundError` with the seed name —
+    the same behaviour as before discovery was introduced.
+    """
+    specs = discover(seeds_dir)
+    log.info(f"loading {len(specs)} seeds from {seeds_dir}")
+    loaded: dict[str, pl.LazyFrame] = {}
+    for spec in specs:
+        if not spec.filename:
+            raise FileNotFoundError(f"seed '{spec.name}' missing under {seeds_dir}")
+        loaded[spec.name] = _load(seeds_dir / spec.filename, spec.schema, name=spec.name)
+    return Seeds(**loaded)
