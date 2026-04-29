@@ -35,6 +35,23 @@ Override any path with `ROLLUP_DATA_DIR`, `ROLLUP_SEEDS_DIR`,
 
 ---
 
+## A0. EP-summary xlsx — converting to long-format CSV
+
+The vendor-supplied EP-summary xlsx files use a multi-row header and wide
+RP columns. To convert them into long-format CSVs that match the
+`STG_RISKLINK_EP` / `STG_VERISK_EP` schemas, run:
+
+    uv run -m rollup.pipeline ep-summary-to-csv
+
+For each xlsx found under `data/ep_summaries/{vendor}/`, a sibling
+`<stem>.long.csv` is written. The long format is `(id, rp, ep_type, lob,
+region_peril, gl)` for risklink.
+
+AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
+(e.g. `2`, `5`, ..., `10000`).
+
+---
+
 ## A. YLT parquets — the actual loss tables
 
 Two directories, one per vendor. Each may contain multiple chunks
@@ -487,7 +504,22 @@ dump for `f_{tag}` columns that are all 1.0 — that's the diagnostic.
 
 ---
 
-## E. Adding a new forecast date
+## E. Default long-format output — `mts_tbl_ylt_combined_all_factors.parquet`
+
+Written unconditionally on every run to `data/output/`. One row per
+(YLT event, metric). Columns:
+
+- All identity dims (vendor, lob, peril, region, year_id, event_id, ...)
+- The blending factors: `rl_proportion`, `vk_proportion`, `base_model`
+- `metric_name` (string) — one of the chain stages or `dialsup`
+- `value` (float) — the metric value
+
+This matches january's `mts_tbl_ylt_combined_all_factors` table for diff-friendliness.
+The wide audit dump is still gated behind `--dump-interim` and writes to `data/output/debug/`.
+
+---
+
+## F. Adding a new forecast date
 
 Cheapest change in the codebase. To add `2027-07-01`:
 
@@ -500,7 +532,7 @@ No code change. No test change.
 
 ---
 
-## F. Verifying the pipeline works on your data
+## G. Verifying the pipeline works on your data
 
 ```bash
 cd polars
