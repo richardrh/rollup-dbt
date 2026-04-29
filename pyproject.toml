@@ -20,7 +20,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "zensical",
+    "zensical>=0.0.37",
     "pandoc>=2.4",
     "pymdown-extensions>=10.16",
     "pytest>=9.0.2",
