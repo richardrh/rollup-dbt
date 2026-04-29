@@ -43,8 +43,9 @@ from pathlib import Path
 import importlib.util
 
 import polars as pl
-from rich.console import Console
-from rich.panel import Panel
+from rich.console import Console, Group
+from rich.padding import Padding
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -53,17 +54,29 @@ from rollup.seeds import NEAR_MISSES, REQUIRED_SEEDS, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
 
-# Hiscox-y colour palette — used by the Rich renderer below. Plain
-# `format_plan` (used by tests / file dumps) ignores these.
-_BRAND       = "bold #B22234"
-_BRAND_DIM   = "#8A1A28"
-_OK          = "bold green"
-_FAIL        = "bold red"
-_DIM         = "dim white"
-_HEADER      = "bold #7AC3E2"
-_SECTION     = "bold #E5B36B"
-_NUM         = "#E5B36B"
-_PATH        = "#A6D989"
+# Hiscox-y palette — used by the Rich renderer below.
+# `format_plan` (plain text for tests / pipes) ignores these.
+_BRAND      = "bold #B22234"      # the one accent — title only
+_RULE       = "#5A1A28"           # darker red for rules
+_OK         = "bold #6CC04A"      # green checkmark
+_WARN       = "bold #E5A53B"      # amber for partials
+_FAIL       = "bold #D14B4B"      # red ✘
+_INK        = "bright_white"      # primary text
+_BODY       = "white"             # secondary text
+_DIM        = "grey50"            # tertiary / paths
+_LABEL      = "bold #E5B36B"      # section names
+_NUM        = "#E5B36B"           # numeric counts
+_GLYPH_OK   = "✓"
+_GLYPH_FAIL = "✘"
+_GLYPH_WARN = "•"
+
+# Section icon — visual key on the left of every section header.
+_SECTION_ICONS: dict[str, str] = {
+    "seeds":        "▣",
+    "ylt":          "▶",
+    "ep_summaries": "◆",
+    "output":       "◯",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -522,58 +535,89 @@ def format_plan(plan: Plan) -> str:
     return "\n".join(lines)
 
 
-def print_plan(plan: Plan, console: Console | None = None) -> None:
-    """Render the plan with Rich — colour, tables, glyphs.
+def _section_icon(title: str) -> str:
+    """Return the icon for a section title; falls back to '·' for unknowns."""
+    for key, icon in _SECTION_ICONS.items():
+        if title.startswith(key):
+            return icon
+    return "·"
 
-    For non-tty / piped output use `format_plan(plan)` instead (returns a
-    plain string). The Rich renderer is for interactive terminals; tests
-    that compare against `format_plan` keep working unchanged.
+
+def _status_pill(ok: int, total: int) -> Text:
+    """Right-side status pill: '12/12 ✓' coloured by completeness."""
+    if total == 0:
+        return Text(f"{_GLYPH_FAIL} empty", style=_FAIL)
+    if ok == total:
+        return Text(f"{ok}/{total} {_GLYPH_OK}", style=_OK)
+    if ok == 0:
+        return Text(f"{ok}/{total} {_GLYPH_FAIL}", style=_FAIL)
+    return Text(f"{ok}/{total} {_GLYPH_WARN}", style=_WARN)
+
+
+def _render_section_header(section: Section, console_width: int) -> Table:
+    """One-line section header: icon + title + path on the left, status pill on the right.
+
+    The left column ellipsizes when the path is long so the pill always
+    has clear space (no jamming against truncated text).
     """
-    if console is None:
-        console = Console()
+    icon = _section_icon(section.title)
+    ok = sum(1 for c in section.checks if c.ok)
+    total = len(section.checks)
 
-    title = Text("polars rollup pipeline", style=_BRAND)
-    subtitle = Text("pre-flight plan", style=_DIM)
-    console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style=_BRAND_DIM))
+    head = Table(show_header=False, box=None, expand=True, pad_edge=False, padding=(0, 0))
+    head.add_column(no_wrap=True, ratio=1, overflow="ellipsis")
+    head.add_column(no_wrap=True, justify="right", min_width=10)
 
-    for section in plan.sections:
-        # Section header row: title + path/glob meta.
-        head = Text.assemble(
-            (f"[{section.title}]", _SECTION),
-            "  ",
-            (section.header, _DIM),
-        )
-        console.print(head)
+    left = Text.assemble(
+        (icon, _LABEL),
+        ("  ", ""),
+        (section.title, _LABEL),
+        ("    ", ""),
+        (section.header, _DIM),
+        ("  ", ""),    # gap before the pill, even when truncated
+    )
+    head.add_row(left, _status_pill(ok, total))
+    return head
 
-        table = Table(
-            show_header=False,
-            box=None,
-            pad_edge=False,
-            padding=(0, 1),
-            expand=False,
-        )
-        table.add_column(justify="left",  width=2)         # ✓/✘ glyph
-        table.add_column(justify="left",  min_width=30)    # label
-        table.add_column(justify="right", min_width=10)    # rows
-        table.add_column(justify="left",  no_wrap=False)   # note
 
-        for c in section.checks:
-            mark_style = _OK if c.ok else _FAIL
-            mark = "✓" if c.ok else "✘"
-            rows_text = f"{c.rows:>8,} rows" if c.rows else ""
-            note_style = _DIM if c.ok else _FAIL
-            table.add_row(
-                Text(mark, style=mark_style),
-                Text(c.label, style="white" if c.ok else _FAIL),
-                Text(rows_text, style=_NUM),
-                Text(c.note, style=note_style),
-            )
-        console.print(table)
-        console.print()
+def _render_check_table(checks: list[Check]) -> Table:
+    """Indented per-file table with glyph, label, row count, note.
 
-    # Summary line — coloured counts.
+    Row-count column is only present when at least one check has rows,
+    keeping the YLT/EP-summary tables tighter.
+    """
+    has_rows = any(c.rows for c in checks)
+
+    tbl = Table(show_header=False, box=None, pad_edge=False, padding=(0, 1), expand=False)
+    tbl.add_column(width=1, no_wrap=True)                                 # glyph
+    tbl.add_column(min_width=24, max_width=44, overflow="fold")           # label
+    if has_rows:
+        tbl.add_column(justify="right", min_width=10, no_wrap=True)       # rows
+    tbl.add_column(overflow="fold", no_wrap=False)                        # note
+
+    for c in checks:
+        glyph = _GLYPH_OK if c.ok else _GLYPH_FAIL
+        glyph_style = _OK if c.ok else _FAIL
+        label_style = _BODY if c.ok else _FAIL
+        note_style = _DIM if c.ok else _FAIL
+
+        cells = [
+            Text(glyph, style=glyph_style),
+            Text(c.label, style=label_style),
+        ]
+        if has_rows:
+            rows_text = f"{c.rows:>7,} rows" if c.rows else ""
+            cells.append(Text(rows_text, style=_NUM))
+        cells.append(Text(c.note, style=note_style))
+        tbl.add_row(*cells)
+    return tbl
+
+
+def _final_summary_line(plan: Plan) -> Text:
+    """One-line horizontal summary: pills separated by faint vertical bars."""
     seed_ok = sum(1 for c in plan.seeds_section.checks if c.ok)
     seed_total = len(plan.seeds_section.checks)
+    n_vendors = len(plan.config.vendors)
     ylt_ready = sum(
         1 for v in plan.config.vendors
         if any(c.ok for s in plan.sections if s.title == f"ylt {v.name}" for c in s.checks)
@@ -582,18 +626,18 @@ def print_plan(plan: Plan, console: Console | None = None) -> None:
         1 for v in plan.config.vendors
         if any(c.ok for s in plan.sections if s.title == f"ep_summaries {v.name}" for c in s.checks)
     )
-    n_vendors = len(plan.config.vendors)
 
-    def _ratio(ok: int, total: int) -> Text:
-        style = _OK if ok == total else (_FAIL if ok == 0 else _SECTION)
-        return Text(f"{ok}/{total}", style=style)
+    parts: list[Text] = []
 
-    summary = Table(show_header=False, box=None, pad_edge=False, padding=(0, 2))
-    summary.add_column(style=_DIM)
-    summary.add_column()
-    summary.add_row("seeds",        _ratio(seed_ok, seed_total))
-    summary.add_row("YLTs",         _ratio(ylt_ready, n_vendors))
-    summary.add_row("EP summaries", _ratio(ep_ready, n_vendors))
+    def _add(label: str, pill: Text) -> None:
+        if parts:
+            parts.append(Text("  │  ", style=_DIM))
+        parts.append(Text.assemble((label, _DIM), ("  ", ""), pill))
+
+    _add("seeds",  _status_pill(seed_ok, seed_total))
+    _add("ylt",    _status_pill(ylt_ready, n_vendors))
+    _add("ep",     _status_pill(ep_ready, n_vendors))
+
     if plan.config.mssql_conn_str:
         display = plan.config.mssql_conn_str
         if "://" in display:
@@ -601,10 +645,48 @@ def print_plan(plan: Plan, console: Console | None = None) -> None:
             if "@" in rest and not rest.startswith("@"):
                 rest = f"...@{rest.split('@', 1)[1]}"
             display = f"{scheme}://{rest}"
-        summary.add_row("SQL Server", Text(display, style=_PATH))
+        _add("sql", Text(display, style=_BODY))
     else:
-        summary.add_row("SQL Server", Text("not configured (parquet-only run)", style=_DIM))
-    console.print(summary)
+        _add("sql", Text(f"{_GLYPH_FAIL} not configured", style=_DIM))
+
+    out = Text()
+    for p in parts:
+        out.append_text(p)
+    return out
+
+
+def print_plan(plan: Plan, console: Console | None = None) -> None:
+    """Render the plan with Rich — colour, rules, glyphs, pills.
+
+    For non-tty / piped output use `format_plan(plan)` instead (returns a
+    plain string). Tests compare against `format_plan` so they're unaffected.
+    """
+    if console is None:
+        console = Console()
+
+    width = console.width or 100
+
+    # Hero rule with title.
+    title = Text.assemble(
+        ("  polars rollup pipeline  ", _BRAND),
+        ("·  pre-flight plan  ", _DIM),
+    )
+    console.print()
+    console.print(Rule(title, style=_RULE))
+    console.print()
+
+    # Each section: header line (with right-aligned pill), then indented table.
+    for i, section in enumerate(plan.sections):
+        console.print(_render_section_header(section, width))
+        if section.checks:
+            console.print(Padding(_render_check_table(section.checks), (0, 0, 0, 4)))
+        if i < len(plan.sections) - 1:
+            console.print()
+
+    # Footer rule + one-line summary.
+    console.print()
+    console.print(Rule(style=_RULE))
+    console.print(Padding(_final_summary_line(plan), (0, 2)))
     console.print()
 
 
