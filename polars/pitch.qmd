@@ -22,7 +22,7 @@ title: "Polars Rollup Pipeline — one process, one pass"
 
 ::: {.subtitle}
 Compute blended forecast EP curves from the RiskLink and Verisk YLTs,
-fan them out to the 21 Hisco tables. 
+fan them out across the Hisco tables.
 
 Different mechanics.
 :::
@@ -126,16 +126,19 @@ schema, and reports status in plain language. Then it asks permission.
 </div>
 <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">python -m rollup.pipeline --dry-run</span>
 
-<span class="t-hdr">[seeds]</span>  <span class="t-path">polars/seeds</span>
+<span class="t-hdr">[seeds]</span>  <span class="t-path">data/seeds</span>
   <span class="t-ok">✓</span> lobs                            <span class="t-num">     62</span> rows   <span class="t-dim">schema OK</span>
-  <span class="t-ok">✓</span> blending_factors                <span class="t-num">     30</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> perils                          <span class="t-num">      5</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> analyses                        <span class="t-num">    424</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> rollup_scope                    <span class="t-num">    101</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> blending_weights                <span class="t-num">     10</span> rows   <span class="t-dim">schema OK</span>
   <span class="t-ok">✓</span> forecast_factors                <span class="t-num">     78</span> rows   <span class="t-dim">schema OK</span>
   <span class="t-ok">✓</span> fx_rates                        <span class="t-num">      6</span> rows   <span class="t-dim">schema OK</span>
   <span class="t-ok">✓</span> euws_rate_factors               <span class="t-num"> 69,212</span> rows   <span class="t-dim">schema OK</span>
-  <span class="t-ok">✓</span> dim_region_perils               <span class="t-num">  2,138</span> rows   <span class="t-dim">schema OK</span>
-  <span class="t-ok">✓</span> dim_risklink_analysis           <span class="t-num">  1,042</span> rows   <span class="t-dim">schema OK</span>
-  <span class="t-ok">✓</span> air_events                      <span class="t-num">410,024</span> rows   <span class="t-dim">schema OK</span>
-  <span class="t-ok">✓</span> fineart_adjustments             <span class="t-num">    186</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> euws_rank_overrides             <span class="t-num">      1</span> rows   <span class="t-dim">schema OK</span>
+  <span class="t-ok">✓</span> fineart_adjustments             <span class="t-num">         </span>          <span class="t-dim">schema OK (stub)</span>
+  <span class="t-ok">✓</span> air_events                      <span class="t-num">         </span>          <span class="t-dim">schema OK (stub)</span>
+  <span class="t-ok">✓</span> risklink_events                 <span class="t-num">         </span>          <span class="t-dim">schema OK (stub)</span>
 
 <span class="t-hdr">[ylt verisk]</span>    <span class="t-path">data/ylt/verisk/</span>    <span class="t-dim">air_ylt_*.parquet</span>       <span class="t-dim">n_simulations=</span><span class="t-num">10,000</span>
   <span class="t-ok">✓</span> air_ylt_c1.parquet                       <span class="t-num">148.3 MB</span>
@@ -144,7 +147,7 @@ schema, and reports status in plain language. Then it asks permission.
 <span class="t-hdr">[ylt risklink]</span>  <span class="t-path">data/ylt/risklink/</span>  <span class="t-dim">risklink_ylt_*.parquet</span>  <span class="t-dim">n_simulations=</span><span class="t-num">100,000</span>
   <span class="t-ok">✓</span> risklink_ylt_01.parquet                    <span class="t-num">2.1 GB</span>
 
-<span class="t-dim">Seeds:</span> <span class="t-ok">11/11</span> <span class="t-dim">valid.</span>   <span class="t-dim">YLTs:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>   <span class="t-dim">EP summaries:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>
+<span class="t-dim">Seeds:</span> <span class="t-ok">12/12</span> <span class="t-dim">valid.</span>   <span class="t-dim">YLTs:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>   <span class="t-dim">EP summaries:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>
 
 <span class="t-ans">Proceed? [y/N]:</span> <span class="caret"></span></div>
 </div></div>
@@ -166,7 +169,7 @@ schema, and reports status in plain language. Then it asks permission.
 
 ::: {.subtitle}
 Measured on the production-sized input — 4.4M-row Verisk YLT plus the
-full RiskLink YLT. Full chain, all 21 Hisco tables written.
+full RiskLink YLT. Full chain, all 9 output parquets written.
 :::
 
 ```{=html}
@@ -195,7 +198,7 @@ full RiskLink YLT. Full chain, all 21 Hisco tables written.
 <div class="why-grid">
 <div class="why">
 <div class="n">01</div>
-<h4>One collect, 21 sinks</h4>
+<h4>One collect, 9 sinks</h4>
 <p>The whole lazy graph is optimised once; shared work is computed once.</p>
 </div>
 <div class="why">
@@ -316,9 +319,9 @@ steps in the chain.
   <div class="oos-n">02</div>
   <div class="oos-body">
     <h4>Produce clean summary EP curves</h4>
-    <p>The pipeline writes per-event loss rows to the 21 Hisco parquets.
-    Aggregating those into summary EP curves for consumption (charts, reports) is a
-    separate downstream step.</p>
+    <p>The pipeline writes per-event loss rows to the Hisco parquets, plus a
+    long-format combined audit. Aggregating those into summary EP curves for
+    consumption (charts, reports) is a separate downstream step.</p>
   </div>
 </div>
 
