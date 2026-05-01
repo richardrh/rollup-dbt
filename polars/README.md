@@ -19,8 +19,7 @@ uv run rollup derive-blending            # rewrite blending_weights from EP AALs
 uv run pytest -q                         # 112 tests, ~5s
 ```
 
-`python -m rollup` and `python -m rollup.pipeline` also work — the
-console-script `rollup` is just the easiest entry point.
+`python -m rollup` is equivalent.
 
 Need to know what data to provide before the run? See
 [`../docs/data-requirements.md`](../docs/data-requirements.md) — the canonical

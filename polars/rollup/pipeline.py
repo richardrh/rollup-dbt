@@ -466,11 +466,3 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
         collected[len(variants) + 2].write_parquet(debug_dir / _AUDIT_LONG_FILE)
         log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
         log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
-
-
-# `python -m rollup.pipeline` still works as a back-compat shim — but
-# `python -m rollup` and the `rollup` console script are the documented
-# entry points. The CLI lives in `rollup.cli`.
-if __name__ == "__main__":
-    from rollup.cli import main
-    raise SystemExit(main())

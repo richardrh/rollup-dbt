@@ -36,15 +36,7 @@ def load_raw_risklink_ylt(
     *,
     glob: str = "risklink_ylt_*.parquet",
 ) -> pl.LazyFrame:
-    """Scan every RiskLink YLT parquet under `parquet_dir` matching `glob`.
-
-    Returns an empty frame with the correct schema when no files are found,
-    so a Verisk-only run still produces AIR outputs.
-    """
-    files = sorted(parquet_dir.glob(glob)) if parquet_dir.exists() else []
-    if not files:
-        log.warning(f"risklink YLT: no files matching {parquet_dir / glob} — RMS outputs will be empty")
-        return pl.LazyFrame(schema=F.RAW_RISKLINK_YLT)
+    """Scan every RiskLink YLT parquet under `parquet_dir` matching `glob`."""
     pattern = parquet_dir / glob
     lf = pl.scan_parquet(str(pattern))
     validate_schema(lf, F.RAW_RISKLINK_YLT, name="raw_risklink_ylt", strict=False)
