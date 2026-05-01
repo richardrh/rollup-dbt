@@ -98,14 +98,10 @@ def main_loss_col(tag: str) -> str:
     return col_after(next(reversed(CHAIN)), tag)
 
 
-def dialsup_col() -> str:
-    """Sensitivity column for the DIALSUP flavour. Not part of CHAIN — different formula.
-
-    Returns the literal string ``"dialsup"`` — there is one dialsup column per event,
-    not one per forecast tag. All forecast dates would give the same value
-    (``loss / rate_to_gbp``) so a single column is emitted.
-    """
-    return "dialsup"
+# Sensitivity column for the DIALSUP flavour. Not part of CHAIN — different
+# formula (`loss / rate_to_gbp`). One column per event, not one per forecast
+# tag, since the forecast factor doesn't enter the dialsup expression.
+DIALSUP_COL: str = "dialsup"
 
 
 def forecast_factor_col(tag: str) -> str:

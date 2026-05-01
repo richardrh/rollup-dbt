@@ -35,23 +35,22 @@ log = logging.getLogger("rollup.blending")
 
 
 def _aal_by_peril(
-    long_csv: Path,
+    long_csvs: list[Path],
     vendor: VendorName,
     analyses: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Read a long-format EP CSV, filter to AAL rows, map region_peril to peril_id, sum AAL per peril.
+    """Read every long-format EP CSV for a vendor, filter to AAL rows, map
+    `region_peril` → `peril_id`, sum AAL per peril across all files.
 
     Returns DataFrame[peril_id: Int64, vendor_aal: Float64].
     Missing region_peril mappings are warned and skipped.
+    Empty `long_csvs` (vendor not yet delivered) returns a 0-row frame.
     """
-    if not long_csv.exists():
-        log.warning(
-            f"{vendor.value}: EP long CSV not found at {long_csv} "
-            "— vendor AAL will be 0"
-        )
+    if not long_csvs:
+        log.warning(f"{vendor.value}: no EP long CSVs found — vendor AAL will be 0")
         return pl.DataFrame(schema={"peril_id": pl.Int64, "vendor_aal": pl.Float64})
 
-    ep = pl.read_csv(long_csv)
+    ep = pl.concat([pl.read_csv(p) for p in long_csvs], how="vertical_relaxed")
 
     if vendor == VendorName.RISKLINK:
         peril_label_col = RL.REGION_PERIL
@@ -95,8 +94,8 @@ def _aal_by_peril(
 
 
 def derive_blending_weights(
-    rl_long_csv: Path,
-    vk_long_csv: Path,
+    rl_long_csvs: list[Path],
+    vk_long_csvs: list[Path],
     analyses: pl.DataFrame,
     perils: pl.DataFrame,
 ) -> pl.DataFrame:
@@ -105,8 +104,8 @@ def derive_blending_weights(
     Returns one row per (peril_id, vendor); peril_name and description are
     populated from `perils`. `sub_peril` is None. `weight` is the proportion.
     """
-    rl_aal = _aal_by_peril(rl_long_csv, VendorName.RISKLINK, analyses)
-    vk_aal = _aal_by_peril(vk_long_csv, VendorName.VERISK, analyses)
+    rl_aal = _aal_by_peril(rl_long_csvs, VendorName.RISKLINK, analyses)
+    vk_aal = _aal_by_peril(vk_long_csvs, VendorName.VERISK, analyses)
 
     rl_aal = rl_aal.rename({"vendor_aal": "rl_aal"})
     vk_aal = vk_aal.rename({"vendor_aal": "vk_aal"})
@@ -155,4 +154,11 @@ def derive_blending_weights(
         pl.lit(VendorName.VERISK.value).alias(BW.VENDOR),
         pl.col("vk_proportion").alias(BW.WEIGHT),
     )
-    return pl.concat([rl_rows, vk_rows]).sort([BW.PERIL_ID, BW.VENDOR])
+    out = pl.concat([rl_rows, vk_rows]).sort([BW.PERIL_ID, BW.VENDOR])
+    if out.height == 0:
+        raise ValueError(
+            "derive_blending_weights produced 0 rows — every EP-summary "
+            "label was unmapped. Check `analyses.modelled_label` covers "
+            "the labels seen in the long CSVs."
+        )
+    return out

@@ -50,7 +50,7 @@ from rich.table import Table
 from rich.text import Text
 
 from rollup.schemas import frames as F
-from rollup.seeds import NEAR_MISSES, REQUIRED_SEEDS, discover as discover_seeds
+from rollup.seeds import REQUIRED_SEEDS, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
 
@@ -335,19 +335,22 @@ class Plan:
 # Plan construction                                                           #
 # --------------------------------------------------------------------------- #
 
-def _check_seed(seeds_dir: Path, spec) -> Check:
+def _check_seed(seeds_dir: Path, spec, near_misses: dict | None = None) -> Check:
     """Verify a seed: file exists, column headers match, count rows.
 
     A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —
     the pipeline would silently produce zero-row Hisco parquets otherwise.
     Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
     legitimately be empty stubs and are reported `ok=True` with `(stub)`.
+
+    `near_misses` (returned by `discover()`) lets us surface a column-level
+    diff when no header-matched CSV was found but a close cousin exists.
     """
+    near_misses = near_misses or {}
+
     if not spec.filename:
-        # Discovery walked seeds_dir but found no CSV whose header matches
-        # this seed's schema. If a near-miss was recorded, surface the diff.
-        if spec.name in NEAR_MISSES:
-            near_path, near_header = NEAR_MISSES[spec.name]
+        if spec.name in near_misses:
+            near_path, near_header = near_misses[spec.name]
             expected = set(spec.schema.names())
             missing = expected - set(near_header)
             extra   = set(near_header) - expected
@@ -444,11 +447,11 @@ def _check_dir_glob(
 def build_plan(config: Config) -> Plan:
     sections: list[Section] = []
 
+    seed_specs, near_misses = discover_seeds(config.seeds_dir)
     sections.append(Section(
         title="seeds",
         header=str(config.seeds_dir),
-        checks=[_check_seed(config.seeds_dir, spec)
-                for spec in discover_seeds(config.seeds_dir)],
+        checks=[_check_seed(config.seeds_dir, spec, near_misses) for spec in seed_specs],
     ))
 
     _YLT_SCHEMAS: dict[VendorName, pl.Schema] = {
@@ -521,18 +524,24 @@ def format_plan(plan: Plan) -> str:
     lines.append(f"YLTs:  {ylt_ready}/{len(plan.config.vendors)} vendors have data.")
     lines.append(f"EP summaries: {ep_ready}/{len(plan.config.vendors)} vendors have data.")
     if plan.config.mssql_conn_str:
-        # Redact user:pass@ if present (SQL auth); Windows auth strings have no credentials
-        display = plan.config.mssql_conn_str
-        if "://" in display:
-            scheme, rest = display.split("://", 1)
-            if "@" in rest and not rest.startswith("@"):
-                rest = f"...@{rest.split('@', 1)[1]}"
-            display = f"{scheme}://{rest}"
-        lines.append(f"SQL Server: {display}")
+        lines.append(f"SQL Server: {_redact_conn_str(plan.config.mssql_conn_str)}")
     else:
         lines.append("SQL Server: not configured (parquet-only run)")
     lines.append("")
     return "\n".join(lines)
+
+
+def _redact_conn_str(conn_str: str) -> str:
+    """Hide `user:pass@` if present in a `scheme://user:pass@host/...` URL.
+
+    Windows-auth ODBC strings have no credentials inline; passes through.
+    """
+    if "://" not in conn_str:
+        return conn_str
+    scheme, rest = conn_str.split("://", 1)
+    if "@" in rest and not rest.startswith("@"):
+        rest = f"...@{rest.split('@', 1)[1]}"
+    return f"{scheme}://{rest}"
 
 
 def _section_icon(title: str) -> str:
@@ -639,13 +648,7 @@ def _final_summary_line(plan: Plan) -> Text:
     _add("ep",     _status_pill(ep_ready, n_vendors))
 
     if plan.config.mssql_conn_str:
-        display = plan.config.mssql_conn_str
-        if "://" in display:
-            scheme, rest = display.split("://", 1)
-            if "@" in rest and not rest.startswith("@"):
-                rest = f"...@{rest.split('@', 1)[1]}"
-            display = f"{scheme}://{rest}"
-        _add("sql", Text(display, style=_BODY))
+        _add("sql", Text(_redact_conn_str(plan.config.mssql_conn_str), style=_BODY))
     else:
         _add("sql", Text(f"{_GLYPH_FAIL} not configured", style=_DIM))
 

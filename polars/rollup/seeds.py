@@ -97,24 +97,29 @@ REQUIRED_SEEDS: frozenset[str] = frozenset({
 # Discovery — match CSVs under seeds_dir to schemas by header
 # ---------------------------------------------------------------------------
 
-def discover(seeds_dir: Path) -> list[SeedSpec]:
+# Per-seed near-miss record: the closest CSV under `seeds_dir` that
+# overlapped a schema's header but didn't exact-match. Returned alongside
+# the SeedSpec list from `discover()` so callers can render a column-level
+# diff (e.g. "missing=[lob_id], unexpected=[renamed_col]") instead of a
+# generic "missing".
+NearMisses = dict[str, tuple[Path, list[str]]]
+
+
+def discover(seeds_dir: Path) -> tuple[list[SeedSpec], NearMisses]:
     """Walk `seeds_dir` for `*.csv` and match each against `SCHEMA_REGISTRY`
-    by exact column-set equality on the header. Returns one `SeedSpec` per
-    logical seed name in registry order; `filename` is empty for any seed
-    that wasn't found on disk.
+    by exact column-set equality on the header.
 
-    For seeds without an exact match, a *near-miss* file is recorded under
-    `NEAR_MISSES` so callers (e.g. the plan reporter) can show a
-    column-level diff instead of a generic "missing".
+    Returns:
+        specs:       one `SeedSpec` per logical seed name (registry order);
+                     `filename` is empty for any seed missing from disk.
+        near_misses: per-seed best-overlap path + header for seeds with no
+                     exact match. Empty dict when every seed matched cleanly.
 
-    Multiple exact matches for the same schema is treated as an error —
-    the first wins and a warning is logged for any duplicates.
-    Files whose headers don't match any registered schema are silently
-    ignored (they may be stub files from another tool).
+    Multiple exact matches for the same schema raise `ValueError`. Files
+    whose headers don't overlap any schema are silently ignored.
     """
-    NEAR_MISSES.clear()
     by_name: dict[str, Path] = {}
-    candidates_by_name: dict[str, list[tuple[int, Path, list[str]]]] = {}
+    candidates: dict[str, list[tuple[int, Path, list[str]]]] = {}
 
     if seeds_dir.exists():
         for csv in sorted(seeds_dir.rglob("*.csv")):
@@ -130,9 +135,7 @@ def discover(seeds_dir: Path) -> list[SeedSpec]:
             ]
             if matches:
                 if len(matches) > 1:
-                    raise ValueError(
-                        f"seed {csv} matches multiple schemas: {matches}"
-                    )
+                    raise ValueError(f"seed {csv} matches multiple schemas: {matches}")
                 name = matches[0]
                 if name in by_name:
                     log.warning(
@@ -143,26 +146,23 @@ def discover(seeds_dir: Path) -> list[SeedSpec]:
                 by_name[name] = csv
                 continue
 
-            # Near-miss: file overlaps significantly with one schema but not
-            # exactly. Score = size of symmetric difference; lower = closer.
+            # Near-miss candidate: file overlaps with at least one schema
+            # but not exactly. Score = size of symmetric difference; lower = closer.
             for name, schema in SCHEMA_REGISTRY.items():
                 expected = set(schema.names())
-                overlap = len(expected & header_set)
-                if overlap == 0:
+                if not (expected & header_set):
                     continue
                 score = len(expected ^ header_set)
-                candidates_by_name.setdefault(name, []).append((score, csv, header))
+                candidates.setdefault(name, []).append((score, csv, header))
 
-    # Populate NEAR_MISSES with the closest near-miss per registered seed
-    # that has no exact match.
+    near_misses: NearMisses = {}
     for name in SCHEMA_REGISTRY:
-        if name in by_name:
+        if name in by_name or name not in candidates:
             continue
-        if name in candidates_by_name:
-            best = min(candidates_by_name[name], key=lambda t: t[0])
-            NEAR_MISSES[name] = (best[1], best[2])
+        best = min(candidates[name], key=lambda t: t[0])
+        near_misses[name] = (best[1], best[2])
 
-    return [
+    specs = [
         SeedSpec(
             name=name,
             filename=(str(by_name[name].relative_to(seeds_dir))
@@ -171,12 +171,7 @@ def discover(seeds_dir: Path) -> list[SeedSpec]:
         )
         for name, schema in SCHEMA_REGISTRY.items()
     ]
-
-
-# Populated by `discover()`. Maps seed-name → (path, header columns) of the
-# closest CSV that did NOT exact-match any schema. Lets the plan reporter
-# produce a "missing=[...] / unexpected=[...]" diff instead of "missing".
-NEAR_MISSES: dict[str, tuple[Path, list[str]]] = {}
+    return specs, near_misses
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +182,7 @@ NEAR_MISSES: dict[str, tuple[Path, list[str]]] = {}
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SEEDS_DIR: Path = Path(__file__).resolve().parents[2] / "data" / "seeds"
-SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)
+SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +220,7 @@ def load_all(seeds_dir: Path) -> Seeds:
     A seed missing from disk raises `FileNotFoundError` with the seed name —
     the same behaviour as before discovery was introduced.
     """
-    specs = discover(seeds_dir)
+    specs, _ = discover(seeds_dir)
     log.info(f"loading {len(specs)} seeds from {seeds_dir}")
     loaded: dict[str, pl.LazyFrame] = {}
     for spec in specs:

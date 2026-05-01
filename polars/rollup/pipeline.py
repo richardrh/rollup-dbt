@@ -20,7 +20,7 @@ from rollup.chain import (
     CHAIN_BASE,
     audit_layout_cols,
     col_after,
-    dialsup_col,
+    DIALSUP_COL,
     factor_col_for,
     main_loss_col,
 )
@@ -108,7 +108,7 @@ class VariantSpec(NamedTuple):
         """
         match self.flavor:
             case Flavor.MAIN:    return main_loss_col(self.forecast_tag)
-            case Flavor.DIALSUP: return dialsup_col()
+            case Flavor.DIALSUP: return DIALSUP_COL
 
 
 def build_variants(
@@ -234,7 +234,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(attach_fagross,          seeds.fineart_adjustments)
         .pipe(attach_uplift,           seeds.blending_weights, n_sim=n_sim)
         .pipe(_compute_metrics,        tags)                                # needs all attach_* outputs
-        .pipe(_compute_dialsup,        tags)                                # needs _compute_metrics output
+        .pipe(_compute_dialsup)                                             # needs _compute_metrics output
     )
     log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
@@ -267,7 +267,7 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     return ylt
 
 
-def _compute_dialsup(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
+def _compute_dialsup(ylt: pl.LazyFrame) -> pl.LazyFrame:
     """Currency-conversion only — raw loss divided by FX rate.
 
     ``dialsup = loss / rate_to_gbp``
@@ -275,11 +275,9 @@ def _compute_dialsup(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     No uplift, no cap, no forecast factor, no euws, no fa_gross. A single
     column ``"dialsup"`` is added — all forecast dates would be identical
     under this definition, so there is no per-tag emission.
-
-    ``tags`` is accepted for call-site compatibility but is not used.
     """
     return ylt.with_columns(
-        (pl.col(Y.LOSS) / pl.col(AF.RATE_TO_GBP)).alias(dialsup_col()),
+        (pl.col(Y.LOSS) / pl.col(AF.RATE_TO_GBP)).alias(DIALSUP_COL),
     )
 
 
@@ -319,7 +317,7 @@ def _metric_cols_for(tags: Sequence[str]) -> list[str]:
     ]
     for stage_name in CHAIN:
         cols += [col_after(stage_name, t) for t in tags]
-    cols.append(dialsup_col())
+    cols.append(DIALSUP_COL)
     return cols
 
 
@@ -347,7 +345,7 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     cols += [pl.col(c) for c in audit_layout_cols(list(tags))]
 
     # Dialsup sensitivity — single column (no per-tag emission; formula is tag-independent)
-    cols.append(pl.col(dialsup_col()))
+    cols.append(pl.col(DIALSUP_COL))
 
     return all_factors.select(cols).sort(
         [Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID],
@@ -442,27 +440,42 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
 
     all_factors = build_all_factors(cfg, seeds).cache()
 
-    fanout_lfs      = [fanout_hisco(all_factors, v) for v in variants]
-    default_long_lf = audit_long(all_factors, tags)
-    debug_lfs       = [audit_wide(all_factors, tags), audit_long(all_factors, tags)] if dump_interim else []
+    # Build each lazy plan once; reuse the same reference where the same
+    # output appears in two places (audit_long is both the production
+    # combined_factors_long output and the --dump-interim debug copy).
+    fanout_lfs   = [fanout_hisco(all_factors, v) for v in variants]
+    long_lf      = audit_long(all_factors, tags)
+    wide_lf      = audit_wide(all_factors, tags) if dump_interim else None
 
-    collected = pl.collect_all(fanout_lfs + [default_long_lf] + debug_lfs)
+    plan_lfs: list[pl.LazyFrame] = list(fanout_lfs)
+    long_idx = len(plan_lfs)
+    plan_lfs.append(long_lf)
+    wide_idx = None
+    if wide_lf is not None:
+        wide_idx = len(plan_lfs)
+        plan_lfs.append(wide_lf)
 
-    for df, variant in zip(collected[:len(variants)], variants, strict=True):
+    collected = pl.collect_all(plan_lfs)
+
+    fanout_dfs = collected[:len(variants)]
+    long_df    = collected[long_idx]
+    wide_df    = collected[wide_idx] if wide_idx is not None else None
+
+    for df, variant in zip(fanout_dfs, variants, strict=True):
         out_path = cfg.output_dir / f"{variant.name}.parquet"
         df.write_parquet(out_path)
         log.info(f"fanout: wrote {variant.name}.parquet ({df.height:,} rows)")
         if cfg.mssql_conn_str:
             _write_to_sql(df, variant.name, cfg.mssql_conn_str)
 
-    default_long_path = cfg.output_dir / "mts_tbl_ylt_combined_all_factors.parquet"
-    collected[len(fanout_lfs)].write_parquet(default_long_path)
-    log.info(f"wrote {default_long_path.name} ({collected[len(fanout_lfs)].height:,} rows)")
+    long_path = cfg.output_dir / "mts_tbl_ylt_combined_all_factors.parquet"
+    long_df.write_parquet(long_path)
+    log.info(f"wrote {long_path.name} ({long_df.height:,} rows)")
 
     if dump_interim:
         debug_dir = cfg.output_dir / _AUDIT_SUBDIR
         debug_dir.mkdir(parents=True, exist_ok=True)
-        collected[len(variants) + 1].write_parquet(debug_dir / _AUDIT_WIDE_FILE)
-        collected[len(variants) + 2].write_parquet(debug_dir / _AUDIT_LONG_FILE)
+        wide_df.write_parquet(debug_dir / _AUDIT_WIDE_FILE)
+        long_df.write_parquet(debug_dir / _AUDIT_LONG_FILE)
         log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
         log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")

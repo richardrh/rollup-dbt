@@ -145,11 +145,13 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     cfg = config.resolve()
     output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
 
-    rl_csv = cfg.vendor(VendorName.RISKLINK).ep_summary_dir / "rms_ep_summary.long.csv"
-    vk_csv = cfg.vendor(VendorName.VERISK).ep_summary_dir / "verisk_ep_summary.long.csv"
-    if not rl_csv.exists() and not vk_csv.exists():
+    rl_csvs = sorted(cfg.vendor(VendorName.RISKLINK).ep_summary_dir.glob("*.long.csv"))
+    vk_csvs = sorted(cfg.vendor(VendorName.VERISK).ep_summary_dir.glob("*.long.csv"))
+    if not rl_csvs and not vk_csvs:
         print(
-            "error: no EP-summary long CSVs found. Run `rollup ep-summary-to-csv` first.",
+            "error: no EP-summary long CSVs found under "
+            "data/ep_summaries/{verisk,risklink}/. "
+            "Run `rollup ep-summary-to-csv` first.",
             file=sys.stderr,
         )
         return 2
@@ -158,7 +160,7 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     analyses = seeds_obj.analyses.collect()
     perils   = seeds_obj.perils.collect()
 
-    df = derive_blending_weights(rl_csv, vk_csv, analyses, perils)
+    df = derive_blending_weights(rl_csvs, vk_csvs, analyses, perils)
     output.parent.mkdir(parents=True, exist_ok=True)
     df.write_csv(output)
     print(f"wrote {output}  ({df.height:,} rows)")

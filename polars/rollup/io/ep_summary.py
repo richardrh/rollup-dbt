@@ -11,6 +11,7 @@ Long format: one row per (id, rp, ep_type, lob, region_peril, gl) for risklink.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import openpyxl
@@ -24,6 +25,11 @@ from rollup.schemas.columns import StgVeriskEpCol as VK  # noqa: F401 — reserv
 _HEADER_ROW = 7   # 1-indexed
 _DATA_START_ROW = 8
 _EP_SHEET = "OEPAEP Curves"
+
+# Strict — only OEP_<int> / AEP_<int> are accepted as RP columns.
+# A header like 'OEP_DIFF' or 'AEP_TOTAL' is silently ignored, not parsed
+# as a return period (which would crash int() and skip the whole file).
+_RP_COLUMN = re.compile(r"^(?P<kind>OEP|AEP)_(?P<rp>\d+)$")
 
 
 def _clean(v):
@@ -73,23 +79,13 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
                 f"{path}: missing required column {required!r} in header row {_HEADER_ROW}"
             )
 
-    # Identify OEP_N and AEP_N columns by prefix; sort by return period.
-    oep_cols = sorted(
-        (
-            (col_idx[c], int(c.split("_", 1)[1]), "OEP")
-            for c in col_idx
-            if c.startswith("OEP_")
-        ),
-        key=lambda t: t[1],
-    )
-    aep_cols = sorted(
-        (
-            (col_idx[c], int(c.split("_", 1)[1]), "AEP")
-            for c in col_idx
-            if c.startswith("AEP_")
-        ),
-        key=lambda t: t[1],
-    )
+    # Identify OEP_<int> / AEP_<int> columns; ignore non-numeric suffixes.
+    rp_columns: list[tuple[int, int, str]] = []   # (col_idx, rp, ep_type)
+    for c in col_idx:
+        m = _RP_COLUMN.match(c)
+        if m:
+            rp_columns.append((col_idx[c], int(m["rp"]), m["kind"]))
+    rp_columns.sort(key=lambda t: (t[2], t[1]))   # OEP first, then AEP, by RP
 
     out_rows: list[dict] = []
 
@@ -133,7 +129,7 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
                 pass
 
         # --- OEP and AEP rows ---
-        for idx, rp, kind in oep_cols + aep_cols:
+        for idx, rp, kind in rp_columns:
             v = _clean(row[idx]) if idx < len(row) else None
             if v is None:
                 continue

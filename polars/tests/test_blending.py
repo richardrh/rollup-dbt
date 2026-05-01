@@ -97,7 +97,12 @@ def test_derive_blending_uses_aal_only(tmp_path: Path):
     analyses = _make_analyses()
     perils   = _make_perils()
 
-    df = derive_blending_weights(rl_csv, vk_csv, analyses, perils)
+    df = derive_blending_weights(
+        [rl_csv],
+        [vk_csv] if vk_csv.exists() else [],
+        analyses,
+        perils,
+    )
 
     # Only peril 1 should be present (peril 2 has no data).
     rl_row = df.filter(
@@ -121,7 +126,12 @@ def test_derive_blending_proportions_sum_to_1(tmp_path: Path):
     rl_csv = _write_rl_long_csv(tmp_path, rows)
     vk_csv = tmp_path / "verisk_ep_summary.long.csv"  # absent → vk_aal = 0
 
-    df = derive_blending_weights(rl_csv, vk_csv, _make_analyses(), _make_perils())
+    df = derive_blending_weights(
+        [rl_csv],
+        [vk_csv] if vk_csv.exists() else [],
+        _make_analyses(),
+        _make_perils(),
+    )
 
     for peril_id in df[BW.PERIL_ID].unique().to_list():
         subset = df.filter(pl.col(BW.PERIL_ID) == peril_id)
@@ -147,7 +157,12 @@ def test_derive_blending_handles_missing_vendor(tmp_path: Path):
     rl_csv = _write_rl_long_csv(tmp_path, rows)
     vk_csv = Path("/does/not/exist/verisk_ep_summary.long.csv")
 
-    df = derive_blending_weights(rl_csv, vk_csv, _make_analyses(), _make_perils())
+    df = derive_blending_weights(
+        [rl_csv],
+        [vk_csv] if vk_csv.exists() else [],
+        _make_analyses(),
+        _make_perils(),
+    )
 
     assert isinstance(df, pl.DataFrame)
     assert df.height > 0
@@ -185,7 +200,12 @@ def test_derive_blending_warns_on_unmapped_label(tmp_path: Path, caplog):
     vk_csv = tmp_path / "verisk_ep_summary.long.csv"  # absent
 
     with caplog.at_level(logging.WARNING, logger="rollup.blending"):
-        df = derive_blending_weights(rl_csv, vk_csv, _make_analyses(), _make_perils())
+        df = derive_blending_weights(
+        [rl_csv],
+        [vk_csv] if vk_csv.exists() else [],
+        _make_analyses(),
+        _make_perils(),
+    )
 
     # The unmapped row must be absent from the output.
     # Only peril 1 should appear.
