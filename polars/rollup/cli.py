@@ -69,8 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--min-loss", type=float, default=None, metavar="N",
-        help="drop output rows whose loss < N. 0 = keep all (default). "
-             "Typical production: --min-loss 1000. Also settable via ROLLUP_MIN_LOSS.",
+        help="drop output rows whose loss < N. Default 1000 (production). "
+             "Use --min-loss 0 to keep every event. Also settable via "
+             "ROLLUP_MIN_LOSS env var or MIN_LOSS in config.py.",
     )
 
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")

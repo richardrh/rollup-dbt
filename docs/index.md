@@ -12,7 +12,7 @@ uv run rollup --dry-run                              # plan only — no data rea
 uv run rollup --yes                                  # full run, writes 9 parquets to data/output/
 uv run rollup --yes --log-level INFO                 # full run, with stage logs
 uv run rollup --yes --dump-interim                   # full run + extra debug parquets in data/output/debug/
-uv run rollup --yes --min-loss 1000                  # drop output rows where loss < 1000 (~65% smaller files)
+uv run rollup --yes --min-loss 0                     # disable the default loss filter (keep every row)
 uv run rollup ep-summary-to-csv                      # convert wide xlsx → long CSV
 uv run rollup derive-blending                        # rewrite blending_weights from EP AALs
 uv run rollup test-sql                               # probe SQL connection (read-only)

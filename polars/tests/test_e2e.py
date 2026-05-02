@@ -39,6 +39,9 @@ def cfg(data_root: Path, monkeypatch) -> config.Config:
     monkeypatch.setenv(EnvVar.YLT_VERISK_DIR,   str(data_root / "ylt" / VendorName.VERISK))
     monkeypatch.setenv(EnvVar.YLT_RISKLINK_DIR, str(data_root / "ylt" / VendorName.RISKLINK))
     monkeypatch.setenv(EnvVar.OUTPUT_DIR,       str(data_root / "output"))
+    # Synthetic test fixtures use small loss values; force min_loss=0 so the
+    # production-default 1000 doesn't filter every row out.
+    monkeypatch.setenv(EnvVar.MIN_LOSS,         "0")
     return config.resolve()
 
 

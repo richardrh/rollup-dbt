@@ -226,42 +226,46 @@ The pipeline writes here. **Created on run.**
 
 Today: 2 vendors × 3 forecast dates → **9 default files** + 2 debug files when `--dump-interim` is set.
 
-### Trimming small-loss rows — `--min-loss N`
+### Trimming small-loss rows — `MIN_LOSS = 1000` by default
 
 Most events in a YLT contribute trivially small losses to the EP curve.
-The pipeline drops output rows whose loss is below a configurable
-threshold. Three places to set it (highest precedence first):
+The pipeline **drops rows whose loss is below 1000 by default** —
+production cuts ~65% off the parquet size with no analytical impact.
 
-1. **CLI flag** — `--min-loss 1000` on a single run
-2. **Env var** — `ROLLUP_MIN_LOSS=1000` for the shell session / CI
-3. **`config.py` at the repo root** — set-and-forget for the machine
+Override precedence (highest first):
+
+1. **CLI flag** — `--min-loss 2500` for a one-off
+2. **Env var** — `ROLLUP_MIN_LOSS=0` for the shell session / CI
+3. **`config.py` at the repo root** — `MIN_LOSS = 500.0` for set-and-forget
+4. **Code default** — `1000.0` if nothing above is set
+
+To **disable** the filter (keep every row, e.g. for full audit work):
+
+```bash
+uv run rollup --yes --min-loss 0
+# or, persistent:
+echo "MIN_LOSS = 0.0" >> config.py
+```
 
 The repo ships a `config.example.py` template:
 
 ```bash
 cp config.example.py config.py
-# edit MIN_LOSS = 1000.0 (or whatever your production threshold is)
+# edit MIN_LOSS or any other override
 ```
 
 `config.py` is **gitignored** — it never goes to git, credentials and
-local paths stay private. After copying, every run picks up the
-threshold automatically:
+local paths stay private. The plan reports the active threshold:
 
 ```bash
-uv run rollup --yes               # picks up MIN_LOSS from config.py
-uv run rollup --dry-run           # plan reports the threshold in INFO log
-uv run rollup --yes --min-loss 0  # one-off override to disable for this run
+uv run rollup --dry-run            # quiet by default
+uv run rollup --yes --log-level INFO   # logs `min_loss filter: dropping rows where loss < 1000.0`
 ```
 
-On the dev dataset we ship, `MIN_LOSS = 1000` cuts parquet size **~65%**
-(`HiscoAIR_*` 11M → 3.2M, combined 34M → 14M). The filter is applied to
-each variant's `ModelGrossLoss` for the Hisco fanouts, and to the `value`
-column for `mts_tbl_ylt_combined_all_factors.parquet`. The
-`--dump-interim` debug parquets are *not* filtered — they're for
-analyst introspection.
-
-Default in code is `0.0` (no filter) so the codebase stays
-backwards-compatible without `config.py`.
+The filter is applied to each variant's `ModelGrossLoss` for the Hisco
+fanouts, and to the `value` column for
+`mts_tbl_ylt_combined_all_factors.parquet`. The `--dump-interim` debug
+parquets are *not* filtered — they're for analyst introspection.
 
 ### When to use `--dump-interim`
 

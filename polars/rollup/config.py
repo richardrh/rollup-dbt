@@ -255,10 +255,11 @@ class Config:
     vendors:        tuple[Vendor, ...]
     mssql_conn_str: str | None = None   # None → parquet-only run
     # Final-stage threshold: rows whose loss column is below this value are
-    # dropped from every output. 0.0 = no filter (keep all rows). Typical
-    # production setting: `--min-loss 1000` — small-loss events bloat the
-    # parquets without contributing meaningfully to EP curves.
-    min_loss:       float = 0.0
+    # dropped from every output. Default 1000.0 — small-loss events bloat
+    # the parquets without contributing meaningfully to EP curves. Override
+    # to 0.0 (CLI `--min-loss 0`, env `ROLLUP_MIN_LOSS=0`, or `MIN_LOSS = 0.0`
+    # in `config.py`) to keep every event for analyst introspection.
+    min_loss:       float = 1000.0
 
     def vendor(self, name: VendorName) -> Vendor:
         for v in self.vendors:
@@ -291,7 +292,9 @@ def resolve() -> Config:
 
     data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
     raw_min_loss = _getval(EnvVar.MIN_LOSS, "MIN_LOSS")
-    min_loss = float(raw_min_loss) if raw_min_loss else 0.0
+    # Use `is not None` so an explicit "0" / 0.0 properly disables the filter
+    # — `if raw_min_loss` would treat both as falsy.
+    min_loss = float(raw_min_loss) if raw_min_loss is not None else 1000.0
     return Config(
         seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),
         output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),

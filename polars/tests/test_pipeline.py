@@ -240,15 +240,22 @@ def test_dialsup_equals_loss_div_fx():
 # -----------------------------------------------------------------------------
 
 def test_resolve_picks_up_min_loss_env(monkeypatch):
-    """`ROLLUP_MIN_LOSS=1000` env var → cfg.min_loss == 1000.0."""
-    monkeypatch.setenv(config.EnvVar.MIN_LOSS, "1000")
+    """`ROLLUP_MIN_LOSS=2500` env var → cfg.min_loss == 2500.0 (overrides default)."""
+    monkeypatch.setenv(config.EnvVar.MIN_LOSS, "2500")
+    cfg = config.resolve()
+    assert cfg.min_loss == 2500.0
+
+
+def test_resolve_default_min_loss_is_1000(monkeypatch):
+    """Absent env var + no config.py → 1000.0 (production default)."""
+    monkeypatch.delenv(config.EnvVar.MIN_LOSS, raising=False)
     cfg = config.resolve()
     assert cfg.min_loss == 1000.0
 
 
-def test_resolve_default_min_loss_is_zero(monkeypatch):
-    """Absent env var → 0.0 (no filter, backwards compatible)."""
-    monkeypatch.delenv(config.EnvVar.MIN_LOSS, raising=False)
+def test_resolve_min_loss_zero_disables_filter(monkeypatch):
+    """Explicit ROLLUP_MIN_LOSS=0 disables the filter (overrides default)."""
+    monkeypatch.setenv(config.EnvVar.MIN_LOSS, "0")
     cfg = config.resolve()
     assert cfg.min_loss == 0.0
 

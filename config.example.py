@@ -15,10 +15,10 @@ no min-loss filter).
 """
 
 # --- Production loss-cut threshold ---------------------------------------- #
-# Drop output rows whose loss is below this value. 0.0 = keep everything.
-# Routine production uses 1000.0 — small-loss events bloat parquet sizes
-# without contributing meaningfully to EP curves.
-MIN_LOSS = 1000.0
+# Drop output rows whose loss is below this value. The code default is
+# 1000.0 — set this attribute (or ROLLUP_MIN_LOSS / --min-loss) only when
+# you want a different threshold. 0.0 disables the filter entirely.
+# MIN_LOSS = 1000.0
 
 
 # --- SQL Server push -------------------------------------------------------- #

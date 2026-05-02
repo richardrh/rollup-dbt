@@ -13,7 +13,7 @@ uv run rollup --dry-run                  # show the plan, exit
 uv run rollup                            # plan → y/N prompt → run
 uv run rollup --yes                      # skip prompt, run
 uv run rollup --yes --dump-interim       # also write audit parquets
-uv run rollup --yes --min-loss 1000      # drop output rows where loss < 1000
+uv run rollup --yes --min-loss 0         # disable default loss filter (keep every row)
 uv run rollup --yes --log-level INFO     # show factor-chain trace
 uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup derive-blending            # rewrite blending_weights from EP AALs
