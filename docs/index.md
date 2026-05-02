@@ -9,11 +9,13 @@ is the overview + schematic + run commands.
 ```bash
 # from repo root
 uv run rollup --dry-run                              # plan only — no data read
-uv run rollup --yes                                  # full run
+uv run rollup --yes                                  # full run, writes 9 parquets to data/output/
 uv run rollup --yes --log-level INFO                 # full run, with stage logs
+uv run rollup --yes --dump-interim                   # full run + extra debug parquets in data/output/debug/
 uv run rollup ep-summary-to-csv                      # convert wide xlsx → long CSV
 uv run rollup derive-blending                        # rewrite blending_weights from EP AALs
-uv run pytest -q                                     # 112 tests, ~5s
+uv run rollup push-to-sql                            # push the 8 Hisco fanout parquets to SQL Server
+uv run pytest -q                                     # 135 tests, ~5s
 ```
 
 ## Build the docs

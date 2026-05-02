@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "derive-blending":   _cmd_derive_blending,
+        "push-to-sql":       _cmd_push_to_sql,
     }.get(args.cmd, _cmd_run)
     return handler(args)
 
@@ -83,6 +84,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, default=None,
         help="Where to write the blending_weights CSV. "
              "Default: <seeds_dir>/vor/blending_weights.csv (overwrites the existing seed).",
+    )
+
+    push = sub.add_parser(
+        "push-to-sql",
+        help="Push the Hisco fanout parquets in data/output/ to SQL Server. "
+             "Each table is dropped and recreated. Requires ROLLUP_MSSQL_CONN_STR "
+             "(or MSSQL_CONN_STR in config.py).",
+    )
+    push.add_argument(
+        "--schema", default=None, metavar="SCHEMA",
+        help="SQL schema to push into (e.g. 'dbo', 'marts'). "
+             "Default: server-side default (typically 'dbo').",
+    )
+    push.add_argument(
+        "-y", "--yes", action="store_true", dest="push_yes",
+        help="skip the y/N confirmation",
     )
 
     return parser
@@ -165,6 +182,78 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     df.write_csv(output)
     print(f"wrote {output}  ({df.height:,} rows)")
     print(df.head(20))
+    return 0
+
+
+def _cmd_push_to_sql(args: argparse.Namespace) -> int:
+    """Push the Hisco fanout parquets in `data/output/` to SQL Server.
+
+    Lists the parquets, prompts for confirmation, then drops + recreates each
+    target table. The connection string comes from `ROLLUP_MSSQL_CONN_STR` (or
+    `MSSQL_CONN_STR` in `config.py`); aborts with exit-2 if it isn't set.
+    """
+    from rollup.config import _redact_conn_str
+    from rollup.io.sql_push import list_pushable_parquets, push_parquet_to_sql
+
+    cfg = config.resolve()
+    if not cfg.mssql_conn_str:
+        print(
+            "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+            "is not set. Cannot push to SQL Server.",
+            file=sys.stderr,
+        )
+        return 2
+
+    parquets = list_pushable_parquets(cfg.output_dir)
+    if not parquets:
+        print(
+            f"error: no Hisco*.parquet files found under {cfg.output_dir}. "
+            "Run `rollup --yes` first.",
+            file=sys.stderr,
+        )
+        return 2
+
+    redacted = _redact_conn_str(cfg.mssql_conn_str)
+    schema_label = args.schema or "<server-default>"
+
+    print()
+    print(f"  Target connection : {redacted}")
+    print(f"  Target schema     : {schema_label}")
+    print(f"  Output directory  : {cfg.output_dir}")
+    print()
+    print(f"  {len(parquets)} parquet file(s) will be pushed (existing tables of the same name will be DROPPED and replaced):")
+    print()
+    for p in parquets:
+        size_mb = p.stat().st_size / 1e6
+        table_name = p.stem
+        fq_name = f"{schema_label}.{table_name}" if args.schema else table_name
+        print(f"    {p.name:<40s}  ->  {fq_name:<48s}  ({size_mb:.1f} MB)")
+    print()
+
+    if not args.push_yes:
+        if not sys.stdin.isatty():
+            print(
+                "error: refusing to push without --yes when stdin is not a TTY "
+                "(piped / non-interactive). Re-run with `--yes` to confirm.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            reply = input("Proceed with push? [y/N]: ").strip().lower()
+        except EOFError:
+            reply = ""
+        if reply not in {"y", "yes"}:
+            print("aborted by user")
+            return 1
+
+    total_rows = 0
+    for p in parquets:
+        n = push_parquet_to_sql(p, conn_str=cfg.mssql_conn_str, schema=args.schema)
+        print(f"  pushed {p.name:<40s} ({n:,} rows)")
+        total_rows += n
+
+    print()
+    print(f"  done: pushed {len(parquets)} table(s), {total_rows:,} rows total.")
     return 0
 
 
