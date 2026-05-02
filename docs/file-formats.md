@@ -303,13 +303,29 @@ df = duckdb.sql("""
 ## SQL Server push — explicit, on-demand
 
 Pushing the Hisco fanout parquets to SQL Server is an **explicit second
-step**, not part of `rollup --yes`. Run the pipeline first; then push
-when you're ready:
+step**, not part of `rollup --yes`. Run the pipeline first, optionally
+test the connection, then push:
 
 ```bash
 uv run rollup --yes              # writes 9 parquets to data/output/
+uv run rollup test-sql           # read-only probe — confirm the conn works
 uv run rollup push-to-sql        # lists, prompts, then pushes the 8 Hisco fanouts
 ```
+
+### `test-sql` — verify the connection before you push
+
+```bash
+uv run rollup test-sql                    # connect, report @@VERSION + database
+uv run rollup test-sql --schema marts     # also check that schema exists
+```
+
+A successful run prints the server version, the connected database, and
+(if `--schema` was given) whether that schema exists. A failure prints the
+exact driver / sqlalchemy error so you know whether it's a missing driver,
+a bad hostname, an auth problem, or a missing schema.
+
+Read-only — never writes. Use this before `push-to-sql` to catch
+config issues without destroying any tables.
 
 ### What `push-to-sql` does
 

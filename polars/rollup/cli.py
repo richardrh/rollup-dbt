@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "derive-blending":   _cmd_derive_blending,
+        "test-sql":          _cmd_test_sql,
         "push-to-sql":       _cmd_push_to_sql,
     }.get(args.cmd, _cmd_run)
     return handler(args)
@@ -84,6 +85,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, default=None,
         help="Where to write the blending_weights CSV. "
              "Default: <seeds_dir>/vor/blending_weights.csv (overwrites the existing seed).",
+    )
+
+    test_sql = sub.add_parser(
+        "test-sql",
+        help="Probe the SQL Server connection — connect, run @@VERSION, "
+             "optionally check a schema exists. Read-only.",
+    )
+    test_sql.add_argument(
+        "--schema", default=None, metavar="SCHEMA",
+        help="If provided, also verify the schema exists on the server.",
     )
 
     push = sub.add_parser(
@@ -182,6 +193,63 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     df.write_csv(output)
     print(f"wrote {output}  ({df.height:,} rows)")
     print(df.head(20))
+    return 0
+
+
+def _cmd_test_sql(args: argparse.Namespace) -> int:
+    """Read-only probe of the SQL Server connection.
+
+    Connects using the configured connection string, runs `@@VERSION` +
+    `DB_NAME()`, and optionally checks whether `--schema` exists. Prints a
+    one-screen summary; never writes. Returns 0 on success, 2 on failure.
+    """
+    from rollup.config import _redact_conn_str
+    from rollup.io.sql_push import test_connection
+
+    cfg = config.resolve()
+    if not cfg.mssql_conn_str:
+        print(
+            "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+            "is not set. Cannot test SQL Server connection.",
+            file=sys.stderr,
+        )
+        return 2
+
+    redacted = _redact_conn_str(cfg.mssql_conn_str)
+    print()
+    print(f"  Target connection : {redacted}")
+    if args.schema:
+        print(f"  Target schema     : {args.schema}")
+    print()
+    print("  Probing... ", end="", flush=True)
+
+    result = test_connection(cfg.mssql_conn_str, schema=args.schema)
+
+    if not result.ok:
+        print("✘ failed")
+        print()
+        print(f"  Error: {result.error}", file=sys.stderr)
+        print()
+        return 2
+
+    print("✓ ok")
+    print()
+    # @@VERSION can be multi-line — show only the headline.
+    version_line = (result.version or "").splitlines()[0] if result.version else "(unknown)"
+    print(f"  Server version  : {version_line}")
+    print(f"  Database        : {result.database}")
+    if args.schema:
+        mark = "✓ exists" if result.schema_exists else "✘ does NOT exist on this server"
+        print(f"  Schema {args.schema!r:14s}: {mark}")
+        if not result.schema_exists:
+            print()
+            print(
+                f"  Warning: schema {args.schema!r} not found on the server. "
+                "`push-to-sql --schema {args.schema}` will fail.",
+                file=sys.stderr,
+            )
+            return 2
+    print()
     return 0
 
 

@@ -14,6 +14,7 @@ uv run rollup --yes --log-level INFO                 # full run, with stage logs
 uv run rollup --yes --dump-interim                   # full run + extra debug parquets in data/output/debug/
 uv run rollup ep-summary-to-csv                      # convert wide xlsx → long CSV
 uv run rollup derive-blending                        # rewrite blending_weights from EP AALs
+uv run rollup test-sql                               # probe SQL connection (read-only)
 uv run rollup push-to-sql                            # push the 8 Hisco fanout parquets to SQL Server
 uv run pytest -q                                     # 135 tests, ~5s
 ```
