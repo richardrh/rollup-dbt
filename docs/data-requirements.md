@@ -2,8 +2,8 @@
 
 This is the contract between the pipeline and the data you supply. If every
 file listed below exists in the right shape, `rollup --yes`
-runs end-to-end and writes 12 (= 2 vendors × N forecast dates × 2 flavours)
-`Hisco{AIR,RMS}_{date}_{flavour}.parquet` files under `data/output/`.
+runs end-to-end and writes 9 default parquets under `data/output/`:
+6 Hisco main files (2 vendors × 3 forecast dates) + 2 dialsup files (one per vendor) + the combined long-format parquet.
 
 The pipeline's preflight (`rollup --dry-run`) reports the
 status of every file mentioned here. Read its output before re-checking this

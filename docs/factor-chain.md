@@ -24,7 +24,7 @@ Six factors. Three year-invariant (uplift, cap, FX) + three year-varying
 euws column). Per forecast tag in the seed you get three year-tagged
 columns. With N tags that's `3 + 3×N` metric columns.
 
-Plus one sensitivity column per tag: `dialsup_{tag}`.
+Plus one sensitivity column: `dialsup` (currency conversion only, independent of forecast tag).
 
 ## Column-name convention: the chain is visible
 

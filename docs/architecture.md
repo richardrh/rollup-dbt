@@ -34,9 +34,9 @@ Two Hisco output flavours:
 - `Flavor.MAIN` — the main output: capped, local-ccy, forecast-adjusted,
   euws-adjusted, fine-art correction applied. Backed by the
   `loss_uplifted_capped_localccy_{tag}_euws_fagross` column.
-- `Flavor.DIALSUP` — sensitivity: the composite
-  (forecast × euws × fa_gross) ratio applied to the raw YLT loss.
-  Backed by the `dialsup_{tag}` column.
+- `Flavor.DIALSUP` — currency-converted raw loss: `loss / rate_to_gbp` (no factors).
+  Single column, not per-forecast-tag, because the formula is tag-independent.
+  One file per vendor.
 
 `fa_gross` in the column name is a **factor** in the chain, not a flavour —
 same way `euws` and `localccy` are factors in the name.
@@ -50,11 +50,12 @@ class VariantSpec(NamedTuple):
     flavor:        Flavor
 ```
 
-Variants are built dynamically: `vendor × forecast_date × flavor`. Each
-vendor × forecast_date × flavor triple produces one Hisco parquet.
+Variants are built dynamically: `vendor × forecast_date × flavor`. However,
+dialsup is independent of forecast date (formula is `loss / rate_to_gbp`),
+so only one dialsup variant is created per vendor.
 
-With 2 vendors, 3 forecast dates, 2 flavors → **12 variants**. Add a date to
-`forecast_factors.csv` → 16 variants automatically, no code change.
+Current setup: 2 vendors × 3 forecast dates (MAIN) + 2 vendors (DIALSUP) → **8 variants**.
+Add a forecast date to `forecast_factors.csv` → 10 variants automatically, no code change.
 
 ## Typed columns
 

@@ -395,19 +395,18 @@ parquets being present locally).
 
 ---
 
-## 7. Dials-up funnel (`mts_vw_ylt_dialsup__funnel`) — **done**
+## 7. Dials-up sensitivity (`mts_vw_ylt_dialsup__funnel`) — **done**
 
 ```
-f_ratio_{tag} = loss_uplifted_capped_localccy_{tag}_euws_fagross
-              / loss_uplifted_capped_localccy
-dialsup_{tag} = f_ratio_{tag} × loss_raw
+dialsup = loss / rate_to_gbp
 ```
 
-polars: `rollup.pipeline._compute_dialsup`. Picks
-`chain.main_loss_col(tag)` as the numerator and `chain.CHAIN_BASE` as
-the denominator, so adding a chain stage shifts the numerator
-automatically. Divide-by-zero guard (`pl.when(... != 0)`) returns 0.0 —
-documented in the function docstring.
+Currency conversion only — no factors. Single column (no per-tag emission),
+because the formula is tag-independent. One file per vendor.
+
+polars: `rollup.pipeline._compute_dialsup`. Produces a single `dialsup` column
+by dividing raw `loss` by `rate_to_gbp`. Divide-by-zero guard
+(`pl.when(... != 0)`) returns 0.0 — documented in the function docstring.
 
 ---
 
@@ -532,8 +531,8 @@ nine `REQUIRED_SEEDS` have zero rows.
 |14b| `tests/test_invariants.py`                                | the rest of `verify.*`                                                                | todo   |
 
 **Overall**: end-to-end pipeline runs against synthetic data
-(`tests/test_e2e.py`) producing 12 Hisco parquets with non-zero
-`ModelGrossLoss`. The remaining gaps are (a) `ModelEventDay` join with
+(`tests/test_e2e.py`) producing 8 Hisco fanout parquets + the combined long-format parquet with non-zero
+`ModelGrossLoss` values. The remaining gaps are (a) `ModelEventDay` join with
 `air_events` / a flood-events seed, (b) `fa_gross_tail_factor`
 application, (c) reproducing the `verify.*` invariants as pytest
 assertions.

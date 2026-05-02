@@ -17,7 +17,7 @@ uv run rollup ep-summary-to-csv                      # convert wide xlsx → lon
 uv run rollup derive-blending                        # rewrite blending_weights from EP AALs
 uv run rollup test-sql                               # probe SQL connection (read-only)
 uv run rollup push-to-sql                            # push the 8 Hisco fanout parquets to SQL Server
-uv run pytest -q                                     # 135 tests, ~5s
+uv run pytest -q                                     # 140 unit + 6 integration tests, ~5s (integration skipped by default)
 ```
 
 ## Build the docs
@@ -41,7 +41,7 @@ uv run zensical build   # write static site to site/
 ## Three things to know first
 
 1. **Polars lazy single-process.** No warehouse, no Jinja, no SQL compile.
-   Parquet → 12 Hisco parquets in ~5 seconds.
+   Raw parquets → 9 output files in ~5 seconds.
 2. **Schema-validated at every stage boundary.** Column names are `StrEnum`
    members; every frame has a declared `pl.Schema`. Drift fails loud, with
    the frame name and the missing/wrong column.

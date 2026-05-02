@@ -19,7 +19,7 @@ uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup derive-blending            # rewrite blending_weights from EP AALs
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
-uv run pytest -q                         # 135 tests, ~5s
+uv run pytest -q                         # 140 unit + 6 integration tests, ~5s (integration skipped by default)
 ```
 
 `python -m rollup` is equivalent.
@@ -146,4 +146,4 @@ tested. To run on real data, work through
 CSVs into `data/seeds/` and drop the YLT parquets under
 `data/ylt/{verisk,risklink}/`.
 
-**97 passing tests in ~1.6s** (`uv run python -m pytest polars/`).
+**140 unit tests + 6 integration tests** (`uv run python -m pytest polars/`). Integration tests require Docker and are skipped by default; opt-in with `--run-integration`. Unit tests run in ~5s.
