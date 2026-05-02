@@ -89,6 +89,33 @@ def list_pushable_parquets(output_dir: Path) -> list[Path]:
     return sorted(output_dir.glob(_PUSH_GLOB))
 
 
+def _polars_to_sqlalchemy_type(dtype: pl.DataType):
+    """Map a polars dtype to a sqlalchemy column type.
+
+    Generic types (Integer, BigInteger, Float, String, Boolean, Date,
+    DateTime) — sqlalchemy translates them per dialect. NVARCHAR(MAX)
+    on MSSQL, VARCHAR on PostgreSQL, etc. Containers (List/Struct) and
+    Decimal aren't expected in Hisco fanouts and fall through to a wide
+    `String` for forward compat.
+    """
+    from sqlalchemy import (
+        BigInteger, Boolean, Date, DateTime, Float, Integer, String,
+    )
+    if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16):
+        return Integer()
+    if dtype in (pl.Int64, pl.UInt32, pl.UInt64):
+        return BigInteger()
+    if dtype in (pl.Float32, pl.Float64):
+        return Float()
+    if dtype == pl.Boolean:
+        return Boolean()
+    if dtype == pl.Date:
+        return Date()
+    if dtype.base_type() == pl.Datetime:
+        return DateTime()
+    return String(length=4000)
+
+
 def push_parquet_to_sql(
     parquet: Path,
     *,
@@ -99,19 +126,40 @@ def push_parquet_to_sql(
 
     The table name is the parquet filename without the `.parquet` suffix
     (e.g. `HiscoAIR_202601_main.parquet` → table `HiscoAIR_202601_main`).
-    `if_table_exists="replace"` drops + recreates each table.
+    Drops + recreates each table.
+
+    Implementation note — this is **pure-polars**: we avoid
+    `polars.write_database(engine="sqlalchemy")` because that path
+    requires pandas (polars converts via `df.to_pandas().to_sql()`).
+    Instead we build the table with sqlalchemy types from the polars
+    schema, then bulk-INSERT polars rows directly. ADBC would be the
+    other no-pandas option, but no ADBC driver exists for SQL Server.
 
     Returns the number of rows pushed.
     """
+    from sqlalchemy import (
+        Column, MetaData, Table, create_engine, inspect,
+    )
+
     df = pl.read_parquet(parquet)
     table_name = parquet.stem
-    fq_name = f"{schema}.{table_name}" if schema else table_name
 
-    df.write_database(
-        table_name=fq_name,
-        connection=conn_str,
-        if_table_exists="replace",
-        engine="sqlalchemy",
-    )
+    columns = [
+        Column(name, _polars_to_sqlalchemy_type(dtype))
+        for name, dtype in df.schema.items()
+    ]
+    metadata = MetaData()
+    table = Table(table_name, metadata, *columns, schema=schema)
+
+    engine = create_engine(conn_str)
+    with engine.begin() as conn:
+        if inspect(conn).has_table(table_name, schema=schema):
+            table.drop(conn)
+        table.create(conn)
+        rows = df.to_dicts()
+        if rows:
+            conn.execute(table.insert(), rows)
+
+    fq_name = f"{schema}.{table_name}" if schema else table_name
     log.info(f"sql: wrote {df.height:,} rows → {fq_name}")
     return df.height
