@@ -26,6 +26,11 @@ dev = [
     "pymdown-extensions>=10.16",
     "pytest>=9.0.2",
     "numpy>=2.0",
+    # Integration-test stack: spin up SQL Server in Docker and connect with a
+    # pure-Python driver (pymssql ships freetds in its wheels — no system ODBC
+    # install required on the test runner).
+    "testcontainers[mssql]>=4.7",
+    "pymssql>=2.3",
 ]
 
 [tool.uv]
@@ -44,3 +49,6 @@ packages = ["polars/rollup"]
 [tool.pytest.ini_options]
 testpaths = ["polars/tests"]
 pythonpath = ["polars"]
+markers = [
+    "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
+]

@@ -319,6 +319,17 @@ uv run rollup test-sql                    # connect, report @@VERSION + database
 uv run rollup test-sql --schema marts     # also check that schema exists
 ```
 
+There are also automated integration tests for `test-sql` and
+`push-to-sql` that boot a real SQL Server container via Docker:
+
+```bash
+uv run pytest --run-integration           # 6 integration tests, ~60-90s on first run
+```
+
+These are **skipped by default** — pass `--run-integration` (or `-m
+integration`) to opt in. Requires Docker on the host. The container is
+torn down on test exit; nothing persists on disk.
+
 A successful run prints the server version, the connected database, and
 (if `--schema` was given) whether that schema exists. A failure prints the
 exact driver / sqlalchemy error so you know whether it's a missing driver,
