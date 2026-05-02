@@ -229,19 +229,39 @@ Today: 2 vendors × 3 forecast dates → **9 default files** + 2 debug files whe
 ### Trimming small-loss rows — `--min-loss N`
 
 Most events in a YLT contribute trivially small losses to the EP curve.
-Pass `--min-loss N` (or set `ROLLUP_MIN_LOSS=N`) to drop output rows whose
-loss is below the threshold:
+The pipeline drops output rows whose loss is below a configurable
+threshold. Three places to set it (highest precedence first):
+
+1. **CLI flag** — `--min-loss 1000` on a single run
+2. **Env var** — `ROLLUP_MIN_LOSS=1000` for the shell session / CI
+3. **`config.py` at the repo root** — set-and-forget for the machine
+
+The repo ships a `config.example.py` template:
 
 ```bash
-uv run rollup --yes --min-loss 1000     # drop rows where loss < 1000
+cp config.example.py config.py
+# edit MIN_LOSS = 1000.0 (or whatever your production threshold is)
 ```
 
-On the synthetic + Verisk dataset we ship: parquet sizes drop ~65%
+`config.py` is **gitignored** — it never goes to git, credentials and
+local paths stay private. After copying, every run picks up the
+threshold automatically:
+
+```bash
+uv run rollup --yes               # picks up MIN_LOSS from config.py
+uv run rollup --dry-run           # plan reports the threshold in INFO log
+uv run rollup --yes --min-loss 0  # one-off override to disable for this run
+```
+
+On the dev dataset we ship, `MIN_LOSS = 1000` cuts parquet size **~65%**
 (`HiscoAIR_*` 11M → 3.2M, combined 34M → 14M). The filter is applied to
 each variant's `ModelGrossLoss` for the Hisco fanouts, and to the `value`
-column for `mts_tbl_ylt_combined_all_factors.parquet`.
+column for `mts_tbl_ylt_combined_all_factors.parquet`. The
+`--dump-interim` debug parquets are *not* filtered — they're for
+analyst introspection.
 
-Default is `0.0` (no filter — keep all rows).
+Default in code is `0.0` (no filter) so the codebase stays
+backwards-compatible without `config.py`.
 
 ### When to use `--dump-interim`
 
