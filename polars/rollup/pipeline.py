@@ -352,10 +352,20 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     )
 
 
-def audit_long(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
-    """Identity columns + one row per (metric_name, value). Pivot-friendly."""
+def audit_long(
+    all_factors: pl.LazyFrame,
+    tags: Sequence[str],
+    *,
+    min_loss: float = 0.0,
+) -> pl.LazyFrame:
+    """Identity columns + one row per (metric_name, value). Pivot-friendly.
+
+    `min_loss > 0` drops rows where the metric value is below the threshold.
+    Applied per-row (not per-event), so a metric row at 500 is dropped even
+    if the same event has another metric > 1000.
+    """
     metric_cols = _metric_cols_for(tags)
-    return (
+    out = (
         all_factors
         .select(*[pl.col(c) for c in _IDENTITY_COLS], *[pl.col(c) for c in metric_cols])
         .unpivot(
@@ -364,16 +374,27 @@ def audit_long(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
             variable_name="metric_name",
             value_name="value",
         )
-        .sort([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID, "metric_name"])
     )
+    if min_loss > 0:
+        out = out.filter(pl.col("value") >= min_loss)
+    return out.sort([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID, "metric_name"])
 
 
-def fanout_hisco(all_factors: pl.LazyFrame, variant: VariantSpec) -> pl.LazyFrame:
+def fanout_hisco(
+    all_factors: pl.LazyFrame,
+    variant: VariantSpec,
+    *,
+    min_loss: float = 0.0,
+) -> pl.LazyFrame:
     """Project all_factors → one Hisco variant.
 
     Filters to this variant's vendor and picks the loss-metric column
     implied by the flavor. Both FAGROSS and DIALSUP columns are built
     dynamically in `build_all_factors` per forecast tag.
+
+    `min_loss > 0` drops rows where the variant's `ModelGrossLoss` is below
+    the threshold — small-loss events that bloat parquet size without
+    contributing meaningfully to the EP curve.
     """
     out = (
         all_factors
@@ -389,6 +410,8 @@ def fanout_hisco(all_factors: pl.LazyFrame, variant: VariantSpec) -> pl.LazyFram
             pl.col(AF.CDS_CAT_CLASS_NAME).alias(H.LOSS_CLASS_NAME),
         )
     )
+    if min_loss > 0:
+        out = out.filter(pl.col(H.MODEL_GROSS_LOSS) >= min_loss)
     validate_schema(out, F.HISCO_FANOUT, name=f"fanout.{variant.name}")
     return out
 
@@ -420,9 +443,11 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
     # Build each lazy plan once; reuse the same reference where the same
     # output appears in two places (audit_long is both the production
     # combined_factors_long output and the --dump-interim debug copy).
-    fanout_lfs   = [fanout_hisco(all_factors, v) for v in variants]
-    long_lf      = audit_long(all_factors, tags)
+    fanout_lfs   = [fanout_hisco(all_factors, v, min_loss=cfg.min_loss) for v in variants]
+    long_lf      = audit_long(all_factors, tags, min_loss=cfg.min_loss)
     wide_lf      = audit_wide(all_factors, tags) if dump_interim else None
+    if cfg.min_loss > 0:
+        log.info(f"min_loss filter: dropping rows where loss < {cfg.min_loss}")
 
     plan_lfs: list[pl.LazyFrame] = list(fanout_lfs)
     long_idx = len(plan_lfs)

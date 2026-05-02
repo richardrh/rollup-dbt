@@ -233,3 +233,96 @@ def test_dialsup_equals_loss_div_fx():
     expected = [800.0 / 0.80, 200.0 / 1.00]
     for i, exp in enumerate(expected):
         assert out["dialsup"][i] == pytest.approx(exp), f"row {i}: expected {exp}"
+
+
+# -----------------------------------------------------------------------------
+# min_loss filter — fanout_hisco + audit_long
+# -----------------------------------------------------------------------------
+
+def test_resolve_picks_up_min_loss_env(monkeypatch):
+    """`ROLLUP_MIN_LOSS=1000` env var → cfg.min_loss == 1000.0."""
+    monkeypatch.setenv(config.EnvVar.MIN_LOSS, "1000")
+    cfg = config.resolve()
+    assert cfg.min_loss == 1000.0
+
+
+def test_resolve_default_min_loss_is_zero(monkeypatch):
+    """Absent env var → 0.0 (no filter, backwards compatible)."""
+    monkeypatch.delenv(config.EnvVar.MIN_LOSS, raising=False)
+    cfg = config.resolve()
+    assert cfg.min_loss == 0.0
+
+
+def test_audit_long_filters_below_min_loss():
+    """audit_long with min_loss > 0 drops metric rows whose value < threshold."""
+    from rollup.pipeline import audit_long
+
+    # Build a tiny all_factors frame with the cols audit_long requires.
+    # Using just two metrics — one above, one below — so we can assert exact filtering.
+    n = 1
+    af = pl.DataFrame({
+        AF.VENDOR:                ["verisk"],
+        AF.LOB_ID:                [1],
+        AF.MODELLED_LOB:          ["X"],
+        AF.ROLLUP_LOB:            ["X"],
+        AF.LOB_TYPE:              ["t"],
+        AF.CDS_CAT_CLASS_NAME:    ["c"],
+        AF.REGION_PERIL_ID:       [1],
+        AF.MODELLED_REGION_PERIL: ["m"],
+        AF.PERIL_NAME:            ["p"],
+        AF.REGION:                ["r"],
+        AF.PERIL_FAMILY:          ["FL"],
+        AF.YEAR_ID:               [1],
+        AF.EVENT_ID:              [1],
+        AF.MODEL_EVENT_ID:        [1],
+        AF.MODEL_CODE:            [0],
+        AF.RL_PROPORTION:         [0.5],
+        AF.VK_PROPORTION:         [0.5],
+        AF.BASE_MODEL:            ["verisk"],
+        # Metric cols audit_long unpivots over (no forecast tags = year-invariant only)
+        Y.LOSS:                   [500.0],     # below 1000 — should be dropped
+        M.LOSS_UPLIFTED:          [500.0],     # below 1000 — should be dropped
+        M.LOSS_UPLIFTED_CAPPED:   [2500.0],    # above 1000 — should be kept
+        M.LOSS_UPLIFTED_CAPPED_LOCALCCY: [2500.0],
+        "dialsup":                [50.0],      # below 1000 — should be dropped
+    }).lazy()
+    _ = n  # silence unused-var warning
+
+    out = audit_long(af, tags=[], min_loss=1000.0).collect()
+    assert out.height == 2, f"expected 2 rows kept (≥1000), got {out.height}"
+    assert (out["value"] >= 1000.0).all()
+
+
+def test_audit_long_no_filter_when_min_loss_zero():
+    """min_loss=0 means no filter — every metric row survives."""
+    from rollup.pipeline import audit_long
+
+    af = pl.DataFrame({
+        AF.VENDOR:                ["verisk"],
+        AF.LOB_ID:                [1],
+        AF.MODELLED_LOB:          ["X"],
+        AF.ROLLUP_LOB:            ["X"],
+        AF.LOB_TYPE:              ["t"],
+        AF.CDS_CAT_CLASS_NAME:    ["c"],
+        AF.REGION_PERIL_ID:       [1],
+        AF.MODELLED_REGION_PERIL: ["m"],
+        AF.PERIL_NAME:            ["p"],
+        AF.REGION:                ["r"],
+        AF.PERIL_FAMILY:          ["FL"],
+        AF.YEAR_ID:               [1],
+        AF.EVENT_ID:              [1],
+        AF.MODEL_EVENT_ID:        [1],
+        AF.MODEL_CODE:            [0],
+        AF.RL_PROPORTION:         [0.5],
+        AF.VK_PROPORTION:         [0.5],
+        AF.BASE_MODEL:            ["verisk"],
+        Y.LOSS:                   [500.0],
+        M.LOSS_UPLIFTED:          [500.0],
+        M.LOSS_UPLIFTED_CAPPED:   [2500.0],
+        M.LOSS_UPLIFTED_CAPPED_LOCALCCY: [2500.0],
+        "dialsup":                [50.0],
+    }).lazy()
+
+    out = audit_long(af, tags=[], min_loss=0.0).collect()
+    # 5 metric columns × 1 event = 5 rows
+    assert out.height == 5

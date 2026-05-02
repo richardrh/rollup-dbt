@@ -226,6 +226,23 @@ The pipeline writes here. **Created on run.**
 
 Today: 2 vendors × 3 forecast dates → **9 default files** + 2 debug files when `--dump-interim` is set.
 
+### Trimming small-loss rows — `--min-loss N`
+
+Most events in a YLT contribute trivially small losses to the EP curve.
+Pass `--min-loss N` (or set `ROLLUP_MIN_LOSS=N`) to drop output rows whose
+loss is below the threshold:
+
+```bash
+uv run rollup --yes --min-loss 1000     # drop rows where loss < 1000
+```
+
+On the synthetic + Verisk dataset we ship: parquet sizes drop ~65%
+(`HiscoAIR_*` 11M → 3.2M, combined 34M → 14M). The filter is applied to
+each variant's `ModelGrossLoss` for the Hisco fanouts, and to the `value`
+column for `mts_tbl_ylt_combined_all_factors.parquet`.
+
+Default is `0.0` (no filter — keep all rows).
+
 ### When to use `--dump-interim`
 
 ```bash

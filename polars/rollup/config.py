@@ -145,6 +145,7 @@ class EnvVar(StrEnum):
     EP_VERISK_DIR     = "ROLLUP_EP_VERISK_DIR"
     EP_RISKLINK_DIR   = "ROLLUP_EP_RISKLINK_DIR"
     MSSQL_CONN_STR    = "ROLLUP_MSSQL_CONN_STR"
+    MIN_LOSS          = "ROLLUP_MIN_LOSS"
 
 
 # --------------------------------------------------------------------------- #
@@ -253,6 +254,11 @@ class Config:
     output_dir:     Path
     vendors:        tuple[Vendor, ...]
     mssql_conn_str: str | None = None   # None → parquet-only run
+    # Final-stage threshold: rows whose loss column is below this value are
+    # dropped from every output. 0.0 = no filter (keep all rows). Typical
+    # production setting: `--min-loss 1000` — small-loss events bloat the
+    # parquets without contributing meaningfully to EP curves.
+    min_loss:       float = 0.0
 
     def vendor(self, name: VendorName) -> Vendor:
         for v in self.vendors:
@@ -284,11 +290,14 @@ def resolve() -> Config:
         return os.getenv(var) or (getattr(_cfg, attr, None) if _cfg else None)
 
     data_root = _env_path(EnvVar.DATA_DIR, REPO_ROOT / "data")
+    raw_min_loss = _getval(EnvVar.MIN_LOSS, "MIN_LOSS")
+    min_loss = float(raw_min_loss) if raw_min_loss else 0.0
     return Config(
         seeds_dir=_env_path(EnvVar.SEEDS_DIR, data_root / "seeds"),
         output_dir=_env_path(EnvVar.OUTPUT_DIR, data_root / "output"),
         vendors=(_verisk(data_root), _risklink(data_root)),
         mssql_conn_str=_getval(EnvVar.MSSQL_CONN_STR, "MSSQL_CONN_STR"),
+        min_loss=min_loss,
     )
 
 

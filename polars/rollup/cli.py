@@ -67,6 +67,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also write audit_wide.parquet + audit_long.parquet to "
              "<output_dir>/debug/ for read-across verification",
     )
+    parser.add_argument(
+        "--min-loss", type=float, default=None, metavar="N",
+        help="drop output rows whose loss < N. 0 = keep all (default). "
+             "Typical production: --min-loss 1000. Also settable via ROLLUP_MIN_LOSS.",
+    )
 
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
 
@@ -122,9 +127,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Default flow: build the plan, prompt (or not), run the pipeline."""
+    from dataclasses import replace
+
     from rollup.pipeline import run
 
-    cfg  = config.resolve()
+    cfg = config.resolve()
+    if args.min_loss is not None:
+        cfg = replace(cfg, min_loss=args.min_loss)
     plan = config.build_plan(cfg)
 
     if args.dry_run:
