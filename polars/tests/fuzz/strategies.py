@@ -15,16 +15,27 @@ _dtype_strategy(dtype)
     Map a single polars dtype to a Hypothesis strategy.  Used internally
     by ``lazyframe_from_schema``; exported for callers that need to build
     column-level strategies directly.
+
+fx_rates_strategy(present_currencies)
+    Build a ``REF_FX_RATES`` LazyFrame containing GBP rows for exactly the
+    given set of CurrencyCode members and no others.  Used by the
+    ``validate_fx_coverage`` property tests to control which codes are
+    present.
 """
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from datetime import date
 from typing import Any
 
 import polars as pl
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
+
+from rollup.config import CurrencyCode
+from rollup.schemas import frames as F
+from rollup.schemas.columns import RefFxRatesCol as FX
 
 
 # ---------------------------------------------------------------------------
@@ -162,3 +173,34 @@ def lazyframe_from_schema(
         series[col_name] = pl.Series(name=col_name, values=values, dtype=dtype)
 
     return pl.LazyFrame(series, schema=schema)
+
+
+# ---------------------------------------------------------------------------
+# FX-rates helper strategy
+# ---------------------------------------------------------------------------
+
+def fx_rates_strategy(
+    present_currencies: AbstractSet[CurrencyCode],
+) -> pl.LazyFrame:
+    """Build a ``REF_FX_RATES`` LazyFrame with exactly the given currencies.
+
+    Each currency in ``present_currencies`` gets one row with
+    ``target_currency=GBP`` so that ``validate_fx_coverage`` can find it.
+    Currencies NOT in the set are absent — ``validate_fx_coverage`` should
+    raise ``MissingFxRateError`` for them.
+
+    The returned frame matches ``F.REF_FX_RATES`` schema exactly.
+    """
+    codes = list(present_currencies)
+    n = len(codes)
+    if n == 0:
+        return pl.LazyFrame(schema=F.REF_FX_RATES)
+    return pl.LazyFrame(
+        {
+            FX.CURRENCY_CODE:   [c.value for c in codes],
+            FX.TARGET_CURRENCY: [CurrencyCode.GBP.value] * n,
+            FX.RATE_DATE:       [date(2024, 1, 1)] * n,
+            FX.RATE:            [1.0] * n,
+        },
+        schema=F.REF_FX_RATES,
+    )
