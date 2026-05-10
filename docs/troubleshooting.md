@@ -1,6 +1,6 @@
 # Troubleshooting — common errors and fixes
 
-Quick reference for the six most common pipeline failures. Each lists the symptom, root cause, and the fix command or action.
+Quick reference for the nine most common pipeline failures. Each lists the symptom, root cause, and the fix command or action.
 
 ---
 
@@ -86,7 +86,40 @@ driver=ODBC+Driver+17+for+SQL+Server
 
 ---
 
-## 7. Output parquets exist but contain zero rows
+## 7. `MissingFxRateError: currency 'EUR' not in fx_rates.csv`
+
+**Symptom:** Pipeline aborts immediately at startup with `MissingFxRateError` mentioning a currency code.
+
+**Cause:** The `fx_rates.csv` seed is missing a required currency. The pipeline derives currency from the LOB name (e.g. `' EU '` → EUR, `' UK '` → GBP). If a peril category contains a currency code not covered by `fx_rates.csv`, the pipeline fails before building the factor chain — **fast** (≈1 second).
+
+**Fix:** Add the missing currency row to `data/seeds/fx_rates.csv`:
+
+```csv
+currency_code,target_currency,rate_date,rate
+EUR,GBP,2026-01-01,0.88
+GBP,GBP,2026-01-01,1.0
+```
+
+Both `GBP→GBP` (rate = 1.0) and `EUR→GBP` rows are required at minimum. See [`data/seeds/fx_rates.csv`](../data/seeds/README.md) for the full seed spec.
+
+---
+
+## 8. `SchemaError: unexpected column 'fake_col' in sql_push.HiscoAIR_202601_main`
+
+**Symptom:** `rollup push-to-sql` fails during the push with a `SchemaError` naming an unexpected column in one of the parquets.
+
+**Cause:** A rogue column made it into the Hisco fanout parquets (likely a temporary debugging column left in the code). The pipeline validates the schema **before** touching SQL Server — so this is caught cleanly at the parquet level, not buried in a SQL error.
+
+**Fix:** 
+1. Check the named column in your output parquet: is it something you added for debugging? If so, remove it from the code and re-run the pipeline.
+2. If it's an expected column that's been recently added, check `polars/rollup/schemas/frames.py::HISCO_FANOUT` schema — it may need updating.
+3. Delete `data/output/*.parquet` and re-run: `uv run rollup --yes`
+
+This is a safety gate — unexpected columns in SQL pushes can corrupt the downstream schema contract, so they fail fast.
+
+---
+
+## 9. Output parquets exist but contain zero rows
 
 **Symptom:** Hisco parquets are written to `data/output/` but every row has `ModelGrossLoss = 0`.
 
