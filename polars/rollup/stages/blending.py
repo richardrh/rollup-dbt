@@ -25,10 +25,23 @@ from rollup.config import VendorName
 from rollup.schemas.columns import (
     AnalysesCol as AN,
     BlendingWeightsCol as BW,
+    EpType,
     PerilsCol as P,
     StgRisklinkEpCol as RL,
     StgVeriskEpCol as VK,
 )
+
+
+# Working / temporary column names — exist only inside the blending computation.
+# Module-level so every reference is traceable from pl.col(...).
+_PERIL_ID_TMP    = "peril_id"
+_VENDOR_AAL_TMP  = "vendor_aal"
+_RL_AAL_TMP      = "rl_aal"
+_VK_AAL_TMP      = "vk_aal"
+_TOTAL_TMP       = "total"
+_RL_PROP_TMP     = "rl_proportion"
+_VK_PROP_TMP     = "vk_proportion"
+_PERIL_NAME_TMP  = "peril_name"
 
 
 log = logging.getLogger("rollup.blending")
@@ -48,9 +61,9 @@ def _aal_by_peril(
     """
     if not long_csvs:
         log.warning(f"{vendor.value}: no EP long CSVs found — vendor AAL will be 0")
-        return pl.DataFrame(schema={"peril_id": pl.Int64, "vendor_aal": pl.Float64})
+        return pl.DataFrame(schema={_PERIL_ID_TMP: pl.Int64, _VENDOR_AAL_TMP: pl.Float64})
 
-    ep = pl.concat([pl.read_csv(p) for p in long_csvs], how="vertical_relaxed")
+    ep = pl.concat([pl.scan_csv(p) for p in long_csvs], how="vertical_relaxed").collect()
 
     if vendor == VendorName.RISKLINK:
         peril_label_col = RL.REGION_PERIL
@@ -60,7 +73,7 @@ def _aal_by_peril(
     else:
         raise ValueError(f"unknown vendor {vendor!r}")
 
-    aal_rows = ep.filter(pl.col("ep_type") == "AAL")
+    aal_rows = ep.filter(pl.col(RL.EP_TYPE) == EpType.AAL)
 
     # Map peril label -> peril_id via analyses (filter to this vendor).
     label_to_pid = (
@@ -78,7 +91,7 @@ def _aal_by_peril(
     # Warn for unmapped labels.
     unmapped = joined.filter(pl.col(AN.PERIL_ID).is_null())
     if unmapped.height > 0:
-        bad_labels = sorted(set(unmapped[peril_label_col].to_list()))
+        bad_labels = unmapped[peril_label_col].unique().sort().to_list()
         log.warning(
             f"{vendor.value}: {len(bad_labels)} EP-summary labels not in "
             f"analyses.csv: {bad_labels}"
@@ -88,8 +101,8 @@ def _aal_by_peril(
         joined
         .filter(pl.col(AN.PERIL_ID).is_not_null())
         .group_by(AN.PERIL_ID)
-        .agg(pl.col("gl").sum().alias("vendor_aal"))
-        .rename({AN.PERIL_ID: "peril_id"})
+        .agg(pl.col(RL.GL).sum().alias(_VENDOR_AAL_TMP))
+        .rename({AN.PERIL_ID: _PERIL_ID_TMP})
     )
 
 
@@ -107,54 +120,54 @@ def derive_blending_weights(
     rl_aal = _aal_by_peril(rl_long_csvs, VendorName.RISKLINK, analyses)
     vk_aal = _aal_by_peril(vk_long_csvs, VendorName.VERISK, analyses)
 
-    rl_aal = rl_aal.rename({"vendor_aal": "rl_aal"})
-    vk_aal = vk_aal.rename({"vendor_aal": "vk_aal"})
+    rl_aal = rl_aal.rename({_VENDOR_AAL_TMP: _RL_AAL_TMP})
+    vk_aal = vk_aal.rename({_VENDOR_AAL_TMP: _VK_AAL_TMP})
 
     # Outer join so any peril seen by either vendor is represented.
-    joined = rl_aal.join(vk_aal, on="peril_id", how="full", coalesce=True)
+    joined = rl_aal.join(vk_aal, on=_PERIL_ID_TMP, how="full", coalesce=True)
 
     proportions = (
         joined
         .with_columns(
-            pl.col("rl_aal").fill_null(0.0),
-            pl.col("vk_aal").fill_null(0.0),
+            pl.col(_RL_AAL_TMP).fill_null(0.0),
+            pl.col(_VK_AAL_TMP).fill_null(0.0),
         )
         .with_columns(
-            total=(pl.col("rl_aal") + pl.col("vk_aal")),
+            **{_TOTAL_TMP: pl.col(_RL_AAL_TMP) + pl.col(_VK_AAL_TMP)},
         )
         .with_columns(
-            rl_proportion=pl.when(pl.col("total") > 0)
-            .then(pl.col("rl_aal") / pl.col("total"))
-            .otherwise(pl.lit(0.5)),
+            **{_RL_PROP_TMP: pl.when(pl.col(_TOTAL_TMP) > 0)
+               .then(pl.col(_RL_AAL_TMP) / pl.col(_TOTAL_TMP))
+               .otherwise(pl.lit(0.5))},
         )
-        .with_columns(vk_proportion=pl.lit(1.0) - pl.col("rl_proportion"))
+        .with_columns(**{_VK_PROP_TMP: pl.lit(1.0) - pl.col(_RL_PROP_TMP)})
         .join(
             perils.select(P.PERIL_ID, P.NAME).rename(
-                {P.PERIL_ID: "peril_id", P.NAME: "peril_name"}
+                {P.PERIL_ID: _PERIL_ID_TMP, P.NAME: _PERIL_NAME_TMP}
             ),
-            on="peril_id",
+            on=_PERIL_ID_TMP,
             how="left",
         )
     )
 
     # Long-format: one row per (peril_id, vendor).
     rl_rows = proportions.select(
-        pl.col("peril_id").alias(BW.PERIL_ID),
-        pl.col("peril_name").alias(BW.PERIL_NAME),
+        pl.col(_PERIL_ID_TMP).alias(BW.PERIL_ID),
+        pl.col(_PERIL_NAME_TMP).alias(BW.PERIL_NAME),
         pl.lit("derived from EP-summary AALs").alias(BW.DESCRIPTION),
         pl.lit(None, dtype=pl.String).alias(BW.SUB_PERIL),
         pl.lit(VendorName.RISKLINK.value).alias(BW.VENDOR),
-        pl.col("rl_proportion").alias(BW.WEIGHT),
+        pl.col(_RL_PROP_TMP).alias(BW.WEIGHT),
     )
     vk_rows = proportions.select(
-        pl.col("peril_id").alias(BW.PERIL_ID),
-        pl.col("peril_name").alias(BW.PERIL_NAME),
+        pl.col(_PERIL_ID_TMP).alias(BW.PERIL_ID),
+        pl.col(_PERIL_NAME_TMP).alias(BW.PERIL_NAME),
         pl.lit("derived from EP-summary AALs").alias(BW.DESCRIPTION),
         pl.lit(None, dtype=pl.String).alias(BW.SUB_PERIL),
         pl.lit(VendorName.VERISK.value).alias(BW.VENDOR),
-        pl.col("vk_proportion").alias(BW.WEIGHT),
+        pl.col(_VK_PROP_TMP).alias(BW.WEIGHT),
     )
-    out = pl.concat([rl_rows, vk_rows]).sort([BW.PERIL_ID, BW.VENDOR])
+    out = pl.concat([rl_rows, vk_rows]).sort([BW.PERIL_ID, BW.VENDOR])  # BW.PERIL_ID uses enum
     if out.height == 0:
         raise ValueError(
             "derive_blending_weights produced 0 rows — every EP-summary "

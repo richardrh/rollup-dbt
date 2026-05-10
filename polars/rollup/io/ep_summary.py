@@ -87,7 +87,7 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
             rp_columns.append((col_idx[c], int(m["rp"]), m["kind"]))
     rp_columns.sort(key=lambda t: (t[2], t[1]))   # OEP first, then AEP, by RP
 
-    out_rows: list[dict] = []
+    out_rows: list[dict[str, int | float | str | None]] = []
 
     for row in data:
         # Skip entirely blank rows (trailing blank rows in the sheet).
