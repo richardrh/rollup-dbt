@@ -23,7 +23,7 @@ from rollup.config import (
     Section,
     Vendor,
     VendorName,
-    _redact_conn_str,
+    redact_conn_str,
     _section_icon,
     _status_pill,
     print_plan,
@@ -74,7 +74,7 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
 
 
 # --------------------------------------------------------------------------- #
-# Pure helpers — _section_icon, _status_pill, _redact_conn_str                #
+# Pure helpers — _section_icon, _status_pill, redact_conn_str                 #
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("title,expected_icon", [
@@ -130,7 +130,7 @@ def test_status_pill_empty_section():
     ("mssql://@host/db", "mssql://@host/db"),
 ])
 def test_redact_conn_str(conn_str: str, expected: str):
-    assert _redact_conn_str(conn_str) == expected
+    assert redact_conn_str(conn_str) == expected
 
 
 # --------------------------------------------------------------------------- #

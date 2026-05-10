@@ -137,6 +137,23 @@ Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
 - [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — **simple checklist for the
   data-collection pass** (what files, what columns, where to put them).
 
+### Build a self-contained single-page HTML
+
+Pandoc is already installed system-wide and available in the dev environment:
+
+```bash
+pandoc \
+  docs/index.md docs/file-formats.md docs/data-requirements.md \
+  docs/architecture.md docs/factor-chain.md docs/calculations.md \
+  docs/operating-modes.md \
+  -o rollup-pipeline-docs.html \
+  --standalone --embed-resources \
+  --toc --toc-depth=2 \
+  --metadata title="Polars Rollup Pipeline"
+```
+
+This produces a single self-contained HTML file (works from a USB stick or email).
+
 ## Status
 
 Pipeline runs end-to-end on synthetic data. The full chain (staging, factor

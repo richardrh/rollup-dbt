@@ -275,7 +275,13 @@ def _load_local_config():
         return None
     spec = importlib.util.spec_from_file_location("_rollup_local_config", path)
     mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as e:
+        raise SystemExit(
+            f"error: config.py has a problem: {type(e).__name__}: {e}\n"
+            "fix config.py and retry."
+        )
     return mod
 
 
@@ -341,6 +347,15 @@ class Plan:
     @property
     def all_seeds_ok(self) -> bool:
         return all(c.ok for c in self.seeds_section.checks)
+
+    @property
+    def all_ylt_ok(self) -> bool:
+        """All vendors have at least one YLT file present."""
+        for v in self.config.vendors:
+            sec = next((s for s in self.sections if s.title == f"ylt {v.name}"), None)
+            if sec is None or not any(c.ok for c in sec.checks):
+                return False
+        return True
 
 
 # --------------------------------------------------------------------------- #
@@ -536,17 +551,18 @@ def format_plan(plan: Plan) -> str:
     lines.append(f"YLTs:  {ylt_ready}/{len(plan.config.vendors)} vendors have data.")
     lines.append(f"EP summaries: {ep_ready}/{len(plan.config.vendors)} vendors have data.")
     if plan.config.mssql_conn_str:
-        lines.append(f"SQL Server: {_redact_conn_str(plan.config.mssql_conn_str)}")
+        lines.append(f"SQL Server: {redact_conn_str(plan.config.mssql_conn_str)}")
     else:
         lines.append("SQL Server: not configured (parquet-only run)")
     lines.append("")
     return "\n".join(lines)
 
 
-def _redact_conn_str(conn_str: str) -> str:
+def redact_conn_str(conn_str: str) -> str:
     """Hide `user:pass@` if present in a `scheme://user:pass@host/...` URL.
 
     Windows-auth ODBC strings have no credentials inline; passes through.
+    Public API — imported by cli.py and available for external callers.
     """
     if "://" not in conn_str:
         return conn_str
@@ -660,7 +676,7 @@ def _final_summary_line(plan: Plan) -> Text:
     _add("ep",     _status_pill(ep_ready, n_vendors))
 
     if plan.config.mssql_conn_str:
-        _add("sql", Text(_redact_conn_str(plan.config.mssql_conn_str), style=_BODY))
+        _add("sql", Text(redact_conn_str(plan.config.mssql_conn_str), style=_BODY))
     else:
         _add("sql", Text(f"{_GLYPH_FAIL} not configured", style=_DIM))
 

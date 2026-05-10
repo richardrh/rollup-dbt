@@ -119,7 +119,7 @@ FROM ylt;
 ```
 
 polars: the **union** is `pl.concat([rl_norm, vk_norm])` inside
-`build_all_factors`. The **ranking** is
+`rollup/pipeline.py::build_all_factors`. The **ranking** is
 `stages/factors.py::attach_rank` — `pl.col(LOSS).rank(...).over([VENDOR,
 LOB_ID, REGION_PERIL_ID])`. The `rnk` column feeds `attach_euws` which
 applies rank-threshold overrides from `euws_rank_overrides.csv`.
@@ -472,7 +472,7 @@ copy-pasteable query.
 ### 9.4 Where it's applied
 
 `stages/staging.py::apply_rollup_scope`, called in
-`build_all_factors` immediately after staging:
+`rollup/pipeline.py::build_all_factors` immediately after staging:
 ```python
 ylt = ylt.pipe(apply_rollup_scope, seeds.rollup_scope)
 ```
