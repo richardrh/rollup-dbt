@@ -78,7 +78,7 @@ contract between the pipeline and the seeds + YLTs you supply.
 
 ```
 <repo>/
-├── docs/                       # detailed docs — see ../docs/README.md
+├── docs/                       # detailed docs — see ../docs/index.md
 │   ├── README.md
 │   ├── data-requirements.md    # the contract for a real run
 │   ├── architecture.md
