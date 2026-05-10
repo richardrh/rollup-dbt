@@ -115,8 +115,8 @@ Three layers, fail fast at each:
 
 ## One cached marts node, many fan-outs
 
-The duckdb pipeline materialised `mts_tbl_ylt_combined_all_factors` because
-~20 downstream views read from it. We do the same with polars lazy `.cache()`:
+The pipeline caches the combined all-factors node because many downstream
+views and fan-outs read from it. This is done with polars lazy `.cache()`:
 
 ```python
 all_factors = build_all_factors(cfg, seeds).cache()     # computed exactly once

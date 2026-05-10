@@ -57,7 +57,7 @@ These seeds are required, and the pipeline cannot run without them populated. Th
 3. **`data/seeds/vor/rollup_scope.csv`** — which (lob, vendor, analysis) combinations are in scope
 4. **`data/seeds/vor/blending_weights.csv`** — per-peril blend weights between RiskLink and Verisk
 
-If you have these from the modelling team, copy them into the `data/seeds/vor/` folder now. If you don't, you'll need to export them from the legacy DuckDB. See [RH-TODO-DATA.md](../polars/RH-TODO-DATA.md) for the export procedure.
+If you have these from the modelling team, copy them into the `data/seeds/vor/` folder now. If you don't, see [RH-TODO-DATA.md](../polars/RH-TODO-DATA.md) for guidance on producing them.
 
 ### The other 7 seeds (stubs or dbt-owned)
 

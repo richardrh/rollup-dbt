@@ -1,58 +1,50 @@
-# Calculations — january (duckdb) → polars
+# Calculations — loss chain stages
 
-Every calc that lives in `jan-rollup/duckdb_schema/view_definitions.csv`,
-mapped to the polars stage that replaces it.
+Every computation step in the polars pipeline, mapped to its input/output.
 
 Notation:
 
-- **duckdb object** `schema.view_or_table` — the duckdb definition.
-- **polars** — the stage module + function that replaces it.
+- **stage name** — the polars stage module + function.
+- **reference SQL** — the equivalent logic in reference SQL (for understanding).
 - **status** — `done` (real math) / `partial` (works but a piece is stubbed) / `todo`.
 
-Column-name convention: january used the wire names (`yearid`, `eventid`,
-`"Rate to GBP"`, etc.); polars canonicalises these at the staging boundary
+Column-name convention: the wire format uses names like `yearid`, `eventid`,
+`"Rate to GBP"`; polars canonicalises these at the staging boundary
 into snake_case (`year_id`, `event_id`, `rate_to_gbp`). See
 `rollup/schemas/columns.py`.
 
-The peril dimension was **split out of the `dim_region_perils` god-table**
-into four single-purpose seeds — `perils`, `analyses`, `rollup_scope`,
-`blending_weights`. References below to "perils.csv etc." mean the new
-split, not the legacy duckdb table. See
-[`data-requirements.md`](data-requirements.md) for the export SQL.
+The peril dimension is split into four single-purpose seeds — `perils`,
+`analyses`, `rollup_scope`, `blending_weights`. These coherently represent
+the peril cataloguing and scope information. See
+[`data-requirements.md`](data-requirements.md) for the schemas.
 
 ---
 
 ## 0. Inputs
 
-| january                                 | polars                                 | status |
-| --------------------------------------- | -------------------------------------- | ------ |
-| `stg_rl_ylt` (RiskLink YLT)             | `stages.staging.load_raw_risklink_ylt` | done   |
-| `stg_vk_ylt` (Verisk YLT)               | `stages.staging.load_raw_verisk_ylt`   | done   |
-| `stg_rl_ep`, `stg_vk_ep` (EP summaries) | `stages.staging.load_ep_summaries`     | todo   |
-| `reference.*` seeds                     | `rollup.seeds.load_all`                | done   |
+| input type         | polars module                          | status |
+| -------------------- | -------------------------------------- | ------ |
+| RiskLink YLT       | `stages.staging.load_raw_risklink_ylt` | done   |
+| Verisk YLT         | `stages.staging.load_raw_verisk_ylt`   | done   |
+| EP summaries       | `stages.staging.load_ep_summaries`     | todo   |
+| Reference seeds    | `rollup.seeds.load_all`                | done   |
 
-January used **RiskLink YLTs from a DocDB dump**; we are now using **AIR
-simulation YLTs** (`data/ylt/verisk/air_ylt_c1.parquet` +
-`air_ylt_c2.parquet`). Those two files are halves of one dataset —
-`pl.scan_parquet([c1, c2])` (or
-`pl.scan_parquet("data/ylt/verisk/air_ylt_c*.parquet")`) concatenates
-them transparently.
+**YLTs (Year Loss Tables):** Verisk AIR and RiskLink simulation parquets
+(`data/ylt/verisk/air_ylt_*.parquet` and `data/ylt/risklink/risklink_ylt_*.parquet`).
+Multiple chunk files are concatenated transparently via glob patterns.
 
-EP summaries are currently in excel
-(`data/ep_summaries/risklink/rms_ep_summary.xlsx` etc.). January derived
-`rl_proportion` / `vk_proportion` for blending from these. The polars
-pipeline now sources blend proportions directly from
-`blending_weights.csv` — EP summaries are no longer required for the main
-chain; they're used only by `tests/test_integration_ep.py` for excel
-diff-checks.
+**EP summaries:** Optional, in long-format CSV (`data/ep_summaries/{vendor}/*.long.csv`).
+The pipeline sources blend proportions directly from `blending_weights.csv` seed,
+so EP summaries are not required for the main chain. They're used only by
+integration tests for validation.
 
 ---
 
 ## 1. YLT staging
 
-### 1.1 `int_vw_rl_ylt` → `stages.staging.normalize_risklink_ylt` — **done**
+### 1.1 `stages.staging.normalize_risklink_ylt` — **done**
 
-duckdb (january, joined through `dim_region_perils` god-table):
+Reference SQL (join pattern):
 ```sql
 SELECT lobs.id AS lob_id, lobs.modelled_lob, lobs.rollup_lob, lobs.lob_type,
        lobs.cds_cat_class_name,
@@ -76,9 +68,9 @@ For RiskLink, `analyses.lob_id` is populated (one analysis is 1:1 with
 one (lob, peril)) so the lobs join is keyed by the analyses-supplied
 `lob_id`, not by `modelled_lob` like Verisk.
 
-### 1.2 `int_vw_vk_ylt` → `normalize_verisk_ylt` — **done**
+### 1.2 `stages.staging.normalize_verisk_ylt` — **done**
 
-duckdb (january):
+Reference SQL (join pattern):
 ```sql
 SELECT lobs.id AS lob_id, ..., model_code, yearid, eventid,
        net_pre_cat_loss AS loss
@@ -99,10 +91,9 @@ The `NormalizedYlt` schema carries `office` + `lob_class` (from the lobs
 join) and `peril_name` + `region` + `peril_family` (from the perils join)
 so downstream factor stages have semantic dims without re-joining.
 
-### 1.3 YLT union + ranking (`int_vw_funnel_ylt_combined_ranked*`) — **done**
+### 1.3 YLT union + ranking — **done**
 
-duckdb stitches the two vendors together then ranks losses within
-(vendor, lob_id, region_peril_id):
+Union the two vendors and rank losses within (vendor, lob_id, region_peril_id):
 
 ```sql
 WITH ylt AS (
@@ -127,10 +118,9 @@ applies rank-threshold overrides from `euws_rank_overrides.csv`.
 Sim counts (10 000 / 100 000) live on `Vendor.n_simulations` in
 `rollup/config.py`.
 
-### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) → `apply_rollup_scope` — **done**
+### 1.4 Validity filter — `apply_rollup_scope` — **done**
 
-duckdb keeps only (lob_id, region_peril_id) pairs that have an AAL row
-in `vw_ep` AND `official_rollup = 1`:
+Keep only (lob_id, region_peril_id) pairs that are marked in_rollup=True:
 
 ```sql
 SELECT DISTINCT vendor, lob_id, region_peril_id, official_rollup
@@ -141,8 +131,7 @@ WHERE ep_type='AAL' AND official_rollup=1;
 polars: `stages/staging.py::apply_rollup_scope`. Inner-joins the
 post-staging YLT against `rollup_scope.csv` on
 `(lob_id, vendor, modelled_region_peril)`, keeping only rows where
-`in_rollup=True`. Replaces january's `applies_to_{mga,prop,fa}` flag
-fan-out and the scope-by-EP-presence filter.
+`in_rollup=True`.
 
 The pre-flight `build_plan` reporter blocks the run when
 `rollup_scope.csv` is empty (otherwise the inner join would silently drop
@@ -163,30 +152,25 @@ so `vw_ep` is no longer required for the main rollup. The unioned
 
 If/when it lands, the polars version would be
 `stages.ep_summary.build_vw_ep(rl_ep, vk_ep, lobs, perils)` — `lobs` +
-`perils` replace the `dim_region_perils` join.
+`perils` is the peril dimension lookup.
 
 ---
 
 ## 3. Blending — `attach_uplift` — **done**
 
-january did this in three steps (`int_vw_blending__vendor_proportions_*`,
-`int_vw_blending_factors_applied`, plus the
-`int_vw_blending_factors_with_forecast*` chain). polars folds the
-proportions + uplift into one stage and computes AAL with window
-functions instead of group-by-then-rejoin.
+Blending computes per-vendor losses then uplift-blends them. polars folds the
+proportions + uplift into one stage and computes AAL with window functions.
 
 ### 3.1 Blend weights → `attach_uplift` — **done**
 
-january keyed blending off `dim_region_perils.blending_factor_*_id` →
-`reference.blending_factors.{air_blend, rms_blend}`. polars sources blend
-weights directly from `blending_weights.csv` — long-format
-`(peril_id, sub_peril, vendor, weight)`, so the join is
+Blend weights come from `blending_weights.csv` — long-format
+`(peril_id, sub_peril, vendor, weight)`. The join is
 `ylt.region_peril_id → blending_weights.peril_id` filtered per vendor
 (`verisk` / `risklink`), pivoted to `(vk_proportion, rl_proportion)`.
 
 ### 3.2 Uplift formula — **done**
 
-january:
+Reference formula:
 ```
 rl_blended_contribution = COALESCE(rl_loss,1) * RMSBlend
 vk_blended_contribution = COALESCE(vk_loss,1) * AIRBlend
@@ -220,7 +204,6 @@ flood region in `perils.csv` → no code change.
 
 ### 3.4 Forecast factors → `attach_forecast_factors` — **done**
 
-january parsed `rollup_lob` by `_` to derive `office` + `class`. polars
 **lobs.csv carries `office` + `class` directly**, and staging puts them
 on the NormalizedYlt frame so `attach_forecast_factors` joins on
 `(office, lob_class)` directly — no parse, no re-join. Forecast dates
@@ -230,14 +213,14 @@ extends, and new Hisco variants emit. No code change.
 
 ### 3.5 Currency → `attach_currency` — **done**
 
-january:
-```sql
-CASE WHEN cds_cat_class_name LIKE '% UK %' THEN 'GBP'
-     WHEN cds_cat_class_name LIKE '% EU %' THEN 'EUR'
-     ELSE 'GBP'  END AS required_currency
+**derivation:**
+```
+IF cds_cat_class_name contains 'UK' → GBP
+IF cds_cat_class_name contains 'EU' → EUR
+ELSE → GBP
 ```
 
-polars: `stages/factors.py::attach_currency`. Same derivation, plus joins
+polars: `stages/factors.py::attach_currency`. This derivation, plus joins
 `fx_rates.csv` (filtered to `target_currency='GBP'`) for `rate_to_gbp`.
 **Raises `MissingFxRateError`** if any row needs a currency that
 isn't in `fx_rates.csv` — silent `fill_null(1.0)` would have inflated
@@ -250,9 +233,7 @@ losses. Currency string values use `CurrencyCode` StrEnum
 
 ### 4.1 Year-invariant prelude — **done**
 
-january: `mts_vw_ylt_combined_with_blending_factors_fx_applied` produces
-`loss_uplifted`, `loss_uplifted_capped`, `loss_uplifted_capped_localccy`
-(the `CHAIN_BASE`).
+Compute the base metric columns: `loss_uplifted`, `loss_uplifted_capped`, `loss_uplifted_capped_localccy` (the `CHAIN_BASE`).
 
 polars (`pipeline._compute_metrics`):
 ```python
@@ -266,9 +247,7 @@ ylt = ylt.with_columns(
 
 ### 4.2 Year-tagged chain — registry-driven — **done**
 
-january wrote three more views per factor stage:
-`_with_blending_factors_with_forecast`, `..._fx_forecasted_euws_applied`,
-`..._fagross`. polars walks the `chain.CHAIN` registry once per tag:
+Walk the `chain.CHAIN` registry once per forecast tag, chaining factor multiplications:
 
 ```python
 for tag in tags:
@@ -304,22 +283,18 @@ override) so adding a new LOB override is a data-only change. The
 
 ### 4.4 Fine-art `aal_factor` vs `tail_factor` — **partial**
 
-january switched between `aal_factor` (rp_bucket=0) and `tail_factor`
-(rp_bucket≥200). polars currently multiplies `aal_factor`
-unconditionally; `fa_gross_tail_factor` is carried through to the audit
-dump but not applied. See the docstring on
-`AllFactorsCol.FA_GROSS_TAIL_FACTOR`. Once the rp_bucket split lands the
-chain can branch — likely a new `chain.CHAIN` entry conditional on the
-output bucket.
+Currently multiplies `aal_factor` unconditionally; `fa_gross_tail_factor` is
+carried through to the audit dump but not applied. See the docstring on
+`AllFactorsCol.FA_GROSS_TAIL_FACTOR`. Future: once the rp_bucket split lands
+the chain can branch conditionally on the output bucket.
 
-### 4.5 `mts_tbl_ylt_combined_all_factors` (the cached DAG node) — **done**
+### 4.5 Cache the combined all-factors node — **done**
 
-duckdb materialised the wide cache as a BASE TABLE so 20+ downstream
-views could read it once.
+The wide all-factors node is referenced by 12 fan-out sinks and 2 audit dumps.
 
-polars equivalent: `build_all_factors(cfg, seeds).cache()` in
+polars: `build_all_factors(cfg, seeds).cache()` in
 `rollup/pipeline.py::run`. `.cache()` ensures the LazyFrame is computed
-exactly once across all 12 fan-out sinks + 2 audit dumps.
+exactly once across all sinks + audits.
 
 ---
 
@@ -327,8 +302,7 @@ exactly once across all 12 fan-out sinks + 2 audit dumps.
 
 ### 5.1 UNPIVOT to long form — **done** (audit parquet)
 
-january: `mts_vw_ylt_combined_all_factors_long_from_cachetbl` unpivots
-the wide cache into `(metric_name, value)` pairs.
+Unpivot the wide cache into `(metric_name, value)` pairs.
 
 polars: `rollup.pipeline.audit_long(all_factors, tags)` produces this
 shape. Written to `<output_dir>/debug/audit_long.parquet` when
@@ -336,9 +310,7 @@ shape. Written to `<output_dir>/debug/audit_long.parquet` when
 
 ### 5.2 Aggregation to Hisco grain — **not needed at current grain**
 
-january groups to
-`(base_model, model_eventid, yearid, eventid, ccy, cds_cat_class_name, metric)`.
-polars: `all_factors` is already at event grain so `fanout_hisco`
+`all_factors` is already at event grain so `fanout_hisco`
 projects directly. Add a `.group_by(...).agg(...)` if multiple YLT rows
 per event_id ever appear.
 
@@ -358,8 +330,7 @@ against `HISCO_FANOUT` schema, writes one parquet per variant.
 
 ### 5.4 Flavors
 
-No per-variant SQL flavour mess like january's `_fix` / `_fl_fa_fix` /
-`_domestic_euws_fix`. polars has exactly two flavours:
+Polars has exactly two flavours:
 
 - **`Flavor.MAIN`** — `loss_metric = chain.main_loss_col(tag)` =
   the LAST cumulative chain column.
@@ -369,7 +340,7 @@ No per-variant SQL flavour mess like january's `_fix` / `_fl_fa_fix` /
 
 ---
 
-## 6. EP curves (`mts_vw_ep_combined_all_factors*`) — **done (auxiliary)**
+## 6. EP curves — **done (auxiliary)**
 
 Three flavours (overall / by_cds_class / by_lob), all with the same
 pattern:
@@ -435,26 +406,13 @@ math doesn't depend on `air_events`).
 
 ## 9. Official rollup selection — `rollup_scope.csv` — **done**
 
-### 9.1 How january computed `official_rollup`
-
-`vw_ep` produced the `official_rollup` column using a CASE on `lob_type`,
-pulling one of the three `applies_to_*` flags from `dim_region_perils`:
-
-```sql
-CASE
-  WHEN lob_type = 'mga'  THEN applies_to_mga
-  WHEN lob_type = 'prop' THEN applies_to_prop
-  WHEN lob_type = 'fa'   THEN applies_to_fa
-  ELSE 0
-END AS official_rollup
-```
-
-The "pick one Verisk variant" logic (e.g. UK_WSSS_GCAdj is in scope but
-plain UK_WSSS isn't) was encoded entirely in these flag values, at the
-`modelled_region_peril` grain — NOT at `peril_id` grain, because two
+`rollup_scope.csv` determines which (lob, vendor, analysis) combinations are
+officially in scope. The "pick one Verisk variant" logic (e.g. UK_WSSS_GCAdj
+is in scope but plain UK_WSSS isn't) is encoded at the `modelled_region_peril`
+grain in the `analysis_id` column — not at `peril_id` grain, because two
 analyses can share a `peril_id`.
 
-### 9.2 polars schema
+### 9.1 Schema
 
 `rollup_scope.csv` (in the new four-way split) has grain
 `(lob_id, vendor, analysis_id, in_rollup)` where `analysis_id` is the
@@ -462,14 +420,12 @@ analyses can share a `peril_id`.
 `MODELLED_REGION_PERIL` after staging) — explicitly chosen to
 distinguish analyses that share a peril_id.
 
-### 9.3 Population SQL
+### 9.2 Population
 
-CROSS JOIN of `reference.lobs × dim_region_perils` with the CASE flag
-collapsed to `in_rollup` boolean — see the `rollup_scope.csv` section in
-[`data-requirements.md`](data-requirements.md) for the
-copy-pasteable query.
+See the `rollup_scope.csv` section in
+[`data-requirements.md`](data-requirements.md) for population guidance.
 
-### 9.4 Where it's applied
+### 9.3 Where it's applied
 
 `stages/staging.py::apply_rollup_scope`, called in
 `rollup/pipeline.py::build_all_factors` immediately after staging:
@@ -487,26 +443,24 @@ Inner-join keyed on `(lob_id, vendor, modelled_region_peril)` keeping
 
 The seeds folder (`data/seeds/`) is the canonical store for
 reference data the polars pipeline reads. Eleven seeds total; see
-[`data-requirements.md`](data-requirements.md) for shape, source, and
-SQL to re-export from january's duckdb when refreshing.
+[`data-requirements.md`](data-requirements.md) for shape and source.
 
 | seed                       | populated by                                                   |
 | -------------------------- | -------------------------------------------------------------- |
 | `lobs.csv`                 | dbt (`hisco_org__lobs.csv`)                                    |
-| `perils.csv`               | duckdb export from `loader.main.dim_region_perils` (DISTINCT)  |
-| `analyses.csv`             | duckdb export — verisk + risklink rows                         |
-| `rollup_scope.csv`         | duckdb export — CROSS JOIN lobs × dim_region_perils with CASE  |
-| `blending_weights.csv`     | duckdb export — long-pivot of `blending_factors`               |
+| `perils.csv`               | peril dimension export (DISTINCT by peril_id)                  |
+| `analyses.csv`             | vendor-to-peril mapping (verisk + risklink rows)               |
+| `rollup_scope.csv`         | rollup scope matrix (lob × vendor × analysis → in_rollup)     |
+| `blending_weights.csv`     | blend weights by peril + vendor (long format)                  |
 | `forecast_factors.csv`     | dbt (`hisco_org__forecast_factors.csv`)                        |
 | `fx_rates.csv`             | handcrafted (replace before prod)                              |
 | `euws_rate_factors.csv`    | dbt (`vor__euws_rate_factors.csv`)                             |
 | `euws_rank_overrides.csv`  | hand-curated                                                   |
-| `air_events.csv`           | duckdb export from `reference.air_events` (recommended)        |
-| `fineart_adjustments.csv`  | duckdb export from `reference.fineart_gross_to_net_adjustment2` (optional) |
+| `air_events.csv`           | Verisk event catalogue (recommended)                           |
+| `fineart_adjustments.csv`  | fine-art adjustment factors (optional)                         |
 
-Four of these are stub-empty in git, awaiting user export from the
-january duckdb. The pre-flight reporter blocks the run if any of the
-nine `REQUIRED_SEEDS` have zero rows.
+Four of these are stub-empty in git, awaiting user export. The pre-flight
+reporter blocks the run if any `REQUIRED_SEEDS` have zero rows.
 
 ---
 

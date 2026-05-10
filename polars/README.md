@@ -1,9 +1,8 @@
 # polars rollup pipeline
 
-Single-process polars replica of the `jan-rollup` duckdb pipeline. Reads raw
-YLT parquets + seed CSVs, applies a chain of factors, fans out to Hisco
-parquets. Everything is a `LazyFrame` expression; nothing materialises until
-`pl.collect_all` at the sinks.
+Single-process polars-native rollup pipeline. Reads YLT parquets + seed CSVs,
+applies a chain of factors, fans out to Hisco parquets. Everything is a
+`LazyFrame` expression; nothing materialises until `pl.collect_all` at the sinks.
 
 ## Run it
 
@@ -36,9 +35,9 @@ contract between the pipeline and the seeds + YLTs you supply.
     raw YLTs                    seeds (11 CSVs)
    ┌─────────┐                 ┌─────────────────────┐
    │ verisk  │                 │ lobs                │
-   │risklink │                 │ perils              │  ← split-out
-   └────┬────┘                 │ analyses            │  ← god-table
-        │                      │ rollup_scope        │  ← gone
+   │risklink │                 │ perils              │  ← split into
+   └────┬────┘                 │ analyses            │  ← four tables
+        │                      │ rollup_scope        │
         │                      │ blending_weights    │
         │                      │ forecast / fx       │
         │                      │ euws (+overrides)   │
@@ -143,8 +142,8 @@ eval "$(register-python-argcomplete rollup)"
 - [`../docs/factor-chain.md`](../docs/factor-chain.md) — how the factor chain works,
   the cumulative column-naming convention, and the 5-step recipe to add a new
   factor.
-- [`../docs/calculations.md`](../docs/calculations.md) — every january duckdb view
-  mapped to its polars replacement, with the source SQL quoted.
+- [`../docs/calculations.md`](../docs/calculations.md) — polars stage modules
+  that compute the loss chain, with reference SQL quoted.
 - [`../data/seeds/README.md`](../data/seeds/README.md) — per-seed schema
   decisions, column naming rules, provenance.
 - [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — **simple checklist for the

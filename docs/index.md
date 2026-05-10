@@ -42,7 +42,7 @@ uv run zensical build   # write static site to site/
 | [Architecture](architecture.md) | Code organisation. `Vendor` / `Flavor` / `VariantSpec`, seed loading, schema validation layers, the audit parquets, logging. |
 | [Operating modes](operating-modes.md) | **How the pipeline selects analyses to run.** Current two-file lookup (Mode A), and two future alternatives: catalogue-as-live (Mode B) and CLI-driven scope (Mode C). Trade-offs and migration paths. |
 | [Factor chain](factor-chain.md) | The factor-chain mental model, cumulative column-naming convention, and the **5-step recipe to add a new factor**. |
-| [Calculations](calculations.md) | Every january duckdb view → polars stage mapping, with the original SQL quoted. Also: `apply_rollup_scope`, the `chain.CHAIN` registry walker, EP curves, the dialsup funnel, and a per-stage status summary table. |
+| [Calculations](calculations.md) | Polars stage modules that compute the loss chain, with the original SQL quoted. Also: `apply_rollup_scope`, the `chain.CHAIN` registry walker, EP curves, the dialsup funnel, and a per-stage status summary table. |
 | [Troubleshooting](troubleshooting.md) | Seven quick-reference fixes: aborted runs, missing seeds, YLT path issues, SQL connection errors, and zero-row outputs. |
 
 ## Three things to know first

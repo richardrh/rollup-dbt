@@ -7,7 +7,6 @@ All paths below are inside the **repo root** (`rollup-dbt/`) — the same folder
 ```
 rollup-dbt/              ← repo root (this is where you cloned it)
 ├── polars/              ← source code — don't touch
-├── jan-rollup/          ← legacy reference — don't touch
 └── data/                ← YOUR DATA GOES HERE
     ├── seeds/           ← reference CSVs
     ├── ylt/

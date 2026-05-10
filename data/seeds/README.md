@@ -57,10 +57,7 @@ stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.m
 
 ## One table, one job
 
-january kept the peril dimension as a god-table — `dim_region_perils` with
-14 columns mixing peril labels, vendor mapping, blending FKs, and per-LOB
-applies-to flags. The new seed structure splits that into four tables that
-each have one job:
+The peril dimension is split into four tables, each with one job:
 
 | split table              | role                                                                  |
 | ------------------------ | --------------------------------------------------------------------- |
@@ -85,19 +82,18 @@ january kept some reference tables in a wide shape (e.g. `f_202601`,
 currency required a schema change. We have **reshaped to long format**
 where the axis is extensible:
 
-| seed                 | january shape                                         | polars shape                                                   |
-| -------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `fx_rates`           | wide: `CurrencyCode, "Rate to USD", "Rate to GBP"`    | long: `currency_code, target_currency, rate_date, rate`        |
-| `forecast_factors`   | wide: `class, office, f_202601, f_202607, f_202701`   | long: `class, office, office_iso2, forecast_date, factor` |
-| `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | long: `peril_id, sub_peril, vendor, weight`                    |
-| `euws_rate_factors`  | long already                                          | long (`model_event_id, occ_year, factor`)                      |
-| `lobs`               | one row per lob                                       | one row per lob (+ `office`, `class` from january's `lobs_with_class_office` view) |
+| seed                 | format |
+| -------------------- | ------ |
+| `fx_rates`           | long: `currency_code, target_currency, rate_date, rate`        |
+| `forecast_factors`   | long: `class, office, office_iso2, forecast_date, factor` |
+| `blending_weights`   | long: `peril_id, sub_peril, vendor, weight`                    |
+| `euws_rate_factors`  | long: `model_event_id, occ_year, factor`                      |
+| `lobs`               | one row per lob (+ `office`, `class` columns) |
 
 ## Column-naming rules
 
 - `snake_case` headers in every CSV.
 - Column names match exactly the string values of `RefXxxCol` / `PerilsCol`
   / `AnalysesCol` / etc. StrEnum members in `rollup/schemas/columns.py`.
-- `peril_id` is the canonical key (matches january's `dim_region_perils.id`
-  integer values). Use `peril_id` in every cross-seed FK; never use the
-  derived `rollup_region_peril` string.
+- `peril_id` is the canonical key. Use `peril_id` in every cross-seed FK;
+  never use string identifiers like `rollup_region_peril` for joins.

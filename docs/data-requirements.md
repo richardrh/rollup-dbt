@@ -11,7 +11,7 @@ The pipeline's preflight (`rollup --dry-run`) reports the
 status of every file mentioned here. Read its output before re-checking this
 doc.
 
-**In a hurry?** Jump to [Stubs to populate](#stubs-to-populate-from-loadermain-dim-region-perils-the-four-way-split) — these are the four CSVs the pipeline absolutely needs before `rollup --yes` will proceed.
+**In a hurry?** Jump to [Stubs to populate](#stubs-to-populate-the-four-way-split) — these are the four CSVs the pipeline absolutely needs before `rollup --yes` will proceed.
 
 ## Layout the pipeline expects
 
@@ -215,12 +215,10 @@ The pre-run plan reporter flags any seed that is missing or whose header
 doesn't match the declared schema. The pipeline will not run if
 `all_seeds_ok` is false.
 
-The peril dimension has been **split into four single-purpose tables**.
-january's god-table `dim_region_perils` (which mixed peril labels, vendor
-mapping, blending FKs, and per-LOB applies-to flags into one row) is gone.
-The new tables — perils, analyses, rollup_scope, blending_weights —
-each have one job. The data the user must supply is exactly the same
-columns that lived on `dim_region_perils`, just split up coherently.
+The peril dimension is **split into four single-purpose tables**:
+perils, analyses, rollup_scope, and blending_weights. Each has one job.
+Together they hold the same data you'd previously export in a single
+dimension, just split up coherently.
 
 ### Already populated (in git)
 
@@ -232,10 +230,11 @@ columns that lived on `dim_region_perils`, just split up coherently.
 | `forecast_factors.csv`     | 78    | `dbt/seeds/hisco-org/hisco_org__forecast_factors.csv`                    | every forecast cycle |
 | `fx_rates.csv`             | 6     | **handcrafted** — replace with a real FX snapshot before any prod run    | every snapshot |
 
-### Stubs to populate from `loader.main.dim_region_perils` (the four-way split)
+### Stubs to populate (the four-way split)
 
-All four come from the same source — `dim_region_perils` plus
-`dim_rl_analysis` plus `lobs`. One duckdb session, four `COPY` statements.
+All four derive from the same logical sources: the peril, analysis, and LOB
+dimensions. Typically you'll export these as a single duckdb session or
+equivalent data-transformation pipeline.
 
 #### 1. `perils.csv` — peril dimension (REQUIRED)
 
@@ -246,19 +245,16 @@ carries as `region_peril_id` after staging. `peril_family` ("FL", "WS",
 
 | column         | type    | notes |
 | -------------- | ------- | ----- |
-| `peril_id`     | Int64   | canonical primary key (matches january's `dim_region_perils.id` integer values). |
+| `peril_id`     | Int64   | canonical primary key (the peril dimension's unique identifier). |
 | `name`         | String  | display label, e.g. `"Europe Winter Storm"`. |
 | `region`       | String  | `EU`, `UK`, `US`, … |
 | `peril_family` | String  | `WS`, `FL`, `EQ`, `TC`, `CS`, `WF`. **Used for the flood check** — case sensitive. |
 
-**The output must have one row per `peril_id`** — the staging join
-(`_peril_dim` in `staging.py`) is keyed on `peril_id` and will multiply
-YLT rows if there are duplicates. `dim_region_perils` has multiple rows
-per `blending_factor_region_peril_id` (one per vendor, plus per
-modelled-label-variant like `UK_WSSS` vs `UK_WSSS_GCAdj`). The query
-below collapses those with a `GROUP BY` so you get exactly one row per
-peril. `peril_family` is also normalised to upper-case + trimmed to
-guarantee the flood check (`peril_family == "FL"`) matches.
+**The output must have one row per `peril_id`** — the staging join is keyed on `peril_id` and will multiply
+YLT rows if there are duplicates. If your source has multiple rows per peril
+(e.g., different variants or vendor-specific rows), use `GROUP BY peril_id`
+to collapse them. Normalise `peril_family` to upper-case to guarantee the
+flood check (`peril_family == "FL"`) matches.
 
 ```sql
 COPY (
@@ -352,11 +348,10 @@ GROUP BY vendor;
 --         risklink → null_lob = 0, populated_lob = N
 ```
 
-#### 3. `rollup_scope.csv` — which (lob, vendor, analysis) triples are official (REQUIRED)
+#### 3. `rollup_scope.csv` — which (lob, vendor, analysis) triples are in scope (REQUIRED)
 
-Replaces january's `applies_to_{mga,prop,fa}` flag fan-out. The pipeline
-inner-joins the YLT to this seed and drops anything not marked `True`. If
-this file is empty the pipeline returns zero rows.
+The pipeline inner-joins the YLT to this seed and keeps only rows marked
+`in_rollup=True`. If this file is empty the pipeline returns zero rows.
 
 | column        | type    | notes |
 | ------------- | ------- | ----- |
@@ -385,8 +380,7 @@ COPY (
 
 #### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
 
-Replaces the wide `air_blend` / `rms_blend` / `kat_risk_blend` columns of
-`blending_factors`. One row per (peril_id, sub_peril, vendor). `sub_peril`
+One row per (peril_id, sub_peril, vendor). `sub_peril`
 is nullable — most perils don't need regional sub-splits.
 
 | column        | type    | notes |
@@ -404,42 +398,29 @@ exist so the CSV is browsable. Pipe `''` (empty string) into
 `description` if you have nothing meaningful to say.
 
 ```sql
--- Long-pivot the wide air_blend/rms_blend columns. Joins dim_region_perils
--- to bring in the human-readable `peril_name`. Adjust the description text
--- per row if you want — empty string is acceptable.
+-- Long-pivot the blend columns, one row per (peril, vendor).
+-- Adjust the description text per row if you want — empty string is acceptable.
 COPY (
-  WITH bf AS (
-    SELECT bf.region_peril_id      AS peril_id,
-           drp.rollup_region_peril AS peril_name,
-           bf.sub_region_peril_id  AS sub_peril,
-           bf.air_blend, bf.rms_blend
-    FROM loader.main.blending_factors AS bf
-    -- pick ONE drp row per peril_id (any vendor, any modelled label) just for the display name
-    LEFT JOIN (
-      SELECT DISTINCT ON (blending_factor_region_peril_id)
-             blending_factor_region_peril_id AS peril_id,
-             rollup_region_peril
-      FROM loader.main.dim_region_perils
-      ORDER BY blending_factor_region_peril_id
-    ) AS drp ON drp.peril_id = bf.region_peril_id
-  )
-  SELECT peril_id, peril_name,
+  -- Example: pivot wide blend columns to long format
+  -- Adjust table/column names to match your source
+  SELECT peril_id,
+         COALESCE(peril_name, '') AS peril_name,
          '' AS description,
-         sub_peril, 'verisk' AS vendor, air_blend AS weight
-  FROM bf
+         sub_peril,
+         'verisk' AS vendor,
+         air_blend AS weight
+  FROM blending_factors
   UNION ALL
-  SELECT peril_id, peril_name,
+  SELECT peril_id,
+         COALESCE(peril_name, '') AS peril_name,
          '' AS description,
-         sub_peril, 'risklink' AS vendor, rms_blend AS weight
-  FROM bf
+         sub_peril,
+         'risklink' AS vendor,
+         rms_blend AS weight
+  FROM blending_factors
   ORDER BY peril_id, sub_peril, vendor
 ) TO 'data/seeds/blending_weights.csv' WITH (HEADER, DELIMITER ',');
 ```
-
-If your duckdb version doesn't have `DISTINCT ON`, swap that subquery
-for `(SELECT peril_id, MIN(rollup_region_peril) AS rollup_region_peril
-FROM loader.main.dim_region_perils GROUP BY blending_factor_region_peril_id)`
-or similar.
 
 ### Recommended (silences a warning)
 
@@ -595,5 +576,5 @@ production run), and asserts:
 | `event-id orphans for vendor=verisk: N / M YLT rows have no match in air_events` | `air_events.csv` is empty or out of date | populate from `reference.air_events`. The pipeline continues — observation only. |
 | Hisco parquets are written but every `ModelGrossLoss = 0` | a join earlier in the chain returned 0 rows | run `--dump-interim` and inspect `audit_wide.parquet`. The leftmost zero column tells you which join failed. |
 | `f_{tag}` column is 1.0 for every row of an LOB | `forecast_factors.csv` has a different `office` string than `lobs.csv` | normalise the office string on either side. |
-| Pipeline writes ZERO rows across all variants | `rollup_scope.csv` is empty or every row has `in_rollup=False` | populate it from `dim_region_perils.applies_to_*` per the SQL above. |
+| Pipeline writes ZERO rows across all variants | `rollup_scope.csv` is empty or every row has `in_rollup=False` | populate it with the officially-in-scope (lob, vendor, analysis) triples. |
 | Verisk EU flood rows show up in the AIR fanout (should be in RMS) | `perils.csv` has wrong `peril_family` for the flood peril (must be exactly `"FL"`) | fix the `peril_family` value to `"FL"`. |
