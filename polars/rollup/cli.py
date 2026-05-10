@@ -307,7 +307,7 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
     `MSSQL_CONN_STR` in `config.py`); aborts with exit-2 if it isn't set.
     """
     from rollup.config import redact_conn_str
-    from rollup.io.sql_push import list_pushable_parquets, push_parquet_to_sql
+    from rollup.io.sql_push import list_pushable_parquets, make_engine, push_parquet_to_sql
 
     cfg = config.resolve()
     if not cfg.mssql_conn_str:
@@ -361,15 +361,19 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
             return 1
 
     total_rows = 0
-    for p in parquets:
-        try:
-            n = push_parquet_to_sql(p, conn_str=cfg.mssql_conn_str, schema=args.schema)
-        except Exception as e:
-            print(f"\nerror pushing {p.name}: {type(e).__name__}: {e}", file=sys.stderr)
-            print("hint: run `rollup test-sql` to diagnose the connection.", file=sys.stderr)
-            return 2
-        print(f"  pushed {p.name:<40s} ({n:,} rows)")
-        total_rows += n
+    engine = make_engine(cfg.mssql_conn_str)
+    try:
+        for p in parquets:
+            try:
+                n = push_parquet_to_sql(p, engine=engine, schema=args.schema)
+            except Exception as e:
+                print(f"\nerror pushing {p.name}: {type(e).__name__}: {e}", file=sys.stderr)
+                print("hint: run `rollup test-sql` to diagnose the connection.", file=sys.stderr)
+                return 2
+            print(f"  pushed {p.name:<40s} ({n:,} rows)")
+            total_rows += n
+    finally:
+        engine.dispose()
 
     print()
     print(f"  done: pushed {len(parquets)} table(s), {total_rows:,} rows total.")
