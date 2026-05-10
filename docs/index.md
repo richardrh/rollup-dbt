@@ -36,6 +36,7 @@ uv run zensical build   # write static site to site/
 | doc | what it covers |
 |---|---|
 | [Getting started](first-run.md) | **Start here if this is your first time.** Setup in 5 minutes, your first run (with or without test data), and how to inspect the output. Assumes no prior knowledge. |
+| [Loading your data](load-data.md) | **Procedural guide.** Step-by-step walkthrough: directory layout, seed CSV population, YLT file placement, verification at each stage, and full pipeline run. For when you have vendor data and need to know exactly what to do. |
 | [File formats](file-formats.md) | **Quick reference.** Every input file's columns + dtypes — YLT parquets, all 12 seed CSVs, EP summaries. Pair with `--dry-run` for instant feedback. |
 | [Data requirements](data-requirements.md) | **The contract for a real run.** YLT wire schemas, every seed CSV, currency-derivation rule, forecast-factor join contract, failure-mode reference. **Includes which RiskLink analyses you actually need to export.** |
 | [Architecture](architecture.md) | Code organisation. `Vendor` / `Flavor` / `VariantSpec`, seed loading, schema validation layers, the audit parquets, logging. |

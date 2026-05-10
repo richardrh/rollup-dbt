@@ -26,7 +26,8 @@ uv run pytest -q                         # 150 unit + 6 integration tests, ~5s (
 `python -m rollup` is equivalent.
 
 Need to know what data to provide before the run? See
-[`../docs/data-requirements.md`](../docs/data-requirements.md) — the canonical
+[`../docs/load-data.md`](../docs/load-data.md) for a step-by-step procedural walkthrough, or
+[`../docs/data-requirements.md`](../docs/data-requirements.md) for the canonical
 contract between the pipeline and the seeds + YLTs you supply.
 
 ## Data flow

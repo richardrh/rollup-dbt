@@ -1,5 +1,7 @@
 # Data requirements — what you need to provide for a real run
 
+Looking for the step-by-step procedure? See [Loading your data](load-data.md). This page is the schema reference.
+
 This is the contract between the pipeline and the data you supply. If every
 file listed below exists in the right shape, `rollup --yes`
 runs end-to-end and writes 9 default parquets under `data/output/`:

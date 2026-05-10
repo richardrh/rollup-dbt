@@ -57,6 +57,8 @@ mkdir -p data/output
 # data/seeds/ already exists in the repo with seed CSV templates
 ```
 
+For a step-by-step walkthrough of populating your data into these directories, see [Loading your data](load-data.md).
+
 ---
 
 ## Run a dry run (see the plan, no execution)
