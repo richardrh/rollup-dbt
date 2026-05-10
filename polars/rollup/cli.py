@@ -27,11 +27,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config.setup_logging(args.log_level)
 
+    if args.cmd is None and not args.dry_run and not args.yes:
+        parser.print_help()
+        return 0
+
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "derive-blending":   _cmd_derive_blending,
         "test-sql":          _cmd_test_sql,
         "push-to-sql":       _cmd_push_to_sql,
+        "docs":              _cmd_docs,
     }.get(args.cmd, _cmd_run)
     return handler(args)
 
@@ -119,6 +124,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help="skip the y/N confirmation",
     )
 
+    # NOTE: push-to-sql uses `--yes` / `-y` as `dest="push_yes"` (not "yes") to
+    # avoid colliding with the top-level `-y/--yes` flag on the main parser.
+    # This is intentional — renaming the push flag would break existing docs and
+    # user scripts that already reference `push-to-sql --yes`.
+
+    docs_p = sub.add_parser("docs", help="Open the pipeline documentation in your browser.")
+    docs_p.add_argument(
+        "--serve", action="store_true",
+        help="Start zensical dev server with live reload (port 8000).",
+    )
+    docs_p.add_argument(
+        "--build", action="store_true",
+        help="Force rebuild of site/ before opening.",
+    )
+
+    import argcomplete
+    argcomplete.autocomplete(parser)
+
     return parser
 
 
@@ -144,17 +167,22 @@ def _cmd_run(args: argparse.Namespace) -> int:
             print(config.format_plan(plan))
         return 0
 
-    if not plan.all_seeds_ok:
+    if not plan.all_seeds_ok or not plan.all_ylt_ok:
         # On stderr we use plain text — colour codes leak in CI logs.
         print(config.format_plan(plan), file=sys.stderr)
-        print("aborting: one or more seeds failed schema validation", file=sys.stderr)
+        print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
         return 2
 
     if not config.confirm(plan, assume_yes=args.yes):
         print("aborted by user")
         return 1
 
-    run(cfg, dump_interim=args.dump_interim)
+    try:
+        run(cfg, dump_interim=args.dump_interim)
+    except Exception as e:
+        print(f"\npipeline failed: {type(e).__name__}: {e}", file=sys.stderr)
+        print("see https://github.com/hamptonian/rollup-dbt/blob/master/docs/troubleshooting.md", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -168,6 +196,14 @@ def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
         written.extend(
             convert_ep_summaries_to_csv(vendor.ep_summary_dir, vendor.name)
         )
+    if not written:
+        print(
+            "error: no xlsx EP summary files found under "
+            "data/ep_summaries/{verisk,risklink}/. "
+            "Drop your vendor xlsx exports there and retry.",
+            file=sys.stderr,
+        )
+        return 2
     for p in written:
         print(f"wrote {p}")
     print(f"total: {len(written)} csv file(s)")
@@ -213,7 +249,7 @@ def _cmd_test_sql(args: argparse.Namespace) -> int:
     `DB_NAME()`, and optionally checks whether `--schema` exists. Prints a
     one-screen summary; never writes. Returns 0 on success, 2 on failure.
     """
-    from rollup.config import _redact_conn_str
+    from rollup.config import redact_conn_str
     from rollup.io.sql_push import test_connection
 
     cfg = config.resolve()
@@ -225,7 +261,7 @@ def _cmd_test_sql(args: argparse.Namespace) -> int:
         )
         return 2
 
-    redacted = _redact_conn_str(cfg.mssql_conn_str)
+    redacted = redact_conn_str(cfg.mssql_conn_str)
     print()
     print(f"  Target connection : {redacted}")
     if args.schema:
@@ -255,7 +291,7 @@ def _cmd_test_sql(args: argparse.Namespace) -> int:
             print()
             print(
                 f"  Warning: schema {args.schema!r} not found on the server. "
-                "`push-to-sql --schema {args.schema}` will fail.",
+                f"`push-to-sql --schema {args.schema}` will fail.",
                 file=sys.stderr,
             )
             return 2
@@ -270,7 +306,7 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
     target table. The connection string comes from `ROLLUP_MSSQL_CONN_STR` (or
     `MSSQL_CONN_STR` in `config.py`); aborts with exit-2 if it isn't set.
     """
-    from rollup.config import _redact_conn_str
+    from rollup.config import redact_conn_str
     from rollup.io.sql_push import list_pushable_parquets, push_parquet_to_sql
 
     cfg = config.resolve()
@@ -291,7 +327,7 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
         )
         return 2
 
-    redacted = _redact_conn_str(cfg.mssql_conn_str)
+    redacted = redact_conn_str(cfg.mssql_conn_str)
     schema_label = args.schema or "<server-default>"
 
     print()
@@ -326,12 +362,54 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
 
     total_rows = 0
     for p in parquets:
-        n = push_parquet_to_sql(p, conn_str=cfg.mssql_conn_str, schema=args.schema)
+        try:
+            n = push_parquet_to_sql(p, conn_str=cfg.mssql_conn_str, schema=args.schema)
+        except Exception as e:
+            print(f"\nerror pushing {p.name}: {type(e).__name__}: {e}", file=sys.stderr)
+            print("hint: run `rollup test-sql` to diagnose the connection.", file=sys.stderr)
+            return 2
         print(f"  pushed {p.name:<40s} ({n:,} rows)")
         total_rows += n
 
     print()
     print(f"  done: pushed {len(parquets)} table(s), {total_rows:,} rows total.")
+    return 0
+
+
+def _cmd_docs(args: argparse.Namespace) -> int:
+    """Open the pipeline documentation in your browser."""
+    import subprocess
+    import webbrowser
+
+    # repo root: cli.py is at polars/rollup/cli.py → ../../..
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    site_index = repo_root / "site" / "index.html"
+
+    if args.serve:
+        webbrowser.open("http://localhost:8000")
+        try:
+            subprocess.run(["uv", "run", "zensical", "serve"], cwd=repo_root, check=True)
+        except KeyboardInterrupt:
+            pass
+        return 0
+
+    if args.build or not site_index.exists():
+        print("building docs...", flush=True)
+        try:
+            subprocess.run(["uv", "run", "zensical", "build"], cwd=repo_root, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"error: docs build failed: {e}", file=sys.stderr)
+            return 2
+
+    if not site_index.exists():
+        print(
+            "error: site/ not built and build failed. Run `uv run zensical build` manually.",
+            file=sys.stderr,
+        )
+        return 2
+
+    webbrowser.open(site_index.as_uri())
+    print(f"opened {site_index}")
     return 0
 
 
