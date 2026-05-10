@@ -70,15 +70,41 @@ class MissingFxRateError(RuntimeError):
     """A row required an FX rate that was not present in `fx_rates.csv`."""
 
 
+def validate_fx_coverage(fx_rates: pl.LazyFrame) -> None:
+    """Check that `fx_rates` contains a GBP rate for every `CurrencyCode` member.
+
+    Call once at pipeline startup (before building the factor chain) so a
+    misconfigured seed is caught immediately — not mid-computation after an
+    expensive YLT join has already materialised.
+
+    Raises `MissingFxRateError` if any member of the closed `CurrencyCode`
+    enum has no row with `target_currency=GBP`.
+    """
+    have = set(
+        fx_rates
+        .filter(pl.col(FX.TARGET_CURRENCY) == CurrencyCode.GBP)
+        .select(pl.col(FX.CURRENCY_CODE))
+        .collect()
+        .to_series()
+        .to_list()
+    )
+    missing = {c.value for c in CurrencyCode} - have
+    if missing:
+        raise MissingFxRateError(
+            f"fx_rates.csv has no GBP rate for currencies: {sorted(missing)}. "
+            f"Add one row per missing code (currency_code,target_currency=GBP,rate_date,rate)."
+        )
+
+
 def attach_currency(ylt: pl.LazyFrame, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
     """Derives `required_currency` from `cds_cat_class_name`, then joins
     fx_rates to attach `rate_to_gbp`.
 
     Currency derivation: `cds_cat_class_name` MUST contain ` UK ` or ` EU `
     as a space-padded substring. UK → GBP, EU → EUR, anything else → GBP.
-    Add a row to `fx_rates.csv` for every currency code that can appear
-    here, otherwise the run aborts with `MissingFxRateError` rather than
-    silently inflating losses with an implicit 1.0 rate.
+    Add a row to `fx_rates.csv` for every currency code in `CurrencyCode`,
+    otherwise `validate_fx_coverage` (called at pipeline startup) will abort
+    the run before any computation begins.
     """
     ylt = ylt.with_columns(
         pl.when(pl.col(Y.CDS_CAT_CLASS_NAME).str.contains(" UK "))
@@ -97,18 +123,6 @@ def attach_currency(ylt: pl.LazyFrame, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
         )
     )
     out = ylt.join(fx_to_gbp, on=AF.REQUIRED_CURRENCY, how="left")
-    missing = (
-        out.filter(pl.col(AF.RATE_TO_GBP).is_null())
-           .select(pl.col(AF.REQUIRED_CURRENCY).unique())
-           .collect()
-           .to_series()
-           .to_list()
-    )
-    if missing:
-        raise MissingFxRateError(
-            f"fx_rates.csv has no GBP rate for currencies: {sorted(missing)}. "
-            f"Add one row per missing code (currency_code,target_currency=GBP,rate_date,rate)."
-        )
     log.info("currency: required_currency derived from CDS class; rate_to_gbp attached")
     return out.with_columns(pl.col(AF.RATE_TO_GBP).cast(pl.Float64))
 

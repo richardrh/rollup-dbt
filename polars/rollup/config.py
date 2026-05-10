@@ -50,7 +50,7 @@ from rich.table import Table
 from rich.text import Text
 
 from rollup.schemas import frames as F
-from rollup.seeds import REQUIRED_SEEDS, discover as discover_seeds
+from rollup.seeds import NearMisses, REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
 
@@ -362,7 +362,7 @@ class Plan:
 # Plan construction                                                           #
 # --------------------------------------------------------------------------- #
 
-def _check_seed(seeds_dir: Path, spec, near_misses: dict | None = None) -> Check:
+def _check_seed(seeds_dir: Path, spec: SeedSpec, near_misses: NearMisses | None = None) -> Check:
     """Verify a seed: file exists, column headers match, count rows.
 
     A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —

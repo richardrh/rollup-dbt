@@ -72,6 +72,16 @@ CHAIN: dict[str, ChainStage] = {
 # The year-invariant column the chain multiplies into for each tag.
 CHAIN_BASE: str = M.LOSS_UPLIFTED_CAPPED_LOCALCCY
 
+# Pre-computed cumulative suffix per stage — built once at module load so
+# col_after() is O(1) instead of O(n) per call. Safe because CHAIN is a
+# module-level constant that is never mutated at runtime.
+_CUMULATIVE_SUFFIX: dict[str, str] = {}
+_acc = ""
+for _stage_name, _stage_entry in CHAIN.items():
+    _acc += _stage_entry["suffix"]
+    _CUMULATIVE_SUFFIX[_stage_name] = _acc
+del _stage_name, _stage_entry, _acc  # clean up loop variables from module namespace
+
 
 # --------------------------------------------------------------------------- #
 # Lookups — every column-name builder routes through these                    #
@@ -85,12 +95,10 @@ def factor_col_for(stage: ChainStage, tag: str) -> str:
 
 def col_after(stage_name: str, tag: str) -> str:
     """Cumulative column name after applying stages up to and including `stage_name`."""
-    suffixes = ""
-    for name, stage in CHAIN.items():
-        suffixes += stage["suffix"]
-        if name == stage_name:
-            return f"{CHAIN_BASE}_{tag}{suffixes}"
-    raise KeyError(f"unknown chain stage: {stage_name!r} — known: {list(CHAIN)}")
+    try:
+        return f"{CHAIN_BASE}_{tag}{_CUMULATIVE_SUFFIX[stage_name]}"
+    except KeyError:
+        raise KeyError(f"unknown chain stage: {stage_name!r} — known: {list(CHAIN)}")
 
 
 def main_loss_col(tag: str) -> str:
