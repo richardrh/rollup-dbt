@@ -10,6 +10,7 @@ nav = [
   { "File formats" = "file-formats.md" },
   { "Data requirements" = "data-requirements.md" },
   { "Architecture" = "architecture.md" },
+  { "Operating modes" = "operating-modes.md" },
   { "Factor chain" = "factor-chain.md" },
   { "Calculations" = "calculations.md" },
 ]
