@@ -19,7 +19,8 @@ uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup derive-blending            # rewrite blending_weights from EP AALs
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
-uv run pytest -q                         # 140 unit + 6 integration tests, ~5s (integration skipped by default)
+uv run rollup docs                       # open the docs site in your browser
+uv run pytest -q                         # 150 unit + 6 integration tests, ~5s (integration skipped by default)
 ```
 
 `python -m rollup` is equivalent.
@@ -120,6 +121,17 @@ Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
 `ROLLUP_YLT_RISKLINK_DIR`, `ROLLUP_OUTPUT_DIR`, `ROLLUP_LOG`, etc. See
 `rollup/config.py::EnvVar` for the full list.
 
+## Setup
+
+```bash
+# from repo root
+uv sync                                 # install dependencies
+cp config.example.py config.py          # local config (gitignored; edit to set MSSQL_CONN_STR or MIN_LOSS)
+
+# (Optional) Tab completion for bash/zsh — add to ~/.bashrc or ~/.zshrc for persistence
+eval "$(register-python-argcomplete rollup)"
+```
+
 ## Docs
 
 - [`../docs/data-requirements.md`](../docs/data-requirements.md) — **start here**.
@@ -163,4 +175,4 @@ tested. To run on real data, work through
 CSVs into `data/seeds/` and drop the YLT parquets under
 `data/ylt/{verisk,risklink}/`.
 
-**140 unit tests + 6 integration tests** (`uv run python -m pytest polars/`). Integration tests require Docker and are skipped by default; opt-in with `--run-integration`. Unit tests run in ~5s.
+**~150 unit tests + 6 integration tests** (`uv run python -m pytest polars/`). Integration tests require Docker and are skipped by default; opt-in with `--run-integration`. Unit tests run in ~5s.
