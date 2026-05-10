@@ -40,6 +40,7 @@ from rollup.stages.factors import (
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
+    validate_fx_coverage,
 )
 from rollup.stages.staging import (
     apply_rollup_scope,
@@ -61,6 +62,13 @@ _AUDIT_LONG_FILE  = "audit_long.parquet"
 _AE_MATCH_TMP    = "_ae_match"
 _ORPHAN_COUNT    = "orphans"
 _TOTAL_COUNT     = "total"
+
+# Output column names that form part of the external contract for
+# mts_tbl_ylt_combined_all_factors.parquet — kept as constants so any
+# rename is a single-line edit traced through every reference.
+_LOSS_RAW_COL    = "loss_raw"
+_METRIC_NAME_COL = "metric_name"
+_METRIC_VALUE_COL = "value"
 
 
 def forecast_tags(forecast_dates: Sequence[date]) -> list[str]:
@@ -181,12 +189,12 @@ def count_event_id_orphans(
         ylt.filter(pl.col(Y.VENDOR) == vendor_filter)
            .join(ae, on=[Y.YEAR_ID, Y.EVENT_ID, Y.MODEL_CODE], how="left")
     )
-    stats = joined.select(
+    collected = joined.select(
         pl.len().alias(_TOTAL_COUNT),
         pl.col(_AE_MATCH_TMP).is_null().sum().alias(_ORPHAN_COUNT),
-    ).collect().row(0, named=True)
-
-    total, orphans = stats[_TOTAL_COUNT], stats[_ORPHAN_COUNT]
+    ).collect()
+    total   = collected[_TOTAL_COUNT].item()
+    orphans = collected[_ORPHAN_COUNT].item()
     if orphans:
         log.warning(
             f"event-id orphans for vendor={vendor_filter}: "
@@ -255,15 +263,22 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     ).with_columns(
         (pl.col(M.LOSS_UPLIFTED_CAPPED) / pl.col(AF.RATE_TO_GBP)).alias(CHAIN_BASE),
     )
-    # Year-tagged chain — walk the registry per tag
-    for tag in tags:
-        prev = CHAIN_BASE
-        for stage_name, stage in CHAIN.items():
-            out_col = col_after(stage_name, tag)
-            ylt = ylt.with_columns(
-                (pl.col(prev) * pl.col(factor_col_for(stage, tag))).alias(out_col)
-            )
-            prev = out_col
+    # Year-tagged chain — walk the registry per stage, batching all tags into
+    # one with_columns per stage. This reduces plan-node overhead from N×M to M
+    # (3 stages × N tags → 3 with_columns calls). Correctness is preserved
+    # because within each stage the inputs are the previous stage's outputs,
+    # which were materialised in the preceding with_columns call, not in the
+    # same one. Across tags the expressions are independent — they only share
+    # the year-invariant CHAIN_BASE column and the per-tag factor columns.
+    prev_for: dict[str, str] = {tag: CHAIN_BASE for tag in tags}
+    for stage_name, stage in CHAIN.items():
+        exprs = [
+            (pl.col(prev_for[tag]) * pl.col(factor_col_for(stage, tag))).alias(col_after(stage_name, tag))
+            for tag in tags
+        ]
+        ylt = ylt.with_columns(exprs)
+        for tag in tags:
+            prev_for[tag] = col_after(stage_name, tag)
     return ylt
 
 
@@ -331,7 +346,7 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     `chain.CHAIN` automatically extends the audit layout. No edits here.
     """
     cols: list[pl.Expr] = [pl.col(c) for c in _IDENTITY_COLS]
-    cols.append(pl.col(Y.LOSS).alias("loss_raw"))
+    cols.append(pl.col(Y.LOSS).alias(_LOSS_RAW_COL))
 
     # Year-invariant chain: uplift → cap → fx  (blend factors already in _IDENTITY_COLS)
     cols += [
@@ -371,13 +386,13 @@ def audit_long(
         .unpivot(
             on=metric_cols,
             index=list(_IDENTITY_COLS),
-            variable_name="metric_name",
-            value_name="value",
+            variable_name=_METRIC_NAME_COL,
+            value_name=_METRIC_VALUE_COL,
         )
     )
     if min_loss > 0:
-        out = out.filter(pl.col("value") >= min_loss)
-    return out.sort([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID, "metric_name"])
+        out = out.filter(pl.col(_METRIC_VALUE_COL) >= min_loss)
+    return out.sort([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID, Y.YEAR_ID, Y.EVENT_ID, _METRIC_NAME_COL])
 
 
 def fanout_hisco(
@@ -432,6 +447,7 @@ def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     seeds     = load_all(cfg.seeds_dir)
+    validate_fx_coverage(seeds.fx_rates)   # fast: small seed; aborts early on misconfiguration
     fc_dates  = forecast_dates_from_seed(seeds)
     tags      = forecast_tags(fc_dates)
     variants  = build_variants(fc_dates, cfg.vendors)

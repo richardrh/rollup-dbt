@@ -9,6 +9,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
+from rollup.chain import forecast_factor_col
 from rollup.config import CurrencyCode, VendorName
 from rollup.schemas.columns import (
     AllFactorsCol as AF,
@@ -26,6 +27,7 @@ from rollup.stages.factors import (
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
+    validate_fx_coverage,
 )
 
 
@@ -104,13 +106,28 @@ def _fx_seed(*pairs: tuple[CurrencyCode, float]) -> pl.LazyFrame:
     }).lazy()
 
 
-def test_attach_currency_raises_on_missing_fx_rate():
-    """A row with required EUR but no EUR rate in the seed must abort the run.
-    fill_null(1.0) here would silently inflate losses."""
+def test_validate_fx_coverage_raises_on_missing_currency():
+    """validate_fx_coverage catches a missing CurrencyCode member early at startup."""
+    fx = _fx_seed((CurrencyCode.GBP, 1.0))   # EUR is missing
+    with pytest.raises(MissingFxRateError, match=CurrencyCode.EUR.value):
+        validate_fx_coverage(fx)
+
+
+def test_validate_fx_coverage_passes_when_all_currencies_present():
+    """validate_fx_coverage does not raise when all CurrencyCode members are covered."""
+    fx = _fx_seed((CurrencyCode.GBP, 1.0), (CurrencyCode.EUR, 0.88))
+    validate_fx_coverage(fx)   # must not raise
+
+
+def test_attach_currency_does_not_raise_on_missing_fx_rate():
+    """attach_currency no longer validates FX coverage — that moved to validate_fx_coverage.
+    The downstream join produces a null rate_to_gbp row; the caller is responsible
+    for calling validate_fx_coverage before building the factor chain."""
     ylt = _ylt(cds_cat_class_name="HSA EU Fine Art")
     fx  = _fx_seed((CurrencyCode.GBP, 1.0))   # EUR is missing
-    with pytest.raises(MissingFxRateError, match=CurrencyCode.EUR.value):
-        attach_currency(ylt, fx).collect()
+    # Does not raise — null rate will remain until the LazyFrame is consumed
+    out = attach_currency(ylt, fx).collect()
+    assert out[AF.RATE_TO_GBP][0] is None
 
 
 def test_attach_currency_attaches_rate_when_present():
@@ -142,33 +159,37 @@ def _forecast_seed(forecast_date: str, factor: float) -> pl.LazyFrame:
 
 
 def test_forecast_factor_attached_for_matching_tag():
+    tag  = "202601"
     seed = _forecast_seed("2026-01-01", 1.05)
-    out  = attach_forecast_factors(_ylt(), seed, ["202601"]).collect()
-    assert out["f_202601"][0] == pytest.approx(1.05)
+    out  = attach_forecast_factors(_ylt(), seed, [tag]).collect()
+    assert out[forecast_factor_col(tag)][0] == pytest.approx(1.05)
 
 
 def test_forecast_factor_works_with_mid_month_seed_date():
     """The dt.year/month filter must work for any day-of-month in the seed."""
+    tag  = "202604"
     seed = _forecast_seed("2026-04-15", 1.08)
-    out  = attach_forecast_factors(_ylt(office="UK", lob_class="HH"), seed, ["202604"]).collect()
-    assert out["f_202604"][0] == pytest.approx(1.08)
+    out  = attach_forecast_factors(_ylt(office="UK", lob_class="HH"), seed, [tag]).collect()
+    assert out[forecast_factor_col(tag)][0] == pytest.approx(1.08)
 
 
 def test_forecast_factor_defaults_to_one_when_lob_missing():
+    tag  = "202601"
     seed = _forecast_seed("2026-01-01", 1.05)
     ylt  = _ylt(office="FR", lob_class="COMM")   # no row in seed for this office+class
-    out  = attach_forecast_factors(ylt, seed, ["202601"]).collect()
-    assert out["f_202601"][0] == pytest.approx(1.0)
+    out  = attach_forecast_factors(ylt, seed, [tag]).collect()
+    assert out[forecast_factor_col(tag)][0] == pytest.approx(1.0)
 
 
 def test_forecast_multiple_tags_all_attached():
+    tag1, tag2 = "202601", "202607"
     seed = pl.concat([
         _forecast_seed("2026-01-01", 1.05),
         _forecast_seed("2026-07-01", 1.07),
     ])
-    out = attach_forecast_factors(_ylt(), seed, ["202601", "202607"]).collect()
-    assert out["f_202601"][0] == pytest.approx(1.05)
-    assert out["f_202607"][0] == pytest.approx(1.07)
+    out = attach_forecast_factors(_ylt(), seed, [tag1, tag2]).collect()
+    assert out[forecast_factor_col(tag1)][0] == pytest.approx(1.05)
+    assert out[forecast_factor_col(tag2)][0] == pytest.approx(1.07)
 
 
 # --------------------------------------------------------------------------- #
