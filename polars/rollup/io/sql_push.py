@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from rollup.schemas import frames as F
+from rollup.validate import SchemaError, validate_schema
+
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -180,12 +183,17 @@ def push_parquet_to_sql(
     if engine is None and conn_str is None:
         raise ValueError("push_parquet_to_sql: supply either `engine` or `conn_str`")
 
+    # Read and validate the parquet BEFORE creating the engine or touching SQL.
+    # A List/Struct/Decimal column (or any schema mismatch) raises SchemaError
+    # with a precise diff here — the user sees the bad column name, not an
+    # opaque pyodbc ProgrammingError 600 lines down the stack.
+    df = pl.read_parquet(parquet)
+    table_name = parquet.stem
+    validate_schema(df, F.HISCO_FANOUT, name=f"sql_push.{table_name}")
+
     _own_engine = engine is None
     if _own_engine:
         engine = make_engine(conn_str)  # type: ignore[arg-type]
-
-    df = pl.read_parquet(parquet)
-    table_name = parquet.stem
 
     columns = [
         Column(name, _polars_to_sqlalchemy_type(dtype))

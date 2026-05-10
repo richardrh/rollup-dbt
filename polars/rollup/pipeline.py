@@ -263,15 +263,22 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     ).with_columns(
         (pl.col(M.LOSS_UPLIFTED_CAPPED) / pl.col(AF.RATE_TO_GBP)).alias(CHAIN_BASE),
     )
-    # Year-tagged chain — walk the registry per tag
-    for tag in tags:
-        prev = CHAIN_BASE
-        for stage_name, stage in CHAIN.items():
-            out_col = col_after(stage_name, tag)
-            ylt = ylt.with_columns(
-                (pl.col(prev) * pl.col(factor_col_for(stage, tag))).alias(out_col)
-            )
-            prev = out_col
+    # Year-tagged chain — walk the registry per stage, batching all tags into
+    # one with_columns per stage. This reduces plan-node overhead from N×M to M
+    # (3 stages × N tags → 3 with_columns calls). Correctness is preserved
+    # because within each stage the inputs are the previous stage's outputs,
+    # which were materialised in the preceding with_columns call, not in the
+    # same one. Across tags the expressions are independent — they only share
+    # the year-invariant CHAIN_BASE column and the per-tag factor columns.
+    prev_for: dict[str, str] = {tag: CHAIN_BASE for tag in tags}
+    for stage_name, stage in CHAIN.items():
+        exprs = [
+            (pl.col(prev_for[tag]) * pl.col(factor_col_for(stage, tag))).alias(col_after(stage_name, tag))
+            for tag in tags
+        ]
+        ylt = ylt.with_columns(exprs)
+        for tag in tags:
+            prev_for[tag] = col_after(stage_name, tag)
     return ylt
 
 
