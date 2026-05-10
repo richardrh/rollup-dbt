@@ -13,6 +13,7 @@ nav = [
   { "Operating modes" = "operating-modes.md" },
   { "Factor chain" = "factor-chain.md" },
   { "Calculations" = "calculations.md" },
+  { "Troubleshooting" = "troubleshooting.md" },
 ]
 
 [project.theme]

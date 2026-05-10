@@ -9,6 +9,8 @@ The pipeline's preflight (`rollup --dry-run`) reports the
 status of every file mentioned here. Read its output before re-checking this
 doc.
 
+**In a hurry?** Jump to [Stubs to populate](#stubs-to-populate-from-loadermain-dim-region-perils-the-four-way-split) — these are the four CSVs the pipeline absolutely needs before `rollup --yes` will proceed.
+
 ## Layout the pipeline expects
 
 ```

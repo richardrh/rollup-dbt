@@ -1,8 +1,10 @@
 # Polars Rollup Pipeline
 
 Detailed documentation for the polars rollup pipeline. This is the deep
-reference; the project [`README.md`](https://github.com/hamptonian/rollup-dbt)
+reference; the project [README.md](../polars/README.md)
 is the overview + schematic + run commands.
+
+**New here?** Start with [Data requirements](data-requirements.md) — it tells you exactly which files the pipeline needs and where to put them.
 
 ## Run the pipeline
 
@@ -38,6 +40,7 @@ uv run zensical build   # write static site to site/
 | [Operating modes](operating-modes.md) | **How the pipeline selects analyses to run.** Current two-file lookup (Mode A), and two future alternatives: catalogue-as-live (Mode B) and CLI-driven scope (Mode C). Trade-offs and migration paths. |
 | [Factor chain](factor-chain.md) | The factor-chain mental model, cumulative column-naming convention, and the **5-step recipe to add a new factor**. |
 | [Calculations](calculations.md) | Every january duckdb view → polars stage mapping, with the original SQL quoted. Also: `apply_rollup_scope`, the `chain.CHAIN` registry walker, EP curves, the dialsup funnel, and a per-stage status summary table. |
+| [Troubleshooting](troubleshooting.md) | Seven quick-reference fixes: aborted runs, missing seeds, YLT path issues, SQL connection errors, and zero-row outputs. |
 
 ## Three things to know first
 
