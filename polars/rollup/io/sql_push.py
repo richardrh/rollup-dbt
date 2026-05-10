@@ -10,20 +10,29 @@ Connection string format (Windows auth — no credentials inline):
 SQL auth:
     mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server
 
-The push uses `polars.DataFrame.write_database(if_table_exists="replace")`
-— each table is dropped and recreated on every push, no DDL management
-needed.
+The push uses a pure-polars path: we build the table via sqlalchemy DDL
+from the polars schema, then bulk-INSERT via chunked `to_dicts()` with
+`fast_executemany=True` on the engine.  This avoids the pandas dependency
+that `polars.write_database(engine="sqlalchemy")` would incur.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
 
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
+
 log = logging.getLogger("rollup.sql_push")
+
+# Rows sent to SQL Server per execute() call.  Large enough to amortise
+# network round-trips; small enough to cap Python dict memory.
+_CHUNK_SIZE = 50_000
 
 
 @dataclass(frozen=True)
@@ -37,6 +46,20 @@ class ConnectionTestResult:
     error:         str | None
 
 
+def make_engine(conn_str: str) -> "Engine":
+    """Create a SQLAlchemy engine for SQL Server with optimal push settings.
+
+    `fast_executemany=True` instructs pyodbc to batch all parameter rows
+    into a single network send per `execute()` call, giving a 10-50x
+    speedup over the default one-row-per-round-trip behaviour.
+
+    The caller is responsible for calling `engine.dispose()` when done.
+    """
+    from sqlalchemy import create_engine
+
+    return create_engine(conn_str, fast_executemany=True)
+
+
 def test_connection(conn_str: str, *, schema: str | None = None) -> ConnectionTestResult:
     """Open a connection, query @@VERSION + DB_NAME(), optionally verify a schema.
 
@@ -46,10 +69,10 @@ def test_connection(conn_str: str, *, schema: str | None = None) -> ConnectionTe
     `schema` (when given) is checked against `sys.schemas`; the result
     has `schema_exists=True/False`.
     """
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
     try:
-        engine = create_engine(conn_str)
+        engine = make_engine(conn_str)
         with engine.connect() as conn:
             version  = conn.execute(text("SELECT @@VERSION")).scalar()
             database = conn.execute(text("SELECT DB_NAME()")).scalar()
@@ -92,15 +115,17 @@ def list_pushable_parquets(output_dir: Path) -> list[Path]:
 def _polars_to_sqlalchemy_type(dtype: pl.DataType):
     """Map a polars dtype to a sqlalchemy column type.
 
-    Generic types (Integer, BigInteger, Float, String, Boolean, Date,
-    DateTime) — sqlalchemy translates them per dialect. NVARCHAR(MAX)
-    on MSSQL, VARCHAR on PostgreSQL, etc. Containers (List/Struct) and
-    Decimal aren't expected in Hisco fanouts and fall through to a wide
-    `String` for forward compat.
+    Numeric and date/time types map to generic sqlalchemy types that
+    sqlalchemy translates per dialect (Integer, Float, DateTime, etc.).
+
+    Strings and any unrecognised container types (List, Struct, Decimal)
+    fall through to NVARCHAR(MAX) — the SQL Server native Unicode type.
+    VARCHAR would silently corrupt non-ASCII content; NVARCHAR(MAX) is
+    the safe, forward-compatible default.
     """
-    from sqlalchemy import (
-        BigInteger, Boolean, Date, DateTime, Float, Integer, String,
-    )
+    from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Integer
+    from sqlalchemy.dialects.mssql import NVARCHAR
+
     if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16):
         return Integer()
     if dtype in (pl.Int64, pl.UInt32, pl.UInt64):
@@ -113,13 +138,15 @@ def _polars_to_sqlalchemy_type(dtype: pl.DataType):
         return Date()
     if dtype.base_type() == pl.Datetime:
         return DateTime()
-    return String(length=4000)
+    # NVARCHAR(MAX) — Unicode-safe, forward-compatible fallback.
+    return NVARCHAR(length=None)
 
 
 def push_parquet_to_sql(
     parquet: Path,
     *,
-    conn_str: str,
+    engine: "Engine | None" = None,
+    conn_str: str | None = None,
     schema: str | None = None,
 ) -> int:
     """Read `parquet` and write it to a SQL Server table.
@@ -128,18 +155,34 @@ def push_parquet_to_sql(
     (e.g. `HiscoAIR_202601_main.parquet` → table `HiscoAIR_202601_main`).
     Drops + recreates each table.
 
+    Pass `engine` (preferred) when pushing multiple files so a single
+    connection pool is shared across all calls.  If `engine` is None,
+    `conn_str` is required and a temporary engine is created and disposed
+    at the end of this call.
+
     Implementation note — this is **pure-polars**: we avoid
     `polars.write_database(engine="sqlalchemy")` because that path
     requires pandas (polars converts via `df.to_pandas().to_sql()`).
     Instead we build the table with sqlalchemy types from the polars
-    schema, then bulk-INSERT polars rows directly. ADBC would be the
-    other no-pandas option, but no ADBC driver exists for SQL Server.
+    schema, then bulk-INSERT polars rows directly via chunked `to_dicts()`
+    with `fast_executemany=True` on the engine.  ADBC would be the other
+    no-pandas option, but no ADBC driver exists for SQL Server.
+
+    Note: if the INSERT fails partway, the previous table state is also
+    rolled back along with the partial insert — there is no recovery, just
+    no table. Re-run to recover. (Atomic swap via a staging table is a
+    future improvement.)
 
     Returns the number of rows pushed.
     """
-    from sqlalchemy import (
-        Column, MetaData, Table, create_engine, inspect,
-    )
+    from sqlalchemy import Column, MetaData, Table, inspect
+
+    if engine is None and conn_str is None:
+        raise ValueError("push_parquet_to_sql: supply either `engine` or `conn_str`")
+
+    _own_engine = engine is None
+    if _own_engine:
+        engine = make_engine(conn_str)  # type: ignore[arg-type]
 
     df = pl.read_parquet(parquet)
     table_name = parquet.stem
@@ -151,14 +194,22 @@ def push_parquet_to_sql(
     metadata = MetaData()
     table = Table(table_name, metadata, *columns, schema=schema)
 
-    engine = create_engine(conn_str)
-    with engine.begin() as conn:
-        if inspect(conn).has_table(table_name, schema=schema):
-            table.drop(conn)
-        table.create(conn)
-        rows = df.to_dicts()
-        if rows:
-            conn.execute(table.insert(), rows)
+    try:
+        with engine.begin() as conn:
+            if inspect(conn).has_table(table_name, schema=schema):
+                table.drop(conn)
+            table.create(conn)
+            # Intentional escape from polars-typed world: SQL Server has no
+            # ADBC driver, and pl.write_database(engine="sqlalchemy") requires
+            # pandas. Chunked to_dicts + fast_executemany is the fastest
+            # pure-polars-input path available.
+            for chunk in df.iter_slices(n_rows=_CHUNK_SIZE):
+                rows = chunk.to_dicts()
+                if rows:
+                    conn.execute(table.insert(), rows)
+    finally:
+        if _own_engine:
+            engine.dispose()
 
     fq_name = f"{schema}.{table_name}" if schema else table_name
     log.info(f"sql: wrote {df.height:,} rows → {fq_name}")

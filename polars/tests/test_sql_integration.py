@@ -148,6 +148,34 @@ def test_push_parquet_to_sql_round_trip(mssql_url: str, tiny_parquet: Path):
     assert float(s) == pytest.approx(1234.5 + 2345.6 + 3456.7)
 
 
+def test_pushed_columns_have_expected_sql_types(mssql_url: str, tiny_parquet: Path):
+    """ModelGrossLoss must land as float, not varchar; ModelYOA as int."""
+    import pandas as pd
+    from sqlalchemy import create_engine, text
+    from rollup.io.sql_push import push_parquet_to_sql
+
+    table_name = tiny_parquet.stem  # "HiscoTEST_dialsup"
+    push_parquet_to_sql(tiny_parquet, conn_str=mssql_url)
+
+    engine = create_engine(mssql_url)
+    with engine.connect() as conn:
+        cols = pd.read_sql(
+            text(
+                "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_NAME = :t"
+            ),
+            conn,
+            params={"t": table_name},
+        )
+    type_map = dict(zip(cols["COLUMN_NAME"], cols["DATA_TYPE"]))
+    assert type_map["ModelGrossLoss"].lower() == "float", (
+        f"ModelGrossLoss expected float, got {type_map['ModelGrossLoss']!r}"
+    )
+    assert type_map["ModelYOA"].lower() in ("int", "bigint"), (
+        f"ModelYOA expected int/bigint, got {type_map['ModelYOA']!r}"
+    )
+
+
 def test_push_parquet_replaces_existing_table(mssql_url: str, tmp_path: Path):
     """Pushing twice overwrites the first table — `if_table_exists='replace'`."""
     from sqlalchemy import create_engine, text
