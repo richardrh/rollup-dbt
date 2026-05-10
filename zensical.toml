@@ -7,15 +7,17 @@ docs_dir = "docs"
 
 nav = [
   { "Home" = "index.md" },
-  { "Getting started" = "first-run.md" },
+  { "Quickstart" = "first-run.md" },
   { "Loading your data" = "load-data.md" },
-  { "File formats" = "file-formats.md" },
-  { "Data requirements" = "data-requirements.md" },
-  { "Architecture" = "architecture.md" },
-  { "Operating modes" = "operating-modes.md" },
-  { "Factor chain" = "factor-chain.md" },
-  { "Calculations" = "calculations.md" },
   { "Troubleshooting" = "troubleshooting.md" },
+  { "Reference" = [
+    { "File formats" = "file-formats.md" },
+    { "Data requirements" = "data-requirements.md" },
+    { "Architecture" = "architecture.md" },
+    { "Factor chain" = "factor-chain.md" },
+    { "Calculations" = "calculations.md" },
+    { "Operating modes" = "operating-modes.md" },
+  ]},
 ]
 
 [project.theme]

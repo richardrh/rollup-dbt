@@ -100,7 +100,7 @@ EUR,GBP,2026-01-01,0.88
 GBP,GBP,2026-01-01,1.0
 ```
 
-Both `GBP→GBP` (rate = 1.0) and `EUR→GBP` rows are required at minimum. See [`data/seeds/fx_rates.csv`](../data/seeds/README.md) for the full seed spec.
+Both `GBP→GBP` (rate = 1.0) and `EUR→GBP` rows are required at minimum. See [`data/seeds/README.md`](../data/seeds/README.md) for the full seed spec.
 
 ---
 
