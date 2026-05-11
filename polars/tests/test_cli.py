@@ -204,6 +204,8 @@ def test_cmd_run_catches_pipeline_exception(tmp_path, monkeypatch, capsys):
     assert "pipeline failed" in captured.err
     assert "RuntimeError" in captured.err
     assert "injected boom" in captured.err
+    assert "see docs/troubleshooting.md" in captured.err
+    assert "http" not in captured.err.lower()
 
 
 # ---------------------------------------------------------------------------

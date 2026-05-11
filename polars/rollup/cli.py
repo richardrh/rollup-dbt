@@ -181,7 +181,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         run(cfg, dump_interim=args.dump_interim)
     except Exception as e:
         print(f"\npipeline failed: {type(e).__name__}: {e}", file=sys.stderr)
-        print("see https://github.com/hamptonian/rollup-dbt/blob/master/docs/troubleshooting.md", file=sys.stderr)
+        print("see docs/troubleshooting.md", file=sys.stderr)
         return 2
     return 0
 
