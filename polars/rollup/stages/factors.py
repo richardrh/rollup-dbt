@@ -306,6 +306,97 @@ def attach_fagross(ylt: pl.LazyFrame, fineart_adjustments: pl.LazyFrame) -> pl.L
     return out
 
 
+def _vendor_blend_weights(
+    blending_weights: pl.LazyFrame,
+    vendor: VendorName,
+    proportion_col: str,
+) -> pl.LazyFrame:
+    return (
+        blending_weights
+        .filter(pl.col(BW.VENDOR) == vendor)
+        .select(
+            pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
+            pl.col(BW.RETURN_PERIOD).alias(AF.RP_BUCKET),
+            pl.col(BW.WEIGHT).alias(proportion_col),
+        )
+    )
+
+
+def _blend_weights_by_peril_bucket(blending_weights: pl.LazyFrame) -> pl.LazyFrame:
+    """Pivot long vendor blend weights into one row per peril/RP bucket."""
+    return (
+        _vendor_blend_weights(blending_weights, VendorName.VERISK, AF.VK_PROPORTION)
+        .join(
+            _vendor_blend_weights(blending_weights, VendorName.RISKLINK, AF.RL_PROPORTION),
+            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="full", coalesce=True,
+        )
+    )
+
+
+def _base_model_by_peril(blending_weights: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        blending_weights
+        .select(
+            pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
+            pl.col(BW.BASE_MODEL),
+        )
+        .unique(subset=[Y.REGION_PERIL_ID])
+    )
+
+
+def _attach_blend_inputs(ylt: pl.LazyFrame, blending_weights: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        ylt
+        .join(_blend_weights_by_peril_bucket(blending_weights), on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="left")
+        .join(_base_model_by_peril(blending_weights), on=Y.REGION_PERIL_ID, how="left")
+        .with_columns(
+            pl.col(AF.VK_PROPORTION).fill_null(0.5).cast(pl.Float64),
+            pl.col(AF.RL_PROPORTION).fill_null(0.5).cast(pl.Float64),
+            pl.col(AF.BASE_MODEL).fill_null(pl.col(Y.VENDOR)).cast(pl.String),
+        )
+    )
+
+
+def _attach_vendor_aals(
+    ylt: pl.LazyFrame,
+    n_sim: dict[VendorName, int],
+) -> pl.LazyFrame:
+    group = [Y.LOB_ID, Y.REGION_PERIL_ID]
+    n_sim_vk = float(n_sim[VendorName.VERISK])
+    n_sim_rl = float(n_sim[VendorName.RISKLINK])
+    return ylt.with_columns(
+        (pl.when(pl.col(Y.VENDOR) == VendorName.VERISK).then(pl.col(Y.LOSS)).otherwise(0.0)
+           .sum().over(group) / n_sim_vk).alias(_VK_AAL_TMP),
+        (pl.when(pl.col(Y.VENDOR) == VendorName.RISKLINK).then(pl.col(Y.LOSS)).otherwise(0.0)
+           .sum().over(group) / n_sim_rl).alias(_RL_AAL_TMP),
+    )
+
+
+def _attach_uplift_factor(ylt: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        ylt
+        .with_columns(
+            (pl.col(AF.VK_PROPORTION) * pl.col(_VK_AAL_TMP) +
+             pl.col(AF.RL_PROPORTION) * pl.col(_RL_AAL_TMP)).alias(_BLENDED_AAL_TMP),
+            pl.when(pl.col(AF.BASE_MODEL) == VendorName.RISKLINK)
+              .then(pl.col(_RL_AAL_TMP))
+              .otherwise(pl.col(_VK_AAL_TMP))
+              .alias(_BASE_MODEL_AAL_TMP),
+            pl.col(Y.EVENT_ID).alias(AF.MODEL_EVENT_ID),
+        )
+        .with_columns(
+            pl.when(pl.col(_BASE_MODEL_AAL_TMP) > 0)
+              .then(pl.col(_BLENDED_AAL_TMP) / pl.col(_BASE_MODEL_AAL_TMP))
+              .otherwise(pl.lit(1.0, dtype=pl.Float64))
+              .cast(pl.Float64)
+              .alias(AF.UPLIFT_FACTOR),
+        )
+        .with_columns(
+            pl.col(AF.UPLIFT_FACTOR).clip(0.1, 10.0).alias(AF.UPLIFT_FACTOR_CAPPED),
+        )
+    )
+
+
 def attach_uplift(
     ylt: pl.LazyFrame,
     blending_weights: pl.LazyFrame,
@@ -341,75 +432,11 @@ def attach_uplift(
     Falls back to 0.5/0.5 blend and 1.0 uplift when blending_weights is empty.
     """
     n_sim_resolved = _resolve_n_sim(n_sim)
-    n_sim_vk = float(n_sim_resolved[VendorName.VERISK])
-    n_sim_rl = float(n_sim_resolved[VendorName.RISKLINK])
-
-    ylt = _with_rank_and_rp_bucket(ylt, n_sim=n_sim_resolved)
-
-    def _vendor_weights(v: VendorName, alias: AF) -> pl.LazyFrame:
-        return (
-            blending_weights
-            .filter(pl.col(BW.VENDOR) == v)
-            .select(
-                pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
-                pl.col(BW.RETURN_PERIOD).alias(AF.RP_BUCKET),
-                pl.col(BW.WEIGHT).alias(alias),
-            )
-        )
-
-    def _base_model_lookup() -> pl.LazyFrame:
-        return (
-            blending_weights
-            .select(
-                pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
-                pl.col(BW.BASE_MODEL),
-            )
-            .unique(subset=[Y.REGION_PERIL_ID])
-        )
-
-    blend_per_peril = (
-        _vendor_weights(VendorName.VERISK,   AF.VK_PROPORTION)
-        .join(
-            _vendor_weights(VendorName.RISKLINK, AF.RL_PROPORTION),
-            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="full", coalesce=True,
-        )
-    )
-    base_model_lookup = _base_model_lookup()
-
-    group = [Y.LOB_ID, Y.REGION_PERIL_ID]
-
     out = (
-        ylt
-        .join(blend_per_peril, on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="left")
-        .join(base_model_lookup, on=Y.REGION_PERIL_ID, how="left")
-        .with_columns(
-            pl.col(AF.VK_PROPORTION).fill_null(0.5).cast(pl.Float64),
-            pl.col(AF.RL_PROPORTION).fill_null(0.5).cast(pl.Float64),
-            pl.col(AF.BASE_MODEL).fill_null(pl.col(Y.VENDOR)).cast(pl.String),
-            (pl.when(pl.col(Y.VENDOR) == VendorName.VERISK).then(pl.col(Y.LOSS)).otherwise(0.0)
-               .sum().over(group) / n_sim_vk).alias(_VK_AAL_TMP),
-            (pl.when(pl.col(Y.VENDOR) == VendorName.RISKLINK).then(pl.col(Y.LOSS)).otherwise(0.0)
-               .sum().over(group) / n_sim_rl).alias(_RL_AAL_TMP),
-        )
-        .with_columns(
-            (pl.col(AF.VK_PROPORTION) * pl.col(_VK_AAL_TMP) +
-             pl.col(AF.RL_PROPORTION) * pl.col(_RL_AAL_TMP)).alias(_BLENDED_AAL_TMP),
-            pl.when(pl.col(AF.BASE_MODEL) == VendorName.RISKLINK)
-              .then(pl.col(_RL_AAL_TMP))
-              .otherwise(pl.col(_VK_AAL_TMP))
-              .alias(_BASE_MODEL_AAL_TMP),
-            pl.col(Y.EVENT_ID).alias(AF.MODEL_EVENT_ID),
-        )
-        .with_columns(
-            pl.when(pl.col(_BASE_MODEL_AAL_TMP) > 0)
-              .then(pl.col(_BLENDED_AAL_TMP) / pl.col(_BASE_MODEL_AAL_TMP))
-              .otherwise(pl.lit(1.0, dtype=pl.Float64))
-              .cast(pl.Float64)
-              .alias(AF.UPLIFT_FACTOR),
-        )
-        .with_columns(
-            pl.col(AF.UPLIFT_FACTOR).clip(0.1, 10.0).alias(AF.UPLIFT_FACTOR_CAPPED),
-        )
+        _with_rank_and_rp_bucket(ylt, n_sim=n_sim_resolved)
+        .pipe(_attach_blend_inputs, blending_weights)
+        .pipe(_attach_vendor_aals, n_sim_resolved)
+        .pipe(_attach_uplift_factor)
         .drop(_VK_AAL_TMP, _RL_AAL_TMP, _BLENDED_AAL_TMP, _BASE_MODEL_AAL_TMP)
     )
     log.info("uplift: rp_bucket proportions + base_model from seed; AAL via window functions")

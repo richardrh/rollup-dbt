@@ -22,6 +22,7 @@ from rollup.schemas.columns import (
 )
 from rollup.stages.factors import (
     MissingFxRateError,
+    _blend_weights_by_peril_bucket,
     attach_currency,
     attach_euws,
     attach_forecast_factors,
@@ -319,6 +320,21 @@ def test_uplift_reads_blend_weights_from_seed():
     out = attach_uplift(ylt, bw).collect()
     assert out[AF.VK_PROPORTION][0] == pytest.approx(0.7, abs=1e-6)
     assert out[AF.RL_PROPORTION][0] == pytest.approx(0.3, abs=1e-6)
+
+
+def test_blend_weights_by_peril_bucket_pivots_vendor_weights():
+    """Long vendor rows become one peril/RP row with both proportions."""
+    bw = _blending_weights(
+        (206, 200, None, VendorName.VERISK, "verisk", 0.25),
+        (206, 200, None, VendorName.RISKLINK, "verisk", 0.75),
+    )
+
+    out = _blend_weights_by_peril_bucket(bw).collect()
+
+    assert out[Y.REGION_PERIL_ID][0] == 206
+    assert out[AF.RP_BUCKET][0] == 200
+    assert out[AF.VK_PROPORTION][0] == pytest.approx(0.25)
+    assert out[AF.RL_PROPORTION][0] == pytest.approx(0.75)
 
 
 def test_uplift_per_peril_blend_is_deterministic():
