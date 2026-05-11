@@ -7,22 +7,9 @@ running the full pipeline (which requires file I/O and seeds on disk).
 All tests are marked ``@pytest.mark.fuzz`` and skipped unless
 ``--run-fuzz`` is passed.
 
-KNOWN ISSUES
-------------
-BUG-1 — forecast_tags_unique: ``forecast_tags`` does not deduplicate tags when
-two dates in the same calendar month are provided (e.g. 2020-01-01 and
-2020-01-02 both become '202001'). The function's docstring implies one date per
-month is the expected input, but no guard exists at the call site or inside
-the function itself. Two duplicate tags would produce duplicate column names in
-``build_all_factors`` (``f_202001`` appears twice), which Polars will reject.
-See ``test_forecast_tags_unique_and_sorted`` (marked xfail) for the minimal repro.
-
-BUG-2 — build_variants_names_unique: Same root cause as BUG-1.  When two dates
-in the same month are fed to ``build_variants``, duplicate output filenames are
-produced (e.g. ``HiscoAIR_202001_main`` twice). The second write would silently
-overwrite the first parquet. Fix: deduplicate dates before building variants, or
-guard in ``forecast_tags`` / ``build_variants``.
-See ``test_build_variants_names_unique`` (marked xfail).
+NOTE: When running with ``-n N`` (pytest-xdist), Hypothesis's shared-random
+state can cause flaky failures in tests using ``st.sets()`` of dates.  Run
+single-threaded (``-q`` without ``-n``) for deterministic CI results.
 """
 
 from __future__ import annotations
@@ -31,7 +18,7 @@ from datetime import date
 
 import polars as pl
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import rollup.schemas.frames as F
@@ -97,8 +84,7 @@ def test_forecast_tags_unique_and_sorted(dates: set[date]) -> None:
 
 @pytest.mark.fuzz
 def test_forecast_tags_duplicates_when_same_month() -> None:
-    """BUG-1 regression guard: two dates in the same month produce unique tags.
-    The fix deduplicates dates in ``forecast_tags`` so this invariant always holds."""
+    """BUG-1 regression guard: two dates in the same month produce unique tags."""
     two_same_month = [date(2020, 1, 1), date(2020, 1, 15)]
     tags = forecast_tags(two_same_month)
     assert len(tags) == len(set(tags)), f"Duplicate tags produced: {tags}"
@@ -137,21 +123,22 @@ def test_forecast_tags_format(dates: set[date]) -> None:
     )
 )
 def test_build_variants_count_correct(forecast_dates: set[date]) -> None:
-    """For N forecast dates and 2 vendors each with MAIN + DIALSUP flavors,
-    ``build_variants`` returns 2*N MAIN variants + 2 DIALSUP variants (exactly)."""
-    n = len(forecast_dates)
+    """For N forecast dates producing M unique YYYYMM tags (two dates in same
+    month → one tag), ``build_variants`` returns 2*M MAIN variants + 2 DIALSUP
+    variants (exactly). Same-month dates do not create extra variants."""
+    n_tags = len({d.strftime("%Y%m") for d in forecast_dates})
     variants = build_variants(list(forecast_dates), _BOTH_VENDORS)
 
     main_variants = [v for v in variants if v.flavor == Flavor.MAIN]
     dialsup_variants = [v for v in variants if v.flavor == Flavor.DIALSUP]
 
-    assert len(main_variants) == 2 * n, (
-        f"Expected 2*{n}={2*n} MAIN variants; got {len(main_variants)}"
+    assert len(main_variants) == 2 * n_tags, (
+        f"Expected 2*{n_tags}={2*n_tags} MAIN variants; got {len(main_variants)}"
     )
     assert len(dialsup_variants) == 2, (
         f"Expected 2 DIALSUP variants; got {len(dialsup_variants)}"
     )
-    assert len(variants) == 2 * n + 2
+    assert len(variants) == 2 * n_tags + 2
 
 
 @pytest.mark.fuzz
@@ -164,19 +151,7 @@ def test_build_variants_count_correct(forecast_dates: set[date]) -> None:
 )
 def test_build_variants_names_unique(forecast_dates: set[date]) -> None:
     """All variant names in the output are unique — no two variants would
-    write to the same output file.
-
-    NOTE: This test may spuriously fail when Hypothesis generates two dates
-    in the same calendar month (same root cause as BUG-1 in the module
-    docstring). When that happens, duplicate filenames are produced.
-    The property is correct — the bug is in the production code, not the test.
-    See KNOWN ISSUES in module docstring.
-    """
-    # Only assert when all dates produce distinct YYYYMM tags — otherwise the
-    # test would always fail due to BUG-1. Use assume() so Hypothesis filters
-    # same-month date combinations rather than treating it as a skip.
-    tags = [d.strftime("%Y%m") for d in forecast_dates]
-    assume(len(tags) == len(set(tags)))  # skip same-month combos (BUG-1 territory)
+    write to the same output file."""
     variants = build_variants(list(forecast_dates), _BOTH_VENDORS)
     names = [v.name for v in variants]
     assert len(names) == len(set(names)), (

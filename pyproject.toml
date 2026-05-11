@@ -34,6 +34,7 @@ dev = [
     "pymssql>=2.3",
     # Property-based / fuzz testing.
     "hypothesis>=6.100",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv]
