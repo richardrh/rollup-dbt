@@ -134,15 +134,29 @@ def build_variants(
     ``vendors`` from ``config.resolve().vendors``. Each vendor's own
     ``flavors`` tuple controls which Hisco outputs it emits.
     """
-    dates = sorted(forecast_dates)
+    unique_tags: list[str] = []
+    seen_tags: set[str] = set()
+    for d in forecast_dates:
+        tag = d.strftime("%Y%m")
+        if tag not in seen_tags:
+            seen_tags.add(tag)
+            unique_tags.append(tag)
     variants: list[VariantSpec] = []
     for v in vendors:
         for f in v.flavors:
             if f == Flavor.DIALSUP:
-                variants.append(VariantSpec(vendor=v, forecast_date=dates[0], flavor=f))
+                if unique_tags:
+                    variants.append(VariantSpec(
+                        vendor=v,
+                        forecast_date=forecast_dates[0],
+                        flavor=f,
+                    ))
             else:
-                for d in dates:
-                    variants.append(VariantSpec(vendor=v, forecast_date=d, flavor=f))
+                for tag in unique_tags:
+                    for d in forecast_dates:
+                        if d.strftime("%Y%m") == tag:
+                            variants.append(VariantSpec(vendor=v, forecast_date=d, flavor=f))
+                            break
     return variants
 
 

@@ -4,6 +4,10 @@ Targets ``ep_curve_from_ylt``.
 
 All tests are marked ``@pytest.mark.fuzz`` and skipped unless
 ``--run-fuzz`` is passed.
+
+NOTE: When running with ``-n N`` (pytest-xdist), Hypothesis's shared-random
+state can cause flaky failures in tests using ``st.sets()`` of dates.
+Run single-threaded (``-q`` without ``-n``) for deterministic CI results.
 """
 
 from __future__ import annotations
