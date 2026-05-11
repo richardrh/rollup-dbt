@@ -73,7 +73,7 @@ _METRIC_VALUE_COL = "value"
 
 def forecast_tags(forecast_dates: Sequence[date]) -> list[str]:
     """`[date(2026,1,1), date(2026,7,1)] → ['202601', '202607']`."""
-    return [d.strftime("%Y%m") for d in sorted(forecast_dates)]
+    return sorted(set(d.strftime("%Y%m") for d in forecast_dates))
 
 
 # --------------------------------------------------------------------------- #
@@ -139,8 +139,6 @@ def build_variants(
     for v in vendors:
         for f in v.flavors:
             if f == Flavor.DIALSUP:
-                # One dialsup file per vendor — forecast_date is stored on the
-                # spec (required field) but not used in the name or loss_metric.
                 variants.append(VariantSpec(vendor=v, forecast_date=dates[0], flavor=f))
             else:
                 for d in dates:

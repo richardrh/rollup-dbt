@@ -96,25 +96,11 @@ def test_forecast_tags_unique_and_sorted(dates: set[date]) -> None:
 
 
 @pytest.mark.fuzz
-@pytest.mark.xfail(
-    reason=(
-        "BUG-1: forecast_tags() does not deduplicate — two dates in the same "
-        "calendar month both produce the same YYYYMM tag. "
-        "Fix: call set() on the output, or enforce one-date-per-month upstream."
-    ),
-    strict=True,
-)
 def test_forecast_tags_duplicates_when_same_month() -> None:
-    """Regression guard for BUG-1: two dates in the same month produce duplicate
-    tags, violating the uniqueness invariant required by build_all_factors.
-
-    This test is marked xfail(strict=True) — it will PASS as an xfail until
-    the bug is fixed. When the bug is fixed, the xfail will flip to XPASS
-    and the mark should be removed.
-    """
+    """BUG-1 regression guard: two dates in the same month produce unique tags.
+    The fix deduplicates dates in ``forecast_tags`` so this invariant always holds."""
     two_same_month = [date(2020, 1, 1), date(2020, 1, 15)]
     tags = forecast_tags(two_same_month)
-    # This assert FAILS today (duplicate tags) — xfail guards it.
     assert len(tags) == len(set(tags)), f"Duplicate tags produced: {tags}"
 
 
