@@ -42,12 +42,56 @@ _TOTAL_TMP         = "total"
 _RL_PROP_TMP       = "rl_proportion"
 _VK_PROP_TMP        = "vk_proportion"
 _PERIL_NAME_TMP    = "peril_name"
+_VENDOR_TMP        = "vendor"
+_EP_TYPE_TMP       = "ep_type"
+_LOB_TMP           = "lob"
+_PERIL_LABEL_TMP   = "peril_label"
+_GL_TMP            = "gl"
 
 _DEFAULT_EP_TYPES: tuple[str, ...] = (EpType.AAL, EpType.OEP)
 _DEFAULT_TARGET_RETURN_PERIODS: tuple[int, ...] = (0, 200, 1000)
 
 
 log = logging.getLogger("rollup.blending")
+
+
+def _canonical_ep_rows(long_csvs: list[Path], vendor: VendorName) -> pl.DataFrame:
+    """Read vendor EP CSVs into a common internal shape.
+
+    Source files keep their native column names at the boundary:
+    RiskLink uses ``region_peril`` while Verisk uses ``analysis`` for the peril
+    label. Everything downstream of this adapter works with the same columns:
+    vendor, rp, ep_type, lob, peril_label, gl.
+    """
+    schema = {
+        _VENDOR_TMP:      pl.String,
+        _RP_TMP:          pl.Int64,
+        _EP_TYPE_TMP:     pl.String,
+        _LOB_TMP:         pl.String,
+        _PERIL_LABEL_TMP: pl.String,
+        _GL_TMP:          pl.Float64,
+    }
+    if not long_csvs:
+        log.warning(f"{vendor.value}: no EP long CSVs found — vendor AAL will be 0")
+        return pl.DataFrame(schema=schema)
+
+    ep = pl.concat([pl.scan_csv(p) for p in long_csvs], how="vertical_relaxed").collect()
+
+    if vendor == VendorName.RISKLINK:
+        peril_label_col = RL.REGION_PERIL
+    elif vendor == VendorName.VERISK:
+        peril_label_col = VK.ANALYSIS if VK.ANALYSIS in ep.columns else "analysis"
+    else:
+        raise ValueError(f"unknown vendor {vendor!r}")
+
+    return ep.select(
+        pl.lit(vendor.value).alias(_VENDOR_TMP),
+        pl.col(RL.RP).cast(pl.Int64).alias(_RP_TMP),
+        pl.col(RL.EP_TYPE).cast(pl.String).alias(_EP_TYPE_TMP),
+        pl.col(RL.LOB).cast(pl.String).alias(_LOB_TMP),
+        pl.col(peril_label_col).cast(pl.String).alias(_PERIL_LABEL_TMP),
+        pl.col(RL.GL).cast(pl.Float64).alias(_GL_TMP),
+    )
 
 
 def _aal_by_rp_peril(
@@ -62,39 +106,28 @@ def _aal_by_rp_peril(
     Returns DataFrame[rp: Int64, peril_id: Int64, vendor_aal: Float64].
     Empty `long_csvs` (vendor not yet delivered) returns a 0-row frame.
     """
-    if not long_csvs:
-        log.warning(f"{vendor.value}: no EP long CSVs found — vendor AAL will be 0")
-        return pl.DataFrame(schema={_RP_TMP: pl.Int64, _PERIL_ID_TMP: pl.Int64, _VENDOR_AAL_TMP: pl.Float64})
-
-    ep = pl.concat([pl.scan_csv(p) for p in long_csvs], how="vertical_relaxed").collect()
-
-    if vendor == VendorName.RISKLINK:
-        peril_label_col = RL.REGION_PERIL
-    elif vendor == VendorName.VERISK:
-        peril_label_col = VK.ANALYSIS if VK.ANALYSIS in ep.columns else "analysis"
-    else:
-        raise ValueError(f"unknown vendor {vendor!r}")
+    ep = _canonical_ep_rows(long_csvs, vendor)
 
     ep_filter = ep.filter(
-        pl.col(RL.EP_TYPE).is_in(ep_types)
-        & pl.col(RL.RP).is_in(target_return_periods)
+        pl.col(_EP_TYPE_TMP).is_in(ep_types)
+        & pl.col(_RP_TMP).is_in(target_return_periods)
     )
 
     label_to_pid = (
         analyses
         .filter(pl.col(AN.VENDOR) == vendor.value)
         .select(
-            pl.col(AN.MODELLED_LABEL).alias(peril_label_col),
+            pl.col(AN.MODELLED_LABEL).alias(_PERIL_LABEL_TMP),
             pl.col(AN.PERIL_ID),
         )
         .unique()
     )
 
-    joined = ep_filter.join(label_to_pid, on=peril_label_col, how="left")
+    joined = ep_filter.join(label_to_pid, on=_PERIL_LABEL_TMP, how="left")
 
     unmapped = joined.filter(pl.col(AN.PERIL_ID).is_null())
     if unmapped.height > 0:
-        bad_labels = unmapped[peril_label_col].unique().sort().to_list()
+        bad_labels = unmapped[_PERIL_LABEL_TMP].unique().sort().to_list()
         log.warning(
             f"{vendor.value}: {len(bad_labels)} EP-summary labels not in "
             f"analyses.csv: {bad_labels}"
@@ -103,9 +136,9 @@ def _aal_by_rp_peril(
     return (
         joined
         .filter(pl.col(AN.PERIL_ID).is_not_null())
-        .group_by(RL.RP, AN.PERIL_ID)
-        .agg(pl.col(RL.GL).sum().alias(_VENDOR_AAL_TMP))
-        .rename({RL.RP: _RP_TMP, AN.PERIL_ID: _PERIL_ID_TMP})
+        .group_by(_RP_TMP, AN.PERIL_ID)
+        .agg(pl.col(_GL_TMP).sum().alias(_VENDOR_AAL_TMP))
+        .rename({AN.PERIL_ID: _PERIL_ID_TMP})
     )
 
 

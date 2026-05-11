@@ -8,7 +8,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from rollup.stages.blending import derive_blending_weights
+from rollup.stages.blending import derive_blending_weights, _canonical_ep_rows
 from rollup.config import VendorName
 from rollup.schemas.columns import (
     AnalysesCol as AN,
@@ -89,6 +89,25 @@ def _write_vk_long_csv(tmp_path: Path, rows: list[dict]) -> Path:
     path = tmp_path / "verisk_ep_summary.long.csv"
     df.write_csv(path)
     return path
+
+
+def test_canonical_ep_rows_aligns_vendor_specific_labels(tmp_path: Path):
+    """RiskLink region_peril and Verisk analysis land in one peril_label column."""
+    rl_csv = _write_rl_long_csv(tmp_path, [
+        {RL.ID: 1, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU FL HD", RL.GL: 10.0},
+    ])
+    vk_csv = _write_vk_long_csv(tmp_path, [
+        {VK.RP: 0, VK.EP_TYPE: "AAL", VK.ANALYSIS: "EU_FL", VK.LOB: "MGA", VK.GL: 20.0},
+    ])
+
+    rl = _canonical_ep_rows([rl_csv], VendorName.RISKLINK)
+    vk = _canonical_ep_rows([vk_csv], VendorName.VERISK)
+
+    assert rl.columns == vk.columns == ["vendor", "rp", "ep_type", "lob", "peril_label", "gl"]
+    assert rl["peril_label"].to_list() == ["EU FL HD"]
+    assert vk["peril_label"].to_list() == ["EU_FL"]
+    assert rl["vendor"].to_list() == [VendorName.RISKLINK.value]
+    assert vk["vendor"].to_list() == [VendorName.VERISK.value]
 
 
 # ---------------------------------------------------------------------------
