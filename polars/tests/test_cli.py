@@ -17,7 +17,7 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -268,71 +268,22 @@ def test_docs_subcommand_is_registered():
 
 def test_docs_subcommand_opens_browser_when_site_exists(tmp_path, monkeypatch, capsys):
     """_cmd_docs opens the browser and returns 0 when site/index.html exists."""
-    import argparse
-    from rollup.cli import _cmd_docs
+    from rollup.cli import _build_parser, _cmd_docs
 
     site_dir = tmp_path / "site"
     site_dir.mkdir()
-    (site_dir / "index.html").write_text("<html/>")
+    site_index = site_dir / "index.html"
+    site_index.write_text("<html/>")
 
     opened_urls: list[str] = []
+    monkeypatch.setattr("rollup.cli._docs_repo_root", lambda: tmp_path)
+    monkeypatch.setattr("webbrowser.open", lambda url: opened_urls.append(url))
 
-    def fake_open(url: str) -> None:
-        opened_urls.append(url)
+    rc = _cmd_docs(_build_parser().parse_args(["docs"]))
 
-    with patch("webbrowser.open", fake_open), \
-         patch("rollup.cli.Path") as MockPath:
-        # Make Path(__file__).resolve().parent.parent.parent point to tmp_path
-        mock_path_instance = MagicMock()
-        mock_path_instance.resolve.return_value = mock_path_instance
-        mock_path_instance.parent.parent.parent = tmp_path
-        MockPath.return_value = mock_path_instance
-
-        # Build a real args namespace
-        from rollup.cli import _build_parser
-        args = _build_parser().parse_args(["docs"])
-
-    # Call _cmd_docs directly with the real tmp_path plumbing
-    args2 = argparse.Namespace(serve=False, build=False)
-
-    # Patch __file__ resolution inside _cmd_docs by mocking the inner Path call
-    real_site_index = site_dir / "index.html"
-
-    with patch("webbrowser.open", fake_open), \
-         patch("rollup.cli.Path", side_effect=lambda *a, **kw: (
-             Path(*a, **kw) if a and a[0] != "__file__" else MagicMock()
-         )):
-        pass  # just verify import works
-
-    # Simpler: patch subprocess to avoid side-effects and call with real path
-    with patch("webbrowser.open", fake_open):
-        import rollup.cli as cli_mod
-        orig_path = cli_mod.Path
-        try:
-            cli_mod.Path = lambda *a, **kw: (
-                real_site_index.parent.parent if a and str(a[0]).endswith("cli.py") else orig_path(*a, **kw)
-            )
-            # site_index = repo_root / "site" / "index.html"
-            # repo_root needs to resolve to tmp_path — too complex to mock Path entirely.
-            # Test the simpler observable: _cmd_docs returns 0 when site exists.
-            # We'll test via a thin integration approach instead.
-        finally:
-            cli_mod.Path = orig_path
-
-    # Thin direct test: mock only the site_index existence check
-    fake_site_index = MagicMock(spec=Path)
-    fake_site_index.exists.return_value = True
-    fake_site_index.as_uri.return_value = "file:///tmp/site/index.html"
-    fake_site_index.__str__ = lambda self: "/tmp/site/index.html"
-
-    captured_opens: list[str] = []
-
-    with patch("webbrowser.open", lambda u: captured_opens.append(u)), \
-         patch("rollup.cli._cmd_docs", wraps=_cmd_docs) as _:
-        pass
-
-    # Verify the function signature and dispatch are correct
-    assert callable(_cmd_docs)
+    assert rc == 0
+    assert opened_urls == [site_index.as_uri()]
+    assert f"opened {site_index}" in capsys.readouterr().out
 
 
 def test_docs_subcommand_args_parsed_correctly():

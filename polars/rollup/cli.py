@@ -412,8 +412,7 @@ def _cmd_docs(args: argparse.Namespace) -> int:
     import subprocess
     import webbrowser
 
-    # repo root: cli.py is at polars/rollup/cli.py → ../../..
-    repo_root = Path(__file__).resolve().parent.parent.parent
+    repo_root = _docs_repo_root()
     site_index = repo_root / "site" / "index.html"
 
     if args.serve:
@@ -442,6 +441,12 @@ def _cmd_docs(args: argparse.Namespace) -> int:
     webbrowser.open(site_index.as_uri())
     print(f"opened {site_index}")
     return 0
+
+
+def _docs_repo_root() -> Path:
+    """Repository root used by the docs subcommand."""
+    # cli.py is at polars/rollup/cli.py → ../../..
+    return Path(__file__).resolve().parent.parent.parent
 
 
 if __name__ == "__main__":
