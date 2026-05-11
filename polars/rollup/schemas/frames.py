@@ -80,12 +80,14 @@ ANALYSES: pl.Schema = pl.Schema({
 })
 
 BLENDING_WEIGHTS: pl.Schema = pl.Schema({
-    BlendingWeightsCol.PERIL_ID:    pl.Int64,
-    BlendingWeightsCol.PERIL_NAME:  pl.String,
-    BlendingWeightsCol.DESCRIPTION: pl.String,
-    BlendingWeightsCol.SUB_PERIL:   pl.String,
-    BlendingWeightsCol.VENDOR:      pl.String,
-    BlendingWeightsCol.WEIGHT:      pl.Float64,
+    BlendingWeightsCol.PERIL_ID:       pl.Int64,
+    BlendingWeightsCol.RETURN_PERIOD:  pl.Int64,
+    BlendingWeightsCol.PERIL_NAME:     pl.String,
+    BlendingWeightsCol.DESCRIPTION:    pl.String,
+    BlendingWeightsCol.SUB_PERIL:      pl.String,
+    BlendingWeightsCol.VENDOR:         pl.String,
+    BlendingWeightsCol.BASE_MODEL:     pl.String,
+    BlendingWeightsCol.WEIGHT:         pl.Float64,
 })
 
 ROLLUP_SCOPE: pl.Schema = pl.Schema({
@@ -245,6 +247,8 @@ ALL_FACTORS: pl.Schema = pl.Schema({
     # forecast_factors seed at runtime. validate_schema runs with strict=False
     # against this schema so the extras pass through.
     AllFactorsCol.RNK:                   pl.UInt32,
+    AllFactorsCol.RP:                    pl.Float64,
+    AllFactorsCol.RP_BUCKET:             pl.Int64,
     AllFactorsCol.EUWS_FACTOR:           pl.Float64,
     AllFactorsCol.FA_GROSS_AAL_FACTOR:   pl.Float64,
     AllFactorsCol.FA_GROSS_TAIL_FACTOR:  pl.Float64,

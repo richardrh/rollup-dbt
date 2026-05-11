@@ -268,38 +268,44 @@ def test_euws_event_missing_from_rate_table_defaults_to_one():
 # attach_uplift (now keyed by peril_id directly via blending_weights)         #
 # --------------------------------------------------------------------------- #
 
-def _blending_weights(*rows: tuple[int, str | None, VendorName, float]) -> pl.LazyFrame:
-    """Long-format blend weights: (peril_id, sub_peril, vendor, weight).
+def _blending_weights(*rows: tuple[int, int, str | None, VendorName, str, float]) -> pl.LazyFrame:
+    """Long-format blend weights: (peril_id, return_period, sub_peril, vendor, base_model, weight).
 
     `peril_name` and `description` are populated with stub values — the
     pipeline never reads them (join is on `peril_id` only) but the schema
     requires them.
     """
     return pl.DataFrame({
-        BW.PERIL_ID:    [r[0] for r in rows],
-        BW.PERIL_NAME:  [f"peril_{r[0]}" for r in rows],
-        BW.DESCRIPTION: ["test fixture" for _ in rows],
-        BW.SUB_PERIL:   [r[1] for r in rows],
-        BW.VENDOR:      [r[2] for r in rows],
-        BW.WEIGHT:      [r[3] for r in rows],
+        BW.PERIL_ID:       [r[0] for r in rows],
+        BW.RETURN_PERIOD: [r[1] for r in rows],
+        BW.PERIL_NAME:     [f"peril_{r[0]}" for r in rows],
+        BW.DESCRIPTION:    ["test fixture" for _ in rows],
+        BW.SUB_PERIL:      [r[2] for r in rows],
+        BW.VENDOR:         [r[3] for r in rows],
+        BW.BASE_MODEL:     [r[4] for r in rows],
+        BW.WEIGHT:         [r[5] for r in rows],
     }, schema={
-        BW.PERIL_ID:    pl.Int64,
-        BW.PERIL_NAME:  pl.String,
-        BW.DESCRIPTION: pl.String,
-        BW.SUB_PERIL:   pl.String,
-        BW.VENDOR:      pl.String,
-        BW.WEIGHT:      pl.Float64,
+        BW.PERIL_ID:       pl.Int64,
+        BW.RETURN_PERIOD:  pl.Int64,
+        BW.PERIL_NAME:     pl.String,
+        BW.DESCRIPTION:    pl.String,
+        BW.SUB_PERIL:      pl.String,
+        BW.VENDOR:         pl.String,
+        BW.BASE_MODEL:     pl.String,
+        BW.WEIGHT:         pl.Float64,
     }).lazy()
 
 
 def _empty_blending_weights() -> pl.LazyFrame:
     return pl.DataFrame(schema={
-        BW.PERIL_ID:    pl.Int64,
-        BW.PERIL_NAME:  pl.String,
-        BW.DESCRIPTION: pl.String,
-        BW.SUB_PERIL:   pl.String,
-        BW.VENDOR:      pl.String,
-        BW.WEIGHT:      pl.Float64,
+        BW.PERIL_ID:       pl.Int64,
+        BW.RETURN_PERIOD:  pl.Int64,
+        BW.PERIL_NAME:     pl.String,
+        BW.DESCRIPTION:    pl.String,
+        BW.SUB_PERIL:      pl.String,
+        BW.VENDOR:         pl.String,
+        BW.BASE_MODEL:     pl.String,
+        BW.WEIGHT:         pl.Float64,
     }).lazy()
 
 
@@ -307,8 +313,8 @@ def test_uplift_reads_blend_weights_from_seed():
     """blending_weights long-format → vk/rl proportions per peril_id, broadcast to event rows."""
     ylt = _ylt(region_peril_id=206)
     bw  = _blending_weights(
-        (206, None, VendorName.VERISK,   0.7),
-        (206, None, VendorName.RISKLINK, 0.3),
+        (206, 1000, None, VendorName.VERISK,   "verisk", 0.7),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.3),
     )
     out = attach_uplift(ylt, bw).collect()
     assert out[AF.VK_PROPORTION][0] == pytest.approx(0.7, abs=1e-6)
@@ -318,9 +324,12 @@ def test_uplift_reads_blend_weights_from_seed():
 def test_uplift_per_peril_blend_is_deterministic():
     """Three perils with different blend weights — each YLT row picks its own peril's weights."""
     bw = _blending_weights(
-        (206, None, VendorName.VERISK,   1.0),  (206, None, VendorName.RISKLINK, 0.0),
-        (216, None, VendorName.VERISK,   0.5),  (216, None, VendorName.RISKLINK, 0.5),
-        (217, None, VendorName.VERISK,   0.0),  (217, None, VendorName.RISKLINK, 1.0),
+        (206, 1000, None, VendorName.VERISK,   "verisk", 1.0),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.0),
+        (216, 1000, None, VendorName.VERISK,   "risklink", 0.5),
+        (216, 1000, None, VendorName.RISKLINK, "risklink", 0.5),
+        (217, 1000, None, VendorName.VERISK,   "risklink", 0.0),
+        (217, 1000, None, VendorName.RISKLINK, "risklink", 1.0),
     )
     ylt = pl.concat([
         _ylt(region_peril_id=206, event_id=1001).collect(),
@@ -344,47 +353,93 @@ def test_uplift_fallback_when_blending_weights_empty():
 _N_SIM: dict[VendorName, int] = {VendorName.VERISK: 10_000, VendorName.RISKLINK: 100_000}
 
 
+def test_attach_rank_assigns_rp_buckets_from_configured_n_sim():
+    """Rank-derived rp buckets follow n_sim / rank boundaries."""
+    ylt = pl.concat([
+        _ylt(
+            vendor=VendorName.VERISK,
+            event_id=i,
+            loss=float(1_000 - i),
+            region_peril_id=206,
+        ).collect()
+        for i in range(1, 52)
+    ]).lazy()
+
+    out = attach_rank(ylt, n_sim=_N_SIM).collect()
+
+    assert out.filter(pl.col(Y.EVENT_ID) == 1)[AF.RP_BUCKET][0] == 1000
+    assert out.filter(pl.col(Y.EVENT_ID) == 50)[AF.RP_BUCKET][0] == 200
+    assert out.filter(pl.col(Y.EVENT_ID) == 51)[AF.RP_BUCKET][0] == 0
+
+
+def test_uplift_uses_rank_bucket_to_select_blending_weights():
+    """Each event joins the weights for its rank-derived return-period bucket."""
+    ylt = pl.concat([
+        _ylt(
+            vendor=VendorName.VERISK,
+            event_id=i,
+            loss=float(1_000 - i),
+            region_peril_id=206,
+        ).collect()
+        for i in range(1, 52)
+    ]).lazy()
+    bw = _blending_weights(
+        (206, 0, None, VendorName.VERISK, "verisk", 0.1),
+        (206, 0, None, VendorName.RISKLINK, "verisk", 0.9),
+        (206, 200, None, VendorName.VERISK, "verisk", 0.2),
+        (206, 200, None, VendorName.RISKLINK, "verisk", 0.8),
+        (206, 1000, None, VendorName.VERISK, "verisk", 0.3),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.7),
+    )
+
+    out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
+
+    assert out.filter(pl.col(Y.EVENT_ID) == 1)[AF.VK_PROPORTION][0] == pytest.approx(0.3)
+    assert out.filter(pl.col(Y.EVENT_ID) == 50)[AF.VK_PROPORTION][0] == pytest.approx(0.2)
+    assert out.filter(pl.col(Y.EVENT_ID) == 51)[AF.VK_PROPORTION][0] == pytest.approx(0.1)
+
+
 def test_uplift_base_model_is_risklink_for_eu_flood():
-    """Any peril whose family is FL forces base_model='risklink' regardless of row vendor."""
+    """Peril 216 has base_model='risklink' in the seed (FL family) regardless of row vendor."""
     ylt = _ylt(vendor=VendorName.RISKLINK, region_peril_id=216,
                peril_name="Europe Flood", peril_family="FL")
     bw  = _blending_weights(
-        (216, None, VendorName.VERISK,   0.0),
-        (216, None, VendorName.RISKLINK, 1.0),
+        (216, 1000, None, VendorName.VERISK,   "risklink", 0.0),
+        (216, 1000, None, VendorName.RISKLINK, "risklink", 1.0),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
-    assert out[AF.BASE_MODEL][0] == VendorName.RISKLINK
+    assert out[AF.BASE_MODEL][0] == "risklink"
 
 
 def test_uplift_base_model_is_risklink_for_uk_flood():
-    """UK flood (different peril_id but same family) — same rule applies."""
+    """Peril 217 has base_model='risklink' in the seed (FL family) regardless of row vendor."""
     ylt = _ylt(vendor=VendorName.RISKLINK, region_peril_id=217,
                peril_name="UK Flood", peril_family="FL", region="UK",
                cds_cat_class_name="HIC UK Flood")
     bw  = _blending_weights(
-        (217, None, VendorName.VERISK,   0.0),
-        (217, None, VendorName.RISKLINK, 1.0),
+        (217, 1000, None, VendorName.VERISK,   "risklink", 0.0),
+        (217, 1000, None, VendorName.RISKLINK, "risklink", 1.0),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
-    assert out[AF.BASE_MODEL][0] == VendorName.RISKLINK
+    assert out[AF.BASE_MODEL][0] == "risklink"
 
 
 def test_uplift_base_model_is_vendor_for_non_flood():
-    """Non-flood perils keep their own vendor as base_model."""
+    """Peril 206 has base_model='verisk' in the seed (non-FL family) — from the seed, not from peril_family."""
     ylt = _ylt(vendor=VendorName.VERISK, region_peril_id=206,
                peril_family="WS", peril_name="Europe Winter Storm")
     bw  = _blending_weights(
-        (206, None, VendorName.VERISK,   0.7),
-        (206, None, VendorName.RISKLINK, 0.3),
+        (206, 1000, None, VendorName.VERISK,   "verisk", 0.7),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.3),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
-    assert out[AF.BASE_MODEL][0] == VendorName.VERISK
+    assert out[AF.BASE_MODEL][0] == "verisk"
 
 
 def test_uplift_factor_blends_aal_from_both_vendors():
     """uplift_factor = blended_AAL / base_model_AAL.
 
-    Setup: lob_id=1, peril_id=206 (EU_WS — verisk base)
+    Setup: lob_id=1, peril_id=206 (EU_WS — base_model=verisk from seed)
         verisk loss=700   → vk_AAL = 700/10000 = 0.07
         risklink loss=300 → rl_AAL = 300/100000 = 0.003
         vk_proportion=0.8, rl_proportion=0.2
@@ -396,8 +451,8 @@ def test_uplift_factor_blends_aal_from_both_vendors():
         _ylt(vendor=VendorName.RISKLINK, loss=300.0, region_peril_id=206, event_id=2001).collect(),
     ]).lazy()
     bw = _blending_weights(
-        (206, None, VendorName.VERISK,   0.8),
-        (206, None, VendorName.RISKLINK, 0.2),
+        (206, 1000, None, VendorName.VERISK,   "verisk", 0.8),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.2),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
 
@@ -415,8 +470,8 @@ def test_uplift_factor_capped_clips_extreme_ratio():
         _ylt(vendor=VendorName.RISKLINK, loss=10_000_000.0, region_peril_id=206, event_id=2001).collect(),
     ]).lazy()
     bw = _blending_weights(
-        (206, None, VendorName.VERISK,   0.5),
-        (206, None, VendorName.RISKLINK, 0.5),
+        (206, 1000, None, VendorName.VERISK,   "verisk", 0.5),
+        (206, 1000, None, VendorName.RISKLINK, "verisk", 0.5),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
 
@@ -426,12 +481,12 @@ def test_uplift_factor_capped_clips_extreme_ratio():
 
 
 def test_uplift_factor_defaults_to_one_when_base_model_has_no_events():
-    """Flood peril with no risklink rows → rl_AAL=0 → fallback 1.0."""
+    """Peril 216 has base_model='risklink' from seed but no risklink rows → rl_AAL=0 → fallback 1.0."""
     ylt = _ylt(vendor=VendorName.VERISK, region_peril_id=216,
                peril_family="FL", peril_name="Europe Flood", loss=500.0)
     bw  = _blending_weights(
-        (216, None, VendorName.VERISK,   0.0),
-        (216, None, VendorName.RISKLINK, 1.0),
+        (216, 1000, None, VendorName.VERISK,   "risklink", 0.0),
+        (216, 1000, None, VendorName.RISKLINK, "risklink", 1.0),
     )
     out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
     assert out[AF.UPLIFT_FACTOR][0] == pytest.approx(1.0)

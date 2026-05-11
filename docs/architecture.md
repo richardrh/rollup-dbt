@@ -170,7 +170,7 @@ rollup.factors     currency: required_currency derived from CDS class; rate_to_g
 rollup.factors     forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
 rollup.factors     euws: factor attached, rank overrides applied from seed
 rollup.factors     fa_gross: aal + tail factors attached (1.0 for non-FA rows)
-rollup.factors     uplift: base_model assigned; AAL computed via window functions
+rollup.factors     uplift: rp_bucket proportions + base_model from seed; AAL via window functions
 rollup.pipeline    metrics: 12 derived loss columns + 3 dialsup columns
 rollup.pipeline    fanout: wrote HiscoAIR_202601_main.parquet (80 rows)
 ...
@@ -217,12 +217,10 @@ and `pl.lit(VendorName.X)` work as drop-in replacements for raw strings:
 | `EpType`        | `AAL` / `AEP` / `OEP`           | `EP_TYPE` column emitted by `ep_curve_from_ylt` |
 | `EnvVar`        | `ROLLUP_*` env var names        | every `os.getenv` / `monkeypatch.setenv` call |
 
-Plus one non-enum constant:
+Plus one non-enum default used when deriving the seed:
 
-- `FLOOD_FAMILY: str = "FL"` — `attach_uplift` checks
-  `peril_family == FLOOD_FAMILY` (joined from `perils.csv`) to force
-  `base_model='risklink'` for any flood peril. Replaces the older
-  `FLOOD_PERILS = {"EU_FL", "UK_FL"}` substring set — semantic, not
-  derived-string-based.
+- `FLOOD_FAMILY: str = "FL"` — `derive-blending` uses this to populate the
+  default `base_model` in `blending_weights.csv`; runtime uplift reads the
+  seed rather than hard-coding the flood rule.
 
 See [`factor-chain.md`](factor-chain.md) for how the factor stages compose.

@@ -59,7 +59,7 @@ ylt = apply_rollup_scope(ylt, seeds.rollup_scope)
 # 4. factors — one function per factor, each ~15 LOC in stages/factors.py
 ylt = attach_currency        (ylt, seeds.fx_rates)
 ylt = attach_forecast_factors(ylt, seeds.forecast_factors, tags)
-ylt = attach_rank            (ylt)                                      # must precede attach_euws
+ylt = attach_rank            (ylt, n_sim=n_sim)                         # rank + rp_bucket
 ylt = attach_euws            (ylt, seeds.euws_rate_factors, seeds.euws_rank_overrides)
 ylt = attach_fagross         (ylt, seeds.fineart_adjustments)
 ylt = attach_uplift          (ylt, seeds.blending_weights, n_sim=n_sim)
@@ -77,9 +77,9 @@ Each `attach_*` is a pure function in `rollup/stages/factors.py`:
   in `attach_currency` which raises `MissingFxRateError` because silently
   dropping FX would inflate losses.
 - Optionally a special-case (`attach_euws` applies rank-threshold overrides
-  from `euws_rank_overrides.csv`; `attach_uplift` consults
-  `config.FLOOD_FAMILY` to force `base_model='risklink'` for any peril
-  whose `peril_family == "FL"`).
+  from `euws_rank_overrides.csv`; `attach_uplift` reads `base_model` and
+  return-period-specific proportions from `blending_weights.csv`, using the
+  rank-derived `rp_bucket` to pick AAL / 200 / 1000 weights).
 
 That's it. Adding a new factor is adding one function and one call site.
 
@@ -178,9 +178,8 @@ factors skip step 5 and edit `_compute_metrics`'s prelude instead.
 - **Don't add `if vendor == 'verisk'` branches inside factor functions.** If
   a factor only applies to one vendor, filter at the seed level (rows for
   one vendor only, other vendor rows get `fill_null(1.0)` pass-through). The
-  one exception: `attach_uplift` consults `config.FLOOD_FAMILY` to force
-  the base model when `peril_family == "FL"` — promoted to a config
-  constant precisely so it isn't a hidden branch inside the function body.
+  `base_model` choice for uplift also lives in `blending_weights.csv`, not in
+  an uplift `if` branch.
 - **Don't hand-build the column-name f-string anywhere.** `chain.col_after`,
   `chain.main_loss_col`, `chain.dialsup_col`, `chain.forecast_factor_col`
   are the only sanctioned builders. New f-string sites = future drift bugs.

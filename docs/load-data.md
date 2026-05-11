@@ -123,8 +123,8 @@ Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
 uv run rollup derive-blending
 ```
 
-Reads `*.long.csv` files under `data/ep_summaries/{vendor}/`. For each
-return period present in the EP data, computes:
+Reads `*.long.csv` files under `data/ep_summaries/{vendor}/`. For each target
+bucket (`0`=AAL, `200`=1-in-200 OEP, `1000`=1-in-1000 OEP), computes:
 
 ```python
 rl_prop = rl_aal / (rl_aal + vk_aal)   # when total > 0; else 0.5
@@ -136,10 +136,14 @@ The seed is written to `data/seeds/vor/blending_weights.csv` with schema:
 | column | meaning |
 |---|---|
 | `peril_id` | FK into `perils.csv` |
-| `return_period` | EP return period: `0`=AAL, `100`=1-in-100, `200`=1-in-200 |
+| `return_period` | Weight bucket: `0`=AAL, `200`=1-in-200, `1000`=1-in-1000 |
 | `vendor` | `"verisk"` or `"risklink"` |
 | `base_model` | The model to use as denominator: `"risklink"` for FL perils, `"verisk"` otherwise |
 | `weight` | Blending proportion for this vendor |
+
+At runtime each YLT event is ranked largest-to-smallest within
+`(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
+`0`, `200`, or `1000`, then joined to the matching blending weight.
 
 Re-run `derive-blending` whenever the EP summaries are refreshed.
 

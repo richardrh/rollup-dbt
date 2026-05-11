@@ -180,8 +180,10 @@ functions instead of group-by-then-rejoin.
 january keyed blending off `dim_region_perils.blending_factor_*_id` →
 `reference.blending_factors.{air_blend, rms_blend}`. polars sources blend
 weights directly from `blending_weights.csv` — long-format
-`(peril_id, sub_peril, vendor, weight)`, so the join is
-`ylt.region_peril_id → blending_weights.peril_id` filtered per vendor
+`(peril_id, return_period, sub_peril, vendor, base_model, weight)`. The YLT
+gets `rp = n_sim / rnk` and `rp_bucket` (`0`, `200`, or `1000`) from
+`attach_rank`, then `attach_uplift` joins on
+`(region_peril_id, rp_bucket) → (peril_id, return_period)` filtered per vendor
 (`verisk` / `risklink`), pivoted to `(vk_proportion, rl_proportion)`.
 
 ### 3.2 Uplift formula — **done**
@@ -211,12 +213,12 @@ Conditional sum within `(lob_id, region_peril_id)`, broadcast to every
 event row. No collapse, no rejoin. Fallback uplift = 1.0 when the base
 model has no events for a group.
 
-### 3.3 Flood base-model rule — **done, semantic**
+### 3.3 Base-model lookup — **done, seed-owned**
 
 January matched `rollup_region_peril IN ('EU_FL', 'UK_FL')` — string
-substring on a derived label. polars matches `peril_family == "FL"`
-(joined from `perils.csv`) via the `config.FLOOD_FAMILY` constant. New
-flood region in `perils.csv` → no code change.
+substring on a derived label. polars stores `base_model` in
+`blending_weights.csv`; `derive-blending` defaults flood perils to RiskLink,
+but runtime uplift reads the seed so operators can override per peril.
 
 ### 3.4 Forecast factors → `attach_forecast_factors` — **done**
 
@@ -306,11 +308,9 @@ override) so adding a new LOB override is a data-only change. The
 
 january switched between `aal_factor` (rp_bucket=0) and `tail_factor`
 (rp_bucket≥200). polars currently multiplies `aal_factor`
-unconditionally; `fa_gross_tail_factor` is carried through to the audit
-dump but not applied. See the docstring on
-`AllFactorsCol.FA_GROSS_TAIL_FACTOR`. Once the rp_bucket split lands the
-chain can branch — likely a new `chain.CHAIN` entry conditional on the
-output bucket.
+unconditionally; `fa_gross_tail_factor` and `rp_bucket` are carried through to
+the audit dump but tail branching is not applied yet. See the docstring on
+`AllFactorsCol.FA_GROSS_TAIL_FACTOR`.
 
 ### 4.5 `mts_tbl_ylt_combined_all_factors` (the cached DAG node) — **done**
 
@@ -423,7 +423,7 @@ fixtures rather than views:
 | `lobs_with_forecast_factors_not_in_reference_lobs` | inverse direction                                                   |
 | `rl_staging_aal_equals_rl_intermediate_aal`        | sum(stg_rl_ylt.loss)/100000 == sum(int_vw_rl_ylt.loss)/100000       |
 | `verisk_ylt_analysis_not_in_perils`                | every `stg_vk_ylt.analysis` is a known modelled_label in `analyses` |
-| `vw_ep_blending_weight_present`                    | every (peril_id, vendor) in vw_ep has a blending_weights row        |
+| `vw_ep_blending_weight_present`                    | every (peril_id, return_period, vendor) target bucket has a blending_weights row |
 
 polars: `tests/test_invariants.py` — **todo**. One started:
 `count_event_id_orphans` in `rollup/pipeline.py` counts YLT rows whose

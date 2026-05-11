@@ -52,7 +52,7 @@ After converting xlsx to long CSV (above), regenerate the blending seed:
     uv run rollup derive-blending
 
 Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
-computes per-peril AAL totals, and writes
+computes per-peril totals for AAL, 1-in-200 OEP, and 1-in-1000 OEP, and writes
 `data/seeds/vor/blending_weights.csv` with proportions:
 
     rl_proportion = rl_aal / (rl_aal + vk_aal)
@@ -109,7 +109,7 @@ Wire schema (matches RiskLink export — lowercase):
 
 If `n_simulations` differs from 10 000 / 100 000, override
 `Vendor.n_simulations` in `rollup/config.py` — it drives the AAL division in
-`attach_uplift`.
+`attach_uplift` and the `rp = n_sim / rank` bucket selection in `attach_rank`.
 
 ### Which RiskLink analyses do you actually need to export?
 
@@ -118,12 +118,12 @@ Two pieces of pipeline logic determine the scope:
 
 #### 1. The `base_model` rule (which event_ids end up in the output)
 
-`attach_uplift` in `polars/rollup/stages/factors.py` assigns one `base_model`
-per `(lob_id, region_peril_id)` group:
+`attach_uplift` in `polars/rollup/stages/factors.py` reads `base_model` from
+`blending_weights.csv`. The generated seed defaults flood perils to RiskLink
+and all other perils to Verisk, but the seed is the runtime lookup:
 
 ```
-base_model = 'risklink'  if peril_family == 'FL'   (i.e. any flood peril)
-base_model = 'verisk'    otherwise                 (wind, EQ, etc.)
+base_model = blending_weights.base_model  -- per peril_id lookup
 ```
 
 **The `base_model` choice decides which vendor's `event_id` appears in the
@@ -157,9 +157,9 @@ optional.
 
 Send the exporter **two lists**, both derived from the seeds:
 
-1. **Required (per-event YLT):** every analysis_id where `peril_id`
-   resolves to `peril_family = 'FL'`. These drive the RMS event-by-event
-   output — every flood event in the rollup must be present.
+1. **Required (per-event YLT):** every RiskLink analysis_id whose `peril_id`
+   has `base_model = 'risklink'` in `blending_weights.csv`. These drive the
+   RMS event-by-event output.
 2. **Optional (per-event YLT or summary AAL):** every analysis_id whose
    peril has `blending_weights.weight > 0` for risklink AND
    `peril_family != 'FL'`. The pipeline today needs per-event data; if
@@ -169,20 +169,22 @@ Send the exporter **two lists**, both derived from the seeds:
 Use this query to enumerate the lists:
 
 ```sql
--- Required (flood perils — base_model='risklink')
+-- Required (base_model='risklink')
 SELECT a.analysis_id, a.modelled_label, p.peril_id, p.name AS peril_name
 FROM analyses a
 JOIN perils  p ON a.peril_id = p.peril_id
-WHERE a.vendor = 'risklink' AND p.peril_family = 'FL'
+JOIN (SELECT DISTINCT peril_id, base_model FROM blending_weights) bm
+  ON bm.peril_id = p.peril_id
+WHERE a.vendor = 'risklink' AND bm.base_model = 'risklink'
 ORDER BY p.peril_id, a.analysis_id;
 
 -- Optional (non-flood, only if blending_weights.risklink > 0)
-SELECT a.analysis_id, a.modelled_label, p.peril_id, p.name, bw.weight AS rl_weight
+SELECT DISTINCT a.analysis_id, a.modelled_label, p.peril_id, p.name, bw.weight AS rl_weight
 FROM analyses a
 JOIN perils  p  ON a.peril_id = p.peril_id
 JOIN blending_weights bw
   ON bw.peril_id = p.peril_id AND bw.vendor = 'risklink'
-WHERE a.vendor = 'risklink' AND p.peril_family != 'FL' AND bw.weight > 0
+WHERE a.vendor = 'risklink' AND bw.base_model != 'risklink' AND bw.weight > 0
 ORDER BY p.peril_id, a.analysis_id;
 ```
 

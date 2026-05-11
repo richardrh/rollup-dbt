@@ -44,7 +44,7 @@ from collections.abc import Sequence
 import polars as pl
 
 from rollup.chain import forecast_factor_col
-from rollup.config import FLOOD_FAMILY, CurrencyCode, VendorName
+from rollup.config import CurrencyCode, VendorName
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import BlendingWeightsCol as BW
 from rollup.schemas.columns import NormalizedYltCol as Y
@@ -64,6 +64,59 @@ _VK_AAL_TMP          = "_vk_aal"
 _RL_AAL_TMP          = "_rl_aal"
 _BLENDED_AAL_TMP     = "_blended_aal"
 _BASE_MODEL_AAL_TMP  = "_base_model_aal"
+
+# Return-period bucket thresholds — adapted from jan-rollup's
+# int_vw_funnel_ylt_combined_ranked_bucketed. This pipeline collapses all
+# tail events at rp >= 1000 into the 1-in-1000 blending tier, per the current
+# seed contract: 0=AAL, 200=1-in-200, 1000=1-in-1000.
+
+
+def _rp_bucket_expr(rp_col: str) -> pl.Expr:
+    return (
+        pl.when(pl.col(rp_col) < 200)
+          .then(pl.lit(0))
+          .when(pl.col(rp_col) < 1000)
+          .then(pl.lit(200))
+          .otherwise(pl.lit(1000))
+    )
+
+
+def _resolve_n_sim(n_sim: dict[VendorName, int] | None) -> dict[VendorName, int]:
+    return n_sim or {VendorName.VERISK: 10_000, VendorName.RISKLINK: 100_000}
+
+
+def _with_rank_and_rp_bucket(
+    ylt: pl.LazyFrame,
+    *,
+    n_sim: dict[VendorName, int] | None = None,
+) -> pl.LazyFrame:
+    """Ensure rnk, rp, and rp_bucket columns exist for blending lookup."""
+    n_sim_resolved = _resolve_n_sim(n_sim)
+    schema_names = set(ylt.collect_schema().names())
+
+    out = ylt
+    if AF.RNK not in schema_names:
+        out = out.with_columns(
+            pl.col(Y.LOSS).rank(method="ordinal", descending=True)
+            .over([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID])
+            .alias(AF.RNK),
+        )
+
+    if AF.RP not in schema_names:
+        n_sim_vk = float(n_sim_resolved[VendorName.VERISK])
+        n_sim_rl = float(n_sim_resolved[VendorName.RISKLINK])
+        out = out.with_columns(
+            pl.when(pl.col(Y.VENDOR) == VendorName.VERISK)
+            .then(pl.lit(n_sim_vk) / pl.col(AF.RNK))
+            .otherwise(pl.lit(n_sim_rl) / pl.col(AF.RNK))
+            .cast(pl.Float64)
+            .alias(AF.RP),
+        )
+
+    if AF.RP_BUCKET not in schema_names:
+        out = out.with_columns(_rp_bucket_expr(AF.RP).cast(pl.Int64).alias(AF.RP_BUCKET))
+
+    return out
 
 
 class MissingFxRateError(RuntimeError):
@@ -162,15 +215,32 @@ def attach_forecast_factors(
     log.info(f"forecast: {len(tags)} factor columns attached — {[forecast_factor_col(t) for t in tags]}")
     return ylt
 
+def attach_rank(
+    ylt: pl.LazyFrame,
+    *,
+    n_sim: dict[VendorName, int] | None = None,
+) -> pl.LazyFrame:
+    """`rnk`, `rp`, and `rp_bucket` within (vendor, lob_id, region_peril_id).
 
-def attach_rank(ylt: pl.LazyFrame) -> pl.LazyFrame:
-    """`rnk` within (vendor, lob_id, region_peril_id) ordered by loss DESC.
-    Used by `attach_euws` to evaluate rank-threshold overrides."""
-    return ylt.with_columns(
-        pl.col(Y.LOSS).rank(method="ordinal", descending=True)
-                      .over([Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID])
-                      .alias(AF.RNK),
-    )
+    Ordered by loss DESC.
+
+    `rnk` is used by `attach_euws` for rank-threshold overrides.
+
+    `rp_bucket` selects the correct blending weight bucket per event:
+      rp < 200   → 0
+      200 ≤ rp < 1000  → 200  (1-in-200)
+      rp ≥ 1000 → 1000 (1-in-1000)
+
+    `rp` is derived from each row vendor's n_sim divided by rank:
+      verisk:  n_sim['verisk'] / rnk  (typically 10_000)
+      risklink: n_sim['risklink'] / rnk (typically 100_000)
+
+    This is the same logic as jan-rollup's
+    `int_vw_funnel_ylt_combined_ranked_bucketed`.
+
+    `n_sim` defaults to {VERISK: 10_000, RISKLINK: 100_000}.
+    """
+    return _with_rank_and_rp_bucket(ylt, n_sim=n_sim)
 
 
 def attach_euws(
@@ -241,10 +311,10 @@ def attach_uplift(
 
     uplift_factor = blended_AAL / base_model_AAL, where:
         blended_AAL    = vk_proportion × vk_AAL + rl_proportion × rl_AAL
-        base_model     = 'risklink' for any peril whose `peril_family == "FL"`
-                         (Verisk does not model flood) otherwise the row's
-                         own vendor
-        base_model_AAL = rl_AAL (flood perils) or vk_AAL (all others)
+        base_model     = from blending_weights.base_model (per peril_id).
+                         The derive_blending_weights step sets this to
+                         "risklink" for FL perils and "verisk" otherwise.
+        base_model_AAL = AAL of whichever vendor is named as base_model
 
     AAL per (vendor, lob_id, region_peril_id) = sum(loss) / n_sim for that vendor.
     uplift_factor is capped 0.1–10× into uplift_factor_capped.
@@ -258,51 +328,59 @@ def attach_uplift(
     the aggregate is broadcast to every event row in one pass.
 
     Blend-weights resolution:
-        blending_weights is long-format (peril_id, sub_peril, vendor, weight).
-        We pivot it into (peril_id, sub_peril, vk_proportion, rl_proportion)
-        and left-join onto each event row by `peril_id`. `sub_peril=None`
-        rows match anything; today we use the unconditional null sub_peril
-        per peril (the YLT has no sub_peril dim yet).
+        blending_weights is long-format (peril_id, return_period, sub_peril,
+        vendor, base_model, weight). The join uses both peril_id and the
+        event's rank-derived rp_bucket. `sub_peril=None` rows match any event
+        (the YLT has no sub-peril dim today).
 
     Falls back to 0.5/0.5 blend and 1.0 uplift when blending_weights is empty.
     """
-    n_sim_resolved = n_sim or {VendorName.VERISK: 10_000, VendorName.RISKLINK: 100_000}
+    n_sim_resolved = _resolve_n_sim(n_sim)
     n_sim_vk = float(n_sim_resolved[VendorName.VERISK])
     n_sim_rl = float(n_sim_resolved[VendorName.RISKLINK])
 
-    # Long → wide: per-vendor filter + full join. Robust to an empty
-    # blending_weights frame (pivot would lose the value columns entirely).
-    # `sub_peril` is carried but the YLT has no sub-peril dim today, so the
-    # join below uses `peril_id` only — extend when the YLT gets sub-perils.
+    ylt = _with_rank_and_rp_bucket(ylt, n_sim=n_sim_resolved)
+
     def _vendor_weights(v: VendorName, alias: AF) -> pl.LazyFrame:
         return (
             blending_weights
             .filter(pl.col(BW.VENDOR) == v)
             .select(
                 pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
+                pl.col(BW.RETURN_PERIOD).alias(AF.RP_BUCKET),
                 pl.col(BW.WEIGHT).alias(alias),
             )
+        )
+
+    def _base_model_lookup() -> pl.LazyFrame:
+        return (
+            blending_weights
+            .select(
+                pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
+                pl.col(BW.BASE_MODEL),
+            )
+            .unique(subset=[Y.REGION_PERIL_ID])
         )
 
     blend_per_peril = (
         _vendor_weights(VendorName.VERISK,   AF.VK_PROPORTION)
         .join(
             _vendor_weights(VendorName.RISKLINK, AF.RL_PROPORTION),
-            on=Y.REGION_PERIL_ID, how="full", coalesce=True,
+            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="full", coalesce=True,
         )
     )
+    base_model_lookup = _base_model_lookup()
 
     group = [Y.LOB_ID, Y.REGION_PERIL_ID]
-    flood = pl.col(Y.PERIL_FAMILY) == FLOOD_FAMILY
 
     out = (
         ylt
-        .join(blend_per_peril, on=Y.REGION_PERIL_ID, how="left")
+        .join(blend_per_peril, on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="left")
+        .join(base_model_lookup, on=Y.REGION_PERIL_ID, how="left")
         .with_columns(
             pl.col(AF.VK_PROPORTION).fill_null(0.5).cast(pl.Float64),
             pl.col(AF.RL_PROPORTION).fill_null(0.5).cast(pl.Float64),
-            # Windowed conditional sum: SUM(loss WHERE vendor='X') OVER (PARTITION BY lob,rp).
-            # Broadcasts the per-group AAL onto every event row of that group.
+            pl.col(AF.BASE_MODEL).fill_null(pl.col(Y.VENDOR)).cast(pl.String),
             (pl.when(pl.col(Y.VENDOR) == VendorName.VERISK).then(pl.col(Y.LOSS)).otherwise(0.0)
                .sum().over(group) / n_sim_vk).alias(_VK_AAL_TMP),
             (pl.when(pl.col(Y.VENDOR) == VendorName.RISKLINK).then(pl.col(Y.LOSS)).otherwise(0.0)
@@ -311,10 +389,10 @@ def attach_uplift(
         .with_columns(
             (pl.col(AF.VK_PROPORTION) * pl.col(_VK_AAL_TMP) +
              pl.col(AF.RL_PROPORTION) * pl.col(_RL_AAL_TMP)).alias(_BLENDED_AAL_TMP),
-            pl.when(flood).then(pl.col(_RL_AAL_TMP)).otherwise(pl.col(_VK_AAL_TMP))
+            pl.when(pl.col(AF.BASE_MODEL) == VendorName.RISKLINK)
+              .then(pl.col(_RL_AAL_TMP))
+              .otherwise(pl.col(_VK_AAL_TMP))
               .alias(_BASE_MODEL_AAL_TMP),
-            pl.when(flood).then(pl.lit(VendorName.RISKLINK)).otherwise(pl.col(Y.VENDOR))
-              .alias(AF.BASE_MODEL),
             pl.col(Y.EVENT_ID).alias(AF.MODEL_EVENT_ID),
         )
         .with_columns(
@@ -329,5 +407,5 @@ def attach_uplift(
         )
         .drop(_VK_AAL_TMP, _RL_AAL_TMP, _BLENDED_AAL_TMP, _BASE_MODEL_AAL_TMP)
     )
-    log.info("uplift: base_model assigned; AAL computed via window functions")
+    log.info("uplift: rp_bucket proportions + base_model from seed; AAL via window functions")
     return out
