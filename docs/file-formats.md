@@ -61,8 +61,8 @@ Filter to `PERSPCODE='RL'` (ground-up loss) before exporting.
 
 ## Seeds — `data/seeds/**/*.csv`
 
-The pipeline auto-discovers seed CSVs by header match — file location
-under `data/seeds/` doesn't matter. The 12 schemas below are the contract.
+The pipeline reads seed CSVs from fixed paths under `data/seeds/`. The 12
+schemas below are the contract; headers and dtypes are validated before run.
 
 ### `lobs` — `data/seeds/business/lobs.csv`
 

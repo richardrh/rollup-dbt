@@ -50,7 +50,7 @@ from rich.table import Table
 from rich.text import Text
 
 from rollup.schemas import frames as F
-from rollup.seeds import NearMisses, REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
+from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
 
@@ -362,7 +362,7 @@ class Plan:
 # Plan construction                                                           #
 # --------------------------------------------------------------------------- #
 
-def _check_seed(seeds_dir: Path, spec: SeedSpec, near_misses: NearMisses | None = None) -> Check:
+def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     """Verify a seed: file exists, column headers match, count rows.
 
     A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —
@@ -370,21 +370,10 @@ def _check_seed(seeds_dir: Path, spec: SeedSpec, near_misses: NearMisses | None 
     Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
     legitimately be empty stubs and are reported `ok=True` with `(stub)`.
 
-    `near_misses` (returned by `discover()`) lets us surface a column-level
-    diff when no header-matched CSV was found but a close cousin exists.
+    Missing files are reported by seed name. Existing files get a header diff
+    before dtype validation, so schema drift remains explicit.
     """
-    near_misses = near_misses or {}
-
     if not spec.filename:
-        if spec.name in near_misses:
-            near_path, near_header = near_misses[spec.name]
-            expected = set(spec.schema.names())
-            missing = expected - set(near_header)
-            extra   = set(near_header) - expected
-            bits = []
-            if missing: bits.append(f"missing={sorted(missing)}")
-            if extra:   bits.append(f"unexpected={sorted(extra)}")
-            return Check(label=spec.name, path=near_path, ok=False, note=", ".join(bits))
         return Check(label=spec.name, path=seeds_dir, ok=False, note="missing")
     path = seeds_dir / spec.filename
     if not path.exists():
@@ -474,11 +463,11 @@ def _check_dir_glob(
 def build_plan(config: Config) -> Plan:
     sections: list[Section] = []
 
-    seed_specs, near_misses = discover_seeds(config.seeds_dir)
+    seed_specs = discover_seeds(config.seeds_dir)
     sections.append(Section(
         title="seeds",
         header=str(config.seeds_dir),
-        checks=[_check_seed(config.seeds_dir, spec, near_misses) for spec in seed_specs],
+        checks=[_check_seed(config.seeds_dir, spec) for spec in seed_specs],
     ))
 
     _YLT_SCHEMAS: dict[VendorName, pl.Schema] = {
