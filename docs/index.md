@@ -5,11 +5,23 @@ Turns vendor catastrophe-loss YLT parquets into Hisco loss parquets, optionally 
 ## Run it
 
 1. **Clone the repo and install:**
+
+   macOS/Linux:
+
    ```bash
    git clone <repo>
    cd rollup-dbt
    uv sync
    cp config.example.py config.py
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   git clone <repo>
+   Set-Location rollup-dbt
+   uv sync
+   Copy-Item config.example.py config.py
    ```
 
 2. **Drop your data into `data/`:** see [Loading your data](load-data.md)
