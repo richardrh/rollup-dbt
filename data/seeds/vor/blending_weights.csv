@@ -5,27 +5,37 @@ peril_id,return_period,peril_name,description,sub_peril,vendor,base_model,weight
 1,200,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
 1,1000,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
 1,1000,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
+1,10000,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
+1,10000,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
 2,0,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 2,0,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 2,200,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 2,200,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 2,1000,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 2,1000,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
+2,10000,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
+2,10000,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 3,0,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 3,0,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
 3,200,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 3,200,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
 3,1000,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 3,1000,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
+3,10000,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
+3,10000,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
 4,0,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 4,0,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 4,200,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 4,200,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 4,1000,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
 4,1000,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
+4,10000,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
+4,10000,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
 5,0,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 5,0,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
 5,200,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 5,200,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
 5,1000,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
 5,1000,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
+5,10000,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
+5,10000,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5

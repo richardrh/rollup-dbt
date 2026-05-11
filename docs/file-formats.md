@@ -112,7 +112,7 @@ once `ep-summary-to-csv` has run.
 | column        | dtype   | notes |
 |---------------|---------|-------|
 | `peril_id`    | Int64   | FK → `perils.peril_id`. |
-| `return_period` | Int64 | Weight bucket: `0`=AAL, `200`=1-in-200 OEP, `1000`=1-in-1000 OEP. |
+| `return_period` | Int64 | Weight bucket: `0`=AAL, `200`=1-in-200 OEP, `1000`=1-in-1000 OEP, `10000`=1-in-10000 OEP. |
 | `peril_name`  | String  | denormalised display only. |
 | `description` | String  | free-text reason. |
 | `sub_peril`   | String  | nullable (sub-region splits). |
@@ -208,8 +208,8 @@ Then derive blending weights:
 
     uv run rollup derive-blending
 
-This rewrites `data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200 and
-1-in-1000 OEP totals.
+This rewrites `data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200,
+1-in-1000, and 1-in-10000 OEP totals.
 
 ---
 

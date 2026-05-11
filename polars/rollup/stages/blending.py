@@ -3,12 +3,12 @@
 Pipeline reads `blending_weights.csv` (a hand-curated seed with 50/50
 placeholder values). This module produces the same shape from the EP
 summaries by computing each vendor's EP loss per peril at the AAL,
-1-in-200, and 1-in-1000 return-period buckets, then turning those values
-into proportions.
+1-in-200, 1-in-1000, and 1-in-10000 return-period buckets, then turning
+those values into proportions.
 
 Formula (per peril_id, return_period):
-    rl_aal   = sum(gl) where ep_type in {'AAL', 'OEP'} and rp in {0, 200, 1000}
-    vk_aal   = sum(gl) where ep_type in {'AAL', 'OEP'} and rp in {0, 200, 1000}
+    rl_aal   = sum(gl) where ep_type in {'AAL', 'OEP'} and rp in {0, 200, 1000, 10000}
+    vk_aal   = sum(gl) where ep_type in {'AAL', 'OEP'} and rp in {0, 200, 1000, 10000}
     rl_prop  = rl_aal / (rl_aal + vk_aal)   (when total > 0)
     vk_prop  = 1 - rl_prop
 
@@ -49,7 +49,7 @@ _PERIL_LABEL_TMP   = "peril_label"
 _GL_TMP            = "gl"
 
 _DEFAULT_EP_TYPES: tuple[str, ...] = (EpType.AAL, EpType.OEP)
-_DEFAULT_TARGET_RETURN_PERIODS: tuple[int, ...] = (0, 200, 1000)
+_DEFAULT_TARGET_RETURN_PERIODS: tuple[int, ...] = (0, 200, 1000, 10000)
 
 
 log = logging.getLogger("rollup.blending")
@@ -156,7 +156,8 @@ def derive_blending_weights(
     Returns one row per (peril_id, return_period, vendor); peril_name and
     description are populated from `perils`. `sub_peril` is None.
     `weight` is the vendor proportion for that return-period bucket. The
-    default buckets are 0=AAL, 200=1-in-200 OEP, and 1000=1-in-1000 OEP.
+    default buckets are 0=AAL, 200=1-in-200 OEP, 1000=1-in-1000 OEP,
+    and 10000=1-in-10000 OEP.
     `base_model` is populated for operator review/override in the seed.
     """
     rl_aal = _aal_by_rp_peril(

@@ -115,11 +115,12 @@ def test_canonical_ep_rows_aligns_vendor_specific_labels(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
-    """Only AAL/0 plus OEP/200 and OEP/1000 rows produce weights."""
+    """Only AAL/0 plus target OEP bucket rows produce weights."""
     rl_rows = [
         {RL.ID: 1, RL.RP: 0,    RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 30.0},
         {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 40.0},
         {RL.ID: 1, RL.RP: 1000, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 80.0},
+        {RL.ID: 1, RL.RP: 10000, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 90.0},
         {RL.ID: 1, RL.RP: 100,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 5000.0},
         {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "AEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 9000.0},
     ]
@@ -127,6 +128,7 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
         {VK.RP: 0,    VK.EP_TYPE: "AAL", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 70.0},
         {VK.RP: 200,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 60.0},
         {VK.RP: 1000, VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 20.0},
+        {VK.RP: 10000, VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 10.0},
         {VK.RP: 100,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 5000.0},
         {VK.RP: 200,  VK.EP_TYPE: "AEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 9000.0},
     ]
@@ -143,7 +145,7 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
         perils,
     )
 
-    assert set(df[BW.RETURN_PERIOD].unique().to_list()) == {0, 200, 1000}
+    assert set(df[BW.RETURN_PERIOD].unique().to_list()) == {0, 200, 1000, 10000}
 
     def weight(vendor: VendorName, return_period: int) -> float:
         row = df.filter(
@@ -157,9 +159,11 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
     assert weight(VendorName.RISKLINK, 0) == pytest.approx(0.3)
     assert weight(VendorName.RISKLINK, 200) == pytest.approx(0.4)
     assert weight(VendorName.RISKLINK, 1000) == pytest.approx(0.8)
+    assert weight(VendorName.RISKLINK, 10000) == pytest.approx(0.9)
     assert weight(VendorName.VERISK, 0) == pytest.approx(0.7)
     assert weight(VendorName.VERISK, 200) == pytest.approx(0.6)
     assert weight(VendorName.VERISK, 1000) == pytest.approx(0.2)
+    assert weight(VendorName.VERISK, 10000) == pytest.approx(0.1)
 
 
 # ---------------------------------------------------------------------------

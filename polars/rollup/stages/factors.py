@@ -66,9 +66,11 @@ _BLENDED_AAL_TMP     = "_blended_aal"
 _BASE_MODEL_AAL_TMP  = "_base_model_aal"
 
 # Return-period bucket thresholds — adapted from jan-rollup's
-# int_vw_funnel_ylt_combined_ranked_bucketed. This pipeline collapses all
-# tail events at rp >= 1000 into the 1-in-1000 blending tier, per the current
-# seed contract: 0=AAL, 200=1-in-200, 1000=1-in-1000.
+# int_vw_funnel_ylt_combined_ranked_bucketed.
+#   rp < 200            → bucket 0     (AAL)
+#   200 ≤ rp < 1000     → bucket 200   (1-in-200)
+#   1000 ≤ rp < 10000   → bucket 1000  (1-in-1000)
+#   rp ≥ 10000          → bucket 10000 (1-in-10000 tail)
 
 
 def _rp_bucket_expr(rp_col: str) -> pl.Expr:
@@ -77,7 +79,9 @@ def _rp_bucket_expr(rp_col: str) -> pl.Expr:
           .then(pl.lit(0))
           .when(pl.col(rp_col) < 1000)
           .then(pl.lit(200))
-          .otherwise(pl.lit(1000))
+          .when(pl.col(rp_col) < 10_000)
+          .then(pl.lit(1000))
+          .otherwise(pl.lit(10_000))
     )
 
 
@@ -229,7 +233,8 @@ def attach_rank(
     `rp_bucket` selects the correct blending weight bucket per event:
       rp < 200   → 0
       200 ≤ rp < 1000  → 200  (1-in-200)
-      rp ≥ 1000 → 1000 (1-in-1000)
+      1000 ≤ rp < 10000 → 1000 (1-in-1000)
+      rp ≥ 10000 → 10000 (1-in-10000 tail)
 
     `rp` is derived from each row vendor's n_sim divided by rank:
       verisk:  n_sim['verisk'] / rnk  (typically 10_000)

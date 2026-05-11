@@ -182,7 +182,7 @@ Which (lob, vendor, analysis) combinations are in the official rollup.
 | column | type | example |
 |--------|------|---------|
 | `peril_id` | integer | `216` |
-| `return_period` | integer | `0`, `200`, or `1000` |
+| `return_period` | integer | `0`, `200`, `1000`, or `10000` |
 | `peril_name` | string | `Europe Flood` |
 | `description` | string | `default 50/50` |
 | `sub_peril` | string or empty | `216a` |
@@ -191,8 +191,8 @@ Which (lob, vendor, analysis) combinations are in the official rollup.
 | `weight` | float | `0.5` |
 
 Every peril and return-period bucket needs both a `verisk` row and a
-`risklink` row. Runtime buckets are `0` (AAL), `200` (1-in-200), and `1000`
-(1-in-1000+).
+`risklink` row. Runtime buckets are `0` (AAL), `200` (1-in-200), `1000`
+(1-in-1000), and `10000` (1-in-10000+).
 
 ---
 

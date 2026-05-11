@@ -79,7 +79,7 @@ Each `attach_*` is a pure function in `rollup/stages/factors.py`:
 - Optionally a special-case (`attach_euws` applies rank-threshold overrides
   from `euws_rank_overrides.csv`; `attach_uplift` reads `base_model` and
   return-period-specific proportions from `blending_weights.csv`, using the
-  rank-derived `rp_bucket` to pick AAL / 200 / 1000 weights).
+  rank-derived `rp_bucket` to pick AAL / 200 / 1000 / 10000 weights).
 
 That's it. Adding a new factor is adding one function and one call site.
 

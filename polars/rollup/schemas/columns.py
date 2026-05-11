@@ -85,7 +85,8 @@ class BlendingWeightsCol(StrEnum):
     """Per (peril_id, return_period, vendor) blend weight — long format.
 
     `return_period` is the EP return period used to derive the weight.
-    Common values: 0 (AAL), 200 (1-in-200 OEP), 1000 (1-in-1000 OEP).
+    Common values: 0 (AAL), 200 (1-in-200 OEP), 1000 (1-in-1000 OEP),
+    10000 (1-in-10000 OEP).
 
     `sub_peril` is nullable — most perils don't need regional sub-splits.
 
@@ -94,7 +95,7 @@ class BlendingWeightsCol(StrEnum):
     only — but the CSV stays human-readable.
     """
     PERIL_ID      = "peril_id"
-    RETURN_PERIOD = "return_period"   # 0=AAL, 200, 1000, ...
+    RETURN_PERIOD = "return_period"   # 0=AAL, 200, 1000, 10000, ...
     PERIL_NAME    = "peril_name"
     DESCRIPTION   = "description"
     SUB_PERIL     = "sub_peril"
