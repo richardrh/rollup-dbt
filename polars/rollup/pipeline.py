@@ -295,10 +295,6 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     return ylt
 
 
-_compute_dialsup = add_dialsup
-
-
-
 # --------------------------------------------------------------------------- #
 # Interim audit dumps                                                         #
 #                                                                             #
