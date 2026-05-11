@@ -10,16 +10,32 @@ Get up and running in 5 minutes.
 
 ## 1. Install
 
+macOS/Linux:
+
 ```bash
 uv sync
 cp config.example.py config.py
 ```
 
+Windows PowerShell:
+
+```powershell
+uv sync
+Copy-Item config.example.py config.py
+```
+
 ## 2. Create data directories
 
+macOS/Linux:
+
 ```bash
-mkdir -p data/ylt/{verisk,risklink}
-mkdir -p data/output
+mkdir -p data/ylt/verisk data/ylt/risklink data/output
+```
+
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/output
 ```
 
 Full walkthrough: [Loading your data](load-data.md).
@@ -43,11 +59,7 @@ Takes ~30 seconds. Output parquets appear in `data/output/`.
 ## 5. Inspect output
 
 ```bash
-python3 << 'EOF'
-import polars as pl
-df = pl.read_parquet("data/output/HiscoAIR_202601_main.parquet")
-print(f"Shape: {df.shape}\nColumns: {df.columns}")
-EOF
+uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;"
 ```
 
 ## Something broke?

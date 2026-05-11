@@ -4,8 +4,16 @@ Step-by-step walkthrough. Follow in order; verify at each step before moving on.
 
 ## Step 0 — Create the directory layout
 
+macOS/Linux:
+
 ```bash
-mkdir -p data/{ylt/{verisk,risklink},ep_summaries/{verisk,risklink},output}
+mkdir -p data/ylt/verisk data/ylt/risklink data/ep_summaries/verisk data/ep_summaries/risklink data/output
+```
+
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/ep_summaries/verisk, data/ep_summaries/risklink, data/output
 ```
 
 All seed CSVs already exist in `data/seeds/` as templates.
@@ -83,22 +91,57 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 
 **Need RiskLink?** Yes if modeling flood perils (`peril_family = 'FL'`); optional for wind/EQ.
 
-## Step 4 — EP summaries (optional)
+## Step 4 — Deriving blending weights from EP summaries
 
-For blending weight recomputation only. Convert Excel to long CSV:
+EP summaries (long-format CSVs) are used to derive per-peril blending proportions
+and the base model, stored in `data/seeds/vor/blending_weights.csv`.
+
+**Step 4a — Convert Excel to long CSV (RiskLink only):**
+
+macOS/Linux:
 
 ```bash
 cp rms_analysis_list.xlsx data/ep_summaries/risklink/
 uv run rollup ep-summary-to-csv
 ```
 
-For Verisk, produce long CSVs manually with columns: `rp`, `ep_type`, `analysis`, `lob`, `gl`. Copy to `data/ep_summaries/verisk/` (must end in `.long.csv`).
+Windows PowerShell:
 
-Regenerate weights:
+```powershell
+Copy-Item rms_analysis_list.xlsx data/ep_summaries/risklink/
+uv run rollup ep-summary-to-csv
+```
+
+**Step 4b — Prepare Verisk CSVs manually:**
+
+Produce long CSVs with columns: `rp`, `ep_type`, `analysis`, `lob`, `gl`.
+Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
+
+**Step 4c — Regenerate blending_weights.csv:**
+
 ```bash
 uv run rollup derive-blending
-uv run rollup --dry-run
 ```
+
+Reads `*.long.csv` files under `data/ep_summaries/{vendor}/`. For each
+return period present in the EP data, computes:
+
+```python
+rl_prop = rl_aal / (rl_aal + vk_aal)   # when total > 0; else 0.5
+vk_prop = 1 - rl_prop
+```
+
+The seed is written to `data/seeds/vor/blending_weights.csv` with schema:
+
+| column | meaning |
+|---|---|
+| `peril_id` | FK into `perils.csv` |
+| `return_period` | EP return period: `0`=AAL, `100`=1-in-100, `200`=1-in-200 |
+| `vendor` | `"verisk"` or `"risklink"` |
+| `base_model` | The model to use as denominator: `"risklink"` for FL perils, `"verisk"` otherwise |
+| `weight` | Blending proportion for this vendor |
+
+Re-run `derive-blending` whenever the EP summaries are refreshed.
 
 ## Step 5 — Full verification
 
@@ -118,11 +161,7 @@ Output: 9 parquets in `data/output/` (~15–40 seconds depending on data size).
 
 **Inspect output:**
 ```bash
-python3 << 'EOF'
-import polars as pl
-df = pl.read_parquet("data/output/HiscoAIR_202601_main.parquet")
-print(f"Shape: {df.shape}, Columns: {df.columns}")
-EOF
+uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;"
 ```
 
 ## Customization
