@@ -8,13 +8,14 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from rollup.stages.blending import derive_blending_weights, _aal_by_peril
+from rollup.stages.blending import derive_blending_weights
 from rollup.config import VendorName
 from rollup.schemas.columns import (
     AnalysesCol as AN,
     BlendingWeightsCol as BW,
     PerilsCol as P,
     StgRisklinkEpCol as RL,
+    StgVeriskEpCol as VK,
 )
 
 
@@ -59,40 +60,59 @@ def _make_perils() -> pl.DataFrame:
     )
 
 
-def _write_rl_long_csv(tmp_path: Path, rows: list[dict]) -> Path:
+def _write_rl_long_csv(tmp_path: Path, rows: list[dict], ep_type_col: str = RL.EP_TYPE) -> Path:
     """Write a risklink-shaped long CSV to tmp_path."""
-    df = pl.DataFrame(
-        rows,
-        schema={
-            RL.ID:           pl.Int64,
-            RL.RP:           pl.Int64,
-            RL.EP_TYPE:      pl.String,
-            RL.LOB:          pl.String,
-            RL.REGION_PERIL: pl.String,
-            RL.GL:           pl.Float64,
-        },
-    )
+    schema = {
+        RL.ID:           pl.Int64,
+        RL.RP:           pl.Int64,
+        RL.EP_TYPE:      pl.String,
+        RL.LOB:          pl.String,
+        RL.REGION_PERIL: pl.String,
+        RL.GL:           pl.Float64,
+    }
+    df = pl.DataFrame(rows, schema=schema)
     path = tmp_path / "rms_ep_summary.long.csv"
     df.write_csv(path)
     return path
 
 
+def _write_vk_long_csv(tmp_path: Path, rows: list[dict]) -> Path:
+    """Write a verisk-shaped long CSV to tmp_path."""
+    schema = {
+        VK.RP:       pl.Int64,
+        VK.EP_TYPE:  pl.String,
+        VK.ANALYSIS: pl.String,
+        VK.LOB:      pl.String,
+        VK.GL:       pl.Float64,
+    }
+    df = pl.DataFrame(rows, schema=schema)
+    path = tmp_path / "verisk_ep_summary.long.csv"
+    df.write_csv(path)
+    return path
+
+
 # ---------------------------------------------------------------------------
-# test_derive_blending_uses_aal_only
+# test_derive_blending_uses_target_aal_and_oep_buckets
 # ---------------------------------------------------------------------------
 
-def test_derive_blending_uses_aal_only(tmp_path: Path):
-    """OEP rows must NOT contribute to the AAL sums."""
-    rows = [
-        # AAL row for peril 1 (EU EQ) — should count
-        {RL.ID: 1, RL.RP: 0,   RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 1000.0},
-        # OEP row for peril 1 — must NOT count
-        {RL.ID: 1, RL.RP: 100, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 5000.0},
-        # AEP row for peril 1 — must NOT count
-        {RL.ID: 1, RL.RP: 200, RL.EP_TYPE: "AEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 9000.0},
+def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
+    """Only AAL/0 plus OEP/200 and OEP/1000 rows produce weights."""
+    rl_rows = [
+        {RL.ID: 1, RL.RP: 0,    RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 30.0},
+        {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 40.0},
+        {RL.ID: 1, RL.RP: 1000, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 80.0},
+        {RL.ID: 1, RL.RP: 100,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 5000.0},
+        {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "AEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 9000.0},
     ]
-    rl_csv = _write_rl_long_csv(tmp_path, rows)
-    vk_csv = tmp_path / "verisk_ep_summary.long.csv"   # intentionally absent
+    vk_rows = [
+        {VK.RP: 0,    VK.EP_TYPE: "AAL", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 70.0},
+        {VK.RP: 200,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 60.0},
+        {VK.RP: 1000, VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 20.0},
+        {VK.RP: 100,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 5000.0},
+        {VK.RP: 200,  VK.EP_TYPE: "AEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 9000.0},
+    ]
+    rl_csv = _write_rl_long_csv(tmp_path, rl_rows)
+    vk_csv = _write_vk_long_csv(tmp_path, vk_rows)
 
     analyses = _make_analyses()
     perils   = _make_perils()
@@ -104,13 +124,23 @@ def test_derive_blending_uses_aal_only(tmp_path: Path):
         perils,
     )
 
-    # Only peril 1 should be present (peril 2 has no data).
-    rl_row = df.filter(
-        (pl.col(BW.PERIL_ID) == 1) & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
-    )
-    assert rl_row.height == 1
-    # rl_aal = 1000.0; vk_aal = 0.0 (no verisk CSV) → rl_proportion = 1.0
-    assert rl_row[BW.WEIGHT][0] == pytest.approx(1.0)
+    assert set(df[BW.RETURN_PERIOD].unique().to_list()) == {0, 200, 1000}
+
+    def weight(vendor: VendorName, return_period: int) -> float:
+        row = df.filter(
+            (pl.col(BW.PERIL_ID) == 1)
+            & (pl.col(BW.VENDOR) == vendor)
+            & (pl.col(BW.RETURN_PERIOD) == return_period)
+        )
+        assert row.height == 1
+        return row[BW.WEIGHT][0]
+
+    assert weight(VendorName.RISKLINK, 0) == pytest.approx(0.3)
+    assert weight(VendorName.RISKLINK, 200) == pytest.approx(0.4)
+    assert weight(VendorName.RISKLINK, 1000) == pytest.approx(0.8)
+    assert weight(VendorName.VERISK, 0) == pytest.approx(0.7)
+    assert weight(VendorName.VERISK, 200) == pytest.approx(0.6)
+    assert weight(VendorName.VERISK, 1000) == pytest.approx(0.2)
 
 
 # ---------------------------------------------------------------------------
@@ -133,11 +163,14 @@ def test_derive_blending_proportions_sum_to_1(tmp_path: Path):
         _make_perils(),
     )
 
-    for peril_id in df[BW.PERIL_ID].unique().to_list():
-        subset = df.filter(pl.col(BW.PERIL_ID) == peril_id)
+    for peril_id, return_period in df.select(BW.PERIL_ID, BW.RETURN_PERIOD).unique().iter_rows():
+        subset = df.filter(
+            (pl.col(BW.PERIL_ID) == peril_id)
+            & (pl.col(BW.RETURN_PERIOD) == return_period)
+        )
         total = subset[BW.WEIGHT].sum()
         assert total == pytest.approx(1.0), (
-            f"peril {peril_id}: rl+vk weights = {total}, expected 1.0"
+            f"peril {peril_id}, rp {return_period}: rl+vk weights = {total}, expected 1.0"
         )
 
 
@@ -201,11 +234,11 @@ def test_derive_blending_warns_on_unmapped_label(tmp_path: Path, caplog):
 
     with caplog.at_level(logging.WARNING, logger="rollup.blending"):
         df = derive_blending_weights(
-        [rl_csv],
-        [vk_csv] if vk_csv.exists() else [],
-        _make_analyses(),
-        _make_perils(),
-    )
+            [rl_csv],
+            [vk_csv] if vk_csv.exists() else [],
+            _make_analyses(),
+            _make_perils(),
+        )
 
     # The unmapped row must be absent from the output.
     # Only peril 1 should appear.

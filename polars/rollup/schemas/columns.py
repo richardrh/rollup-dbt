@@ -82,24 +82,25 @@ class AnalysesCol(StrEnum):
 
 
 class BlendingWeightsCol(StrEnum):
-    """Per (peril_id, sub_peril, vendor) blend weight — long format.
+    """Per (peril_id, return_period, vendor) blend weight — long format.
 
-    Replaces the wide `air_blend` / `rms_blend` columns of `blending_factors`.
+    `return_period` is the EP return period used to derive the weight.
+    Common values: 0 (AAL), 200 (1-in-200 OEP), 1000 (1-in-1000 OEP).
+
     `sub_peril` is nullable — most perils don't need regional sub-splits.
 
     `peril_name` + `description` are denormalised display columns: the
-    pipeline NEVER joins on them — the join is on `peril_id` only — but the
-    CSV stays human-readable (otherwise `(216, NULL, "rl", 0.5)` is opaque).
-    Treat `peril_name` as a hint mirrored from `perils.csv` and
-    `description` as free text describing why this row exists (e.g.
-    "Germany sub-peril split", "default 50/50 fallback for HU_EQ").
+    pipeline NEVER joins on them — the join is on (peril_id, return_period)
+    only — but the CSV stays human-readable.
     """
-    PERIL_ID    = "peril_id"
-    PERIL_NAME  = "peril_name"     # denormalised display, mirrors perils.name
-    DESCRIPTION = "description"    # free-text reason for this weight row
-    SUB_PERIL   = "sub_peril"
-    VENDOR      = "vendor"
-    WEIGHT      = "weight"
+    PERIL_ID      = "peril_id"
+    RETURN_PERIOD = "return_period"   # 0=AAL, 200, 1000, ...
+    PERIL_NAME    = "peril_name"
+    DESCRIPTION   = "description"
+    SUB_PERIL     = "sub_peril"
+    VENDOR        = "vendor"
+    BASE_MODEL    = "base_model"      # "verisk" | "risklink"
+    WEIGHT        = "weight"
 
 
 class RollupScopeCol(StrEnum):
@@ -322,6 +323,8 @@ class AllFactorsCol(StrEnum):
     UPLIFT_FACTOR_CAPPED = "uplift_factor_on_base_model_capped"
     # year-invariant factor scalars
     RNK                  = "rnk"
+    RP                   = "rp"
+    RP_BUCKET            = "rp_bucket"
     EUWS_FACTOR          = "euws_factor"
     FA_GROSS_AAL_FACTOR  = "fa_gross_aal_factor"
     FA_GROSS_TAIL_FACTOR = "fa_gross_tail_factor"

@@ -28,7 +28,7 @@ joins later.
 perils.csv            — one row per rollup peril (peril_id, name, region, peril_family)
 analyses.csv          — (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
 rollup_scope.csv      — which (lob_id, vendor, analysis_id) triples are in scope
-blending_weights.csv  — long-format (peril_id, sub_peril, vendor, weight)
+blending_weights.csv  — long-format (peril_id, return_period, vendor, base_model, weight)
 lobs.csv              — LOB dimension + office + class
 forecast_factors.csv  — (class, office, forecast_date) → factor
 fx_rates.csv          — long-format (currency_code, target_currency, rate_date, rate)
@@ -64,7 +64,7 @@ each have one job:
 
 | split table              | role                                                                  |
 | ------------------------ | --------------------------------------------------------------------- |
-| `perils.csv`             | the peril dimension itself — `peril_id` is the canonical primary key shared across vendors. `peril_family` ("FL", "WS", …) is the semantic category used by the flood-base-model rule. |
+| `perils.csv`             | the peril dimension itself — `peril_id` is the canonical primary key shared across vendors. `peril_family` ("FL", "WS", …) is available for seed derivation and QA. |
 | `analyses.csv`           | `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL (lob lives on the YLT row). |
 | `rollup_scope.csv`       | which `(lob_id, vendor, analysis_id)` triples are officially in the rollup. Replaces the `applies_to_{mga,prop,fa}` flag fan-out. |
 | `blending_weights.csv`   | long-format blend weights. Adding a vendor is a new row, not a new column. |
@@ -75,7 +75,7 @@ What this beats:
 - `applies_to_{mga, prop, fa}` collapses into `rollup_scope(lob, vendor, analysis, in_rollup)` — a real relationship, not flag columns conditioned on `lob_type`.
 - No vendor duplication in the peril dim — vendor lives on `analyses` where it belongs.
 - Blending weights long format: new vendor or new sub-peril is a new row, not a schema change.
-- The flood-base-model rule keys on `peril_family == "FL"` (semantic), not on a substring match against derived strings like `"EU_FL"` / `"UK_FL"`. New flood region in `perils.csv` → no code change.
+- Base-model selection lives in `blending_weights.base_model`; generated weights default flood perils to RiskLink but operators can override the seed.
 
 ## Shape decisions on the other seeds
 
@@ -89,7 +89,7 @@ where the axis is extensible:
 | -------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
 | `fx_rates`           | wide: `CurrencyCode, "Rate to USD", "Rate to GBP"`    | long: `currency_code, target_currency, rate_date, rate`        |
 | `forecast_factors`   | wide: `class, office, f_202601, f_202607, f_202701`   | long: `class, office, office_iso2, forecast_date, factor` |
-| `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | long: `peril_id, sub_peril, vendor, weight`                    |
+| `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | long: `peril_id, return_period, sub_peril, vendor, base_model, weight` |
 | `euws_rate_factors`  | long already                                          | long (`model_event_id, occ_year, factor`)                      |
 | `lobs`               | one row per lob                                       | one row per lob (+ `office`, `class` from january's `lobs_with_class_office` view) |
 

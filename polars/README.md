@@ -16,7 +16,7 @@ uv run rollup --yes --dump-interim       # also write audit parquets
 uv run rollup --yes --min-loss 0         # disable default loss filter (keep every row)
 uv run rollup --yes --log-level INFO     # show factor-chain trace
 uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
-uv run rollup derive-blending            # rewrite blending_weights from EP AALs
+uv run rollup derive-blending            # rewrite blending_weights from AAL/200/1000 EP buckets
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser
@@ -90,7 +90,7 @@ contract between the pipeline and the seeds + YLTs you supply.
 │   ├── RH-TODO-DATA.md         # checklist for collecting real data
 │   ├── rollup/
 │   │   ├── chain.py            # year-tagged factor chain registry (TypedDict)
-│   │   ├── config.py           # Vendor + Flavor + VendorName + EnvVar + FLOOD_FAMILY
+│   │   ├── config.py           # Vendor + Flavor + VendorName + EnvVar
 │   │   ├── seeds.py            # typed seed loaders + REQUIRED_SEEDS gate
 │   │   ├── validate.py         # validate_schema + SchemaError
 │   │   ├── pipeline.py         # orchestrator + build_all_factors + audit + CLI

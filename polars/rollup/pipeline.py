@@ -249,7 +249,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(apply_rollup_scope,      seeds.rollup_scope)                  # drop rows not in official scope
         .pipe(attach_currency,         seeds.fx_rates)
         .pipe(attach_forecast_factors, seeds.forecast_factors, tags)
-        .pipe(attach_rank)                                                  # must precede attach_euws
+        .pipe(attach_rank,            n_sim=n_sim)                         # must precede attach_euws
         .pipe(attach_euws,             seeds.euws_rate_factors, seeds.euws_rank_overrides)
         .pipe(attach_fagross,          seeds.fineart_adjustments)
         .pipe(attach_uplift,           seeds.blending_weights, n_sim=n_sim)
@@ -332,6 +332,7 @@ _IDENTITY_COLS: tuple[str, ...] = (
     AF.REGION_PERIL_ID, AF.MODELLED_REGION_PERIL,
     AF.PERIL_NAME, AF.REGION, AF.PERIL_FAMILY,
     AF.YEAR_ID, AF.EVENT_ID, AF.MODEL_EVENT_ID, AF.MODEL_CODE,
+    AF.RNK, AF.RP, AF.RP_BUCKET,
     AF.RL_PROPORTION, AF.VK_PROPORTION, AF.BASE_MODEL,
 )
 
@@ -357,6 +358,7 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     The year-tagged section is registry-driven — adding a `ChainStage` to
     `chain.CHAIN` automatically extends the audit layout. No edits here.
     """
+    seen: set[str] = set(_IDENTITY_COLS)
     cols: list[pl.Expr] = [pl.col(c) for c in _IDENTITY_COLS]
     cols.append(pl.col(Y.LOSS).alias(_LOSS_RAW_COL))
 
@@ -369,7 +371,10 @@ def audit_wide(all_factors: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     ]
 
     # Year-tagged chain — driven by the registry, not by hand-listed columns
-    cols += [pl.col(c) for c in audit_layout_cols(list(tags))]
+    for c in audit_layout_cols(list(tags)):
+        if c not in seen:
+            cols.append(pl.col(c))
+            seen.add(c)
 
     # Dialsup sensitivity — single column (no per-tag emission; formula is tag-independent)
     cols.append(pl.col(DIALSUP_COL))
