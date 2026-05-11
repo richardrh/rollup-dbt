@@ -443,3 +443,65 @@ def test_test_sql_report_connection_failure_goes_to_stderr():
     assert code == 2
     assert "Status            : failed" in stdout
     assert stderr == "Error: OperationalError: timeout\n"
+
+
+# ---------------------------------------------------------------------------
+# push-to-sql report rendering
+# ---------------------------------------------------------------------------
+
+def test_push_preview_lists_targets_and_destructive_note(tmp_path):
+    from rollup.cli import _format_push_preview
+
+    parquet = tmp_path / "HiscoAIR_202601_main.parquet"
+    parquet.write_bytes(b"x" * 1_000_000)
+
+    report = _format_push_preview(
+        redacted_conn_str="mssql://...@server/db",
+        schema="marts",
+        output_dir=tmp_path,
+        parquets=[parquet],
+    )
+
+    assert "SQL push preview" in report
+    assert "Target connection : mssql://...@server/db" in report
+    assert "Target schema     : marts" in report
+    assert "dropped and replaced" in report
+    assert "HiscoAIR_202601_main.parquet" in report
+    assert "marts.HiscoAIR_202601_main" in report
+
+
+def test_confirm_push_refuses_non_tty_without_yes():
+    from rollup.cli import _confirm_push
+
+    code, stdout, stderr = _confirm_push(False, stdin=io.StringIO(""))
+
+    assert code == 2
+    assert stdout == ""
+    assert "refusing to push without --yes" in stderr
+
+
+def test_confirm_push_abort_message_when_user_declines():
+    from rollup.cli import _confirm_push
+
+    class TtyInput(io.StringIO):
+        def isatty(self):
+            return True
+
+    code, stdout, stderr = _confirm_push(
+        False,
+        stdin=TtyInput(""),
+        input_func=lambda _: "n",
+    )
+
+    assert code == 1
+    assert stdout == "aborted by user\n"
+    assert stderr == ""
+
+
+def test_push_error_report_includes_diagnostic_hint():
+    from rollup.cli import _format_push_error
+
+    report = _format_push_error("HiscoAIR.parquet", RuntimeError("boom"))
+
+    assert "error pushing HiscoAIR.parquet: RuntimeError: boom" in report
+    assert "rollup test-sql" in report

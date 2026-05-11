@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -338,54 +339,27 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
 
     cfg = config.resolve()
     if not cfg.mssql_conn_str:
-        print(
-            "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
-            "is not set. Cannot push to SQL Server.",
-            file=sys.stderr,
-        )
+        sys.stderr.write(_push_conn_missing_message())
         return 2
 
     parquets = list_pushable_parquets(cfg.output_dir)
     if not parquets:
-        print(
-            f"error: no Hisco*.parquet files found under {cfg.output_dir}. "
-            "Run `rollup --yes` first.",
-            file=sys.stderr,
-        )
+        sys.stderr.write(_push_no_parquets_message(cfg.output_dir))
         return 2
 
     redacted = redact_conn_str(cfg.mssql_conn_str)
-    schema_label = args.schema or "<server-default>"
+    sys.stdout.write(_format_push_preview(
+        redacted_conn_str=redacted,
+        schema=args.schema,
+        output_dir=cfg.output_dir,
+        parquets=parquets,
+    ))
 
-    print()
-    print(f"  Target connection : {redacted}")
-    print(f"  Target schema     : {schema_label}")
-    print(f"  Output directory  : {cfg.output_dir}")
-    print()
-    print(f"  {len(parquets)} parquet file(s) will be pushed (existing tables of the same name will be DROPPED and replaced):")
-    print()
-    for p in parquets:
-        size_mb = p.stat().st_size / 1e6
-        table_name = p.stem
-        fq_name = f"{schema_label}.{table_name}" if args.schema else table_name
-        print(f"    {p.name:<40s}  ->  {fq_name:<48s}  ({size_mb:.1f} MB)")
-    print()
-
-    if not args.push_yes:
-        if not sys.stdin.isatty():
-            print(
-                "error: refusing to push without --yes when stdin is not a TTY "
-                "(piped / non-interactive). Re-run with `--yes` to confirm.",
-                file=sys.stderr,
-            )
-            return 2
-        try:
-            reply = input("Proceed with push? [y/N]: ").strip().lower()
-        except EOFError:
-            reply = ""
-        if reply not in {"y", "yes"}:
-            print("aborted by user")
-            return 1
+    confirm_code, confirm_stdout, confirm_stderr = _confirm_push(args.push_yes)
+    sys.stdout.write(confirm_stdout)
+    sys.stderr.write(confirm_stderr)
+    if confirm_code is not None:
+        return confirm_code
 
     total_rows = 0
     engine = make_engine(cfg.mssql_conn_str)
@@ -394,17 +368,93 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
             try:
                 n = push_parquet_to_sql(p, engine=engine, schema=args.schema)
             except Exception as e:
-                print(f"\nerror pushing {p.name}: {type(e).__name__}: {e}", file=sys.stderr)
-                print("hint: run `rollup test-sql` to diagnose the connection.", file=sys.stderr)
+                sys.stderr.write(_format_push_error(p.name, e))
                 return 2
-            print(f"  pushed {p.name:<40s} ({n:,} rows)")
+            sys.stdout.write(_lines([f"  pushed {p.name:<40s} ({n:,} rows)"]))
             total_rows += n
     finally:
         engine.dispose()
 
-    print()
-    print(f"  done: pushed {len(parquets)} table(s), {total_rows:,} rows total.")
+    sys.stdout.write(_format_push_done(table_count=len(parquets), row_count=total_rows))
     return 0
+
+
+def _push_conn_missing_message() -> str:
+    return (
+        "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+        "is not set. Cannot push to SQL Server.\n"
+    )
+
+
+def _push_no_parquets_message(output_dir: Path) -> str:
+    return (
+        f"error: no Hisco*.parquet files found under {output_dir}. "
+        "Run `rollup --yes` first.\n"
+    )
+
+
+def _format_push_preview(
+    *,
+    redacted_conn_str: str,
+    schema: str | None,
+    output_dir: Path,
+    parquets: Sequence[Path],
+) -> str:
+    schema_label = schema or "<server-default>"
+    lines = [
+        "",
+        "SQL push preview",
+        f"  Target connection : {redacted_conn_str}",
+        f"  Target schema     : {schema_label}",
+        f"  Output directory  : {output_dir}",
+        "",
+        f"  {len(parquets)} parquet file(s) will be pushed; existing tables with matching names will be dropped and replaced:",
+        "",
+    ]
+    for path in parquets:
+        size_mb = path.stat().st_size / 1e6
+        target_name = f"{schema_label}.{path.stem}" if schema else path.stem
+        lines.append(f"    {path.name:<40s}  ->  {target_name:<48s}  ({size_mb:.1f} MB)")
+    lines.append("")
+    return _lines(lines)
+
+
+def _confirm_push(
+    push_yes: bool,
+    *,
+    stdin=None,
+    input_func: Callable[[str], str] = input,
+) -> tuple[int | None, str, str]:
+    """Return `(exit_code, stdout, stderr)` for push confirmation.
+
+    `exit_code=None` means the caller may continue with the push.
+    """
+    if push_yes:
+        return None, "", ""
+    stdin = stdin or sys.stdin
+    if not stdin.isatty():
+        return 2, "", _lines([
+            "error: refusing to push without --yes when stdin is not a TTY "
+            "(piped / non-interactive). Re-run with `--yes` to confirm."
+        ])
+    try:
+        reply = input_func("Proceed with push? [y/N]: ").strip().lower()
+    except EOFError:
+        reply = ""
+    if reply not in {"y", "yes"}:
+        return 1, _lines(["aborted by user"]), ""
+    return None, "", ""
+
+
+def _format_push_error(parquet_name: str, error: Exception) -> str:
+    return _lines([
+        f"error pushing {parquet_name}: {type(error).__name__}: {error}",
+        "hint: run `rollup test-sql` to diagnose the connection.",
+    ])
+
+
+def _format_push_done(*, table_count: int, row_count: int) -> str:
+    return _lines(["", f"  done: pushed {table_count} table(s), {row_count:,} rows total."])
 
 
 def _cmd_docs(args: argparse.Namespace) -> int:
