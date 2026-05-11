@@ -86,12 +86,15 @@ ROLLUP_SCOPE = [
 ]
 
 # Simple 50/50 blend on both perils. sub_peril=None → applies to all sub-perils.
-# (peril_id, peril_name, description, sub_peril, vendor, weight)
+# (peril_id, return_period, peril_name, description, sub_peril, vendor, base_model, weight)
 BLENDING_WEIGHTS = [
-    (206, "Europe Winter Storm", "default 50/50 blend", None, VendorName.VERISK, 0.5),
-    (206, "Europe Winter Storm", "default 50/50 blend", None, VendorName.RISKLINK, 0.5),
-    (216, "Europe Flood",        "default 50/50 blend", None, VendorName.VERISK, 0.5),
-    (216, "Europe Flood",        "default 50/50 blend", None, VendorName.RISKLINK, 0.5),
+    (206, rp, "Europe Winter Storm", "default 50/50 blend", None, vendor, VendorName.VERISK, 0.5)
+    for rp in (0, 200, 1000, 10000)
+    for vendor in (VendorName.VERISK, VendorName.RISKLINK)
+] + [
+    (216, rp, "Europe Flood", "default 50/50 blend", None, vendor, VendorName.RISKLINK, 0.5)
+    for rp in (0, 200, 1000, 10000)
+    for vendor in (VendorName.VERISK, VendorName.RISKLINK)
 ]
 
 # Three arbitrary forecast dates — the pipeline picks them up from the seed.
@@ -161,7 +164,8 @@ def _write_seeds() -> None:
 
     # vor/
     pl.DataFrame(BLENDING_WEIGHTS, orient="row", schema=[
-        BW.PERIL_ID, BW.PERIL_NAME, BW.DESCRIPTION, BW.SUB_PERIL, BW.VENDOR, BW.WEIGHT,
+        BW.PERIL_ID, BW.RETURN_PERIOD, BW.PERIL_NAME, BW.DESCRIPTION,
+        BW.SUB_PERIL, BW.VENDOR, BW.BASE_MODEL, BW.WEIGHT,
     ]).write_csv(SEEDS / "vor/blending_weights.csv")
 
     pl.DataFrame(FORECAST_FACTORS, orient="row", schema=[
