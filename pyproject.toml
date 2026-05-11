@@ -32,6 +32,8 @@ dev = [
     # install required on the test runner).
     "testcontainers[mssql]>=4.7",
     "pymssql>=2.3",
+    # Property-based / fuzz testing.
+    "hypothesis>=6.100",
 ]
 
 [tool.uv]
@@ -52,4 +54,5 @@ testpaths = ["polars/tests"]
 pythonpath = ["polars"]
 markers = [
     "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
+    "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
 ]
