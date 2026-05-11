@@ -18,8 +18,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rollup import config
+
+if TYPE_CHECKING:
+    from rollup.io.sql_push import ConnectionTestResult
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -254,49 +258,72 @@ def _cmd_test_sql(args: argparse.Namespace) -> int:
 
     cfg = config.resolve()
     if not cfg.mssql_conn_str:
-        print(
-            "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
-            "is not set. Cannot test SQL Server connection.",
-            file=sys.stderr,
-        )
+        sys.stderr.write(_sql_conn_missing_message())
         return 2
 
     redacted = redact_conn_str(cfg.mssql_conn_str)
-    print()
-    print(f"  Target connection : {redacted}")
-    if args.schema:
-        print(f"  Target schema     : {args.schema}")
-    print()
-    print("  Probing... ", end="", flush=True)
-
     result = test_connection(cfg.mssql_conn_str, schema=args.schema)
+    exit_code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str=redacted,
+        schema=args.schema,
+        result=result,
+    )
+    sys.stdout.write(stdout)
+    sys.stderr.write(stderr)
+    return exit_code
+
+
+def _sql_conn_missing_message() -> str:
+    return (
+        "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+        "is not set. Cannot test SQL Server connection.\n"
+    )
+
+
+def _format_test_sql_report(
+    *,
+    redacted_conn_str: str,
+    schema: str | None,
+    result: "ConnectionTestResult",
+) -> tuple[int, str, str]:
+    """Render `rollup test-sql` output in one place.
+
+    Returns `(exit_code, stdout, stderr)`. Keeping formatting pure makes the
+    command handler a simple sequence of resolve → probe → render.
+    """
+    stdout_lines = [
+        "",
+        "SQL connection probe",
+        f"  Target connection : {redacted_conn_str}",
+    ]
+    if schema:
+        stdout_lines.append(f"  Target schema     : {schema}")
 
     if not result.ok:
-        print("✘ failed")
-        print()
-        print(f"  Error: {result.error}", file=sys.stderr)
-        print()
-        return 2
+        stdout_lines.append("  Status            : failed")
+        return 2, _lines(stdout_lines), _lines([f"Error: {result.error}"])
 
-    print("✓ ok")
-    print()
+    stdout_lines.append("  Status            : ok")
+
     # @@VERSION can be multi-line — show only the headline.
     version_line = (result.version or "").splitlines()[0] if result.version else "(unknown)"
-    print(f"  Server version  : {version_line}")
-    print(f"  Database        : {result.database}")
-    if args.schema:
-        mark = "✓ exists" if result.schema_exists else "✘ does NOT exist on this server"
-        print(f"  Schema {args.schema!r:14s}: {mark}")
+    stdout_lines.extend([
+        f"  Server version   : {version_line}",
+        f"  Database         : {result.database}",
+    ])
+    if schema:
+        schema_status = "exists" if result.schema_exists else "missing"
+        stdout_lines.append(f"  Schema {schema!r:14s}: {schema_status}")
         if not result.schema_exists:
-            print()
-            print(
-                f"  Warning: schema {args.schema!r} not found on the server. "
-                f"`push-to-sql --schema {args.schema}` will fail.",
-                file=sys.stderr,
-            )
-            return 2
-    print()
-    return 0
+            return 2, _lines(stdout_lines), _lines([
+                f"Warning: schema {schema!r} not found on the server. "
+                f"`push-to-sql --schema {schema}` will fail."
+            ])
+    return 0, _lines(stdout_lines), ""
+
+
+def _lines(lines: list[str]) -> str:
+    return "\n".join(lines) + "\n"
 
 
 def _cmd_push_to_sql(args: argparse.Namespace) -> int:

@@ -402,25 +402,93 @@ def test_cmd_run_aborts_when_ylt_missing(tmp_path, monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
-# #1 f-string in test-sql warning (regression guard via string inspection)
+# test-sql report rendering
 # ---------------------------------------------------------------------------
 
-def test_test_sql_warning_is_fstring():
-    """Ensure the schema-not-found warning uses f-string interpolation."""
-    import ast
-    import inspect
-    import rollup.cli as cli_mod
+def test_test_sql_missing_connection_message_is_single_error():
+    from rollup.cli import _sql_conn_missing_message
 
-    source = inspect.getsource(cli_mod._cmd_test_sql)
-    # The warning message must NOT contain the literal text {args.schema} inside
-    # a plain string (non-f-string). Parse the function AST.
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            # A plain string (not f-string JoinedStr) must not contain uninterpolated
-            # {args.schema} — that would be the bug.
-            if "{args.schema}" in node.value:
-                pytest.fail(
-                    f"Found uninterpolated {{args.schema}} in a plain string literal: "
-                    f"{node.value!r}"
-                )
+    message = _sql_conn_missing_message()
+
+    assert message.startswith("error:")
+    assert message.endswith("\n")
+    assert message.count("\n") == 1
+
+
+def test_test_sql_report_success_is_single_stdout_block():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=True,
+        version="Microsoft SQL Server 2022\nextra details",
+        database="rollup",
+        schema="dbo",
+        schema_exists=True,
+        error=None,
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://...@server/db",
+        schema="dbo",
+        result=result,
+    )
+
+    assert code == 0
+    assert stderr == ""
+    assert "SQL connection probe" in stdout
+    assert "Target connection : mssql://...@server/db" in stdout
+    assert "Status            : ok" in stdout
+    assert "Server version   : Microsoft SQL Server 2022" in stdout
+    assert "extra details" not in stdout
+    assert "Schema 'dbo'         : exists" in stdout
+
+
+def test_test_sql_report_missing_schema_returns_warning():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=True,
+        version="Microsoft SQL Server 2022",
+        database="rollup",
+        schema="marts",
+        schema_exists=False,
+        error=None,
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://server/db",
+        schema="marts",
+        result=result,
+    )
+
+    assert code == 2
+    assert "Schema 'marts'       : missing" in stdout
+    assert "Warning: schema 'marts' not found" in stderr
+    assert "push-to-sql --schema marts" in stderr
+    assert "{args.schema}" not in stderr
+
+
+def test_test_sql_report_connection_failure_goes_to_stderr():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=False,
+        version=None,
+        database=None,
+        schema=None,
+        schema_exists=None,
+        error="OperationalError: timeout",
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://server/db",
+        schema=None,
+        result=result,
+    )
+
+    assert code == 2
+    assert "Status            : failed" in stdout
+    assert stderr == "Error: OperationalError: timeout\n"
