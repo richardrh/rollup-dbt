@@ -14,6 +14,7 @@ import polars as pl
 
 from rollup import config
 from rollup.config import Flavor, Vendor, VendorName
+from rollup.metrics.dialsup import add_dialsup
 from rollup.schemas import frames as F
 from rollup.chain import (
     CHAIN,
@@ -254,7 +255,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(attach_fagross,          seeds.fineart_adjustments)
         .pipe(attach_uplift,           seeds.blending_weights, n_sim=n_sim)
         .pipe(_compute_metrics,        tags)                                # needs all attach_* outputs
-        .pipe(_compute_dialsup)                                             # needs _compute_metrics output
+        .pipe(add_dialsup)                                                  # needs _compute_metrics output
     )
     log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
@@ -294,18 +295,8 @@ def _compute_metrics(ylt: pl.LazyFrame, tags: Sequence[str]) -> pl.LazyFrame:
     return ylt
 
 
-def _compute_dialsup(ylt: pl.LazyFrame) -> pl.LazyFrame:
-    """Currency-conversion only — raw loss divided by FX rate.
+_compute_dialsup = add_dialsup
 
-    ``dialsup = loss / rate_to_gbp``
-
-    No uplift, no cap, no forecast factor, no euws, no fa_gross. A single
-    column ``"dialsup"`` is added — all forecast dates would be identical
-    under this definition, so there is no per-tag emission.
-    """
-    return ylt.with_columns(
-        (pl.col(Y.LOSS) / pl.col(AF.RATE_TO_GBP)).alias(DIALSUP_COL),
-    )
 
 
 # --------------------------------------------------------------------------- #
