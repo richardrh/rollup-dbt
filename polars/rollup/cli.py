@@ -195,8 +195,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     blending_weights = None
     if args.derive_blending:
-        blending_weights, message = _derive_blending_for_run(cfg)
-        print(message)
+        from rollup.run_inputs import derive_blending_for_run
+
+        blending = derive_blending_for_run(cfg)
+        blending_weights = blending.weights
+        print(blending.message)
     else:
         print("blending: using blending_weights.csv (--no-derive-blending)")
 
@@ -207,43 +210,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("see docs/troubleshooting.md", file=sys.stderr)
         return 2
     return 0
-
-
-def _derive_blending_for_run(cfg: config.Config):
-    """Return in-memory derived blending weights when all vendor CSVs exist.
-
-    The normal run never overwrites ``blending_weights.csv``.  When every
-    configured vendor has at least one ``*.long.csv`` EP-summary file, the
-    weights are derived for this run and copied to ``output/debug`` for audit.
-    Partial EP-summary delivery falls back to the reviewed seed.
-    """
-    from rollup.config import VendorName
-    from rollup.seeds import load_all
-    from rollup.stages.blending import derive_blending_weights
-
-    csvs_by_vendor = {
-        vendor.name: sorted(vendor.ep_summary_dir.glob("*.long.csv"))
-        for vendor in cfg.vendors
-    }
-    missing = [vendor.value for vendor, paths in csvs_by_vendor.items() if not paths]
-    if missing:
-        return None, (
-            "blending: using blending_weights.csv "
-            f"(missing EP-summary long CSVs for: {', '.join(missing)})"
-        )
-
-    seeds_obj = load_all(cfg.seeds_dir)
-    df = derive_blending_weights(
-        csvs_by_vendor[VendorName.RISKLINK],
-        csvs_by_vendor[VendorName.VERISK],
-        seeds_obj.analyses.collect(),
-        seeds_obj.perils.collect(),
-    )
-    debug_dir = cfg.output_dir / "debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = debug_dir / "derived_blending_weights.csv"
-    df.write_csv(audit_path)
-    return df.lazy(), f"blending: derived {df.height:,} rows from EP summaries for this run; wrote {audit_path}"
 
 
 def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:

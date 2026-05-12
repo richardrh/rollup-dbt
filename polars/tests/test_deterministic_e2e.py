@@ -277,16 +277,16 @@ def test_cli_derive_blending_reads_fake_ep_summary_files(deterministic_root: Pat
 
 
 def test_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
-    from rollup.cli import _derive_blending_for_run
+    from rollup.run_inputs import derive_blending_for_run
 
     cfg = config.resolve()
-    derived, message = _derive_blending_for_run(cfg)
+    blending = derive_blending_for_run(cfg)
 
-    assert derived is not None
-    assert "derived" in message
+    assert blending.weights is not None
+    assert "derived" in blending.message
     assert (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
 
-    df = derived.collect()
+    df = blending.weights.collect()
     rl_weight = df.filter(
         (pl.col(BW.PERIL_ID) == 1)
         & (pl.col(BW.RETURN_PERIOD) == 0)
