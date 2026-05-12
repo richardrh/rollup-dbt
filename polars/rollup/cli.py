@@ -167,49 +167,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Default flow: build the plan, prompt (or not), run the pipeline."""
-    from dataclasses import replace
+    from rollup.wizard import run_wizard
 
-    from rollup.pipeline import run
-
-    cfg = config.resolve()
-    if args.min_loss is not None:
-        cfg = replace(cfg, min_loss=args.min_loss)
-    plan = config.build_plan(cfg)
-
-    if args.dry_run:
-        if sys.stdout.isatty():
-            config.print_plan(plan)
-        else:
-            print(config.format_plan(plan))
-        return 0
-
-    if not plan.all_seeds_ok or not plan.all_ylt_ok:
-        # On stderr we use plain text — colour codes leak in CI logs.
-        print(config.format_plan(plan), file=sys.stderr)
-        print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
-        return 2
-
-    if not config.confirm(plan, assume_yes=args.yes, stream=sys.stdout):
-        print("aborted by user")
-        return 1
-
-    blending_weights = None
-    if args.derive_blending:
-        from rollup.run_inputs import derive_blending_for_run
-
-        blending = derive_blending_for_run(cfg)
-        blending_weights = blending.weights
-        print(blending.message)
-    else:
-        print("blending: using blending_weights.csv (--no-derive-blending)")
-
-    try:
-        run(cfg, dump_interim=args.dump_interim, blending_weights=blending_weights)
-    except Exception as e:
-        print(f"\npipeline failed: {type(e).__name__}: {e}", file=sys.stderr)
-        print("see docs/troubleshooting.md", file=sys.stderr)
-        return 2
-    return 0
+    return run_wizard(args)
 
 
 def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
