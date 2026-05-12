@@ -64,6 +64,13 @@ _VK_AAL_TMP          = "_vk_aal"
 _RL_AAL_TMP          = "_rl_aal"
 _BLENDED_AAL_TMP     = "_blended_aal"
 _BASE_MODEL_AAL_TMP  = "_base_model_aal"
+_SPECIFIC_VK_PROP    = "_specific_vk_proportion"
+_SPECIFIC_RL_PROP    = "_specific_rl_proportion"
+_GENERIC_VK_PROP     = "_generic_vk_proportion"
+_GENERIC_RL_PROP     = "_generic_rl_proportion"
+_SPECIFIC_BASE_MODEL = "_specific_base_model"
+_GENERIC_BASE_MODEL  = "_generic_base_model"
+_SUB_PERIL_KEY       = "_sub_peril_key"
 
 # Return-period bucket thresholds — adapted from jan-rollup's
 # int_vw_funnel_ylt_combined_ranked_bucketed.
@@ -326,6 +333,8 @@ def _vendor_blend_weights(
         .select(
             pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
             pl.col(BW.RETURN_PERIOD).alias(AF.RP_BUCKET),
+            pl.col(BW.SUB_PERIL),
+            pl.col(BW.SUB_PERIL).fill_null("").alias(_SUB_PERIL_KEY),
             pl.col(BW.WEIGHT).alias(proportion_col),
         )
     )
@@ -337,8 +346,12 @@ def _blend_weights_by_peril_bucket(blending_weights: pl.LazyFrame) -> pl.LazyFra
         _vendor_blend_weights(blending_weights, VendorName.VERISK, AF.VK_PROPORTION)
         .join(
             _vendor_blend_weights(blending_weights, VendorName.RISKLINK, AF.RL_PROPORTION),
-            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="full", coalesce=True,
+            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET, _SUB_PERIL_KEY], how="full", coalesce=True,
         )
+        .with_columns(
+            pl.coalesce(pl.col(BW.SUB_PERIL), pl.col(f"{BW.SUB_PERIL}_right")).alias(BW.SUB_PERIL),
+        )
+        .drop(f"{BW.SUB_PERIL}_right", _SUB_PERIL_KEY)
     )
 
 
@@ -347,21 +360,68 @@ def _base_model_by_peril(blending_weights: pl.LazyFrame) -> pl.LazyFrame:
         blending_weights
         .select(
             pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
+            pl.col(BW.SUB_PERIL),
             pl.col(BW.BASE_MODEL),
         )
-        .unique(subset=[Y.REGION_PERIL_ID])
+        .unique(subset=[Y.REGION_PERIL_ID, BW.SUB_PERIL])
     )
 
 
 def _attach_blend_inputs(ylt: pl.LazyFrame, blending_weights: pl.LazyFrame) -> pl.LazyFrame:
+    weights = _blend_weights_by_peril_bucket(blending_weights)
+    specific_weights = (
+        weights
+        .filter(pl.col(BW.SUB_PERIL).is_not_null())
+        .rename({
+            BW.SUB_PERIL: Y.MODELLED_REGION_PERIL,
+            AF.VK_PROPORTION: _SPECIFIC_VK_PROP,
+            AF.RL_PROPORTION: _SPECIFIC_RL_PROP,
+        })
+    )
+    generic_weights = (
+        weights
+        .filter(pl.col(BW.SUB_PERIL).is_null())
+        .select(Y.REGION_PERIL_ID, AF.RP_BUCKET, AF.VK_PROPORTION, AF.RL_PROPORTION)
+        .rename({
+            AF.VK_PROPORTION: _GENERIC_VK_PROP,
+            AF.RL_PROPORTION: _GENERIC_RL_PROP,
+        })
+    )
+
+    base_models = _base_model_by_peril(blending_weights)
+    specific_base_models = (
+        base_models
+        .filter(pl.col(BW.SUB_PERIL).is_not_null())
+        .rename({BW.SUB_PERIL: Y.MODELLED_REGION_PERIL, BW.BASE_MODEL: _SPECIFIC_BASE_MODEL})
+    )
+    generic_base_models = (
+        base_models
+        .filter(pl.col(BW.SUB_PERIL).is_null())
+        .select(Y.REGION_PERIL_ID, BW.BASE_MODEL)
+        .rename({BW.BASE_MODEL: _GENERIC_BASE_MODEL})
+    )
+
     return (
         ylt
-        .join(_blend_weights_by_peril_bucket(blending_weights), on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="left")
-        .join(_base_model_by_peril(blending_weights), on=Y.REGION_PERIL_ID, how="left")
+        .join(specific_weights, on=[Y.REGION_PERIL_ID, AF.RP_BUCKET, Y.MODELLED_REGION_PERIL], how="left")
+        .join(generic_weights, on=[Y.REGION_PERIL_ID, AF.RP_BUCKET], how="left")
+        .join(specific_base_models, on=[Y.REGION_PERIL_ID, Y.MODELLED_REGION_PERIL], how="left")
+        .join(generic_base_models, on=Y.REGION_PERIL_ID, how="left")
         .with_columns(
-            pl.col(AF.VK_PROPORTION).fill_null(0.5).cast(pl.Float64),
-            pl.col(AF.RL_PROPORTION).fill_null(0.5).cast(pl.Float64),
-            pl.col(AF.BASE_MODEL).fill_null(pl.col(Y.VENDOR)).cast(pl.String),
+            pl.coalesce(pl.col(_SPECIFIC_VK_PROP), pl.col(_GENERIC_VK_PROP), pl.lit(0.5))
+              .cast(pl.Float64)
+              .alias(AF.VK_PROPORTION),
+            pl.coalesce(pl.col(_SPECIFIC_RL_PROP), pl.col(_GENERIC_RL_PROP), pl.lit(0.5))
+              .cast(pl.Float64)
+              .alias(AF.RL_PROPORTION),
+            pl.coalesce(pl.col(_SPECIFIC_BASE_MODEL), pl.col(_GENERIC_BASE_MODEL), pl.col(Y.VENDOR))
+              .cast(pl.String)
+              .alias(AF.BASE_MODEL),
+        )
+        .drop(
+            _SPECIFIC_VK_PROP, _GENERIC_VK_PROP,
+            _SPECIFIC_RL_PROP, _GENERIC_RL_PROP,
+            _SPECIFIC_BASE_MODEL, _GENERIC_BASE_MODEL,
         )
     )
 
