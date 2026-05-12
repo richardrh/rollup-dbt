@@ -2,7 +2,7 @@
 
 Covers:
   #1  f-string interpolation in _cmd_test_sql warning
-  #2  bare `rollup` prints help and exits 0
+  #2  bare `rollup` reaches the interactive plan flow
   #3  all_ylt_ok property + _cmd_run gates on it
   #4  push-to-sql exception path returns exit 2 with message
   #5  _cmd_run wraps pipeline exceptions cleanly
@@ -125,19 +125,32 @@ def test_all_ylt_ok_true_when_both_vendors_have_files(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# #2 bare `rollup` prints help and exits 0
+# #2 bare `rollup` reaches interactive flow
 # ---------------------------------------------------------------------------
 
-def test_bare_rollup_prints_help_exits_0():
-    """Invoking main() with no args prints help and returns 0."""
+def test_bare_rollup_prints_plan_and_aborts_without_tty(tmp_path, monkeypatch):
+    """Invoking main() with no args starts the run flow, not argparse help."""
+    import polars as pl
     from rollup.cli import main
+    from rollup.schemas import frames as F
+
+    cfg = _make_config(tmp_path)
+    for vendor, glob, schema in [
+        (cfg.vendor(VendorName.VERISK),   "air_ylt_test.parquet",      F.RAW_VERISK_YLT),
+        (cfg.vendor(VendorName.RISKLINK), "risklink_ylt_test.parquet", F.RAW_RISKLINK_YLT),
+    ]:
+        vendor.ylt_dir.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({col: [] for col in schema.names()}, schema=schema).write_parquet(vendor.ylt_dir / glob)
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
 
     buf = io.StringIO()
     with patch("sys.stdout", buf):
         rc = main([])
-    assert rc == 0
+    assert rc == 1
     output = buf.getvalue()
-    assert "usage" in output.lower() or "rollup" in output.lower()
+    assert "Pipeline plan" in output
+    assert "usage:" not in output.lower()
+    assert "refusing to run without --yes" in output
 
 
 def test_rollup_dry_run_does_not_print_help(tmp_path, monkeypatch):
@@ -159,6 +172,17 @@ def test_rollup_dry_run_does_not_print_help(tmp_path, monkeypatch):
     output = buf.getvalue()
     # Plan output contains "Pipeline plan" or "[seeds]" — not the argparse usage line
     assert "Pipeline plan" in output or "[seeds]" in output
+
+
+def test_audit_outputs_default_on_and_can_be_disabled():
+    """Audit/debug parquets are now default-on for operator explainability."""
+    from rollup.cli import _build_parser
+
+    parser = _build_parser()
+
+    assert parser.parse_args([]).dump_interim is True
+    assert parser.parse_args(["--dump-interim"]).dump_interim is True
+    assert parser.parse_args(["--no-audit"]).dump_interim is False
 
 
 # ---------------------------------------------------------------------------

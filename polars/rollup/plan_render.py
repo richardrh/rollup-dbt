@@ -219,8 +219,8 @@ def confirm(plan: Plan, *, assume_yes: bool = False, stream=sys.stdout) -> bool:
             print("(--yes) proceeding", file=stream)
         return True
     if not sys.stdin.isatty():
-        print("(non-interactive stdin) proceeding", file=stream)
-        return True
+        print("(non-interactive stdin) refusing to run without --yes", file=stream)
+        return False
     try:
         prompt = "Proceed? [y/N]: "
         if use_rich:

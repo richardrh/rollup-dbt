@@ -32,10 +32,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config.setup_logging(args.log_level)
 
-    if args.cmd is None and not args.dry_run and not args.yes:
-        parser.print_help()
-        return 0
-
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "derive-blending":   _cmd_derive_blending,
@@ -61,9 +57,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="verbosity (default WARNING; also settable via ROLLUP_LOG env var)",
     )
 
-    # Default-flow flags (no subcommand) — `rollup --yes` runs the pipeline,
-    # `rollup --dry-run` prints the plan. Kept on the top-level parser so
-    # bare `rollup ...` keeps working without a `run` subcommand.
+    # Default-flow flags (no subcommand) — bare `rollup` runs the interactive
+    # wizard, `rollup --yes` runs non-interactively, and `rollup --dry-run`
+    # prints the plan. Kept on the top-level parser so users don't need a
+    # separate `run` subcommand.
     parser.add_argument(
         "-y", "--yes", action="store_true",
         help="skip the interactive y/N confirmation",
@@ -72,10 +69,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="print the plan and exit without running the pipeline",
     )
-    parser.add_argument(
-        "-d", "--dump-interim", action="store_true",
-        help="also write audit_wide.parquet + audit_long.parquet to "
-             "<output_dir>/debug/ for read-across verification",
+    audit_group = parser.add_mutually_exclusive_group()
+    audit_group.add_argument(
+        "-d", "--dump-interim", dest="dump_interim", action="store_true", default=True,
+        help="write audit_wide.parquet + audit_long.parquet to <output_dir>/debug/ "
+             "for read-across verification (default)",
+    )
+    audit_group.add_argument(
+        "--no-audit", dest="dump_interim", action="store_false",
+        help="skip debug audit_wide.parquet and audit_long.parquet outputs",
     )
     parser.add_argument(
         "--min-loss", type=float, default=None, metavar="N",
@@ -178,7 +180,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
         return 2
 
-    if not config.confirm(plan, assume_yes=args.yes):
+    if not config.confirm(plan, assume_yes=args.yes, stream=sys.stdout):
         print("aborted by user")
         return 1
 
