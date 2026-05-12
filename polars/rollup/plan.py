@@ -132,12 +132,17 @@ def _check_dir_glob(
     directory: Path,
     glob: str,
     parquet_schema: pl.Schema | None = None,
+    optional_missing_ok: bool = False,
 ) -> list[Check]:
     """Generic dir-pattern check for YLT parquets and EP-summary files."""
     if not directory.exists():
+        if optional_missing_ok:
+            return [Check(label=glob, path=directory, ok=True, note="optional; directory does not exist")]
         return [Check(label=glob, path=directory, ok=False, note="directory does not exist")]
     files = sorted(directory.glob(glob))
     if not files:
+        if optional_missing_ok:
+            return [Check(label=glob, path=directory, ok=True, note="optional; using blending_weights seed")]
         return [Check(label=glob, path=directory, ok=False, note="no files match pattern")]
     checks: list[Check] = []
     for path in files:
@@ -183,7 +188,12 @@ def build_plan(config: Config) -> Plan:
         sections.append(Section(
             title=f"ep_summaries {vendor.name}",
             header=f"{vendor.ep_summary_dir}  pattern={vendor.ep_summary_glob}",
-            checks=_check_dir_glob(vendor.name, vendor.ep_summary_dir, vendor.ep_summary_glob),
+            checks=_check_dir_glob(
+                vendor.name,
+                vendor.ep_summary_dir,
+                vendor.ep_summary_glob,
+                optional_missing_ok=True,
+            ),
         ))
 
     sections.append(Section(

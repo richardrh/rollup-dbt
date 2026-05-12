@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rollup Polars Pipeline Demo</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --good:#22c55e; }
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
+    .deck { scroll-snap-type:y mandatory; height:100vh; overflow-y:auto; }
+    section { box-sizing:border-box; min-height:100vh; padding:7vh 9vw; scroll-snap-align:start; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid #1f2937; }
+    h1 { font-size:4.5rem; line-height:1; margin:0 0 1rem; }
+    h2 { font-size:3rem; line-height:1.05; margin:0 0 2rem; color:var(--accent); }
+    p, li { font-size:1.55rem; line-height:1.45; }
+    ul { margin:0; padding-left:1.6em; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background:#020617; border:1px solid #334155; border-radius:16px; padding:1.2rem; overflow:auto; font-size:1.25rem; }
+    .muted { color:var(--muted); }
+    .note { margin-top:2rem; padding:1rem 1.25rem; background:#082f49; border-left:5px solid var(--accent); border-radius:10px; color:#dbeafe; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:2rem; }
+    .card { background:var(--card); border:1px solid #334155; border-radius:20px; padding:1.5rem; }
+    .ok { color:var(--good); font-weight:700; }
+    .small { font-size:1.1rem; }
+  </style>
+</head>
+<body>
+<main class="deck">
+  <section>
+    <h1>Rollup Polars Pipeline Demo</h1>
+    <p class="muted">Product / underwriting / engineering stakeholders · 10–15 minutes</p>
+    <p><strong>Goal:</strong> show the pipeline is usable, explainable, tested, and January-aligned.</p>
+  </section>
+
+  <section>
+    <h2>1. What this product does</h2>
+    <p><strong>Turns vendor catastrophe YLTs into Hisco-ready rollup outputs.</strong></p>
+    <ul>
+      <li>Reads RiskLink and Verisk YLT parquet files</li>
+      <li>Applies official rollup scope and factor chain</li>
+      <li>Produces Hisco fanout parquets plus audit outputs</li>
+      <li>Supports parquet-only operation and optional SQL Server push</li>
+    </ul>
+    <p class="note">“This replaces spreadsheet/manual rollup steps with a repeatable pipeline.”</p>
+  </section>
+
+  <section>
+    <h2>2. Why this matters</h2>
+    <div class="grid">
+      <div class="card"><h3>Before</h3><ul><li>Manual joins and spreadsheet checks</li><li>Hard to prove what factor changed a number</li><li>Risk of drift from January reference logic</li></ul></div>
+      <div class="card"><h3>Now</h3><ul><li>One CLI command gives a checked plan</li><li>Each factor is visible in audit files</li><li>Deterministic tests prove key calculations</li></ul></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Demo flow</h2>
+    <pre>uv run python -m rollup.cli --dry-run -y
+uv run python -m rollup.cli -y --min-loss 0 --dump-interim
+uv run pytest polars/tests/test_deterministic_e2e.py -q</pre>
+    <p>Optional if Docker SQL Server is available:</p>
+    <pre>uv run pytest polars/tests/test_sql_integration.py -q --run-integration</pre>
+  </section>
+
+  <section>
+    <h2>4. CLI plan: confidence before running</h2>
+    <ul>
+      <li>Seed files and row counts</li>
+      <li>Vendor YLT files and schema checks</li>
+      <li>EP summary availability</li>
+      <li>Output directory</li>
+      <li>SQL configured or parquet-only mode</li>
+    </ul>
+    <p class="note">“Operators can see missing data before spending time on a run.”</p>
+  </section>
+
+  <section>
+    <h2>5. Factor chain at a glance</h2>
+    <div class="grid">
+      <div class="card"><h3>MAIN</h3><pre>raw loss
+→ blending uplift
+→ cap
+→ local currency / FX
+→ forecast
+→ EUWS
+→ fine-art gross</pre></div>
+      <div class="card"><h3>DIALSUP</h3><pre>raw loss × forecast
+× EUWS × fine-art gross</pre><p class="small">Bypasses uplift, cap, and FX to match January intent.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>6. January alignment delivered</h2>
+    <ul>
+      <li>Verisk STC filtering</li>
+      <li>Return-period blending buckets</li>
+      <li>DIALSUP January-style formula</li>
+      <li>Fine-art AAL vs tail factor by rank bucket</li>
+      <li>Sub-peril blending override with generic fallback</li>
+      <li>EP ranking deterministic on tied losses</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>7. Deterministic proof test</h2>
+    <pre>Verisk AAL   = 1,000
+RiskLink AAL = 500
+50/50 blend  = 750
+uplift       = 750 / 1,000 = 0.75</pre>
+    <pre>100 → 75
+200 → 150
+300 → 225</pre>
+    <p class="note">“This is not a smoke test. It checks exact values through the CLI pipeline.”</p>
+  </section>
+
+  <section>
+    <h2>8. Auditability</h2>
+    <p>With <code>--dump-interim</code>, the pipeline writes:</p>
+    <ul>
+      <li><code>audit_wide.parquet</code> — one row per event with factors left-to-right</li>
+      <li><code>audit_long.parquet</code> — metric/value format for analysis</li>
+      <li><code>mts_tbl_ylt_combined_all_factors.parquet</code> — default combined audit output</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. Quality gates passing</h2>
+    <pre><span class="ok">Default suite: 193 passed, 97 skipped</span>
+<span class="ok">Fuzz suite:    90 passed</span>
+<span class="ok">SQL suite:     7 passed</span></pre>
+    <p class="muted">Skipped by default: fuzz tests require <code>--run-fuzz</code>; SQL integration requires <code>--run-integration</code>.</p>
+  </section>
+
+  <section>
+    <h2>10. What is still explicitly not hidden</h2>
+    <ul>
+      <li>Make SQL push atomic with staging/swap</li>
+      <li>Add more uniqueness guards on joins</li>
+      <li>Replace silent fallbacks with warnings/errors where appropriate</li>
+      <li>Decide when to delete legacy January/reference folders</li>
+    </ul>
+    <p class="note">“The product is demoable now, and the remaining risk list is known and trackable.”</p>
+  </section>
+
+  <section>
+    <h2>11. Close</h2>
+    <p><strong>The rollup is now a repeatable, inspectable Polars product with January-aligned calculations and automated proof tests.</strong></p>
+    <pre>uv run pytest polars/ -q</pre>
+  </section>
+</main>
+</body>
+</html>
