@@ -289,11 +289,9 @@ class AllFactorsCol(StrEnum):
     date to the seed = new `f_{tag}` column + new metric columns
     automatically; no code change.
 
-    `FA_GROSS_TAIL_FACTOR` is carried for audit transparency only — it is
-    NOT multiplied into any metric in the current chain. The fine-art
-    AAL/tail split exists for future tail-loss adjustments; today only
-    `FA_GROSS_AAL_FACTOR` is applied. If you start using tail, multiply it
-    in `_compute_metrics` and add a new column suffix (`_fagrosstail`).
+    `FA_GROSS_FACTOR` is the effective January-compatible factor: AAL rows
+    use `FA_GROSS_AAL_FACTOR`, while return-period buckets >= 200 use
+    `FA_GROSS_TAIL_FACTOR`.
     """
     # dims
     VENDOR                = "vendor"
@@ -329,6 +327,7 @@ class AllFactorsCol(StrEnum):
     EUWS_FACTOR          = "euws_factor"
     FA_GROSS_AAL_FACTOR  = "fa_gross_aal_factor"
     FA_GROSS_TAIL_FACTOR = "fa_gross_tail_factor"
+    FA_GROSS_FACTOR      = "fa_gross_factor"
 
 
 class MetricCol(StrEnum):

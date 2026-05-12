@@ -28,6 +28,6 @@ def add_dialsup(ylt: pl.LazyFrame, forecast_tag: str) -> pl.LazyFrame:
             pl.col(Y.LOSS)
             * pl.col(forecast_factor_col(forecast_tag))
             * pl.col(AF.EUWS_FACTOR)
-            * pl.col(AF.FA_GROSS_AAL_FACTOR)
+            * pl.col(AF.FA_GROSS_FACTOR)
         ).alias(DIALSUP_COL),
     )

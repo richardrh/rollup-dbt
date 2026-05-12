@@ -287,8 +287,11 @@ def attach_euws(
 
 
 def attach_fagross(ylt: pl.LazyFrame, fineart_adjustments: pl.LazyFrame) -> pl.LazyFrame:
-    """Fine-art gross-to-net `aal_factor` + `tail_factor` per
-    (lob_id, region_peril_id). Non-FA rows get factor=1.0 via fill_null."""
+    """Fine-art gross-to-net factors per (lob_id, region_peril_id).
+
+    January applies ``aal_factor`` for bucket 0 rows and ``tail_factor`` for
+    tail buckets. Non-FA rows get factor=1.0 via fill_null.
+    """
     fa = fineart_adjustments.select(
         pl.col(FA.LOB_ID),
         pl.col(FA.REGION_PERIL_ID),
@@ -301,8 +304,14 @@ def attach_fagross(ylt: pl.LazyFrame, fineart_adjustments: pl.LazyFrame) -> pl.L
                pl.col(AF.FA_GROSS_AAL_FACTOR).fill_null(1.0).cast(pl.Float64),
                pl.col(AF.FA_GROSS_TAIL_FACTOR).fill_null(1.0).cast(pl.Float64),
            )
+           .with_columns(
+               pl.when(pl.col(AF.RP_BUCKET) == 0)
+                 .then(pl.col(AF.FA_GROSS_AAL_FACTOR))
+                 .otherwise(pl.col(AF.FA_GROSS_TAIL_FACTOR))
+                 .alias(AF.FA_GROSS_FACTOR),
+           )
     )
-    log.info("fa_gross: aal + tail factors attached (1.0 for non-FA rows)")
+    log.info("fa_gross: effective aal/tail factor attached (1.0 for non-FA rows)")
     return out
 
 

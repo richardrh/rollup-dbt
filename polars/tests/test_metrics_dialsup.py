@@ -18,7 +18,7 @@ def test_add_dialsup_single_column_named_dialsup():
         Y.LOSS:                    [100.0],
         forecast_factor_col(tag):  [1.05],
         AF.EUWS_FACTOR:            [0.95],
-        AF.FA_GROSS_AAL_FACTOR:    [1.10],
+        AF.FA_GROSS_FACTOR:        [1.10],
     }).lazy()
 
     out = add_dialsup(ylt, tag).collect()
@@ -34,7 +34,7 @@ def test_add_dialsup_matches_january_factor_formula():
         Y.LOSS:                    [1000.0, 500.0, 250.0],
         forecast_factor_col(tag):  [1.05,   1.10,  1.0],
         AF.EUWS_FACTOR:            [0.95,   1.00,  0.8],
-        AF.FA_GROSS_AAL_FACTOR:    [1.10,   1.20,  1.0],
+        AF.FA_GROSS_FACTOR:        [1.10,   1.20,  1.0],
         AF.RATE_TO_GBP:            [1.25,   0.88,  2.0],
         AF.UPLIFT_FACTOR_CAPPED:   [9.0,    8.0,   7.0],
     }).lazy()
@@ -54,7 +54,7 @@ def test_dialsup_uses_requested_forecast_tag():
         forecast_factor_col("202601"): [1.01, 1.02],
         forecast_factor_col(selected_tag): [1.10, 1.20],
         AF.EUWS_FACTOR:                 [0.90, 1.00],
-        AF.FA_GROSS_AAL_FACTOR:         [1.00, 1.50],
+        AF.FA_GROSS_FACTOR:             [1.00, 1.50],
     }).lazy()
 
     out = add_dialsup(ylt, selected_tag).collect()
