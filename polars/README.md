@@ -16,7 +16,7 @@ uv run rollup --yes --dump-interim       # also write audit parquets
 uv run rollup --yes --min-loss 0         # disable default loss filter (keep every row)
 uv run rollup --yes --log-level INFO     # show factor-chain trace
 uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
-uv run rollup derive-blending            # rewrite blending_weights from AAL/200/1000 EP buckets
+uv run rollup derive-blending            # rewrite blending_weights from AAL/200/1000/10000 EP buckets
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser

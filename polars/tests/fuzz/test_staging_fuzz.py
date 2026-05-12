@@ -130,7 +130,7 @@ def _consistent_verisk_input(draw: st.DrawFn) -> tuple[
     1. N peril_ids → perils
     2. N lob_ids with distinct modelled_lob strings → lobs
     3. N verisk analyses (lob_id=null) referencing peril_ids
-    4. Raw Verisk YLT rows with CatalogTypeCode='STC' referencing
+    4. Raw Verisk YLT rows with CatalogTypeCode containing 'STC' referencing
        analysis IDs and ExposureAttribute matching modelled_lob.
     """
     n = draw(st.integers(min_value=1, max_value=4))
@@ -256,7 +256,7 @@ def test_normalize_verisk_vendor_column_is_verisk(
 def test_normalize_verisk_non_stc_rows_dropped(
     inputs: tuple[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame, pl.LazyFrame],
 ) -> None:
-    """Rows with CatalogTypeCode != 'STC' are silently dropped.
+    """Rows whose normalized CatalogTypeCode lacks 'STC' are silently dropped.
     Since the strategy always generates STC rows, row count should be preserved
     (modulo inner-join drops from mismatched FKs — impossible here by construction).
     """

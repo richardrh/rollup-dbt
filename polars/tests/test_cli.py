@@ -17,7 +17,7 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -204,6 +204,8 @@ def test_cmd_run_catches_pipeline_exception(tmp_path, monkeypatch, capsys):
     assert "pipeline failed" in captured.err
     assert "RuntimeError" in captured.err
     assert "injected boom" in captured.err
+    assert "see docs/troubleshooting.md" in captured.err
+    assert "http" not in captured.err.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -266,71 +268,22 @@ def test_docs_subcommand_is_registered():
 
 def test_docs_subcommand_opens_browser_when_site_exists(tmp_path, monkeypatch, capsys):
     """_cmd_docs opens the browser and returns 0 when site/index.html exists."""
-    import argparse
-    from rollup.cli import _cmd_docs
+    from rollup.cli import _build_parser, _cmd_docs
 
     site_dir = tmp_path / "site"
     site_dir.mkdir()
-    (site_dir / "index.html").write_text("<html/>")
+    site_index = site_dir / "index.html"
+    site_index.write_text("<html/>")
 
     opened_urls: list[str] = []
+    monkeypatch.setattr("rollup.cli._docs_repo_root", lambda: tmp_path)
+    monkeypatch.setattr("webbrowser.open", lambda url: opened_urls.append(url))
 
-    def fake_open(url: str) -> None:
-        opened_urls.append(url)
+    rc = _cmd_docs(_build_parser().parse_args(["docs"]))
 
-    with patch("webbrowser.open", fake_open), \
-         patch("rollup.cli.Path") as MockPath:
-        # Make Path(__file__).resolve().parent.parent.parent point to tmp_path
-        mock_path_instance = MagicMock()
-        mock_path_instance.resolve.return_value = mock_path_instance
-        mock_path_instance.parent.parent.parent = tmp_path
-        MockPath.return_value = mock_path_instance
-
-        # Build a real args namespace
-        from rollup.cli import _build_parser
-        args = _build_parser().parse_args(["docs"])
-
-    # Call _cmd_docs directly with the real tmp_path plumbing
-    args2 = argparse.Namespace(serve=False, build=False)
-
-    # Patch __file__ resolution inside _cmd_docs by mocking the inner Path call
-    real_site_index = site_dir / "index.html"
-
-    with patch("webbrowser.open", fake_open), \
-         patch("rollup.cli.Path", side_effect=lambda *a, **kw: (
-             Path(*a, **kw) if a and a[0] != "__file__" else MagicMock()
-         )):
-        pass  # just verify import works
-
-    # Simpler: patch subprocess to avoid side-effects and call with real path
-    with patch("webbrowser.open", fake_open):
-        import rollup.cli as cli_mod
-        orig_path = cli_mod.Path
-        try:
-            cli_mod.Path = lambda *a, **kw: (
-                real_site_index.parent.parent if a and str(a[0]).endswith("cli.py") else orig_path(*a, **kw)
-            )
-            # site_index = repo_root / "site" / "index.html"
-            # repo_root needs to resolve to tmp_path — too complex to mock Path entirely.
-            # Test the simpler observable: _cmd_docs returns 0 when site exists.
-            # We'll test via a thin integration approach instead.
-        finally:
-            cli_mod.Path = orig_path
-
-    # Thin direct test: mock only the site_index existence check
-    fake_site_index = MagicMock(spec=Path)
-    fake_site_index.exists.return_value = True
-    fake_site_index.as_uri.return_value = "file:///tmp/site/index.html"
-    fake_site_index.__str__ = lambda self: "/tmp/site/index.html"
-
-    captured_opens: list[str] = []
-
-    with patch("webbrowser.open", lambda u: captured_opens.append(u)), \
-         patch("rollup.cli._cmd_docs", wraps=_cmd_docs) as _:
-        pass
-
-    # Verify the function signature and dispatch are correct
-    assert callable(_cmd_docs)
+    assert rc == 0
+    assert opened_urls == [site_index.as_uri()]
+    assert f"opened {site_index}" in capsys.readouterr().out
 
 
 def test_docs_subcommand_args_parsed_correctly():
@@ -400,25 +353,155 @@ def test_cmd_run_aborts_when_ylt_missing(tmp_path, monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
-# #1 f-string in test-sql warning (regression guard via string inspection)
+# test-sql report rendering
 # ---------------------------------------------------------------------------
 
-def test_test_sql_warning_is_fstring():
-    """Ensure the schema-not-found warning uses f-string interpolation."""
-    import ast
-    import inspect
-    import rollup.cli as cli_mod
+def test_test_sql_missing_connection_message_is_single_error():
+    from rollup.cli import _sql_conn_missing_message
 
-    source = inspect.getsource(cli_mod._cmd_test_sql)
-    # The warning message must NOT contain the literal text {args.schema} inside
-    # a plain string (non-f-string). Parse the function AST.
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            # A plain string (not f-string JoinedStr) must not contain uninterpolated
-            # {args.schema} — that would be the bug.
-            if "{args.schema}" in node.value:
-                pytest.fail(
-                    f"Found uninterpolated {{args.schema}} in a plain string literal: "
-                    f"{node.value!r}"
-                )
+    message = _sql_conn_missing_message()
+
+    assert message.startswith("error:")
+    assert message.endswith("\n")
+    assert message.count("\n") == 1
+
+
+def test_test_sql_report_success_is_single_stdout_block():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=True,
+        version="Microsoft SQL Server 2022\nextra details",
+        database="rollup",
+        schema="dbo",
+        schema_exists=True,
+        error=None,
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://...@server/db",
+        schema="dbo",
+        result=result,
+    )
+
+    assert code == 0
+    assert stderr == ""
+    assert "SQL connection probe" in stdout
+    assert "Target connection : mssql://...@server/db" in stdout
+    assert "Status            : ok" in stdout
+    assert "Server version   : Microsoft SQL Server 2022" in stdout
+    assert "extra details" not in stdout
+    assert "Schema 'dbo'         : exists" in stdout
+
+
+def test_test_sql_report_missing_schema_returns_warning():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=True,
+        version="Microsoft SQL Server 2022",
+        database="rollup",
+        schema="marts",
+        schema_exists=False,
+        error=None,
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://server/db",
+        schema="marts",
+        result=result,
+    )
+
+    assert code == 2
+    assert "Schema 'marts'       : missing" in stdout
+    assert "Warning: schema 'marts' not found" in stderr
+    assert "push-to-sql --schema marts" in stderr
+    assert "{args.schema}" not in stderr
+
+
+def test_test_sql_report_connection_failure_goes_to_stderr():
+    from rollup.cli import _format_test_sql_report
+    from rollup.io.sql_push import ConnectionTestResult
+
+    result = ConnectionTestResult(
+        ok=False,
+        version=None,
+        database=None,
+        schema=None,
+        schema_exists=None,
+        error="OperationalError: timeout",
+    )
+
+    code, stdout, stderr = _format_test_sql_report(
+        redacted_conn_str="mssql://server/db",
+        schema=None,
+        result=result,
+    )
+
+    assert code == 2
+    assert "Status            : failed" in stdout
+    assert stderr == "Error: OperationalError: timeout\n"
+
+
+# ---------------------------------------------------------------------------
+# push-to-sql report rendering
+# ---------------------------------------------------------------------------
+
+def test_push_preview_lists_targets_and_destructive_note(tmp_path):
+    from rollup.cli import _format_push_preview
+
+    parquet = tmp_path / "HiscoAIR_202601_main.parquet"
+    parquet.write_bytes(b"x" * 1_000_000)
+
+    report = _format_push_preview(
+        redacted_conn_str="mssql://...@server/db",
+        schema="marts",
+        output_dir=tmp_path,
+        parquets=[parquet],
+    )
+
+    assert "SQL push preview" in report
+    assert "Target connection : mssql://...@server/db" in report
+    assert "Target schema     : marts" in report
+    assert "dropped and replaced" in report
+    assert "HiscoAIR_202601_main.parquet" in report
+    assert "marts.HiscoAIR_202601_main" in report
+
+
+def test_confirm_push_refuses_non_tty_without_yes():
+    from rollup.cli import _confirm_push
+
+    code, stdout, stderr = _confirm_push(False, stdin=io.StringIO(""))
+
+    assert code == 2
+    assert stdout == ""
+    assert "refusing to push without --yes" in stderr
+
+
+def test_confirm_push_abort_message_when_user_declines():
+    from rollup.cli import _confirm_push
+
+    class TtyInput(io.StringIO):
+        def isatty(self):
+            return True
+
+    code, stdout, stderr = _confirm_push(
+        False,
+        stdin=TtyInput(""),
+        input_func=lambda _: "n",
+    )
+
+    assert code == 1
+    assert stdout == "aborted by user\n"
+    assert stderr == ""
+
+
+def test_push_error_report_includes_diagnostic_hint():
+    from rollup.cli import _format_push_error
+
+    report = _format_push_error("HiscoAIR.parquet", RuntimeError("boom"))
+
+    assert "error pushing HiscoAIR.parquet: RuntimeError: boom" in report
+    assert "rollup test-sql" in report

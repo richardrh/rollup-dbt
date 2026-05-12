@@ -8,7 +8,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from rollup.stages.blending import derive_blending_weights
+from rollup.stages.blending import derive_blending_weights, _canonical_ep_rows
 from rollup.config import VendorName
 from rollup.schemas.columns import (
     AnalysesCol as AN,
@@ -91,16 +91,36 @@ def _write_vk_long_csv(tmp_path: Path, rows: list[dict]) -> Path:
     return path
 
 
+def test_canonical_ep_rows_aligns_vendor_specific_labels(tmp_path: Path):
+    """RiskLink region_peril and Verisk analysis land in one peril_label column."""
+    rl_csv = _write_rl_long_csv(tmp_path, [
+        {RL.ID: 1, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU FL HD", RL.GL: 10.0},
+    ])
+    vk_csv = _write_vk_long_csv(tmp_path, [
+        {VK.RP: 0, VK.EP_TYPE: "AAL", VK.ANALYSIS: "EU_FL", VK.LOB: "MGA", VK.GL: 20.0},
+    ])
+
+    rl = _canonical_ep_rows([rl_csv], VendorName.RISKLINK)
+    vk = _canonical_ep_rows([vk_csv], VendorName.VERISK)
+
+    assert rl.columns == vk.columns == ["vendor", "rp", "ep_type", "lob", "peril_label", "gl"]
+    assert rl["peril_label"].to_list() == ["EU FL HD"]
+    assert vk["peril_label"].to_list() == ["EU_FL"]
+    assert rl["vendor"].to_list() == [VendorName.RISKLINK.value]
+    assert vk["vendor"].to_list() == [VendorName.VERISK.value]
+
+
 # ---------------------------------------------------------------------------
 # test_derive_blending_uses_target_aal_and_oep_buckets
 # ---------------------------------------------------------------------------
 
 def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
-    """Only AAL/0 plus OEP/200 and OEP/1000 rows produce weights."""
+    """Only AAL/0 plus target OEP bucket rows produce weights."""
     rl_rows = [
         {RL.ID: 1, RL.RP: 0,    RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 30.0},
         {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 40.0},
         {RL.ID: 1, RL.RP: 1000, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 80.0},
+        {RL.ID: 1, RL.RP: 10000, RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 90.0},
         {RL.ID: 1, RL.RP: 100,  RL.EP_TYPE: "OEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 5000.0},
         {RL.ID: 1, RL.RP: 200,  RL.EP_TYPE: "AEP", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 9000.0},
     ]
@@ -108,6 +128,7 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
         {VK.RP: 0,    VK.EP_TYPE: "AAL", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 70.0},
         {VK.RP: 200,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 60.0},
         {VK.RP: 1000, VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 20.0},
+        {VK.RP: 10000, VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 10.0},
         {VK.RP: 100,  VK.EP_TYPE: "OEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 5000.0},
         {VK.RP: 200,  VK.EP_TYPE: "AEP", VK.ANALYSIS: "EU_EQ", VK.LOB: "MGA", VK.GL: 9000.0},
     ]
@@ -124,7 +145,7 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
         perils,
     )
 
-    assert set(df[BW.RETURN_PERIOD].unique().to_list()) == {0, 200, 1000}
+    assert set(df[BW.RETURN_PERIOD].unique().to_list()) == {0, 200, 1000, 10000}
 
     def weight(vendor: VendorName, return_period: int) -> float:
         row = df.filter(
@@ -138,9 +159,11 @@ def test_derive_blending_uses_target_aal_and_oep_buckets(tmp_path: Path):
     assert weight(VendorName.RISKLINK, 0) == pytest.approx(0.3)
     assert weight(VendorName.RISKLINK, 200) == pytest.approx(0.4)
     assert weight(VendorName.RISKLINK, 1000) == pytest.approx(0.8)
+    assert weight(VendorName.RISKLINK, 10000) == pytest.approx(0.9)
     assert weight(VendorName.VERISK, 0) == pytest.approx(0.7)
     assert weight(VendorName.VERISK, 200) == pytest.approx(0.6)
     assert weight(VendorName.VERISK, 1000) == pytest.approx(0.2)
+    assert weight(VendorName.VERISK, 10000) == pytest.approx(0.1)
 
 
 # ---------------------------------------------------------------------------

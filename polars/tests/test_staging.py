@@ -128,6 +128,27 @@ def test_normalize_verisk_ylt_resolves_lob_via_exposure_attribute():
     assert row[Y.LOSS]                  == 100.0
 
 
+def test_normalize_verisk_ylt_matches_trim_upper_stc_contains_filter():
+    """January kept rows where trim(upper(CatalogTypeCode)) LIKE '%STC%'."""
+    raw = pl.DataFrame({
+        VK.ANALYSIS:           ["EU_WS", "EU_WS", "EU_WS"],
+        VK.EXPOSURE_ATTRIBUTE: ["lob_a", "lob_a", "lob_a"],
+        VK.CATALOG_TYPE_CODE:  [" stc ", "XSTCY", "HIST"],
+        VK.EVENT_ID:           [200, 201, 202],
+        VK.MODEL_CODE:         [41, 41, 41],
+        VK.YEAR_ID:            [2026, 2026, 2026],
+        VK.PERILSET_CODE:      [1, 1, 1],
+        VK.GROUND_UP_LOSS:     [120.0, 121.0, 122.0],
+        VK.GROSS_LOSS:         [110.0, 111.0, 112.0],
+        VK.NET_PRE_CAT_LOSS:   [100.0, 101.0, 102.0],
+        VK.FILENAME:           ["test", "test", "test"],
+    }, schema=F.RAW_VERISK_YLT).lazy()
+
+    out = normalize_verisk_ylt(raw, _analyses(), _perils(), _lobs()).collect()
+
+    assert out[Y.EVENT_ID].sort().to_list() == [200, 201]
+
+
 def test_normalized_outputs_match_schema():
     rl = normalize_risklink_ylt(_raw_risklink_ylt(), _analyses(), _perils(), _lobs()).collect()
     vk = normalize_verisk_ylt  (_raw_verisk_ylt(),   _analyses(), _perils(), _lobs()).collect()

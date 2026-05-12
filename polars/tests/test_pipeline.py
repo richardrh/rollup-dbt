@@ -6,13 +6,11 @@ from datetime import date
 from pathlib import Path
 
 import polars as pl
-import pytest
 
 from rollup import config
 from rollup.config import Flavor, Vendor, VendorName
 from rollup.pipeline import (
     VariantSpec,
-    _compute_dialsup,
     build_variants,
     count_event_id_orphans,
     forecast_dates_from_seed,
@@ -193,46 +191,6 @@ def test_count_event_id_orphans_counts_unmatched_rows():
     ylt = _ylt_for_orphan_test([10, 20, 30, 40])
     ae  = _air_events_seed([10, 20])
     assert count_event_id_orphans(ylt, ae, vendor_filter=VendorName.VERISK) == 2
-
-
-# -----------------------------------------------------------------------------
-# _compute_dialsup: loss / rate_to_gbp (no factors)
-# -----------------------------------------------------------------------------
-
-def test_compute_dialsup_single_column_named_dialsup():
-    """_compute_dialsup adds exactly one column called 'dialsup', not per-tag."""
-    ylt = pl.DataFrame({
-        Y.LOSS:         [100.0],
-        AF.RATE_TO_GBP: [1.25],
-    }).lazy()
-    out = _compute_dialsup(ylt).collect()
-    assert "dialsup" in out.columns
-    # No per-tag columns should exist
-    assert not any(col.startswith("dialsup_") for col in out.columns)
-
-
-def test_compute_dialsup_equals_loss_div_fx():
-    """dialsup == loss / rate_to_gbp exactly — currency conversion only, no factors."""
-    ylt = pl.DataFrame({
-        Y.LOSS:         [1000.0, 500.0, 250.0],
-        AF.RATE_TO_GBP: [1.25,   0.88,  1.0],
-    }).lazy()
-    out = _compute_dialsup(ylt).collect()
-    assert out["dialsup"][0] == pytest.approx(1000.0 / 1.25)
-    assert out["dialsup"][1] == pytest.approx(500.0  / 0.88)
-    assert out["dialsup"][2] == pytest.approx(250.0  / 1.0)
-
-
-def test_dialsup_equals_loss_div_fx():
-    """Synthetic AllFactors frame: every row's dialsup equals loss / rate_to_gbp."""
-    ylt = pl.DataFrame({
-        Y.LOSS:         [800.0, 200.0],
-        AF.RATE_TO_GBP: [0.80,  1.00],
-    }).lazy()
-    out = _compute_dialsup(ylt).collect()
-    expected = [800.0 / 0.80, 200.0 / 1.00]
-    for i, exp in enumerate(expected):
-        assert out["dialsup"][i] == pytest.approx(exp), f"row {i}: expected {exp}"
 
 
 # -----------------------------------------------------------------------------

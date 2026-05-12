@@ -7,7 +7,7 @@ suite stays cheap.
 
 What this test does:
   1. Glob-loads every `air_ylt_*.parquet` in the configured Verisk YLT dir.
-  2. Filters to `CatalogTypeCode = 'STC'` (matches january `int_vw_vk_ylt`).
+  2. Filters to `trim(upper(CatalogTypeCode)) LIKE '%STC%'`.
   3. Projects into `NormalizedYlt` shape — without real dim tables, lob_id /
      region_peril_id are dense-ranked ints per unique (ExposureAttribute,
      Analysis); labels are preserved for human inspection.
@@ -68,7 +68,7 @@ def _project_to_normalized(raw: pl.LazyFrame) -> pl.LazyFrame:
     """
     return (
         raw
-        .filter(pl.col(VK.CATALOG_TYPE_CODE) == "STC")
+        .filter(pl.col(VK.CATALOG_TYPE_CODE).str.strip_chars().str.to_uppercase().str.contains("STC"))
         .with_columns(
             pl.col(VK.EXPOSURE_ATTRIBUTE).rank("dense").cast(pl.Int64).alias(Y.LOB_ID),
             pl.col(VK.ANALYSIS).rank("dense").cast(pl.Int64).alias(Y.REGION_PERIL_ID),

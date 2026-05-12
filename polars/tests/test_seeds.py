@@ -20,6 +20,32 @@ SEEDS_DIR = Path(__file__).resolve().parents[2] / "data" / "seeds"
 
 
 # -----------------------------------------------------------------------------
+# Seed discovery is explicit path resolution, not header-based guessing.
+# -----------------------------------------------------------------------------
+
+def test_seed_file_map_matches_schema_registry():
+    assert set(seeds.SEED_FILES) == set(seeds.SCHEMA_REGISTRY)
+
+
+def test_discover_returns_fixed_relative_paths():
+    discovered = {spec.name: spec.filename for spec in seeds.discover(SEEDS_DIR)}
+    assert discovered == seeds.SEED_FILES
+
+
+def test_discover_does_not_guess_by_header(tmp_path):
+    """A matching CSV in the wrong folder should not satisfy a seed."""
+    loose_dir = tmp_path / "loose"
+    loose_dir.mkdir()
+    (loose_dir / "lobs_like.csv").write_text(
+        ",".join(F.REF_LOBS.names()) + "\n"
+    )
+
+    discovered = {spec.name: spec.filename for spec in seeds.discover(tmp_path)}
+
+    assert discovered["lobs"] == ""
+
+
+# -----------------------------------------------------------------------------
 # Every seed exists, scans, and its schema matches the declared pl.Schema.
 # -----------------------------------------------------------------------------
 

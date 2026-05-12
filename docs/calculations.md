@@ -181,7 +181,7 @@ january keyed blending off `dim_region_perils.blending_factor_*_id` →
 `reference.blending_factors.{air_blend, rms_blend}`. polars sources blend
 weights directly from `blending_weights.csv` — long-format
 `(peril_id, return_period, sub_peril, vendor, base_model, weight)`. The YLT
-gets `rp = n_sim / rnk` and `rp_bucket` (`0`, `200`, or `1000`) from
+gets `rp = n_sim / rnk` and `rp_bucket` (`0`, `200`, `1000`, or `10000`) from
 `attach_rank`, then `attach_uplift` joins on
 `(region_peril_id, rp_bucket) → (peril_id, return_period)` filtered per vendor
 (`verisk` / `risklink`), pivoted to `(vk_proportion, rl_proportion)`.

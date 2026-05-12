@@ -25,8 +25,8 @@ pipeline consumes.
 1. Declare the column enum in `schemas/columns.py`.
 2. Declare the `pl.Schema` in `schemas/frames.py`.
 3. Add a `name → schema` row to `SCHEMA_REGISTRY` below.
-4. Drop the CSV anywhere under `data/seeds/` — the loader finds it by
-   header match. No file path coding required.
+4. Add the CSV path to `SEED_FILES` below. Seed paths are explicit so the
+   loader is predictable and easy to debug.
 """
 
 from __future__ import annotations
@@ -94,84 +94,47 @@ REQUIRED_SEEDS: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Discovery — match CSVs under seeds_dir to schemas by header
+# Discovery — resolve each logical seed to its explicit CSV path
 # ---------------------------------------------------------------------------
 
-# Per-seed near-miss record: the closest CSV under `seeds_dir` that
-# overlapped a schema's header but didn't exact-match. Returned alongside
-# the SeedSpec list from `discover()` so callers can render a column-level
-# diff (e.g. "missing=[lob_id], unexpected=[renamed_col]") instead of a
-# generic "missing".
-NearMisses = dict[str, tuple[Path, list[str]]]
+SEED_FILES: dict[str, str] = {
+    "lobs":                "business/lobs.csv",
+    "perils":              "business/perils.csv",
+    "analyses":            "business/analyses.csv",
+    "rollup_scope":        "business/rollup_scope.csv",
+    "blending_weights":    "vor/blending_weights.csv",
+    "forecast_factors":    "vor/forecast_factors.csv",
+    "fx_rates":            "vor/fx_rates.csv",
+    "euws_rate_factors":   "vor/euws_rate_factors.csv",
+    "euws_rank_overrides": "adjustments/euws_rank_overrides.csv",
+    "fineart_adjustments": "adjustments/fineart_adjustments.csv",
+    "air_events":          "validation/air_events.csv",
+    "risklink_events":     "validation/risklink_events.csv",
+}
 
 
-def discover(seeds_dir: Path) -> tuple[list[SeedSpec], NearMisses]:
-    """Walk `seeds_dir` for `*.csv` and match each against `SCHEMA_REGISTRY`
-    by exact column-set equality on the header.
+if set(SEED_FILES) != set(SCHEMA_REGISTRY):
+    missing = sorted(set(SCHEMA_REGISTRY) - set(SEED_FILES))
+    extra = sorted(set(SEED_FILES) - set(SCHEMA_REGISTRY))
+    raise RuntimeError(f"SEED_FILES must match SCHEMA_REGISTRY: missing={missing}, extra={extra}")
 
-    Returns:
-        specs:       one `SeedSpec` per logical seed name (registry order);
-                     `filename` is empty for any seed missing from disk.
-        near_misses: per-seed best-overlap path + header for seeds with no
-                     exact match. Empty dict when every seed matched cleanly.
 
-    Multiple exact matches for the same schema raise `ValueError`. Files
-    whose headers don't overlap any schema are silently ignored.
+def discover(seeds_dir: Path) -> list[SeedSpec]:
+    """Return one seed spec per registry entry using fixed relative paths.
+
+    `filename` is empty when the configured file is missing. Header and dtype
+    validation happen later in the plan checker / loader against the exact
+    expected path, so there is no recursive scan or header-based guessing here.
     """
-    by_name: dict[str, Path] = {}
-    candidates: dict[str, list[tuple[int, Path, list[str]]]] = {}
-
-    if seeds_dir.exists():
-        for csv in sorted(seeds_dir.rglob("*.csv")):
-            try:
-                header = pl.scan_csv(csv).collect_schema().names()
-            except Exception as e:
-                log.warning(f"seed scan failed for {csv}: {e}")
-                continue
-            header_set = set(header)
-            matches = [
-                name for name, schema in SCHEMA_REGISTRY.items()
-                if set(schema.names()) == header_set
-            ]
-            if matches:
-                if len(matches) > 1:
-                    raise ValueError(f"seed {csv} matches multiple schemas: {matches}")
-                name = matches[0]
-                if name in by_name:
-                    log.warning(
-                        f"seed {name!r}: duplicate match — keeping {by_name[name]}, "
-                        f"ignoring {csv}"
-                    )
-                    continue
-                by_name[name] = csv
-                continue
-
-            # Near-miss candidate: file overlaps with at least one schema
-            # but not exactly. Score = size of symmetric difference; lower = closer.
-            for name, schema in SCHEMA_REGISTRY.items():
-                expected = set(schema.names())
-                if not (expected & header_set):
-                    continue
-                score = len(expected ^ header_set)
-                candidates.setdefault(name, []).append((score, csv, header))
-
-    near_misses: NearMisses = {}
-    for name in SCHEMA_REGISTRY:
-        if name in by_name or name not in candidates:
-            continue
-        best = min(candidates[name], key=lambda t: t[0])
-        near_misses[name] = (best[1], best[2])
-
-    specs = [
-        SeedSpec(
+    specs: list[SeedSpec] = []
+    for name, schema in SCHEMA_REGISTRY.items():
+        filename = SEED_FILES[name]
+        specs.append(SeedSpec(
             name=name,
-            filename=(str(by_name[name].relative_to(seeds_dir))
-                      if name in by_name else ""),
+            filename=filename if (seeds_dir / filename).exists() else "",
             schema=schema,
-        )
-        for name, schema in SCHEMA_REGISTRY.items()
-    ]
-    return specs, near_misses
+        ))
+    return specs
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +145,7 @@ def discover(seeds_dir: Path) -> tuple[list[SeedSpec], NearMisses]:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SEEDS_DIR: Path = Path(__file__).resolve().parents[2] / "data" / "seeds"
-SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)[0]
+SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +183,7 @@ def load_all(seeds_dir: Path) -> Seeds:
     A seed missing from disk raises `FileNotFoundError` with the seed name —
     the same behaviour as before discovery was introduced.
     """
-    specs, _ = discover(seeds_dir)
+    specs = discover(seeds_dir)
     log.info(f"loading {len(specs)} seeds from {seeds_dir}")
     loaded: dict[str, pl.LazyFrame] = {}
     for spec in specs:

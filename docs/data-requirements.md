@@ -52,7 +52,8 @@ After converting xlsx to long CSV (above), regenerate the blending seed:
     uv run rollup derive-blending
 
 Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
-computes per-peril totals for AAL, 1-in-200 OEP, and 1-in-1000 OEP, and writes
+computes per-peril totals for AAL, 1-in-200 OEP, 1-in-1000 OEP, and
+1-in-10000 OEP, and writes
 `data/seeds/vor/blending_weights.csv` with proportions:
 
     rl_proportion = rl_aal / (rl_aal + vk_aal)

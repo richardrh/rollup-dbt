@@ -169,7 +169,7 @@ def normalize_verisk_ylt(
         raw.Analysis           → analyses.analysis_id (vendor='verisk') → peril_id
         analyses.peril_id      → perils.peril_id → name + region + peril_family
         raw.ExposureAttribute  → lobs.modelled_lob → lob_id + ...
-    Filters `CatalogTypeCode='STC'` (matches duckdb `int_vw_vk_ylt`).
+    Filters `trim(upper(CatalogTypeCode)) LIKE '%STC%'` (matches january).
     """
     vk_analyses = (
         _analyses_for(VendorName.VERISK, analyses)
@@ -178,7 +178,7 @@ def normalize_verisk_ylt(
 
     out = (
         raw
-        .filter(pl.col(VK.CATALOG_TYPE_CODE) == "STC")
+        .filter(pl.col(VK.CATALOG_TYPE_CODE).str.strip_chars().str.to_uppercase().str.contains("STC"))
         .join(vk_analyses,        left_on=VK.ANALYSIS,           right_on=AN.ANALYSIS_ID, how="inner")
         .join(_peril_dim(perils),                                on=Y.REGION_PERIL_ID,    how="inner")
         .join(_lob_dim(lobs),     left_on=VK.EXPOSURE_ATTRIBUTE, right_on=LB.MODELLED_LOB, how="inner")
