@@ -252,6 +252,7 @@ ALL_FACTORS: pl.Schema = pl.Schema({
     AllFactorsCol.EUWS_FACTOR:           pl.Float64,
     AllFactorsCol.FA_GROSS_AAL_FACTOR:   pl.Float64,
     AllFactorsCol.FA_GROSS_TAIL_FACTOR:  pl.Float64,
+    AllFactorsCol.FA_GROSS_FACTOR:       pl.Float64,
 })
 
 METRICS: pl.Schema = pl.Schema({m: pl.Float64 for m in MetricCol})
