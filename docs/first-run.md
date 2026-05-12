@@ -50,11 +50,20 @@ Shows which files are present and which are missing. Safe to ignore missing file
 
 ## 4. Run the pipeline
 
+Interactive wizard:
+
+```bash
+uv run rollup
+```
+
+Non-interactive run:
+
 ```bash
 uv run rollup --yes
 ```
 
-Takes ~30 seconds. Output parquets appear in `data/output/`.
+Takes ~30 seconds. Output parquets and audit/debug parquets appear in `data/output/`.
+Use `--no-audit` to skip `data/output/debug/`.
 
 ## 5. Inspect output
 

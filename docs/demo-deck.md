@@ -40,8 +40,8 @@ Now:
 Run these from repo root:
 
 ```bash
-uv run python -m rollup.cli --dry-run -y
-uv run python -m rollup.cli -y --min-loss 0 --dump-interim
+uv run rollup --dry-run -y
+uv run rollup -y --min-loss 0
 uv run pytest polars/tests/test_deterministic_e2e.py -q
 ```
 
@@ -129,11 +129,13 @@ Speaker note: “This is not a smoke test. It checks exact values through the CL
 
 ## 8. Auditability
 
-With `--dump-interim`, the pipeline writes:
+Audit outputs are written by default. The pipeline writes:
 
 - `audit_wide.parquet` — one row per event with factors left-to-right
 - `audit_long.parquet` — metric/value format for analysis
 - `mts_tbl_ylt_combined_all_factors.parquet` — default combined audit output
+
+Use `--no-audit` only when debug parquets are not needed.
 
 Speaker note: “When a number looks wrong, we can inspect every factor that produced it.”
 

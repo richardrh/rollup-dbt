@@ -94,7 +94,10 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 ## Step 4 — Deriving blending weights from EP summaries
 
 EP summaries (long-format CSVs) are used to derive per-peril blending proportions
-and the base model, stored in `data/seeds/vor/blending_weights.csv`.
+and the base model. A normal `uv run rollup` run derives blending weights
+in-memory when every vendor has `*.long.csv` EP summaries, writes the derived
+CSV to `data/output/debug/derived_blending_weights.csv`, and does **not**
+overwrite the reviewed seed.
 
 **Step 4a — Convert Excel to long CSV (RiskLink only):**
 
@@ -117,7 +120,7 @@ uv run rollup ep-summary-to-csv
 Produce long CSVs with columns: `rp`, `ep_type`, `analysis`, `lob`, `gl`.
 Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
 
-**Step 4c — Regenerate blending_weights.csv:**
+**Step 4c — Optional: regenerate blending_weights.csv seed:**
 
 ```bash
 uv run rollup derive-blending
@@ -132,7 +135,8 @@ rl_prop = rl_aal / (rl_aal + vk_aal)   # when total > 0; else 0.5
 vk_prop = 1 - rl_prop
 ```
 
-The seed is written to `data/seeds/vor/blending_weights.csv` with schema:
+The explicit subcommand writes the reviewed seed to
+`data/seeds/vor/blending_weights.csv` with schema:
 
 | column | meaning |
 |---|---|
@@ -146,7 +150,8 @@ At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
 `0`, `200`, `1000`, or `10000`, then joined to the matching blending weight.
 
-Re-run `derive-blending` whenever the EP summaries are refreshed.
+Use `uv run rollup --no-derive-blending` to force a run to use the reviewed
+`blending_weights.csv` seed even when EP-summary long CSVs are present.
 
 ## Step 5 — Full verification
 
@@ -159,10 +164,11 @@ All sections should show ✓. If any show ✘, see [Troubleshooting](troubleshoo
 ## Step 6 — Run the pipeline
 
 ```bash
-uv run rollup --yes
+uv run rollup              # interactive wizard
+uv run rollup --yes        # non-interactive
 ```
 
-Output: 9 parquets in `data/output/` (~15–40 seconds depending on data size).
+Output: Hisco parquets plus audit/debug parquets in `data/output/` (~15–40 seconds depending on data size).
 
 **Inspect output:**
 ```bash
@@ -174,7 +180,7 @@ uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;
 ```bash
 uv run rollup --yes --min-loss 0           # keep all rows
 uv run rollup --yes --log-level INFO       # see factor-chain trace
-uv run rollup --yes --dump-interim         # write debug parquets
+uv run rollup --yes --no-audit             # skip debug parquets
 ```
 
 Or set in `config.py`: `MIN_LOSS = 500`, `LOG = "INFO"`, etc.
