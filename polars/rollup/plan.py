@@ -9,6 +9,9 @@ import polars as pl
 
 from rollup.config import Config, VendorName
 from rollup.schemas import frames as F
+from rollup.schemas.columns import RefForecastFactorsCol as FF
+from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import RollupScopeCol as RS
 from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
@@ -153,6 +156,90 @@ def _check_dir_glob(
     return checks
 
 
+def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
+    """Report forecast dates and coverage for scoped LOB/analysis rows.
+
+    Forecast factors join at runtime on ``(office, class)``. Missing rows are
+    currently filled as factor 1.0, so the plan surfaces coverage gaps before
+    the operator starts a run.
+    """
+    lobs_path = seeds_dir / "business" / "lobs.csv"
+    scope_path = seeds_dir / "business" / "rollup_scope.csv"
+    ff_path = seeds_dir / "vor" / "forecast_factors.csv"
+    if not lobs_path.exists() or not scope_path.exists() or not ff_path.exists():
+        return [Check(label="forecast coverage", path=seeds_dir, ok=False, note="missing seed input")]
+
+    try:
+        lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
+        scope = pl.read_csv(scope_path, schema=F.ROLLUP_SCOPE)
+        forecast = pl.read_csv(ff_path, schema=F.REF_FORECAST_FACTORS)
+    except Exception as e:
+        return [Check(label="forecast coverage", path=ff_path, ok=False, note=f"parse error: {e}")]
+
+    dates = forecast.select(FF.FORECAST_DATE).unique().sort(FF.FORECAST_DATE)
+    if dates.height == 0:
+        return [Check(label="forecast dates", path=ff_path, ok=False, note="no forecast dates found")]
+
+    scoped_lobs = (
+        scope
+        .filter(pl.col(RS.IN_ROLLUP))
+        .select(RS.MODELLED_LOB, RS.ANALYSIS_ID)
+        .unique()
+        .join(
+            lobs.select(LB.MODELLED_LOB, LB.OFFICE, LB.CLASS),
+            on=RS.MODELLED_LOB,
+            how="left",
+        )
+    )
+    expected = scoped_lobs.join(dates, how="cross")
+    actual = forecast.select(FF.OFFICE, FF.CLASS, FF.FORECAST_DATE).unique()
+    missing = expected.join(
+        actual,
+        left_on=[LB.OFFICE, LB.CLASS, FF.FORECAST_DATE],
+        right_on=[FF.OFFICE, FF.CLASS, FF.FORECAST_DATE],
+        how="anti",
+    )
+
+    date_labels = [d.isoformat() for d in dates[FF.FORECAST_DATE].to_list()]
+    checks = [
+        Check(
+            label="forecast dates",
+            path=ff_path,
+            ok=True,
+            rows=dates.height,
+            note=", ".join(date_labels),
+        )
+    ]
+    if missing.height == 0:
+        checks.append(Check(
+            label="forecast coverage",
+            path=ff_path,
+            ok=True,
+            rows=expected.height,
+            note="all scoped modelled_lob/analysis rows covered for every forecast date",
+        ))
+        return checks
+
+    examples = missing.select(
+        RS.MODELLED_LOB,
+        RS.ANALYSIS_ID,
+        LB.OFFICE,
+        LB.CLASS,
+        FF.FORECAST_DATE,
+    ).head(5)
+    example_text = "; ".join(
+        f"{row[RS.MODELLED_LOB]}/{row[RS.ANALYSIS_ID]} {row[LB.OFFICE]}/{row[LB.CLASS]} {row[FF.FORECAST_DATE]}"
+        for row in examples.iter_rows(named=True)
+    )
+    return checks + [Check(
+        label="forecast coverage",
+        path=ff_path,
+        ok=True,
+        rows=missing.height,
+        note=f"WARNING missing factors for scoped rows; examples: {example_text}",
+    )]
+
+
 def build_plan(config: Config) -> Plan:
     sections: list[Section] = []
 
@@ -195,6 +282,12 @@ def build_plan(config: Config) -> Plan:
                 optional_missing_ok=True,
             ),
         ))
+
+    sections.append(Section(
+        title="forecast_factors",
+        header=str(config.seeds_dir / "vor" / "forecast_factors.csv"),
+        checks=_check_forecast_coverage(config.seeds_dir),
+    ))
 
     sections.append(Section(
         title="output",

@@ -31,6 +31,7 @@ _SECTION_ICONS: dict[str, str] = {
     "seeds": "▣",
     "ylt": "▶",
     "ep_summaries": "◆",
+    "forecast_factors": "◇",
     "output": "◯",
 }
 

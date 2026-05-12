@@ -6,9 +6,11 @@ import io
 from pathlib import Path
 
 import pytest
+import polars as pl
 
 from rollup import config
 from rollup.config import EnvVar, VendorName
+from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.seeds import REQUIRED_SEEDS, SEEDS
 
 
@@ -187,10 +189,40 @@ def test_format_plan_contains_every_section(tmp_path):
     for title in ("seeds",
                   f"ylt {VendorName.VERISK}",          f"ylt {VendorName.RISKLINK}",
                   f"ep_summaries {VendorName.VERISK}", f"ep_summaries {VendorName.RISKLINK}",
+                  "forecast_factors",
                   "output"):
         assert f"[{title}]" in text
     assert "Seeds:" in text
     assert "YLTs:" in text
+
+
+def test_forecast_coverage_section_reports_dates(tmp_path):
+    plan = config.build_plan(_cfg_with_seeds(tmp_path))
+    section = next(s for s in plan.sections if s.title == "forecast_factors")
+
+    date_check = next(c for c in section.checks if c.label == "forecast dates")
+    coverage_check = next(c for c in section.checks if c.label == "forecast coverage")
+
+    assert date_check.ok
+    assert date_check.rows > 0
+    assert coverage_check.ok
+    assert "covered" in coverage_check.note or "missing factors" in coverage_check.note
+
+
+def test_forecast_coverage_section_reports_missing_factors(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    ff_path = cfg.seeds_dir / "vor" / "forecast_factors.csv"
+    ff = pl.read_csv(ff_path)
+    first_date = ff[FF.FORECAST_DATE][0]
+    ff.filter(pl.col(FF.FORECAST_DATE) != first_date).write_csv(ff_path)
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "forecast_factors")
+    coverage_check = next(c for c in section.checks if c.label == "forecast coverage")
+
+    assert coverage_check.ok
+    assert coverage_check.rows > 0
+    assert "missing factors" in coverage_check.note
 
 
 # -----------------------------------------------------------------------------
@@ -203,11 +235,11 @@ def test_confirm_with_assume_yes_skips_prompt(tmp_path, monkeypatch):
     assert config.confirm(plan, assume_yes=True, stream=io.StringIO()) is True
 
 
-def test_confirm_non_interactive_returns_true(tmp_path, monkeypatch):
+def test_confirm_non_interactive_returns_false(tmp_path, monkeypatch):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     monkeypatch.setattr("sys.stdin", io.StringIO(""))  # stdin.isatty() → False
     monkeypatch.setattr("builtins.input", lambda _: pytest.fail("input() called"))
-    assert config.confirm(plan, assume_yes=False, stream=io.StringIO()) is True
+    assert config.confirm(plan, assume_yes=False, stream=io.StringIO()) is False
 
 
 # -----------------------------------------------------------------------------
