@@ -114,7 +114,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(attach_fagross, seeds.fineart_adjustments)
         .pipe(attach_uplift, seeds.blending_weights, n_sim=n_sim)
         .pipe(add_main_metrics, tags)
-        .pipe(add_dialsup)
+        .pipe(add_dialsup, tags[0])
     )
     log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)

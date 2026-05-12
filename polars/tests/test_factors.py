@@ -17,6 +17,7 @@ from rollup.schemas.columns import (
     NormalizedYltCol as Y,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
+    RefFineartAdjCol as FA,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
 )
@@ -25,6 +26,7 @@ from rollup.stages.factors import (
     _blend_weights_by_peril_bucket,
     attach_currency,
     attach_euws,
+    attach_fagross,
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
@@ -44,6 +46,7 @@ def _ylt(
     vendor: VendorName = VendorName.VERISK,
     lob_id: int = 1,
     region_peril_id: int = 206,
+    modelled_region_peril: str = "EU_WS",
     peril_name: str = "Europe Winter Storm",
     region: str = "EU",
     peril_family: str = "WS",
@@ -61,7 +64,8 @@ def _ylt(
         Y.VENDOR:              [vendor],
         Y.LOB_ID:              [lob_id],
         Y.ROLLUP_LOB:          [rollup_lob],
-        Y.REGION_PERIL_ID:     [region_peril_id],
+        Y.REGION_PERIL_ID:       [region_peril_id],
+        Y.MODELLED_REGION_PERIL: [modelled_region_peril],
         Y.PERIL_NAME:          [peril_name],
         Y.REGION:              [region],
         Y.PERIL_FAMILY:        [peril_family],
@@ -75,7 +79,8 @@ def _ylt(
         Y.VENDOR:              pl.String,
         Y.LOB_ID:              pl.Int64,
         Y.ROLLUP_LOB:          pl.String,
-        Y.REGION_PERIL_ID:     pl.Int64,
+        Y.REGION_PERIL_ID:       pl.Int64,
+        Y.MODELLED_REGION_PERIL: pl.String,
         Y.PERIL_NAME:          pl.String,
         Y.REGION:              pl.String,
         Y.PERIL_FAMILY:        pl.String,
@@ -266,6 +271,61 @@ def test_euws_event_missing_from_rate_table_defaults_to_one():
 
 
 # --------------------------------------------------------------------------- #
+# attach_fagross                                                              #
+# --------------------------------------------------------------------------- #
+
+def _fineart_adjustments(lob_id: int, region_peril_id: int, aal: float, tail: float) -> pl.LazyFrame:
+    return pl.DataFrame({
+        FA.LOB_ID:              [lob_id],
+        FA.REGION_PERIL_ID:     [region_peril_id],
+        FA.APPLIES_TO_FA:       [True],
+        FA.ROLLUP_REGION_PERIL: ["test peril"],
+        FA.AAL_FACTOR:          [aal],
+        FA.TAIL_FACTOR:         [tail],
+    }, schema={
+        FA.LOB_ID:              pl.Int64,
+        FA.REGION_PERIL_ID:     pl.Int64,
+        FA.APPLIES_TO_FA:       pl.Boolean,
+        FA.ROLLUP_REGION_PERIL: pl.String,
+        FA.AAL_FACTOR:          pl.Float64,
+        FA.TAIL_FACTOR:         pl.Float64,
+    }).lazy()
+
+
+def _ylt_with_rp_bucket(rp_bucket: int) -> pl.LazyFrame:
+    return _ylt().collect().with_columns(pl.lit(rp_bucket, dtype=pl.Int64).alias(AF.RP_BUCKET)).lazy()
+
+
+def test_attach_fagross_uses_aal_factor_for_aal_bucket():
+    ylt = _ylt_with_rp_bucket(0)
+    fa = _fineart_adjustments(lob_id=1, region_peril_id=206, aal=1.2, tail=2.5)
+
+    out = attach_fagross(ylt, fa).collect()
+
+    assert out[AF.FA_GROSS_AAL_FACTOR][0] == pytest.approx(1.2)
+    assert out[AF.FA_GROSS_TAIL_FACTOR][0] == pytest.approx(2.5)
+    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(1.2)
+
+
+def test_attach_fagross_uses_tail_factor_for_tail_bucket():
+    ylt = _ylt_with_rp_bucket(200)
+    fa = _fineart_adjustments(lob_id=1, region_peril_id=206, aal=1.2, tail=2.5)
+
+    out = attach_fagross(ylt, fa).collect()
+
+    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(2.5)
+
+
+def test_attach_fagross_defaults_to_one_when_no_seed_row_matches():
+    ylt = _ylt_with_rp_bucket(1000)
+    fa = _fineart_adjustments(lob_id=999, region_peril_id=999, aal=1.2, tail=2.5)
+
+    out = attach_fagross(ylt, fa).collect()
+
+    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(1.0)
+
+
+# --------------------------------------------------------------------------- #
 # attach_uplift (now keyed by peril_id directly via blending_weights)         #
 # --------------------------------------------------------------------------- #
 
@@ -417,6 +477,40 @@ def test_uplift_uses_rank_bucket_to_select_blending_weights():
     assert out.filter(pl.col(Y.EVENT_ID) == 10)[AF.VK_PROPORTION][0] == pytest.approx(0.3)
     assert out.filter(pl.col(Y.EVENT_ID) == 50)[AF.VK_PROPORTION][0] == pytest.approx(0.2)
     assert out.filter(pl.col(Y.EVENT_ID) == 51)[AF.VK_PROPORTION][0] == pytest.approx(0.1)
+
+
+def test_uplift_uses_sub_peril_blending_when_present():
+    """A matching blending_weights.sub_peril overrides generic peril weights."""
+    ylt = _ylt(region_peril_id=2, modelled_region_peril="BE FL")
+    bw = _blending_weights(
+        (2, 10000, None, VendorName.VERISK, "risklink", 0.5),
+        (2, 10000, None, VendorName.RISKLINK, "risklink", 0.5),
+        (2, 10000, "BE FL", VendorName.VERISK, "verisk", 0.9),
+        (2, 10000, "BE FL", VendorName.RISKLINK, "verisk", 0.1),
+    )
+
+    out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
+
+    assert out[AF.VK_PROPORTION][0] == pytest.approx(0.9)
+    assert out[AF.RL_PROPORTION][0] == pytest.approx(0.1)
+    assert out[AF.BASE_MODEL][0] == "verisk"
+
+
+def test_uplift_falls_back_to_generic_blending_without_sub_peril_match():
+    """Generic peril weights continue to apply when no sub_peril matches the row."""
+    ylt = _ylt(region_peril_id=2, modelled_region_peril="DE FL")
+    bw = _blending_weights(
+        (2, 10000, None, VendorName.VERISK, "risklink", 0.4),
+        (2, 10000, None, VendorName.RISKLINK, "risklink", 0.6),
+        (2, 10000, "BE FL", VendorName.VERISK, "verisk", 0.9),
+        (2, 10000, "BE FL", VendorName.RISKLINK, "verisk", 0.1),
+    )
+
+    out = attach_uplift(ylt, bw, n_sim=_N_SIM).collect()
+
+    assert out[AF.VK_PROPORTION][0] == pytest.approx(0.4)
+    assert out[AF.RL_PROPORTION][0] == pytest.approx(0.6)
+    assert out[AF.BASE_MODEL][0] == "risklink"
 
 
 def test_uplift_base_model_is_risklink_for_eu_flood():

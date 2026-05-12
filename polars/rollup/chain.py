@@ -5,7 +5,7 @@ the cumulative loss columns:
 
     loss_uplifted_capped_localccy_{tag}                   ← after `forecast`
     loss_uplifted_capped_localccy_{tag}_euws              ← after `euws`
-    loss_uplifted_capped_localccy_{tag}_euws_fagross      ← after `fagross`
+    loss_uplifted_capped_localccy_{tag}_euws_fagross      ← after effective `fagross`
 
 The base column the chain starts from is `CHAIN_BASE`
 (= `MetricCol.LOSS_UPLIFTED_CAPPED_LOCALCCY` — the year-invariant local-ccy
@@ -62,9 +62,9 @@ CHAIN: dict[str, ChainStage] = {
         "ancillary_after":  (),
     },
     "fagross": {
-        "suffix": "_fagross", "factor_col": AF.FA_GROSS_AAL_FACTOR, "is_per_tag": False,
+        "suffix": "_fagross", "factor_col": AF.FA_GROSS_FACTOR, "is_per_tag": False,
         "ancillary_before": (),
-        "ancillary_after":  (AF.FA_GROSS_TAIL_FACTOR,),  # same seed, audit-only today
+        "ancillary_after":  (AF.FA_GROSS_AAL_FACTOR, AF.FA_GROSS_TAIL_FACTOR),
     },
 }
 
