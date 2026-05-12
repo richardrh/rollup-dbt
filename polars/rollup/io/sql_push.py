@@ -60,6 +60,8 @@ def make_engine(conn_str: str) -> "Engine":
     """
     from sqlalchemy import create_engine
 
+    if conn_str.startswith("mssql+pymssql://"):
+        return create_engine(conn_str)
     return create_engine(conn_str, fast_executemany=True)
 
 

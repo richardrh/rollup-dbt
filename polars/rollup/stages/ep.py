@@ -48,18 +48,20 @@ def ep_curve_from_ylt(
         )
     )
 
-    # Unpivot AEP/OEP into long form, then rank within (key, ep_type).
+    # Unpivot AEP/OEP into long form, then assign deterministic row-order ranks
+    # within (key, ep_type). Ties sort by year_id so repeated runs produce the
+    # same return-period assignment.
     aep_oep = (
         per_year
         .unpivot(
             on=[EpType.AEP, EpType.OEP],
-            index=[*_KEY, *_DIMS],
+            index=[*_KEY, Y.YEAR_ID, *_DIMS],
             variable_name=EP.EP_TYPE,
             value_name=EP.ANNUAL_LOSS,
         )
+        .sort([*_KEY, EP.EP_TYPE, EP.ANNUAL_LOSS, Y.YEAR_ID], descending=[False, False, False, False, True, False])
         .with_columns(
-            pl.col(EP.ANNUAL_LOSS)
-                .rank(method="ordinal", descending=True)
+            pl.int_range(1, pl.len() + 1)
                 .over([*_KEY, EP.EP_TYPE])
                 .cast(pl.Int64)
                 .alias(EP.RANK_NUM),

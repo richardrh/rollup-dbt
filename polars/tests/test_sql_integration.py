@@ -72,9 +72,9 @@ def tiny_parquet(tmp_path: Path) -> Path:
         "ModelEventID":              [1, 2, 3],
         "ModelYear":                 [100, 200, 300],
         "CurrencyCode":              ["GBP", "GBP", "EUR"],
-        "ModelYOA":                  [0, 0, 0],
+        "ModelYOA":                  pl.Series([0, 0, 0], dtype=pl.Int32),
         "ModelGrossLoss":            [1234.5, 2345.6, 3456.7],
-        "ModelInwardsReinstatement": [0, 0, 0],
+        "ModelInwardsReinstatement": pl.Series([0, 0, 0], dtype=pl.Int32),
         "ModelEventDay":             [1, 30, 200],
         "LossClassName":             ["UK Household", "UK Household", "EU Spec Property"],
     })
@@ -150,7 +150,6 @@ def test_push_parquet_to_sql_round_trip(mssql_url: str, tiny_parquet: Path):
 
 def test_pushed_columns_have_expected_sql_types(mssql_url: str, tiny_parquet: Path):
     """ModelGrossLoss must land as float, not varchar; ModelYOA as int."""
-    import pandas as pd
     from sqlalchemy import create_engine, text
     from rollup.io.sql_push import push_parquet_to_sql
 
@@ -159,15 +158,14 @@ def test_pushed_columns_have_expected_sql_types(mssql_url: str, tiny_parquet: Pa
 
     engine = create_engine(mssql_url)
     with engine.connect() as conn:
-        cols = pd.read_sql(
+        rows = conn.execute(
             text(
                 "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
                 "WHERE TABLE_NAME = :t"
             ),
-            conn,
-            params={"t": table_name},
-        )
-    type_map = dict(zip(cols["COLUMN_NAME"], cols["DATA_TYPE"]))
+            {"t": table_name},
+        ).mappings().all()
+    type_map = {row["COLUMN_NAME"]: row["DATA_TYPE"] for row in rows}
     assert type_map["ModelGrossLoss"].lower() == "float", (
         f"ModelGrossLoss expected float, got {type_map['ModelGrossLoss']!r}"
     )
@@ -181,20 +179,38 @@ def test_push_parquet_replaces_existing_table(mssql_url: str, tmp_path: Path):
     from sqlalchemy import create_engine, text
     from rollup.io.sql_push import push_parquet_to_sql
 
-    # First push: 5 rows.
-    df_a = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+    # First push: 5 valid Hisco rows.
+    df_a = pl.DataFrame({
+        "ModelEventID":              [1, 2, 3, 4, 5],
+        "ModelYear":                 [100, 200, 300, 400, 500],
+        "CurrencyCode":              ["GBP"] * 5,
+        "ModelYOA":                  pl.Series([0] * 5, dtype=pl.Int32),
+        "ModelGrossLoss":            [1.0, 2.0, 3.0, 4.0, 5.0],
+        "ModelInwardsReinstatement": pl.Series([0] * 5, dtype=pl.Int32),
+        "ModelEventDay":             [1, 2, 3, 4, 5],
+        "LossClassName":             ["UK Household"] * 5,
+    })
     p_a = tmp_path / "HiscoTEST_replace.parquet"
     df_a.write_parquet(p_a)
     push_parquet_to_sql(p_a, conn_str=mssql_url)
 
     # Second push: 2 rows in a parquet of the same name → table replaced.
-    df_b = pl.DataFrame({"x": [10, 20]})
+    df_b = pl.DataFrame({
+        "ModelEventID":              [10, 20],
+        "ModelYear":                 [1000, 2000],
+        "CurrencyCode":              ["GBP", "GBP"],
+        "ModelYOA":                  pl.Series([0, 0], dtype=pl.Int32),
+        "ModelGrossLoss":            [10.0, 20.0],
+        "ModelInwardsReinstatement": pl.Series([0, 0], dtype=pl.Int32),
+        "ModelEventDay":             [10, 20],
+        "LossClassName":             ["UK Household", "UK Household"],
+    })
     df_b.write_parquet(p_a)
     push_parquet_to_sql(p_a, conn_str=mssql_url)
 
     engine = create_engine(mssql_url)
     with engine.connect() as conn:
         n = conn.execute(text("SELECT COUNT(*) FROM HiscoTEST_replace")).scalar()
-        s = conn.execute(text("SELECT SUM(x) FROM HiscoTEST_replace")).scalar()
+        s = conn.execute(text("SELECT SUM(ModelGrossLoss) FROM HiscoTEST_replace")).scalar()
     assert n == 2
-    assert int(s) == 30
+    assert float(s) == pytest.approx(30.0)

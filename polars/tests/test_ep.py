@@ -69,4 +69,43 @@ def test_ep_curve_oep_ranking():
     losses_by_rank = dict(zip(out[EP.RANK_NUM].to_list(), out[EP.ANNUAL_LOSS].to_list()))
     assert losses_by_rank[1] == 200.0
     assert losses_by_rank[2] == 100.0
+    assert losses_by_rank[3] == 75.0
+    assert losses_by_rank[4] == 50.0
     assert losses_by_rank[5] == 25.0
+
+
+def test_ep_curve_tied_losses_get_row_order_ranks_not_dense_ranks():
+    """Tied annual losses get deterministic row-order ranks, not shared dense ranks."""
+    rows = []
+    losses_by_year = {2: 100.0, 1: 100.0, 3: 50.0}
+    for year_id, loss in losses_by_year.items():
+        rows.append({
+            Y.VENDOR: VendorName.VERISK,
+            Y.LOB_ID: 1,
+            Y.MODELLED_LOB: "lob1",
+            Y.ROLLUP_LOB: "rollup1",
+            Y.LOB_TYPE: "prop",
+            Y.CDS_CAT_CLASS_NAME: "class1",
+            Y.OFFICE: "UK",
+            Y.LOB_CLASS: "HH",
+            Y.REGION_PERIL_ID: 206,
+            Y.MODELLED_REGION_PERIL: "EU_WS",
+            Y.PERIL_NAME: "Europe Winter Storm",
+            Y.REGION: "EU",
+            Y.PERIL_FAMILY: "WS",
+            Y.MODEL_CODE: 0,
+            Y.YEAR_ID: year_id,
+            Y.EVENT_ID: year_id * 10,
+            Y.LOSS: loss,
+        })
+    ylt = pl.DataFrame(rows, schema=F.NORMALIZED_YLT).lazy()
+
+    out = (
+        ep_curve_from_ylt(ylt, n_simulations=3, target_return_periods=[3, 1])
+        .collect()
+        .filter(pl.col(EP.EP_TYPE) == EpType.OEP)
+        .sort(EP.RANK_NUM)
+    )
+
+    assert out[EP.RANK_NUM].to_list() == [1, 2, 3]
+    assert out[EP.ANNUAL_LOSS].to_list() == [100.0, 100.0, 50.0]
