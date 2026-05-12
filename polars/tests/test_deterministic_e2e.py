@@ -231,7 +231,7 @@ def deterministic_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_cli_pipeline_applies_hand_calculated_50_50_blend(deterministic_root: Path):
     assert cli_main(["--dry-run", "-y"]) == 0
-    assert cli_main(["-y", "--min-loss", "0", "--dump-interim"]) == 0
+    assert cli_main(["-y", "--min-loss", "0", "--dump-interim", "--no-derive-blending"]) == 0
 
     wide = pl.read_parquet(deterministic_root / "output" / "debug" / "audit_wide.parquet")
     verisk = wide.filter(pl.col(AF.VENDOR) == VendorName.VERISK)
@@ -267,6 +267,32 @@ def test_cli_derive_blending_reads_fake_ep_summary_files(deterministic_root: Pat
         & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
     )[BW.WEIGHT][0]
     vk_weight = derived.filter(
+        (pl.col(BW.PERIL_ID) == 1)
+        & (pl.col(BW.RETURN_PERIOD) == 0)
+        & (pl.col(BW.VENDOR) == VendorName.VERISK)
+    )[BW.WEIGHT][0]
+
+    assert rl_weight == pytest.approx(500.0 / 1500.0)
+    assert vk_weight == pytest.approx(1000.0 / 1500.0)
+
+
+def test_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from rollup.cli import _derive_blending_for_run
+
+    cfg = config.resolve()
+    derived, message = _derive_blending_for_run(cfg)
+
+    assert derived is not None
+    assert "derived" in message
+    assert (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
+
+    df = derived.collect()
+    rl_weight = df.filter(
+        (pl.col(BW.PERIL_ID) == 1)
+        & (pl.col(BW.RETURN_PERIOD) == 0)
+        & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
+    )[BW.WEIGHT][0]
+    vk_weight = df.filter(
         (pl.col(BW.PERIL_ID) == 1)
         & (pl.col(BW.RETURN_PERIOD) == 0)
         & (pl.col(BW.VENDOR) == VendorName.VERISK)
