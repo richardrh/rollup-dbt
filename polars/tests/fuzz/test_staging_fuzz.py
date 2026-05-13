@@ -1,7 +1,6 @@
 """Property-based tests for ``rollup.stages.staging``.
 
-Targets ``normalize_risklink_ylt``, ``normalize_verisk_ylt``, and
-``apply_rollup_scope``.
+Targets ``normalize_risklink_ylt`` and ``normalize_verisk_ylt``.
 
 All tests are marked ``@pytest.mark.fuzz`` and skipped unless
 ``--run-fuzz`` is passed.
@@ -23,10 +22,8 @@ from rollup.schemas.columns import (
     RawRisklinkYltCol as RLK,
     RawVeriskYltCol as VK,
     RefLobsCol as LB,
-    RollupScopeCol as RS,
 )
 from rollup.stages.staging import (
-    apply_rollup_scope,
     normalize_risklink_ylt,
     normalize_verisk_ylt,
 )
@@ -272,50 +269,3 @@ def test_normalize_verisk_non_stc_rows_dropped(
         out_without = normalize_verisk_ylt(raw, analyses, perils, lobs).collect().height
         assert out_with == out_without
 
-
-# ---------------------------------------------------------------------------
-# Tests for apply_rollup_scope
-# ---------------------------------------------------------------------------
-
-@pytest.mark.fuzz
-@given(
-    ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50),
-    scope=lazyframe_from_schema(F.ROLLUP_SCOPE, min_rows=1, max_rows=20),
-)
-def test_apply_rollup_scope_only_drops_rows(
-    ylt: pl.LazyFrame,
-    scope: pl.LazyFrame,
-) -> None:
-    """``apply_rollup_scope`` is a filter: output rows <= input rows.
-    No new rows are introduced."""
-    out = apply_rollup_scope(ylt, scope).collect()
-    n_in = ylt.collect().height
-    assert out.height <= n_in
-
-
-@pytest.mark.fuzz
-@given(ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50))
-def test_apply_rollup_scope_with_empty_scope_returns_zero_rows(
-    ylt: pl.LazyFrame,
-) -> None:
-    """An empty rollup_scope returns zero rows (documented behaviour)."""
-    empty_scope = pl.LazyFrame(schema=F.ROLLUP_SCOPE)
-    out = apply_rollup_scope(ylt, empty_scope).collect()
-    assert out.height == 0
-
-
-@pytest.mark.fuzz
-@given(ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50))
-def test_apply_rollup_scope_with_all_in_rollup_false_returns_zero(
-    ylt: pl.LazyFrame,
-) -> None:
-    """A rollup_scope with all in_rollup=False returns zero rows."""
-    n = 5
-    scope = pl.LazyFrame({
-        RS.MODELLED_LOB: [f"lob_{i}" for i in range(n)],
-        RS.VENDOR:       ["risklink"] * n,
-        RS.ANALYSIS_ID:  [f"AN_{i}" for i in range(n)],
-        RS.IN_ROLLUP:    [False] * n,
-    }, schema=F.ROLLUP_SCOPE)
-    out = apply_rollup_scope(ylt, scope).collect()
-    assert out.height == 0

@@ -23,7 +23,6 @@ from .columns import (
     RefFxRatesCol,
     RefLobsCol,
     RefRisklinkEventsCol,
-    RollupScopeCol,
     StgRisklinkEpCol,
     StgVeriskEpCol,
     ValidAnalysesCol,
@@ -94,13 +93,6 @@ BLENDING_WEIGHTS: pl.Schema = pl.Schema({
     BlendingWeightsCol.VENDOR:         pl.String,
     BlendingWeightsCol.BASE_MODEL:     pl.String,
     BlendingWeightsCol.WEIGHT:         pl.Float64,
-})
-
-ROLLUP_SCOPE: pl.Schema = pl.Schema({
-    RollupScopeCol.MODELLED_LOB: pl.String,
-    RollupScopeCol.VENDOR:       pl.String,
-    RollupScopeCol.ANALYSIS_ID:  pl.String,
-    RollupScopeCol.IN_ROLLUP:    pl.Boolean,
 })
 
 REF_LOBS: pl.Schema = pl.Schema({

@@ -20,7 +20,6 @@ from rollup.schemas.columns import PerilsCol as P
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
-from rollup.schemas.columns import RollupScopeCol as RS
 from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.validate import validate_schema
 
@@ -260,42 +259,4 @@ def normalize_verisk_ylt(
     )
 
     validate_schema(out, F.NORMALIZED_YLT, name="verisk.normalized")
-    return out
-
-
-# --------------------------------------------------------------------------- #
-# Scope filter — drops YLT rows not officially in the rollup                  #
-# --------------------------------------------------------------------------- #
-
-def apply_rollup_scope(ylt: pl.LazyFrame, rollup_scope: pl.LazyFrame) -> pl.LazyFrame:
-    """Inner-join `rollup_scope` to keep only (modelled_lob, vendor, analysis_id)
-    triples whose `in_rollup` is True. Lives in staging because it is a
-    gate, not a factor — produces no new column, only filters rows.
-
-    `analysis_id` in `rollup_scope` is the **modelled label** the YLT carries
-    after staging (`MODELLED_REGION_PERIL`), not the raw RiskLink integer id.
-
-    If `rollup_scope` is empty the inner join drops every row — by design.
-    The pre-flight `build_plan` reporter flags an empty `rollup_scope` as a
-    blocker so the run aborts before producing zero-row Hisco parquets.
-    """
-    in_scope = (
-        rollup_scope
-        .filter(pl.col(RS.IN_ROLLUP))
-        .select(
-            pl.col(RS.MODELLED_LOB),
-            pl.col(RS.VENDOR),
-            pl.col(RS.ANALYSIS_ID).alias(Y.MODELLED_REGION_PERIL),
-        )
-    )
-    # Keyed on (modelled_lob, vendor, analysis_label) — readable without a join
-    # to lobs.csv. Two analyses can share a peril_id (e.g. UK_WSSS and
-    # UK_WSSS_GCAdj are both peril 206 but only one is official per LOB).
-    out = ylt.join(
-        in_scope,
-        left_on=[Y.MODELLED_LOB, Y.VENDOR, Y.MODELLED_REGION_PERIL],
-        right_on=[RS.MODELLED_LOB, RS.VENDOR, Y.MODELLED_REGION_PERIL],
-        how="inner",
-    )
-    log.info("rollup_scope: filtered YLT to in_rollup=True triples")
     return out
