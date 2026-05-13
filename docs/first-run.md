@@ -46,7 +46,11 @@ Full walkthrough: [Loading your data](load-data.md).
 uv run rollup --dry-run
 ```
 
-Shows which files are present and which are missing. YLT parquets and EP-summary `*.long.csv` files are required for the default run.
+Shows which files are present and which are missing. YLT parquets and EP-summary
+`*.long.csv` files are required for the default run. Before production, replace
+the bundled Verisk placeholder IDs (`900001`–`900007`) in
+`data/seeds/business/{analyses,valid_analyses}.csv` with real numeric Verisk
+analysis IDs; keep raw labels like `EU_WS` in `analyses.modelled_label`.
 
 ## 4. Run the pipeline
 

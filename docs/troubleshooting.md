@@ -123,11 +123,12 @@ This is a safety gate — unexpected columns in SQL pushes can corrupt the downs
 
 **Symptom:** Hisco parquets are written to `data/output/` but every row has `ModelGrossLoss = 0`.
 
-**Cause:** A join earlier in the factor chain failed silently (returned 0 rows). Or: `valid_analyses.csv` is empty / does not include the vendor-native analysis IDs present in the YLTs and EP summaries.
+**Cause:** A join earlier in the factor chain failed silently (returned 0 rows). Or: `valid_analyses.csv` is empty / does not include the numeric vendor analysis IDs selected for the run.
 
 **Fix:**
 1. Verify `data/seeds/business/valid_analyses.csv` lists the intended `(vendor, analysis_id)` rows.
-2. Cross-check that `analyses.csv` includes the same vendor-native IDs and maps them to perils.
-3. Run with `--dump-interim` to write audit parquets: `uv run rollup --yes --dump-interim`. Inspect `data/output/debug/audit_wide.parquet` — the leftmost zero column tells you which join failed.
+2. Cross-check that `analyses.csv` includes the same numeric IDs and maps them to perils.
+3. For Verisk, ensure raw `Analysis` / EP `analysis` labels match `analyses.modelled_label`; the bundled `90000x` IDs are placeholders and must be replaced before production.
+4. Run with default audit enabled: `uv run rollup --yes`. Inspect `data/output/debug/audit_wide.parquet` — the leftmost zero column tells you which join failed.
 
 ---

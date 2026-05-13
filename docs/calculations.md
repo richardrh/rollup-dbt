@@ -38,13 +38,13 @@ simulation YLTs** (`data/ylt/verisk/air_ylt_c1.parquet` +
 `pl.scan_parquet("data/ylt/verisk/air_ylt_c*.parquet")`) concatenates
 them transparently.
 
-EP summaries are currently in excel
-(`data/ep_summaries/risklink/rms_ep_summary.xlsx` etc.). January derived
-`rl_proportion` / `vk_proportion` for blending from these. The polars
-pipeline now sources blend proportions directly from
-`blending_weights.csv` — EP summaries are no longer required for the main
-chain; they're used only by `tests/test_integration_ep.py` for excel
-diff-checks.
+EP summaries are currently delivered as Excel/long CSV inputs
+(`data/ep_summaries/risklink/*.xlsx`, `*.long.csv`, etc.). January derived
+`rl_proportion` / `vk_proportion` for blending from these. The polars default
+run now derives blend proportions in-memory from complete vendor long CSVs and
+writes an audit copy to `data/output/debug/derived_blending_weights.csv`.
+Use `--use-blending-seed` to run from the reviewed
+`data/seeds/vor/blending_weights.csv` fallback instead.
 
 ---
 
@@ -89,9 +89,11 @@ WHERE rps.vendor = 'verisk' AND catalog_type_code = 'STC';
 ```
 
 polars: `stages/staging.py::normalize_verisk_ylt`. Same shape but joins
-through `analyses` (filtered to vendor='verisk') + `perils`. For Verisk
-the analysis is peril-only (`analyses.lob_id` is NULL) so lob is resolved
-via the YLT row's `ExposureAttribute` → `lobs.modelled_lob`. Filters
+through `analyses` (filtered to vendor='verisk') + `perils`. The numeric
+`analysis_id` allow-list is applied first; raw AIR `Analysis` values then join
+to `analyses.modelled_label`. For Verisk the analysis is peril-only
+(`analyses.lob_id` is NULL) so lob is resolved via the YLT row's
+`ExposureAttribute` → `lobs.modelled_lob`. Filters
 `CatalogTypeCode='STC'`. `MODEL_CODE` comes straight from the raw
 parquet's `ModelCode` column.
 
@@ -152,13 +154,14 @@ every YLT row) — see `seeds.REQUIRED_SEEDS`.
 
 ## 2. EP summary staging
 
-### 2.1 `vw_ep` — **todo (now optional for main chain)**
+### 2.1 `vw_ep` — **todo (materialised view not required)**
 
 January unioned RL + VK EP summaries to derive `rl_proportion` /
-`vk_proportion` for blending. The polars pipeline sources blend
-proportions directly from `blending_weights.csv` (long-format, see §3),
-so `vw_ep` is no longer required for the main rollup. The unioned
-`vw_ep` would still be useful for excel-diff QA — see
+`vk_proportion` for blending. The polars default run derives those
+proportions directly from vendor `*.long.csv` EP summaries at run time, or
+from reviewed `blending_weights.csv` when `--use-blending-seed` is selected.
+A materialised `vw_ep` equivalent is therefore not required in the main DAG.
+The unioned `vw_ep` would still be useful for excel-diff QA — see
 `tests/test_integration_ep.py`.
 
 If/when it lands, the polars version would be
@@ -328,8 +331,8 @@ january: `mts_vw_ylt_combined_all_factors_long_from_cachetbl` unpivots
 the wide cache into `(metric_name, value)` pairs.
 
 polars: `rollup.pipeline.audit_long(all_factors, tags)` produces this
-shape. Written to `<output_dir>/debug/audit_long.parquet` when
-`--dump-interim` is set.
+shape. Written to `<output_dir>/debug/audit_long.parquet` by default;
+`--no-audit` skips the debug copy.
 
 ### 5.2 Aggregation to Hisco grain — **not needed at current grain**
 
@@ -459,7 +462,7 @@ staging joins Verisk YLT/EP rows on that label. It is only an allow-list;
 
 ### 9.3 Population SQL
 
-Export or maintain the vendor-native analysis IDs selected for the run — see
+Export or maintain the numeric vendor analysis IDs selected for the run — see
 the `valid_analyses.csv` section in
 [`data-requirements.md`](data-requirements.md) for the
 copy-pasteable contract.
@@ -490,7 +493,7 @@ SQL to re-export from january's duckdb when refreshing.
 | `lobs.csv`                 | dbt (`hisco_org__lobs.csv`)                                    |
 | `perils.csv`               | duckdb export from `loader.main.dim_region_perils` (DISTINCT)  |
 | `analyses.csv`             | duckdb export — verisk + risklink rows                         |
-| `valid_analyses.csv`       | operator-owned vendor-native analysis allow-list               |
+| `valid_analyses.csv`       | operator-owned numeric vendor analysis allow-list              |
 | `blending_weights.csv`     | duckdb export — long-pivot of `blending_factors`               |
 | `forecast_factors.csv`     | dbt (`hisco_org__forecast_factors.csv`)                        |
 | `fx_rates.csv`             | handcrafted (replace before prod)                              |

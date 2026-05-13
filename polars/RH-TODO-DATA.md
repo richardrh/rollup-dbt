@@ -164,7 +164,7 @@ handles the Excel number formatting (e.g. `"1,806,464"`) for you.
 
 ### `data/seeds/valid_analyses.csv`
 
-Which vendor-native analysis IDs are in the official rollup.
+Which numeric vendor analysis IDs are in the official rollup.
 
 | column | type | example |
 |--------|------|---------|

@@ -9,10 +9,10 @@ parquets. Everything is a `LazyFrame` expression; nothing materialises until
 
 ```bash
 # from repo root
-uv run rollup --dry-run                  # show the plan, exit
-uv run rollup                            # plan → y/N prompt → run
-uv run rollup --yes                      # skip prompt, run
-uv run rollup --yes --dump-interim       # also write audit parquets
+uv run rollup --dry-run                  # show the plan/coverage, exit
+uv run rollup                            # interactive operator wizard
+uv run rollup --yes                      # non-interactive run
+uv run rollup --yes --no-audit           # skip debug audit parquets
 uv run rollup --yes --min-loss 0         # disable default loss filter (keep every row)
 uv run rollup --yes --log-level INFO     # show factor-chain trace
 uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
@@ -42,7 +42,7 @@ contract between the pipeline and the seeds + YLTs you supply.
         │                      │ blending_weights    │
         │                      │ forecast / fx       │
         │                      │ euws (+overrides)   │
-        │                      │ air_events / fa     │
+        │                      │ event catalogues    │
         │                      └──────────┬──────────┘
         ▼                                 │
    ┌──────────────────────────────────────▼───┐
@@ -112,9 +112,9 @@ contract between the pipeline and the seeds + YLTs you supply.
     ├── ylt/
     │   ├── verisk/*.parquet    # 10,000 simulation years (AIR)
     │   └── risklink/*.parquet  # 100,000 simulation years (RMS)
-    ├── ep_summaries/           # optional; only used by integration tests
-    │   ├── verisk/*.csv
-    │   └── risklink/*.csv
+    ├── ep_summaries/           # required by default for EP-derived blending
+    │   ├── verisk/*.long.csv
+    │   └── risklink/*.long.csv
     └── output/                 # pipeline writes Hisco{AIR,RMS}_*.parquet
 ```
 
@@ -147,6 +147,8 @@ eval "$(register-python-argcomplete rollup)"
   mapped to its polars replacement, with the source SQL quoted.
 - [`../data/seeds/README.md`](../data/seeds/README.md) — per-seed schema
   decisions, column naming rules, provenance.
+- [`../docs/load-data.md`](../docs/load-data.md) — **operator runbook** with exact commands
+  for seeds, YLTs, EP summaries, dry-run, wizard, and output checks.
 - [`RH-TODO-DATA.md`](RH-TODO-DATA.md) — **simple checklist for the
   data-collection pass** (what files, what columns, where to put them).
 
@@ -172,8 +174,11 @@ This produces a single self-contained HTML file (works from a USB stick or email
 Pipeline runs end-to-end on synthetic data. The full chain (staging, factor
 attach, metrics, fan-out, audit dumps, interactive CLI) is implemented and
 tested. To run on real data, work through
-[`RH-TODO-DATA.md`](RH-TODO-DATA.md) — collect the four blocker seed
-CSVs into `data/seeds/` and drop the YLT parquets under
-`data/ylt/{verisk,risklink}/`.
+[`../docs/load-data.md`](../docs/load-data.md) — collect the run-scope seeds,
+replace the bundled Verisk placeholder analysis IDs, drop YLT parquets under
+`data/ylt/{verisk,risklink}/`, and provide EP-summary `*.long.csv` files for
+default blending derivation.
 
-**~150 unit tests + 6 integration tests** (`uv run python -m pytest polars/`). Integration tests require Docker and are skipped by default; opt-in with `--run-integration`. Unit tests run in ~5s.
+Run `uv run pytest polars/ -q` for the default suite. Integration tests require
+extra local services/data and are skipped by default; opt in with
+`--run-integration` when those dependencies are available.

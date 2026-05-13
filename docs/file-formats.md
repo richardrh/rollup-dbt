@@ -196,8 +196,12 @@ Then derive blending weights:
 
     uv run rollup derive-blending
 
-This rewrites `data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200,
-1-in-1000, and 1-in-10000 OEP totals.
+Normal runs derive blending weights in-memory from these long CSVs and write
+`data/output/debug/derived_blending_weights.csv` for audit. The explicit
+`derive-blending` subcommand rewrites the reviewed fallback seed
+`data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200, 1-in-1000, and
+1-in-10000 OEP totals. Use `uv run rollup --use-blending-seed` to run from
+that reviewed seed instead of EP summaries.
 
 ---
 
@@ -208,14 +212,14 @@ The pipeline writes here. **Created on run.**
 | file                                              | when written | what it contains |
 |---------------------------------------------------|---|---|
 | `HiscoAIR_<yyyymm>_main.parquet` × N forecast dates | every run | full chain output for Verisk per forecast date |
-| `HiscoAIR_dialsup.parquet`                        | every run | Verisk raw loss / FX only (no factors) |
+| `HiscoAIR_dialsup.parquet`                        | every run | Verisk sensitivity output: `loss × forecast × EUWS` |
 | `HiscoRMS_<yyyymm>_main.parquet` × N              | every run | full chain output for RiskLink per forecast date |
-| `HiscoRMS_dialsup.parquet`                        | every run | RiskLink raw loss / FX only |
+| `HiscoRMS_dialsup.parquet`                        | every run | RiskLink sensitivity output: `loss × forecast × EUWS` |
 | `mts_tbl_ylt_combined_all_factors.parquet`        | every run | **long format**, one row per (event × metric); identity + factor scalars + `(metric_name, value)` |
-| `debug/audit_wide.parquet`                        | `--dump-interim` only | **wide format**, one row per event with every factor and metric side-by-side, layout matches the chain order |
-| `debug/audit_long.parquet`                        | `--dump-interim` only | duplicate of the long-format file, kept under `debug/` for analyst convenience |
+| `debug/audit_wide.parquet`                        | default; skip with `--no-audit` | **wide format**, one row per event with every factor and metric side-by-side, layout matches the chain order |
+| `debug/audit_long.parquet`                        | default; skip with `--no-audit` | duplicate of the long-format file, kept under `debug/` for analyst convenience |
 
-Today: 2 vendors × 3 forecast dates → **9 default files** + 2 debug files when `--dump-interim` is set.
+Today: 2 vendors × 3 forecast dates → **9 default files** + 2 debug audit files.
 
 ### Trimming small-loss rows — `MIN_LOSS = 1000` by default
 
@@ -255,13 +259,14 @@ uv run rollup --yes --log-level INFO   # logs `min_loss filter: dropping rows wh
 
 The filter is applied to each variant's `ModelGrossLoss` for the Hisco
 fanouts, and to the `value` column for
-`mts_tbl_ylt_combined_all_factors.parquet`. The `--dump-interim` debug
-parquets are *not* filtered — they're for analyst introspection.
+`mts_tbl_ylt_combined_all_factors.parquet`. The debug audit parquets are *not*
+filtered — they're for analyst introspection.
 
-### When to use `--dump-interim`
+### Audit outputs
 
 ```bash
-uv run rollup --yes --dump-interim
+uv run rollup --yes             # writes debug audit outputs by default
+uv run rollup --yes --no-audit  # skip debug audit outputs
 ```
 
 Adds the **wide** audit parquet under `data/output/debug/`. Wide is one row
@@ -413,7 +418,7 @@ uv run rollup push-to-sql --schema marts --yes
 ### What gets pushed
 
 - The 8 `Hisco{AIR,RMS}_*.parquet` fanout files → SQL tables of the same name (e.g. `HiscoAIR_202601_main`, `HiscoRMS_dialsup`).
-- **Not pushed:** `mts_tbl_ylt_combined_all_factors.parquet` and the `--dump-interim` debug parquets — these are 21M-row audit artefacts kept parquet-only by design.
+- **Not pushed:** `mts_tbl_ylt_combined_all_factors.parquet` and the debug audit parquets — these are large audit artefacts kept parquet-only by design.
 
 ### Caveats
 

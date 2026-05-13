@@ -28,7 +28,8 @@ Turns vendor catastrophe-loss YLT parquets into Hisco loss parquets, optionally 
 
 3. **Run:**
    ```bash
-   uv run rollup --yes
+   uv run rollup        # interactive wizard
+   uv run rollup --yes  # non-interactive run
    ```
 
 4. **Output appears in `data/output/`:** parquets ready for Hisco ingestion or SQL push.

@@ -14,7 +14,7 @@ Schema reference. For the step-by-step procedure, see [Loading your data](load-d
     ├── ylt/
     │   ├── verisk/*.parquet
     │   └── risklink/*.parquet
-    ├── ep_summaries/         ← optional; only used by tests/test_integration_ep.py
+    ├── ep_summaries/         ← required by default for run-time blend derivation
     │   ├── verisk/*.csv
     │   └── risklink/*.csv
     └── output/               ← pipeline writes here
@@ -47,7 +47,10 @@ AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 
 ### Deriving blending weights from EP summaries
 
-After converting xlsx to long CSV (above), regenerate the blending seed:
+After converting xlsx to long CSV (above), normal runs derive blending weights
+in memory and write an audit copy to
+`data/output/debug/derived_blending_weights.csv`; they do **not** overwrite the
+reviewed seed. To deliberately refresh the reviewed seed, run:
 
     uv run rollup derive-blending
 
@@ -59,8 +62,8 @@ computes per-peril totals for AAL, 1-in-200 OEP, 1-in-1000 OEP, and
     rl_proportion = rl_aal / (rl_aal + vk_aal)
     vk_proportion = 1 - rl_proportion
 
-The CSV is the contract the pipeline reads — re-run `ep-summary-to-csv`
-and `derive-blending` whenever the EP summaries are refreshed.
+Use `uv run rollup --use-blending-seed` only when you explicitly want the
+reviewed `blending_weights.csv` instead of run-time EP-summary derivation.
 
 ---
 
@@ -203,9 +206,10 @@ ORDER BY p.peril_id, a.analysis_id;
 
 ---
 
-## B. Seeds — `data/seeds/*.csv` (11 files, all required)
+## B. Seeds — `data/seeds/*.csv` (11 files)
 
-11 CSVs total. Four are stubs requiring population; the rest are dbt-owned or optional.
+11 CSVs total. The business/VOR seeds are required for real runs; event
+catalogues may be stub-empty but improve validation/enrichment when populated.
 
 ### Already populated (in git)
 
@@ -250,7 +254,7 @@ Maps each vendor's analysis to peril. For Verisk, `lob_id` is NULL (lob comes fr
 
 One row per vendor × analysis pair. Concatenate Verisk and RiskLink CSVs (header from one, body of both).
 
-#### 3. `valid_analyses.csv` — vendor-native analysis allow-list (REQUIRED)
+#### 3. `valid_analyses.csv` — numeric vendor analysis allow-list (REQUIRED)
 
 Pipeline filters YLT and EP summaries to listed `(vendor, analysis_id)` rows.
 Empty file → zero rows output.
@@ -324,7 +328,8 @@ Written unconditionally on every run to `data/output/`. One row per
 - `value` (float) — the metric value
 
 This matches january's `mts_tbl_ylt_combined_all_factors` table for diff-friendliness.
-The wide audit dump is still gated behind `--dump-interim` and writes to `data/output/debug/`.
+The wide audit dump is written to `data/output/debug/` by default; use
+`--no-audit` to skip it.
 
 ---
 
@@ -344,17 +349,18 @@ No code change. No test change.
 ## G. Verifying the pipeline works on your data
 
 ```bash
-cd polars
 uv run rollup --dry-run        # plan: every seed + YLT + EP file checked
+uv run rollup                  # interactive wizard
 uv run rollup --yes            # full run
-uv run rollup --yes --dump-interim         # also write audit_{wide,long}.parquet
+uv run rollup --yes --no-audit             # skip audit_{wide,long}.parquet
 ```
 
 If everything is green:
 
-- `data/output/Hisco{AIR,RMS}_{date}_{main,dialsup}.parquet` — one per variant.
+- `data/output/Hisco{AIR,RMS}_{yyyymm}_main.parquet` — one per vendor and forecast date.
+- `data/output/Hisco{AIR,RMS}_dialsup.parquet` — one sensitivity output per vendor.
 - `data/output/debug/audit_wide.parquet` — every event with the factor chain
-  laid out left-to-right (only when `-d` is set).
+  laid out left-to-right (default; skipped only with `--no-audit`).
 
 To verify the code itself works end-to-end before pointing at production:
 
