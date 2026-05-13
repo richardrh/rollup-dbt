@@ -18,7 +18,6 @@ from .columns import (
     RefAirEventsCol,
     RefEuwsRankOverridesCol,
     RefEuwsRateFactorsCol,
-    RefFineartAdjCol,
     RefForecastFactorsCol,
     RefFxRatesCol,
     RefLobsCol,
@@ -146,16 +145,6 @@ REF_RISKLINK_EVENTS: pl.Schema = pl.Schema({
     RefRisklinkEventsCol.DAY:      pl.Int64,
 })
 
-REF_FINEART_ADJ: pl.Schema = pl.Schema({
-    RefFineartAdjCol.LOB_ID:              pl.Int64,
-    RefFineartAdjCol.REGION_PERIL_ID:     pl.Int64,
-    RefFineartAdjCol.APPLIES_TO_FA:       pl.Int64,
-    RefFineartAdjCol.ROLLUP_REGION_PERIL: pl.String,
-    RefFineartAdjCol.AAL_FACTOR:          pl.Float64,
-    RefFineartAdjCol.TAIL_FACTOR:         pl.Float64,
-})
-
-
 # ----- raw EP summaries -----
 
 STG_RISKLINK_EP: pl.Schema = pl.Schema({
@@ -248,9 +237,6 @@ ALL_FACTORS: pl.Schema = pl.Schema({
     AllFactorsCol.RP:                    pl.Float64,
     AllFactorsCol.RP_BUCKET:             pl.Int64,
     AllFactorsCol.EUWS_FACTOR:           pl.Float64,
-    AllFactorsCol.FA_GROSS_AAL_FACTOR:   pl.Float64,
-    AllFactorsCol.FA_GROSS_TAIL_FACTOR:  pl.Float64,
-    AllFactorsCol.FA_GROSS_FACTOR:       pl.Float64,
 })
 
 METRICS: pl.Schema = pl.Schema({m: pl.Float64 for m in MetricCol})

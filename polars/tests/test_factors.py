@@ -17,7 +17,6 @@ from rollup.schemas.columns import (
     NormalizedYltCol as Y,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
-    RefFineartAdjCol as FA,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
 )
@@ -26,7 +25,6 @@ from rollup.stages.factors import (
     _blend_weights_by_peril_bucket,
     attach_currency,
     attach_euws,
-    attach_fagross,
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
@@ -268,61 +266,6 @@ def test_euws_event_missing_from_rate_table_defaults_to_one():
                                     EO.FACTOR: pl.Float64}).lazy()
     out = attach_euws(ylt, euws, override).collect()
     assert out[AF.EUWS_FACTOR][0] == pytest.approx(1.0)
-
-
-# --------------------------------------------------------------------------- #
-# attach_fagross                                                              #
-# --------------------------------------------------------------------------- #
-
-def _fineart_adjustments(lob_id: int, region_peril_id: int, aal: float, tail: float) -> pl.LazyFrame:
-    return pl.DataFrame({
-        FA.LOB_ID:              [lob_id],
-        FA.REGION_PERIL_ID:     [region_peril_id],
-        FA.APPLIES_TO_FA:       [True],
-        FA.ROLLUP_REGION_PERIL: ["test peril"],
-        FA.AAL_FACTOR:          [aal],
-        FA.TAIL_FACTOR:         [tail],
-    }, schema={
-        FA.LOB_ID:              pl.Int64,
-        FA.REGION_PERIL_ID:     pl.Int64,
-        FA.APPLIES_TO_FA:       pl.Boolean,
-        FA.ROLLUP_REGION_PERIL: pl.String,
-        FA.AAL_FACTOR:          pl.Float64,
-        FA.TAIL_FACTOR:         pl.Float64,
-    }).lazy()
-
-
-def _ylt_with_rp_bucket(rp_bucket: int) -> pl.LazyFrame:
-    return _ylt().collect().with_columns(pl.lit(rp_bucket, dtype=pl.Int64).alias(AF.RP_BUCKET)).lazy()
-
-
-def test_attach_fagross_uses_aal_factor_for_aal_bucket():
-    ylt = _ylt_with_rp_bucket(0)
-    fa = _fineart_adjustments(lob_id=1, region_peril_id=206, aal=1.2, tail=2.5)
-
-    out = attach_fagross(ylt, fa).collect()
-
-    assert out[AF.FA_GROSS_AAL_FACTOR][0] == pytest.approx(1.2)
-    assert out[AF.FA_GROSS_TAIL_FACTOR][0] == pytest.approx(2.5)
-    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(1.2)
-
-
-def test_attach_fagross_uses_tail_factor_for_tail_bucket():
-    ylt = _ylt_with_rp_bucket(200)
-    fa = _fineart_adjustments(lob_id=1, region_peril_id=206, aal=1.2, tail=2.5)
-
-    out = attach_fagross(ylt, fa).collect()
-
-    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(2.5)
-
-
-def test_attach_fagross_defaults_to_one_when_no_seed_row_matches():
-    ylt = _ylt_with_rp_bucket(1000)
-    fa = _fineart_adjustments(lob_id=999, region_peril_id=999, aal=1.2, tail=2.5)
-
-    out = attach_fagross(ylt, fa).collect()
-
-    assert out[AF.FA_GROSS_FACTOR][0] == pytest.approx(1.0)
 
 
 # --------------------------------------------------------------------------- #

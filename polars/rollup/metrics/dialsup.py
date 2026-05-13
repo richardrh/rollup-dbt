@@ -17,7 +17,7 @@ from rollup.schemas.columns import NormalizedYltCol as Y
 def add_dialsup(ylt: pl.LazyFrame, forecast_tag: str) -> pl.LazyFrame:
     """Add the tag-independent DIALSUP sensitivity metric.
 
-    ``dialsup = loss * forecast * euws * fa_gross``
+    ``dialsup = loss * forecast * euws``
 
     The DIALSUP fanout is intentionally a single output, so it uses the first
     forecast tag chosen for that fanout rather than emitting one metric per tag.
@@ -28,6 +28,5 @@ def add_dialsup(ylt: pl.LazyFrame, forecast_tag: str) -> pl.LazyFrame:
             pl.col(Y.LOSS)
             * pl.col(forecast_factor_col(forecast_tag))
             * pl.col(AF.EUWS_FACTOR)
-            * pl.col(AF.FA_GROSS_FACTOR)
         ).alias(DIALSUP_COL),
     )

@@ -35,7 +35,7 @@ fx_rates.csv          — long-format (currency_code, target_currency, rate_date
 euws_rate_factors.csv — per-event EUWS factors
 euws_rank_overrides.csv — per-LOB rank-threshold overrides for EUWS
 air_events.csv        — Verisk event catalogue (event_id, model_id, year, day)
-fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
+risklink_events.csv   — RiskLink event catalogue (event_id, year, day)
 ```
 
 | seed                       | rows in this branch | populated by |
@@ -50,7 +50,7 @@ fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
 | `euws_rate_factors.csv`    | 69 212              | dbt          |
 | `euws_rank_overrides.csv`  | 1                   | hand-curated |
 | `air_events.csv`           | **stub (0)**        | duckdb export — recommended |
-| `fineart_adjustments.csv`  | **stub (0)**        | duckdb export — optional |
+| `risklink_events.csv`      | **stub (0)**        | duckdb export — optional |
 
 The full column schemas for the stub seeds (and what happens when they
 stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md).

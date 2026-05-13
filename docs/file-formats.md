@@ -158,19 +158,6 @@ Long format. Adding a forecast date is a data-only change.
 | `max_rank`   | Int64   | apply override when `rank ≤ max_rank`. |
 | `factor`     | Float64 | replacement factor. |
 
-### `fineart_adjustments` — `data/seeds/adjustments/fineart_adjustments.csv`
-
-Optional. Empty = no fine-art adjustment (factor 1.0 for all rows).
-
-| column                | dtype   | notes |
-|-----------------------|---------|-------|
-| `lob_id`              | Int64   | FK → `lobs.lob_id`. |
-| `region_peril_id`     | Int64   | FK → `perils.peril_id`. |
-| `applies_to_fa`       | Int64   | flag. |
-| `rollup_region_peril` | String  | display. |
-| `aal_factor`          | Float64 | applied today. |
-| `tail_factor`         | Float64 | carried but not applied (future tail-loss work). |
-
 ### `air_events` — `data/seeds/validation/air_events.csv`
 
 Verisk event catalogue. Optional stub.
@@ -282,7 +269,7 @@ per YLT event with columns laid out left-to-right in chain order:
 
 `[identity dims] → raw loss → uplift → uplift_capped → localccy → (per
 forecast tag: f_yyyymm → loss_..._fyyyymm) → (euws → loss_..._euws) →
-(fa_gross → loss_..._fagross) → dialsup`
+dialsup`
 
 You can read across one row and verify each multiplication. Best when you
 want to chase a specific event through the chain — the long-format file

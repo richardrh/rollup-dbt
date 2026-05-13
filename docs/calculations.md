@@ -248,7 +248,7 @@ losses. Currency string values use `CurrencyCode` StrEnum
 
 ---
 
-## 4. Year-tagged metric chain — `_compute_metrics` + `chain.CHAIN`
+## 4. Year-tagged metric chain — `add_main_metrics` + `chain.CHAIN`
 
 ### 4.1 Year-invariant prelude — **done**
 
@@ -256,7 +256,7 @@ january: `mts_vw_ylt_combined_with_blending_factors_fx_applied` produces
 `loss_uplifted`, `loss_uplifted_capped`, `loss_uplifted_capped_localccy`
 (the `CHAIN_BASE`).
 
-polars (`pipeline._compute_metrics`):
+polars (`metrics.main_chain.add_main_metrics`):
 ```python
 ylt = ylt.with_columns(
     (pl.col(Y.LOSS) * pl.col(AF.UPLIFT_FACTOR))       .alias(M.LOSS_UPLIFTED),
@@ -268,9 +268,9 @@ ylt = ylt.with_columns(
 
 ### 4.2 Year-tagged chain — registry-driven — **done**
 
-january wrote three more views per factor stage:
-`_with_blending_factors_with_forecast`, `..._fx_forecasted_euws_applied`,
-`..._fagross`. polars walks the `chain.CHAIN` registry once per tag:
+january wrote one more view per factor stage, ending at
+`..._fx_forecasted_euws_applied`. polars walks the `chain.CHAIN` registry
+once per tag:
 
 ```python
 for tag in tags:
@@ -288,11 +288,10 @@ for tag in tags:
 CHAIN = {
     "forecast": {"suffix": "",         "factor_col": "f_{tag}",                  "is_per_tag": True,  ...},
     "euws":     {"suffix": "_euws",    "factor_col": AF.EUWS_FACTOR,             "is_per_tag": False, ...},
-    "fagross":  {"suffix": "_fagross", "factor_col": AF.FA_GROSS_AAL_FACTOR,     "is_per_tag": False, ...},
 }
 ```
 
-Adding a new factor stage = one entry in CHAIN. `_compute_metrics`,
+Adding a new factor stage = one entry in CHAIN. `add_main_metrics`,
 `_metric_cols_for`, `audit_wide`, and `VariantSpec.loss_metric` all
 walk this registry — no other edits.
 
@@ -304,13 +303,11 @@ inside the EUWS view. polars extracts this to
 override) so adding a new LOB override is a data-only change. The
 `pl.when` lives inside `attach_euws`, fed by the seed.
 
-### 4.4 Fine-art `aal_factor` vs `tail_factor` — **partial**
+### 4.4 Legacy gross-to-net adjustment — **removed**
 
-january switched between `aal_factor` (rp_bucket=0) and `tail_factor`
-(rp_bucket≥200). polars currently multiplies `aal_factor`
-unconditionally; `fa_gross_tail_factor` and `rp_bucket` are carried through to
-the audit dump but tail branching is not applied yet. See the docstring on
-`AllFactorsCol.FA_GROSS_TAIL_FACTOR`.
+The january-only gross-to-net adjustment is no longer part of the Polars
+rollup. MAIN ends at `..._{tag}_euws`, and DIALSUP uses
+`loss × forecast × EUWS`.
 
 ### 4.5 `mts_tbl_ylt_combined_all_factors` (the cached DAG node) — **done**
 
@@ -347,7 +344,7 @@ per event_id ever appear.
 polars: `rollup.pipeline.fanout_hisco(all_factors, variant)`. Filters
 by `base_model == variant.vendor.name`, picks
 `variant.loss_metric` (= `chain.main_loss_col(tag)` for MAIN,
-= `chain.dialsup_col(tag)` for DIALSUP) as `ModelGrossLoss`, validates
+= `chain.DIALSUP_COL` for DIALSUP) as `ModelGrossLoss`, validates
 against `HISCO_FANOUT` schema, writes one parquet per variant.
 
 `ModelEventDay` — **still hardcoded to 0**. Planned:
@@ -363,9 +360,7 @@ No per-variant SQL flavour mess like january's `_fix` / `_fl_fa_fix` /
 
 - **`Flavor.MAIN`** — `loss_metric = chain.main_loss_col(tag)` =
   the LAST cumulative chain column.
-- **`Flavor.DIALSUP`** — `loss_metric = chain.dialsup_col(tag)`.
-
-`fa_gross` is a chain factor, not a flavour. See `rollup/config.py::Flavor`.
+- **`Flavor.DIALSUP`** — `loss_metric = chain.DIALSUP_COL`.
 
 ---
 
@@ -398,15 +393,15 @@ parquets being present locally).
 ## 7. Dials-up sensitivity (`mts_vw_ylt_dialsup__funnel`) — **done**
 
 ```
-dialsup = loss / rate_to_gbp
+dialsup = loss × forecast × EUWS
 ```
 
-Currency conversion only — no factors. Single column (no per-tag emission),
-because the formula is tag-independent. One file per vendor.
+Single column (no per-tag emission) using the selected forecast tag. One file
+per vendor.
 
-polars: `rollup.pipeline._compute_dialsup`. Produces a single `dialsup` column
-by dividing raw `loss` by `rate_to_gbp`. Divide-by-zero guard
-(`pl.when(... != 0)`) returns 0.0 — documented in the function docstring.
+polars: `rollup.metrics.dialsup.add_dialsup`. Produces a single `dialsup`
+column from raw `loss`, the selected `f_{tag}` forecast factor, and
+`euws_factor`.
 
 ---
 
@@ -501,10 +496,10 @@ SQL to re-export from january's duckdb when refreshing.
 | `euws_rate_factors.csv`    | dbt (`vor__euws_rate_factors.csv`)                             |
 | `euws_rank_overrides.csv`  | hand-curated                                                   |
 | `air_events.csv`           | duckdb export from `reference.air_events` (recommended)        |
-| `fineart_adjustments.csv`  | duckdb export from `reference.fineart_gross_to_net_adjustment2` (optional) |
+| `risklink_events.csv`      | duckdb export from RiskLink event catalogue (optional)         |
 
-Four of these are stub-empty in git, awaiting user export from the
-january duckdb. The pre-flight reporter blocks the run if any of the
+Some non-required event catalogues are stub-empty in git, awaiting user
+export from source data. The pre-flight reporter blocks the run if any of the
 nine `REQUIRED_SEEDS` have zero rows.
 
 ---
@@ -519,19 +514,17 @@ nine `REQUIRED_SEEDS` have zero rows.
 | 4 | `stages/factors.py::attach_currency`                      | `int_vw_blending_factors_with_forecast_ccy` (CCY derivation + FX join)                | done   |
 | 5 | `stages/factors.py::attach_forecast_factors`              | `int_vw_blending_factors_with_forecast`                                               | done   |
 | 6 | `stages/factors.py::attach_euws`                          | `..._fx_forecasted_euws_applied` incl. rank-threshold override (now seed-driven)      | done   |
-| 7 | `stages/factors.py::attach_fagross`                       | `..._fx_forecasted_euws_applied_fagross` (aal_factor)                                 | partial (tail_factor carried for audit, not applied — needs rp_bucket logic) |
-| 8 | `stages/factors.py::attach_uplift`                        | `int_vw_blending__vendor_proportions_*` + `..._applied` + flood base-model            | done (window functions instead of group-by + join-back) |
-| 9 | `pipeline.py::_compute_metrics` + `rollup/chain.py`       | year-invariant + year-tagged metric cascade across `mts_vw_ylt_combined_*`            | done (registry-driven) |
-|10 | `pipeline.py::build_all_factors`                          | cache equivalent to `mts_tbl_ylt_combined_all_factors`                                | done (`.cache()`) |
-|11 | `pipeline.py::fanout_hisco`                               | `marts.*fanout_air`, `*fanout_rl_nodayid`, `*fanout_rl_withdayid`                     | done (ModelEventDay still hardcoded 0 pending air_events join) |
-|12 | `stages/ep.py::ep_curve_from_ylt`                         | `mts_vw_ep_combined_all_factors*`                                                     | done (used by integration tests, not the main rollup) |
-|13 | `pipeline.py::_compute_dialsup`                           | `mts_vw_ylt_dialsup__funnel` + fanouts                                                | done   |
-|14 | `pipeline.py::count_event_id_orphans`                     | part of `verify.*` — eventid orphan count (observation-only)                          | done   |
-|14b| `tests/test_invariants.py`                                | the rest of `verify.*`                                                                | todo   |
+| 7 | `stages/factors.py::attach_uplift`                        | `int_vw_blending__vendor_proportions_*` + `..._applied` + flood base-model            | done (window functions instead of group-by + join-back) |
+| 8 | `metrics/main_chain.py::add_main_metrics` + `rollup/chain.py` | year-invariant + year-tagged metric cascade across `mts_vw_ylt_combined_*`         | done (registry-driven) |
+| 9 | `pipeline.py::build_all_factors`                          | cache equivalent to `mts_tbl_ylt_combined_all_factors`                                | done (`.cache()`) |
+|10 | `pipeline.py::fanout_hisco`                               | `marts.*fanout_air`, `*fanout_rl_nodayid`, `*fanout_rl_withdayid`                     | done (ModelEventDay still hardcoded 0 pending air_events join) |
+|11 | `stages/ep.py::ep_curve_from_ylt`                         | `mts_vw_ep_combined_all_factors*`                                                     | done (used by integration tests, not the main rollup) |
+|12 | `metrics/dialsup.py::add_dialsup`                         | `mts_vw_ylt_dialsup__funnel` + fanouts                                                | done   |
+|13 | `pipeline.py::count_event_id_orphans`                     | part of `verify.*` — eventid orphan count (observation-only)                          | done   |
+|13b| `tests/test_invariants.py`                                | the rest of `verify.*`                                                                | todo   |
 
 **Overall**: end-to-end pipeline runs against synthetic data
 (`tests/test_e2e.py`) producing 8 Hisco fanout parquets + the combined long-format parquet with non-zero
 `ModelGrossLoss` values. The remaining gaps are (a) `ModelEventDay` join with
-`air_events` / a flood-events seed, (b) `fa_gross_tail_factor`
-application, (c) reproducing the `verify.*` invariants as pytest
+`air_events` / a flood-events seed and (b) reproducing the `verify.*` invariants as pytest
 assertions.

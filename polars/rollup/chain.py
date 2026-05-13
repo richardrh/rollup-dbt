@@ -5,7 +5,6 @@ the cumulative loss columns:
 
     loss_uplifted_capped_localccy_{tag}                   ← after `forecast`
     loss_uplifted_capped_localccy_{tag}_euws              ← after `euws`
-    loss_uplifted_capped_localccy_{tag}_euws_fagross      ← after effective `fagross`
 
 The base column the chain starts from is `CHAIN_BASE`
 (= `MetricCol.LOSS_UPLIFTED_CAPPED_LOCALCCY` — the year-invariant local-ccy
@@ -17,9 +16,9 @@ Adding a new factor is a one-line edit to `CHAIN`. The metrics computer,
 the audit layout, `VariantSpec.loss_metric`, and `_metric_cols_for` all
 walk this registry — no other call site hand-builds the column names.
 
-`dialsup` is NOT part of the MAIN chain — it uses a January-style sensitivity
-formula (loss × forecast × EUWS × effective fine-art gross) and deliberately
-bypasses uplift, cap, and FX/local-currency conversion.
+`dialsup` is NOT part of the MAIN chain — it uses a sensitivity formula
+(loss × forecast × EUWS) and deliberately bypasses uplift, cap, and
+FX/local-currency conversion.
 """
 
 from __future__ import annotations
@@ -38,8 +37,7 @@ class ChainStage(TypedDict):
 
     `ancillary_before` / `ancillary_after` are non-factor columns that audit
     layout prints alongside the factor (e.g. `RNK` before `EUWS_FACTOR` —
-    rank drives the override logic; `FA_GROSS_TAIL_FACTOR` after
-    `FA_GROSS_AAL_FACTOR` — same source seed). Empty tuple if none.
+    rank drives the override logic). Empty tuple if none.
     """
     suffix:           str
     factor_col:       str
@@ -59,11 +57,6 @@ CHAIN: dict[str, ChainStage] = {
         "suffix": "_euws", "factor_col": AF.EUWS_FACTOR, "is_per_tag": False,
         "ancillary_before": (AF.RNK,),                  # rank drives the EUWS override
         "ancillary_after":  (),
-    },
-    "fagross": {
-        "suffix": "_fagross", "factor_col": AF.FA_GROSS_FACTOR, "is_per_tag": False,
-        "ancillary_before": (),
-        "ancillary_after":  (AF.FA_GROSS_AAL_FACTOR, AF.FA_GROSS_TAIL_FACTOR),
     },
 }
 
@@ -106,7 +99,7 @@ def main_loss_col(tag: str) -> str:
 
 
 # Sensitivity column for the DIALSUP flavour. Not part of CHAIN — different
-# formula (`loss * forecast * euws * fa_gross`). A single DIALSUP output uses
+# formula (`loss * forecast * euws`). A single DIALSUP output uses
 # the selected forecast tag rather than emitting one file per tag.
 DIALSUP_COL: str = "dialsup"
 

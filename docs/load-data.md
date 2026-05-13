@@ -29,7 +29,7 @@ Copy these CSVs into `data/seeds/vor/`:
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
-Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `fineart_adjustments.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
+Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `risklink_events.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
 
 **Verify:**
 ```bash

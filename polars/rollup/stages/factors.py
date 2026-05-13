@@ -23,12 +23,12 @@ Say you want to add a `broker_commission_factor`. Do this:
      it small — a select + a left join + a fill_null(1.0).
 
   4. Call it from `pipeline.build_all_factors` in the right order (before
-     metrics; usually: after fa_gross, before dialsup).
+     metrics; usually: after EUWS, before dialsup).
 
   5. Pick a column-name suffix (e.g. `_brokercomm`). In the metrics loop
      inside `build_all_factors`, chain the new factor in:
-         loss_..._{tag}_euws_fagross_brokercomm =
-           loss_..._{tag}_euws_fagross * broker_commission_factor
+         loss_..._{tag}_euws_brokercomm =
+           loss_..._{tag}_euws * broker_commission_factor
      Update `audit_wide`'s ordering so the factor sits next to the metric
      it produced.
 
@@ -50,7 +50,6 @@ from rollup.schemas.columns import BlendingWeightsCol as BW
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RefEuwsRankOverridesCol as EO
 from rollup.schemas.columns import RefEuwsRateFactorsCol as EU
-from rollup.schemas.columns import RefFineartAdjCol as FA
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 
@@ -290,35 +289,6 @@ def attach_euws(
         .drop(_EUWS_OVERRIDE_TMP, EO.MAX_RANK)
     )
     log.info("euws: factor attached, rank overrides applied from seed")
-    return out
-
-
-def attach_fagross(ylt: pl.LazyFrame, fineart_adjustments: pl.LazyFrame) -> pl.LazyFrame:
-    """Fine-art gross-to-net factors per (lob_id, region_peril_id).
-
-    January applies ``aal_factor`` for bucket 0 rows and ``tail_factor`` for
-    tail buckets. Non-FA rows get factor=1.0 via fill_null.
-    """
-    fa = fineart_adjustments.select(
-        pl.col(FA.LOB_ID),
-        pl.col(FA.REGION_PERIL_ID),
-        pl.col(FA.AAL_FACTOR).alias(AF.FA_GROSS_AAL_FACTOR),
-        pl.col(FA.TAIL_FACTOR).alias(AF.FA_GROSS_TAIL_FACTOR),
-    )
-    out = (
-        ylt.join(fa, on=[Y.LOB_ID, Y.REGION_PERIL_ID], how="left")
-           .with_columns(
-               pl.col(AF.FA_GROSS_AAL_FACTOR).fill_null(1.0).cast(pl.Float64),
-               pl.col(AF.FA_GROSS_TAIL_FACTOR).fill_null(1.0).cast(pl.Float64),
-           )
-           .with_columns(
-               pl.when(pl.col(AF.RP_BUCKET) == 0)
-                 .then(pl.col(AF.FA_GROSS_AAL_FACTOR))
-                 .otherwise(pl.col(AF.FA_GROSS_TAIL_FACTOR))
-                 .alias(AF.FA_GROSS_FACTOR),
-           )
-    )
-    log.info("fa_gross: effective aal/tail factor attached (1.0 for non-FA rows)")
     return out
 
 

@@ -69,7 +69,6 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
     "euws_rate_factors":   F.REF_EUWS_RATE_FACTORS,
     # adjustments
     "euws_rank_overrides": F.REF_EUWS_RANK_OVERRIDES,
-    "fineart_adjustments": F.REF_FINEART_ADJ,
     # validation: event catalogues (stubs until real data provided)
     "air_events":          F.REF_AIR_EVENTS,
     "risklink_events":     F.REF_RISKLINK_EVENTS,
@@ -79,7 +78,7 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
 # Seeds that MUST have rows for a real run — empty data here means the
 # pipeline will silently produce zero-row Hisco parquets. The plan reporter
 # treats an empty REQUIRED seed as a blocker (`Check.ok = False`); other
-# seeds may legitimately be empty stubs (e.g. `air_events`, `fineart_*`).
+# seeds may legitimately be empty stubs (e.g. event catalogues).
 REQUIRED_SEEDS: frozenset[str] = frozenset({
     "lobs",
     "perils",
@@ -107,7 +106,6 @@ SEED_FILES: dict[str, str] = {
     "fx_rates":            "vor/fx_rates.csv",
     "euws_rate_factors":   "vor/euws_rate_factors.csv",
     "euws_rank_overrides": "adjustments/euws_rank_overrides.csv",
-    "fineart_adjustments": "adjustments/fineart_adjustments.csv",
     "air_events":          "validation/air_events.csv",
     "risklink_events":     "validation/risklink_events.csv",
 }
@@ -172,7 +170,6 @@ class Seeds:
     fx_rates:            pl.LazyFrame
     euws_rate_factors:   pl.LazyFrame
     euws_rank_overrides: pl.LazyFrame
-    fineart_adjustments: pl.LazyFrame
     air_events:          pl.LazyFrame
     risklink_events:     pl.LazyFrame
 

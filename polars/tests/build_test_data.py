@@ -29,7 +29,6 @@ from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefEuwsRankOverridesCol as EO
 from rollup.schemas.columns import RefEuwsRateFactorsCol as EU
-from rollup.schemas.columns import RefFineartAdjCol as FA
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import RefLobsCol as LB
@@ -180,15 +179,6 @@ def _write_seeds() -> None:
     pl.DataFrame(EUWS_RANK_OVERRIDES, orient="row", schema=[
         EO.ROLLUP_LOB, EO.MAX_RANK, EO.FACTOR,
     ]).write_csv(SEEDS / "adjustments/euws_rank_overrides.csv")
-
-    pl.DataFrame(schema={
-        FA.LOB_ID:              pl.Int64,
-        FA.REGION_PERIL_ID:     pl.Int64,
-        FA.APPLIES_TO_FA:       pl.Int64,
-        FA.ROLLUP_REGION_PERIL: pl.String,
-        FA.AAL_FACTOR:          pl.Float64,
-        FA.TAIL_FACTOR:         pl.Float64,
-    }).write_csv(SEEDS / "adjustments/fineart_adjustments.csv")
 
     # validation/ stubs — air_events populated by _write_air_events after YLTs are known
     pl.DataFrame(schema={

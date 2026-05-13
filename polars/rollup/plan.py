@@ -91,7 +91,7 @@ def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
 
     A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —
     the pipeline would silently produce zero-row Hisco parquets otherwise.
-    Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
+    Non-required seeds (e.g. `air_events`) may
     legitimately be empty stubs and are reported `ok=True` with `(stub)`.
     """
     if not spec.filename:

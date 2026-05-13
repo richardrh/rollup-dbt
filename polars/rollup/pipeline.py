@@ -21,7 +21,6 @@ from rollup.seeds import Seeds
 from rollup.stages.factors import (
     attach_currency,
     attach_euws,
-    attach_fagross,
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
@@ -117,12 +116,11 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         .pipe(attach_forecast_factors, seeds.forecast_factors, tags)
         .pipe(attach_rank, n_sim=n_sim)
         .pipe(attach_euws, seeds.euws_rate_factors, seeds.euws_rank_overrides)
-        .pipe(attach_fagross, seeds.fineart_adjustments)
         .pipe(attach_uplift, seeds.blending_weights, n_sim=n_sim)
         .pipe(add_main_metrics, tags)
         .pipe(add_dialsup, tags[0])
     )
-    log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
+    log.info(f"metrics: {3 + 2 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
     return all_factors
 

@@ -57,9 +57,9 @@ def test_variant_loss_metric_per_flavor():
     v = _fake_vendor(VendorName.VERISK, "AIR")
     main    = VariantSpec(v, date(2026, 1, 1), Flavor.MAIN).loss_metric
     dialsup = VariantSpec(v, date(2026, 1, 1), Flavor.DIALSUP).loss_metric
-    # fa_gross IS in the column name — it's the last factor in the chain, not a flavour.
-    assert main    == "loss_uplifted_capped_localccy_202601_euws_fagross"
-    # dialsup is tag-independent: loss / rate_to_gbp, so no forecast tag in the column name.
+    # MAIN uses the final chain stage; the legacy gross adjustment is gone.
+    assert main    == "loss_uplifted_capped_localccy_202601_euws"
+    # DIALSUP emits one selected-tag sensitivity column, so no forecast tag in the name.
     assert dialsup == "dialsup"
 
 

@@ -79,13 +79,12 @@ raw loss
 → local currency / FX
 → forecast
 → EUWS
-→ fine-art gross
 ```
 
 DIALSUP output:
 
 ```text
-raw loss × forecast × EUWS × fine-art gross
+raw loss × forecast × EUWS
 ```
 
 Speaker note: “DIALSUP intentionally bypasses uplift, cap, and FX to match January intent.”

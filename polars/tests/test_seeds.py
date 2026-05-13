@@ -77,9 +77,9 @@ def test_populated_seeds_have_rows():
 
 
 def test_optional_stub_seeds_are_valid():
-    """air_events, risklink_events and fineart_adjustments are stub-empty but schema-valid."""
+    """event catalogue seeds are stub-empty but schema-valid."""
     bundle = seeds.load_all(SEEDS_DIR)
-    for name in ("air_events", "risklink_events", "fineart_adjustments"):
+    for name in ("air_events", "risklink_events"):
         assert getattr(bundle, name).collect().height == 0, f"{name} should be stub-empty"
 
 

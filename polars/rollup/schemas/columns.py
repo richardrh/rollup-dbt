@@ -187,15 +187,6 @@ class RefRisklinkEventsCol(StrEnum):
     DAY      = "day"
 
 
-class RefFineartAdjCol(StrEnum):
-    LOB_ID              = "lob_id"
-    REGION_PERIL_ID     = "region_peril_id"
-    APPLIES_TO_FA       = "applies_to_fa"
-    ROLLUP_REGION_PERIL = "rollup_region_peril"
-    AAL_FACTOR          = "aal_factor"
-    TAIL_FACTOR         = "tail_factor"
-
-
 # ----- raw EP summaries (one row per RP × ep_type × lob × region_peril) -----
 
 class StgRisklinkEpCol(StrEnum):
@@ -283,9 +274,6 @@ class AllFactorsCol(StrEnum):
     date to the seed = new `f_{tag}` column + new metric columns
     automatically; no code change.
 
-    `FA_GROSS_FACTOR` is the effective January-compatible factor: AAL rows
-    use `FA_GROSS_AAL_FACTOR`, while return-period buckets >= 200 use
-    `FA_GROSS_TAIL_FACTOR`.
     """
     # dims
     VENDOR                = "vendor"
@@ -319,17 +307,14 @@ class AllFactorsCol(StrEnum):
     RP                   = "rp"
     RP_BUCKET            = "rp_bucket"
     EUWS_FACTOR          = "euws_factor"
-    FA_GROSS_AAL_FACTOR  = "fa_gross_aal_factor"
-    FA_GROSS_TAIL_FACTOR = "fa_gross_tail_factor"
-    FA_GROSS_FACTOR      = "fa_gross_factor"
 
 
 class MetricCol(StrEnum):
     """Year-invariant derived loss metrics. Year-tagged metric column names
     are data-driven and built by the chain registry in `rollup/chain.py` —
     use `chain.col_after(stage, tag)` / `chain.main_loss_col(tag)` /
-    `chain.dialsup_col(tag)` / `chain.forecast_factor_col(tag)` to look them
-    up. Never hand-build the `loss_uplifted_capped_localccy_..._fagross`
+    `chain.forecast_factor_col(tag)` to look them
+    up. Never hand-build the `loss_uplifted_capped_localccy_..._euws`
     f-string — the registry IS the source of truth.
     """
     LOSS_UPLIFTED                 = "loss_uplifted"

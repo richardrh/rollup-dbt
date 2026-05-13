@@ -277,9 +277,9 @@ One row per (peril, vendor) pair. `sub_peril` is optional regional split label.
 
 **`air_events.csv`** — Verisk event catalogue. Pipeline runs without it but reports orphan warnings. Populate to silence.
 
-**`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
+**`risklink_events.csv`** — RiskLink event catalogue. Optional stub for future event-day enrichment.
 
-**`fineart_adjustments.csv`** — fine-art gross-to-net factors. Stub-empty by default; populate to apply real adjustments.
+**`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
 
 ---
 

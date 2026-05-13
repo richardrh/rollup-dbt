@@ -36,7 +36,6 @@ from rollup.schemas.columns import (
     RefAirEventsCol as AE,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
-    RefFineartAdjCol as FA,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
     RefLobsCol as LB,
@@ -134,15 +133,6 @@ def _write_minimal_seeds(root: Path) -> None:
     pl.DataFrame({EO.ROLLUP_LOB: ["NO_MATCH"], EO.MAX_RANK: [0], EO.FACTOR: [1.0]}).write_csv(
         seeds / "adjustments" / "euws_rank_overrides.csv"
     )
-    pl.DataFrame(schema={
-        FA.LOB_ID: pl.Int64,
-        FA.REGION_PERIL_ID: pl.Int64,
-        FA.APPLIES_TO_FA: pl.Int64,
-        FA.ROLLUP_REGION_PERIL: pl.String,
-        FA.AAL_FACTOR: pl.Float64,
-        FA.TAIL_FACTOR: pl.Float64,
-    }).write_csv(seeds / "adjustments" / "fineart_adjustments.csv")
-
     pl.DataFrame({
         AE.EVENT_ID: [1, 2, 3, 4],
         AE.MODEL_ID: [41, 41, 41, 41],

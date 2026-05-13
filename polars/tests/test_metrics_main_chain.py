@@ -22,7 +22,6 @@ def test_add_main_metrics_applies_chain_for_each_forecast_tag():
         forecast_factor_col("202601"): [1.10],
         forecast_factor_col("202607"): [1.20],
         AF.EUWS_FACTOR: [0.50],
-        AF.FA_GROSS_FACTOR: [2.00],
     }).lazy()
 
     out = add_main_metrics(ylt, tags).collect()
@@ -33,11 +32,11 @@ def test_add_main_metrics_applies_chain_for_each_forecast_tag():
 
     assert out[col_after("forecast", "202601")][0] == pytest.approx(55.0)
     assert out[col_after("euws", "202601")][0] == pytest.approx(27.5)
-    assert out[main_loss_col("202601")][0] == pytest.approx(55.0)
+    assert out[main_loss_col("202601")][0] == pytest.approx(27.5)
 
     assert out[col_after("forecast", "202607")][0] == pytest.approx(60.0)
     assert out[col_after("euws", "202607")][0] == pytest.approx(30.0)
-    assert out[main_loss_col("202607")][0] == pytest.approx(60.0)
+    assert out[main_loss_col("202607")][0] == pytest.approx(30.0)
 
 
 def test_add_main_metrics_uses_capped_uplift_for_local_currency_base():
@@ -49,7 +48,6 @@ def test_add_main_metrics_uses_capped_uplift_for_local_currency_base():
         AF.RATE_TO_GBP: [4.0],
         forecast_factor_col(tag): [1.0],
         AF.EUWS_FACTOR: [1.0],
-        AF.FA_GROSS_FACTOR: [1.0],
     }).lazy()
 
     out = add_main_metrics(ylt, [tag]).collect()
@@ -70,10 +68,9 @@ def test_add_main_metrics_keeps_forecast_tags_independent():
         forecast_factor_col("202601"): [2.0],
         forecast_factor_col("202607"): [3.0],
         AF.EUWS_FACTOR: [5.0],
-        AF.FA_GROSS_FACTOR: [7.0],
     }).lazy()
 
     out = add_main_metrics(ylt, tags).collect()
 
-    assert out[main_loss_col("202601")][0] == pytest.approx(10.0 * 2.0 * 5.0 * 7.0)
-    assert out[main_loss_col("202607")][0] == pytest.approx(10.0 * 3.0 * 5.0 * 7.0)
+    assert out[main_loss_col("202601")][0] == pytest.approx(10.0 * 2.0 * 5.0)
+    assert out[main_loss_col("202607")][0] == pytest.approx(10.0 * 3.0 * 5.0)

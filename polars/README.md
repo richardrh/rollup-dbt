@@ -56,14 +56,14 @@ contract between the pipeline and the seeds + YLTs you supply.
    │    valid analysis gate →                 │
    │    FX → forecast(× N tags) → rank →      │
    │    euws (+ rank-threshold overrides)     │
-   │    → fa_gross → uplift                   │
+   │    → uplift                              │
    └────────────────────┬─────────────────────┘
                         │
                         ▼
    ┌──────────────────────────────────────────┐
    │ 3. metrics (column name traces chain)    │
    │    loss_uplifted_capped_localccy_{tag}_  │
-   │    euws_fagross  +  dialsup_{tag}        │
+   │    euws  +  dialsup                      │
    └────────────────────┬─────────────────────┘
                         │  .cache()  — single pass
              ┌──────────┴──────────┐
