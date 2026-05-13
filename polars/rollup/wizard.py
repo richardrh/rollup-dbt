@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import sys
 from dataclasses import replace
+from typing import TextIO
 from typing import Protocol
+
+from rich.console import Console
 
 from rollup import config
 from rollup.run_inputs import derive_blending_for_run
@@ -38,14 +41,11 @@ def run_wizard(args: RunArgs) -> int:
     plan = config.build_plan(cfg, require_ep_summaries=args.derive_blending)
 
     if args.dry_run:
-        if sys.stdout.isatty():
-            config.print_plan(plan)
-        else:
-            print(config.format_plan(plan))
+        _render_plan(plan, stream=sys.stdout)
         return 0
 
     if not plan.all_seeds_ok or not plan.all_ylt_ok or (args.derive_blending and not plan.all_ep_ok):
-        print(config.format_plan(plan), file=sys.stderr)
+        _render_plan(plan, stream=sys.stderr)
         print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
         return 2
 
@@ -85,7 +85,7 @@ def run_wizard(args: RunArgs) -> int:
 
 def _interactive_review(cfg: config.Config, plan: config.Plan, args: RunArgs) -> config.Config | None:
     """Operator wizard for TTY runs."""
-    config.print_plan(plan)
+    _render_plan(plan, stream=sys.stdout)
     print("Input paths")
     print(f"  seeds       : {cfg.seeds_dir}")
     print(f"  output      : {cfg.output_dir}")
@@ -148,6 +148,14 @@ def _forecast_summary(plan: config.Plan) -> str:
     if section is None:
         return "forecast_factors section missing"
     return "; ".join(f"{c.label}: {c.note}" for c in section.checks if c.note) or "no forecast details"
+
+
+def _render_plan(plan: config.Plan, *, stream: TextIO) -> None:
+    """Render the plan with Rich for terminals and plain text for pipes."""
+    if getattr(stream, "isatty", lambda: False)():
+        config.print_plan(plan, console=Console(file=stream))
+    else:
+        print(config.format_plan(plan), file=stream)
 
 
 def _maybe_push_sql() -> None:

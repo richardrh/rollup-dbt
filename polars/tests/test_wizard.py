@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 
 from rollup.wizard import _interactive_review, run_wizard
 
@@ -87,6 +88,39 @@ def test_run_wizard_requires_ep_summaries_for_default_derivation(monkeypatch, ca
     assert run_wizard(Args(derive_blending=True)) == 2
     assert calls == []
     assert "fix the failing checks" in capsys.readouterr().err
+
+
+def test_run_wizard_renders_rich_plan_for_tty_failures(monkeypatch):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    class TtyBuffer(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    cfg = config.resolve()
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ep_summaries verisk", "ep-dir", [Check("*.long.csv", cfg.output_dir, False)]),
+        Section("ep_summaries risklink", "ep-dir", [Check("*.long.csv", cfg.output_dir, True)]),
+    ])
+    stderr = TtyBuffer()
+    rendered: list[object] = []
+
+    def fake_print_plan(_plan, *, console):
+        rendered.append(console.file)
+        console.print("RICH PLAN")
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
+    monkeypatch.setattr(config, "print_plan", fake_print_plan)
+    monkeypatch.setattr("sys.stderr", stderr)
+
+    assert run_wizard(Args(derive_blending=True)) == 2
+    assert rendered == [stderr]
+    assert "RICH PLAN" in stderr.getvalue()
 
 
 def test_interactive_review_collects_operator_choices(monkeypatch):
