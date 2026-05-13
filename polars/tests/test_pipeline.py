@@ -187,10 +187,14 @@ def test_count_event_id_orphans_zero_when_all_match():
     assert count_event_id_orphans(ylt, ae, vendor_filter=VendorName.VERISK) == 0
 
 
-def test_count_event_id_orphans_counts_unmatched_rows():
+def test_count_event_id_orphans_counts_unmatched_rows(caplog):
     ylt = _ylt_for_orphan_test([10, 20, 30, 40])
     ae  = _air_events_seed([10, 20])
     assert count_event_id_orphans(ylt, ae, vendor_filter=VendorName.VERISK) == 2
+    message = caplog.text
+    assert "event catalogue validation incomplete" in message
+    assert "data/seeds/validation/air_events.csv" in message
+    assert "ModelEventDay remains 0" in message
 
 
 # -----------------------------------------------------------------------------

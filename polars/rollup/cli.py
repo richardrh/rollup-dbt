@@ -94,6 +94,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-derive-blending", dest="derive_blending", action="store_false",
         help="always use data/seeds/vor/blending_weights.csv for this run",
     )
+    blend_group.add_argument(
+        "--use-blending-seed", dest="derive_blending", action="store_false",
+        help="explicitly use reviewed data/seeds/vor/blending_weights.csv instead of run-time EP derivation",
+    )
 
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
 

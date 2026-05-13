@@ -141,6 +141,8 @@ def test_bare_rollup_prints_plan_and_aborts_without_tty(tmp_path, monkeypatch):
     ]:
         vendor.ylt_dir.mkdir(parents=True, exist_ok=True)
         pl.DataFrame({col: [] for col in schema.names()}, schema=schema).write_parquet(vendor.ylt_dir / glob)
+        vendor.ep_summary_dir.mkdir(parents=True, exist_ok=True)
+        (vendor.ep_summary_dir / f"{vendor.name}.long.csv").write_text("analysis_id,peril,measure,return_period,loss\n")
     monkeypatch.setattr(config, "resolve", lambda: cfg)
 
     buf = io.StringIO()
@@ -193,6 +195,7 @@ def test_run_time_blending_derivation_defaults_on_and_can_be_disabled():
     assert parser.parse_args([]).derive_blending is True
     assert parser.parse_args(["--derive-blending"]).derive_blending is True
     assert parser.parse_args(["--no-derive-blending"]).derive_blending is False
+    assert parser.parse_args(["--use-blending-seed"]).derive_blending is False
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +234,7 @@ def test_cmd_run_catches_pipeline_exception(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("ROLLUP_EP_RISKLINK_DIR",   str(tmp_path / "ep_r"))
 
     with patch("rollup.pipeline.run", side_effect=RuntimeError("injected boom")):
-        rc = main(["--yes"])
+        rc = main(["--yes", "--use-blending-seed"])
 
     assert rc == 2
     captured = capsys.readouterr()

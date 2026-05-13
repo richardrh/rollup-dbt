@@ -74,8 +74,11 @@ def count_event_id_orphans(
     orphans = collected[_ORPHAN_COUNT].item()
     if orphans:
         log.warning(
-            f"event-id orphans for vendor={vendor_filter}: "
-            f"{orphans:,} / {total:,} YLT rows have no match in air_events"
+            f"event catalogue validation incomplete for vendor={vendor_filter}: "
+            f"{orphans:,} / {total:,} YLT rows did not match "
+            "data/seeds/validation/air_events.csv. Calculations continue, "
+            "but ModelEventDay remains 0 and AIR event metadata is not validated. "
+            "Provide air_events.csv to validate/enrich event IDs."
         )
     else:
         log.info(f"event-id check ({vendor_filter}): {total:,}/{total:,} rows matched air_events")

@@ -59,6 +59,15 @@ class Plan:
                 return False
         return True
 
+    @property
+    def all_ep_ok(self) -> bool:
+        """All vendors have at least one EP-summary long CSV/file present."""
+        for vendor in self.config.vendors:
+            section = next((s for s in self.sections if s.title == f"ep_summaries {vendor.name}"), None)
+            if section is None or not any(c.ok for c in section.checks):
+                return False
+        return True
+
 
 def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     """Verify a seed: file exists, column headers match, count rows.
@@ -136,6 +145,7 @@ def _check_dir_glob(
     glob: str,
     parquet_schema: pl.Schema | None = None,
     optional_missing_ok: bool = False,
+    missing_note: str = "no files match pattern",
 ) -> list[Check]:
     """Generic dir-pattern check for YLT parquets and EP-summary files."""
     if not directory.exists():
@@ -146,7 +156,7 @@ def _check_dir_glob(
     if not files:
         if optional_missing_ok:
             return [Check(label=glob, path=directory, ok=True, note="optional; using blending_weights seed")]
-        return [Check(label=glob, path=directory, ok=False, note="no files match pattern")]
+        return [Check(label=glob, path=directory, ok=False, note=missing_note)]
     checks: list[Check] = []
     for path in files:
         if parquet_schema is not None and path.suffix == ".parquet":
@@ -240,7 +250,7 @@ def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
     )]
 
 
-def build_plan(config: Config) -> Plan:
+def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
     sections: list[Section] = []
 
     seed_specs = discover_seeds(config.seeds_dir)
@@ -272,14 +282,16 @@ def build_plan(config: Config) -> Plan:
         ))
 
     for vendor in config.vendors:
+        ep_glob = "*.long.csv" if require_ep_summaries else vendor.ep_summary_glob
         sections.append(Section(
             title=f"ep_summaries {vendor.name}",
-            header=f"{vendor.ep_summary_dir}  pattern={vendor.ep_summary_glob}",
+            header=f"{vendor.ep_summary_dir}  pattern={ep_glob}",
             checks=_check_dir_glob(
                 vendor.name,
                 vendor.ep_summary_dir,
-                vendor.ep_summary_glob,
-                optional_missing_ok=True,
+                ep_glob,
+                optional_missing_ok=not require_ep_summaries,
+                missing_note="required for run-time blending derivation; use --use-blending-seed to bypass",
             ),
         ))
 
