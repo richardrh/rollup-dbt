@@ -20,7 +20,7 @@ from rollup.schemas.columns import PerilsCol as P
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
-from rollup.schemas.columns import RollupScopeCol as RS
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.validate import validate_schema
 
 
@@ -91,17 +91,77 @@ def _peril_dim(perils: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _analyses_for(vendor: VendorName, analyses: pl.LazyFrame) -> pl.LazyFrame:
-    """Vendor-filtered analyses with the modelled label aliased so the join
-    against the YLT's analysis-string column lands cleanly."""
+    """Vendor-filtered analyses with both numeric ID and modelled label.
+
+    ``analysis_id`` is the operator-facing numeric allow-list key. Verisk raw
+    YLTs still carry the modelled analysis label, so Verisk staging joins on
+    ``modelled_label`` after ``filter_valid_analyses`` has applied the numeric
+    ID gate.
+    """
     return (
         analyses
         .filter(pl.col(AN.VENDOR) == vendor)
         .select(
             pl.col(AN.ANALYSIS_ID),
+            pl.col(AN.MODELLED_LABEL),
             pl.col(AN.MODELLED_LABEL).alias(Y.MODELLED_REGION_PERIL),
             pl.col(AN.PERIL_ID).alias(Y.REGION_PERIL_ID),
             pl.col(AN.LOB_ID),                  # nullable for verisk; populated for risklink
         )
+    )
+
+
+def filter_valid_analyses(
+    analyses: pl.LazyFrame,
+    valid_analyses: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Keep only analysis metadata explicitly listed in valid_analyses.
+
+    The allow-list is keyed by vendor-native numeric ``analysis_id`` for both
+    RiskLink and Verisk. Downstream staging and EP blending then use only these
+    valid analysis rows; Verisk raw rows still join by ``modelled_label``.
+    """
+    valid = valid_analyses.select(
+        pl.col(VA.VENDOR),
+        pl.col(VA.ANALYSIS_ID),
+    ).unique()
+    return analyses.join(
+        valid,
+        left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+        right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+        how="inner",
+    )
+
+
+def validate_one_peril_per_rollup_lob(ylt: pl.LazyFrame) -> None:
+    """Fail if any rollup LOB contains more than one canonical peril.
+
+    The valid-analysis model assumes each rollup LOB is associated with one
+    rollup peril. If the YLT inputs contain multiple perils for one rollup LOB,
+    downstream vendor blending would be ambiguous, so fail before factor stages.
+    """
+    conflicts = (
+        ylt
+        .select(Y.ROLLUP_LOB, Y.REGION_PERIL_ID)
+        .unique()
+        .group_by(Y.ROLLUP_LOB)
+        .agg(
+            pl.col(Y.REGION_PERIL_ID).sort().alias("peril_ids"),
+            pl.len().alias("n_perils"),
+        )
+        .filter(pl.col("n_perils") > 1)
+        .collect()
+    )
+    if conflicts.height == 0:
+        return
+
+    examples = "; ".join(
+        f"{row[Y.ROLLUP_LOB]} -> {row['peril_ids']}"
+        for row in conflicts.head(5).iter_rows(named=True)
+    )
+    raise ValueError(
+        "one peril per rollup_lob validation failed; "
+        f"examples: {examples}"
     )
 
 
@@ -166,7 +226,7 @@ def normalize_verisk_ylt(
 
     For Verisk, `analyses.lob_id` is NULL — the analysis is peril-only and
     the LOB lives on the YLT row's `ExposureAttribute`. Join chain:
-        raw.Analysis           → analyses.analysis_id (vendor='verisk') → peril_id
+        raw.Analysis           → analyses.modelled_label (vendor='verisk') → peril_id
         analyses.peril_id      → perils.peril_id → name + region + peril_family
         raw.ExposureAttribute  → lobs.modelled_lob → lob_id + ...
     Filters `trim(upper(CatalogTypeCode)) LIKE '%STC%'` (matches january).
@@ -179,7 +239,7 @@ def normalize_verisk_ylt(
     out = (
         raw
         .filter(pl.col(VK.CATALOG_TYPE_CODE).str.strip_chars().str.to_uppercase().str.contains("STC"))
-        .join(vk_analyses,        left_on=VK.ANALYSIS,           right_on=AN.ANALYSIS_ID, how="inner")
+        .join(vk_analyses,        left_on=VK.ANALYSIS,           right_on=AN.MODELLED_LABEL, how="inner")
         .join(_peril_dim(perils),                                on=Y.REGION_PERIL_ID,    how="inner")
         .join(_lob_dim(lobs),     left_on=VK.EXPOSURE_ATTRIBUTE, right_on=LB.MODELLED_LOB, how="inner")
         .select(
@@ -204,42 +264,4 @@ def normalize_verisk_ylt(
     )
 
     validate_schema(out, F.NORMALIZED_YLT, name="verisk.normalized")
-    return out
-
-
-# --------------------------------------------------------------------------- #
-# Scope filter — drops YLT rows not officially in the rollup                  #
-# --------------------------------------------------------------------------- #
-
-def apply_rollup_scope(ylt: pl.LazyFrame, rollup_scope: pl.LazyFrame) -> pl.LazyFrame:
-    """Inner-join `rollup_scope` to keep only (modelled_lob, vendor, analysis_id)
-    triples whose `in_rollup` is True. Lives in staging because it is a
-    gate, not a factor — produces no new column, only filters rows.
-
-    `analysis_id` in `rollup_scope` is the **modelled label** the YLT carries
-    after staging (`MODELLED_REGION_PERIL`), not the raw RiskLink integer id.
-
-    If `rollup_scope` is empty the inner join drops every row — by design.
-    The pre-flight `build_plan` reporter flags an empty `rollup_scope` as a
-    blocker so the run aborts before producing zero-row Hisco parquets.
-    """
-    in_scope = (
-        rollup_scope
-        .filter(pl.col(RS.IN_ROLLUP))
-        .select(
-            pl.col(RS.MODELLED_LOB),
-            pl.col(RS.VENDOR),
-            pl.col(RS.ANALYSIS_ID).alias(Y.MODELLED_REGION_PERIL),
-        )
-    )
-    # Keyed on (modelled_lob, vendor, analysis_label) — readable without a join
-    # to lobs.csv. Two analyses can share a peril_id (e.g. UK_WSSS and
-    # UK_WSSS_GCAdj are both peril 206 but only one is official per LOB).
-    out = ylt.join(
-        in_scope,
-        left_on=[Y.MODELLED_LOB, Y.VENDOR, Y.MODELLED_REGION_PERIL],
-        right_on=[RS.MODELLED_LOB, RS.VENDOR, Y.MODELLED_REGION_PERIL],
-        how="inner",
-    )
-    log.info("rollup_scope: filtered YLT to in_rollup=True triples")
     return out

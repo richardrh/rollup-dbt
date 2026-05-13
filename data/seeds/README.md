@@ -26,8 +26,8 @@ joins later.
 
 ```
 perils.csv            — one row per rollup peril (peril_id, name, region, peril_family)
-analyses.csv          — (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-rollup_scope.csv      — which (lob_id, vendor, analysis_id) triples are in scope
+analyses.csv          — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
+valid_analyses.csv    — numeric vendor analysis IDs allowed into this run
 blending_weights.csv  — long-format (peril_id, return_period, vendor, base_model, weight)
 lobs.csv              — LOB dimension + office + class
 forecast_factors.csv  — (class, office, forecast_date) → factor
@@ -35,7 +35,7 @@ fx_rates.csv          — long-format (currency_code, target_currency, rate_date
 euws_rate_factors.csv — per-event EUWS factors
 euws_rank_overrides.csv — per-LOB rank-threshold overrides for EUWS
 air_events.csv        — Verisk event catalogue (event_id, model_id, year, day)
-fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
+risklink_events.csv   — RiskLink event catalogue (event_id, year, day)
 ```
 
 | seed                       | rows in this branch | populated by |
@@ -43,14 +43,14 @@ fineart_adjustments.csv — fine-art gross-to-net AAL factor (optional)
 | `lobs.csv`                 | 62                  | dbt          |
 | `perils.csv`               | **stub (0)**        | duckdb export — required |
 | `analyses.csv`             | **stub (0)**        | duckdb export — required |
-| `rollup_scope.csv`         | **stub (0)**        | duckdb export — required (else pipeline drops every row) |
+| `valid_analyses.csv`       | 12                  | operator-owned allow-list — required |
 | `blending_weights.csv`     | **stub (0)**        | duckdb export — required |
 | `forecast_factors.csv`     | 78                  | dbt — bump per forecast cycle |
 | `fx_rates.csv`             | 6 (handcrafted)     | replace with real FX snapshot before prod |
 | `euws_rate_factors.csv`    | 69 212              | dbt          |
 | `euws_rank_overrides.csv`  | 1                   | hand-curated |
 | `air_events.csv`           | **stub (0)**        | duckdb export — recommended |
-| `fineart_adjustments.csv`  | **stub (0)**        | duckdb export — optional |
+| `risklink_events.csv`      | **stub (0)**        | duckdb export — optional |
 
 The full column schemas for the stub seeds (and what happens when they
 stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md).
@@ -59,20 +59,20 @@ stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.m
 
 january kept the peril dimension as a god-table — `dim_region_perils` with
 14 columns mixing peril labels, vendor mapping, blending FKs, and per-LOB
-applies-to flags. The new seed structure splits that into four tables that
+applies-to flags. The new seed structure splits that into focused tables that
 each have one job:
 
 | split table              | role                                                                  |
 | ------------------------ | --------------------------------------------------------------------- |
 | `perils.csv`             | the peril dimension itself — `peril_id` is the canonical primary key shared across vendors. `peril_family` ("FL", "WS", …) is available for seed derivation and QA. |
-| `analyses.csv`           | `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL (lob lives on the YLT row). |
-| `rollup_scope.csv`       | which `(lob_id, vendor, analysis_id)` triples are officially in the rollup. Replaces the `applies_to_{mga,prop,fa}` flag fan-out. |
+| `analyses.csv`           | numeric `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL and raw AIR labels live in `modelled_label`. |
+| `valid_analyses.csv`     | explicit allow-list of numeric vendor analysis IDs included in the rollup. Bundled Verisk IDs are placeholders. Replaces per-LOB `applies_to_{mga,prop,fa}` filtering. |
 | `blending_weights.csv`   | long-format blend weights. Adding a vendor is a new row, not a new column. |
 
 What this beats:
 
 - **No god-dim doing four unrelated jobs in one table.**
-- `applies_to_{mga, prop, fa}` collapses into `rollup_scope(lob, vendor, analysis, in_rollup)` — a real relationship, not flag columns conditioned on `lob_type`.
+- `applies_to_{mga, prop, fa}` collapses into `valid_analyses(vendor, analysis_id)` — a direct operator allow-list.
 - No vendor duplication in the peril dim — vendor lives on `analyses` where it belongs.
 - Blending weights long format: new vendor or new sub-peril is a new row, not a schema change.
 - Base-model selection lives in `blending_weights.base_model`; generated weights default flood perils to RiskLink but operators can override the seed.

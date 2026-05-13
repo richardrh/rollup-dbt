@@ -40,8 +40,8 @@ Now:
 Run these from repo root:
 
 ```bash
-uv run python -m rollup.cli --dry-run -y
-uv run python -m rollup.cli -y --min-loss 0 --dump-interim
+uv run rollup --dry-run -y
+uv run rollup --yes --min-loss 0
 uv run pytest polars/tests/test_deterministic_e2e.py -q
 ```
 
@@ -59,7 +59,8 @@ The dry-run shows:
 
 - Seed files and row counts
 - Vendor YLT files and schema checks
-- EP summary availability
+- Required EP-summary long CSV availability for default blending derivation
+- Forecast factor dates and scoped coverage
 - Output directory
 - SQL configured or parquet-only mode
 
@@ -78,13 +79,12 @@ raw loss
 → local currency / FX
 → forecast
 → EUWS
-→ fine-art gross
 ```
 
 DIALSUP output:
 
 ```text
-raw loss × forecast × EUWS × fine-art gross
+raw loss × forecast × EUWS
 ```
 
 Speaker note: “DIALSUP intentionally bypasses uplift, cap, and FX to match January intent.”
@@ -129,11 +129,13 @@ Speaker note: “This is not a smoke test. It checks exact values through the CL
 
 ## 8. Auditability
 
-With `--dump-interim`, the pipeline writes:
+Audit outputs are written by default. The pipeline writes:
 
 - `audit_wide.parquet` — one row per event with factors left-to-right
 - `audit_long.parquet` — metric/value format for analysis
 - `mts_tbl_ylt_combined_all_factors.parquet` — default combined audit output
+
+Use `--no-audit` only when debug parquets are not needed.
 
 Speaker note: “When a number looks wrong, we can inspect every factor that produced it.”
 
@@ -144,7 +146,7 @@ Speaker note: “When a number looks wrong, we can inspect every factor that pro
 Latest validation on this branch:
 
 ```text
-Default suite: 193 passed, 97 skipped
+Default suite: 201 passed, 97 skipped
 Fuzz suite:    90 passed
 SQL suite:     7 passed
 ```

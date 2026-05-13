@@ -32,14 +32,12 @@ risklink = cfg.vendor(VendorName.RISKLINK)  # Vendor(hisco_label='RMS', n_simula
 Two Hisco output flavours:
 
 - `Flavor.MAIN` — the main output: capped, local-ccy, forecast-adjusted,
-  euws-adjusted, fine-art correction applied. Backed by the
-  `loss_uplifted_capped_localccy_{tag}_euws_fagross` column.
-- `Flavor.DIALSUP` — currency-converted raw loss: `loss / rate_to_gbp` (no factors).
-  Single column, not per-forecast-tag, because the formula is tag-independent.
+  euws-adjusted. Backed by the
+  `loss_uplifted_capped_localccy_{tag}_euws` column.
+- `Flavor.DIALSUP` — sensitivity output: `loss × forecast × EUWS`.
+  Single column, using the selected forecast tag rather than emitting one
+  file per forecast date.
   One file per vendor.
-
-`fa_gross` in the column name is a **factor** in the chain, not a flavour —
-same way `euws` and `localccy` are factors in the name.
 
 ## VariantSpec — what gets fanned out
 
@@ -51,8 +49,8 @@ class VariantSpec(NamedTuple):
 ```
 
 Variants are built dynamically: `vendor × forecast_date × flavor`. However,
-dialsup is independent of forecast date (formula is `loss / rate_to_gbp`),
-so only one dialsup variant is created per vendor.
+dialsup is emitted once per vendor, using the selected forecast tag, so only
+one dialsup variant is created per vendor.
 
 Current setup: 2 vendors × 3 forecast dates (MAIN) + 2 vendors (DIALSUP) → **8 variants**.
 Add a forecast date to `forecast_factors.csv` → 10 variants automatically, no code change.
@@ -68,7 +66,7 @@ Add a forecast date to `forecast_factors.csv` → 10 variants automatically, no 
 
 ### Dynamic column names — driven by `rollup/chain.py`
 
-Year-tagged columns (`f_{tag}`, `loss_..._{tag}_*`, `dialsup_{tag}`) can't
+Year-tagged columns (`f_{tag}`, `loss_..._{tag}_*`) can't
 live in a StrEnum because the `{tag}` suffix is data-driven from the
 `forecast_factors` seed at runtime. They live in a TypedDict registry:
 
@@ -79,21 +77,19 @@ class ChainStage(TypedDict):
     factor_col: str        # AF.* column or "{tag}"-templated string
     is_per_tag: bool       # is factor_col templated by tag?
     ancillary_before: tuple[str, ...]   # e.g. RNK before EUWS_FACTOR in audit
-    ancillary_after:  tuple[str, ...]   # e.g. FA_GROSS_TAIL after FA_GROSS_AAL
+    ancillary_after:  tuple[str, ...]
 
 CHAIN: dict[str, ChainStage] = {
     "forecast": {"suffix": "",         "factor_col": "f_{tag}",
                  "is_per_tag": True,  ...},
     "euws":     {"suffix": "_euws",    "factor_col": AF.EUWS_FACTOR,
-                 "is_per_tag": False, "ancillary_before": (AF.RNK,), ...},
-    "fagross":  {"suffix": "_fagross", "factor_col": AF.FA_GROSS_AAL_FACTOR,
-                 "is_per_tag": False, "ancillary_after":  (AF.FA_GROSS_TAIL_FACTOR,), ...},
+                  "is_per_tag": False, "ancillary_before": (AF.RNK,), ...},
 }
 ```
 
-`_compute_metrics`, `_compute_dialsup`, `_metric_cols_for`, `audit_wide`,
-and `VariantSpec.loss_metric` all walk this registry — adding a new factor
-stage is one entry in `CHAIN`, no other edits.
+`add_main_metrics`, `_metric_cols_for`, `audit_wide`, and
+`VariantSpec.loss_metric` all walk this registry — adding a new factor stage
+is one entry in `CHAIN`, no other edits.
 
 `MetricCol` (in `rollup/schemas/columns.py`) holds the three year-invariant
 member names (`LOSS_UPLIFTED`, `LOSS_UPLIFTED_CAPPED`,
@@ -159,19 +155,18 @@ Sample INFO trace from an end-to-end run:
 
 ```
 rollup.seeds       loading 11 seeds from …/seeds
-rollup.pipeline    plan: 12 Hisco variants across 2 vendors × 3 forecast dates × flavours
+rollup.pipeline    plan: 8 Hisco variants across 2 vendors
 rollup.pipeline    forecast tags from seed: ['202601', '202607', '202701']
 rollup.staging     loaded risklink YLT: …/risklink_ylt_*.parquet
 rollup.staging     loaded verisk YLT: …/air_ylt_*.parquet
 rollup.pipeline    staging: normalised YLTs concatenated
 rollup.pipeline    event-id check (verisk): 80/80 rows matched air_events
-rollup.staging     rollup_scope: filtered YLT to in_rollup=True triples
+rollup.staging     valid analyses filtered YLT inputs
 rollup.factors     currency: required_currency derived from CDS class; rate_to_gbp attached
 rollup.factors     forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
 rollup.factors     euws: factor attached, rank overrides applied from seed
-rollup.factors     fa_gross: aal + tail factors attached (1.0 for non-FA rows)
 rollup.factors     uplift: rp_bucket proportions + base_model from seed; AAL via window functions
-rollup.pipeline    metrics: 12 derived loss columns + 3 dialsup columns
+rollup.pipeline    metrics: 9 derived loss columns + 1 dialsup column
 rollup.pipeline    fanout: wrote HiscoAIR_202601_main.parquet (80 rows)
 ...
 ```
@@ -193,15 +188,15 @@ Each stage is a pure function: `(LazyFrame, seed(s)) → LazyFrame`. No side
 effects. Composed by `build_all_factors` in `pipeline.py`. Full list:
 
 - `rollup/stages/staging.py` — `load_raw_{verisk,risklink}_ylt`,
-  `normalize_{verisk,risklink}_ylt`, `apply_rollup_scope`. The normalised
+  `filter_valid_analyses`, `normalize_{verisk,risklink}_ylt`,
+  `validate_one_peril_per_rollup_lob`. The normalised
   YLT carries `office` + `lob_class` (from lobs) and
   `peril_name` + `region` + `peril_family` (from perils) so factor stages
-  downstream have semantic dims without re-joining. `apply_rollup_scope`
-  is a gate (not a factor) — it inner-joins `rollup_scope` to drop rows
-  not officially in the rollup.
+  downstream have semantic dims without re-joining. `valid_analyses.csv`
+  is the gate: only listed vendor-native analysis IDs contribute rows.
 - `rollup/stages/factors.py` — `attach_currency`,
   `attach_forecast_factors`, `attach_rank`, `attach_euws`,
-  `attach_fagross`, `attach_uplift`.
+  `attach_uplift`.
 - `rollup/stages/ep.py` — `ep_curve_from_ylt` (auxiliary; not in the main
   fan-out chain, but used by integration tests).
 
@@ -212,7 +207,7 @@ and `pl.lit(VendorName.X)` work as drop-in replacements for raw strings:
 
 | enum            | values                          | where it appears             |
 | --------------- | ------------------------------- | ---------------------------- |
-| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `blending_weights.vendor`, `rollup_scope.vendor` |
+| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `valid_analyses.vendor`, `blending_weights.vendor` |
 | `CurrencyCode`  | `GBP` / `EUR`                   | `attach_currency` derivation; values land in `required_currency` |
 | `EpType`        | `AAL` / `AEP` / `OEP`           | `EP_TYPE` column emitted by `ep_curve_from_ylt` |
 | `EnvVar`        | `ROLLUP_*` env var names        | every `os.getenv` / `monkeypatch.setenv` call |

@@ -18,14 +18,13 @@ from .columns import (
     RefAirEventsCol,
     RefEuwsRankOverridesCol,
     RefEuwsRateFactorsCol,
-    RefFineartAdjCol,
     RefForecastFactorsCol,
     RefFxRatesCol,
     RefLobsCol,
     RefRisklinkEventsCol,
-    RollupScopeCol,
     StgRisklinkEpCol,
     StgVeriskEpCol,
+    ValidAnalysesCol,
 )
 
 
@@ -79,6 +78,11 @@ ANALYSES: pl.Schema = pl.Schema({
     AnalysesCol.LOB_ID:         pl.Int64,   # nullable for Verisk
 })
 
+VALID_ANALYSES: pl.Schema = pl.Schema({
+    ValidAnalysesCol.VENDOR:      pl.String,
+    ValidAnalysesCol.ANALYSIS_ID: pl.String,
+})
+
 BLENDING_WEIGHTS: pl.Schema = pl.Schema({
     BlendingWeightsCol.PERIL_ID:       pl.Int64,
     BlendingWeightsCol.RETURN_PERIOD:  pl.Int64,
@@ -88,13 +92,6 @@ BLENDING_WEIGHTS: pl.Schema = pl.Schema({
     BlendingWeightsCol.VENDOR:         pl.String,
     BlendingWeightsCol.BASE_MODEL:     pl.String,
     BlendingWeightsCol.WEIGHT:         pl.Float64,
-})
-
-ROLLUP_SCOPE: pl.Schema = pl.Schema({
-    RollupScopeCol.MODELLED_LOB: pl.String,
-    RollupScopeCol.VENDOR:       pl.String,
-    RollupScopeCol.ANALYSIS_ID:  pl.String,
-    RollupScopeCol.IN_ROLLUP:    pl.Boolean,
 })
 
 REF_LOBS: pl.Schema = pl.Schema({
@@ -147,16 +144,6 @@ REF_RISKLINK_EVENTS: pl.Schema = pl.Schema({
     RefRisklinkEventsCol.YEAR:     pl.Int64,
     RefRisklinkEventsCol.DAY:      pl.Int64,
 })
-
-REF_FINEART_ADJ: pl.Schema = pl.Schema({
-    RefFineartAdjCol.LOB_ID:              pl.Int64,
-    RefFineartAdjCol.REGION_PERIL_ID:     pl.Int64,
-    RefFineartAdjCol.APPLIES_TO_FA:       pl.Int64,
-    RefFineartAdjCol.ROLLUP_REGION_PERIL: pl.String,
-    RefFineartAdjCol.AAL_FACTOR:          pl.Float64,
-    RefFineartAdjCol.TAIL_FACTOR:         pl.Float64,
-})
-
 
 # ----- raw EP summaries -----
 
@@ -250,9 +237,6 @@ ALL_FACTORS: pl.Schema = pl.Schema({
     AllFactorsCol.RP:                    pl.Float64,
     AllFactorsCol.RP_BUCKET:             pl.Int64,
     AllFactorsCol.EUWS_FACTOR:           pl.Float64,
-    AllFactorsCol.FA_GROSS_AAL_FACTOR:   pl.Float64,
-    AllFactorsCol.FA_GROSS_TAIL_FACTOR:  pl.Float64,
-    AllFactorsCol.FA_GROSS_FACTOR:       pl.Float64,
 })
 
 METRICS: pl.Schema = pl.Schema({m: pl.Float64 for m in MetricCol})

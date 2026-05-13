@@ -24,12 +24,12 @@ Copy these CSVs into `data/seeds/vor/`:
 
 1. **`perils.csv`** — peril dimension (peril_id, name, region, peril_family)
 2. **`analyses.csv`** — maps (vendor, analysis_id) to peril_id
-3. **`rollup_scope.csv`** — which (lob, vendor, analysis) pairs are in scope
+3. **`valid_analyses.csv`** — vendor-native analysis IDs allowed into the run
 4. **`blending_weights.csv`** — per-peril RiskLink / Verisk proportions
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
-Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `fineart_adjustments.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
+Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `risklink_events.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
 
 **Verify:**
 ```bash
@@ -45,7 +45,7 @@ Copy parquets with filename pattern `air_ylt_*.parquet`.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `Analysis` | String | e.g. `EU_WS`, joined to `analyses.csv` |
+| `Analysis` | String | e.g. `EU_WS`, joined to `analyses.modelled_label` after numeric ID filtering |
 | `ExposureAttribute` | String | LOB string (e.g. `HIC_HH_UK`) |
 | `CatalogTypeCode` | String | filter: only `STC` rows kept |
 | `EventID` | Int64 | event identifier |
@@ -94,7 +94,10 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 ## Step 4 — Deriving blending weights from EP summaries
 
 EP summaries (long-format CSVs) are used to derive per-peril blending proportions
-and the base model, stored in `data/seeds/vor/blending_weights.csv`.
+and the base model. A normal `uv run rollup` run requires every vendor to have
+`*.long.csv` EP summaries, derives blending weights in-memory, writes the
+derived CSV to `data/output/debug/derived_blending_weights.csv`, and does
+**not** overwrite the reviewed seed.
 
 **Step 4a — Convert Excel to long CSV (RiskLink only):**
 
@@ -117,7 +120,7 @@ uv run rollup ep-summary-to-csv
 Produce long CSVs with columns: `rp`, `ep_type`, `analysis`, `lob`, `gl`.
 Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
 
-**Step 4c — Regenerate blending_weights.csv:**
+**Step 4c — Optional: regenerate blending_weights.csv seed:**
 
 ```bash
 uv run rollup derive-blending
@@ -132,7 +135,8 @@ rl_prop = rl_aal / (rl_aal + vk_aal)   # when total > 0; else 0.5
 vk_prop = 1 - rl_prop
 ```
 
-The seed is written to `data/seeds/vor/blending_weights.csv` with schema:
+The explicit subcommand writes the reviewed seed to
+`data/seeds/vor/blending_weights.csv` with schema:
 
 | column | meaning |
 |---|---|
@@ -146,7 +150,9 @@ At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
 `0`, `200`, `1000`, or `10000`, then joined to the matching blending weight.
 
-Re-run `derive-blending` whenever the EP summaries are refreshed.
+Use `uv run rollup --use-blending-seed` (or the legacy alias
+`--no-derive-blending`) to explicitly force a run to use the reviewed
+`blending_weights.csv` seed even when EP-summary long CSVs are present.
 
 ## Step 5 — Full verification
 
@@ -159,10 +165,12 @@ All sections should show ✓. If any show ✘, see [Troubleshooting](troubleshoo
 ## Step 6 — Run the pipeline
 
 ```bash
-uv run rollup --yes
+uv run rollup              # interactive wizard
+uv run rollup --yes        # non-interactive
 ```
 
-Output: 9 parquets in `data/output/` (~15–40 seconds depending on data size).
+Output: Hisco parquets plus audit/debug parquets in `data/output/` (~15–40 seconds depending on data size).
+The interactive wizard confirms input paths, forecast factor coverage, blending mode, minimum loss, audit outputs, and optional SQL push.
 
 **Inspect output:**
 ```bash
@@ -174,7 +182,8 @@ uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;
 ```bash
 uv run rollup --yes --min-loss 0           # keep all rows
 uv run rollup --yes --log-level INFO       # see factor-chain trace
-uv run rollup --yes --dump-interim         # write debug parquets
+uv run rollup --yes --no-audit             # skip debug parquets
+uv run rollup --yes --use-blending-seed    # reviewed seed instead of EP-derived blending
 ```
 
 Or set in `config.py`: `MIN_LOSS = 500`, `LOG = "INFO"`, etc.

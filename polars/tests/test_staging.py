@@ -5,6 +5,7 @@ NormalizedYlt for both vendors."""
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from rollup.config import VendorName
 from rollup.schemas import frames as F
@@ -14,7 +15,13 @@ from rollup.schemas.columns import PerilsCol as P
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
-from rollup.stages.staging import normalize_risklink_ylt, normalize_verisk_ylt
+from rollup.schemas.columns import ValidAnalysesCol as VA
+from rollup.stages.staging import (
+    filter_valid_analyses,
+    normalize_risklink_ylt,
+    normalize_verisk_ylt,
+    validate_one_peril_per_rollup_lob,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -59,7 +66,7 @@ def _analyses() -> pl.LazyFrame:
     """One verisk + one risklink analysis pointing at peril 206 (EU_WS)."""
     return pl.DataFrame({
         AN.VENDOR:         [VendorName.VERISK,   VendorName.RISKLINK],
-        AN.ANALYSIS_ID:    ["EU_WS",             "501"],
+        AN.ANALYSIS_ID:    ["900003",            "501"],
         AN.MODELLED_LABEL: ["EU_WS",             "EU_WS"],
         AN.PERIL_ID:       [206,                 206],
         AN.LOB_ID:         [None,                42],   # NULL for verisk; populated for risklink
@@ -85,6 +92,13 @@ def _lobs() -> pl.LazyFrame:
         LB.OFFICE:             ["UK"],
         LB.CLASS:              ["HH"],
     }, schema=F.REF_LOBS).lazy()
+
+
+def _valid_analyses(*rows: tuple[VendorName, str]) -> pl.LazyFrame:
+    return pl.DataFrame({
+        VA.VENDOR: [r[0] for r in rows],
+        VA.ANALYSIS_ID: [r[1] for r in rows],
+    }, schema=F.VALID_ANALYSES).lazy()
 
 
 # --------------------------------------------------------------------------- #
@@ -156,58 +170,66 @@ def test_normalized_outputs_match_schema():
     assert vk.schema == F.NORMALIZED_YLT
 
 
-# --------------------------------------------------------------------------- #
-# apply_rollup_scope                                                          #
-# --------------------------------------------------------------------------- #
+def test_filter_valid_analyses_keeps_only_numeric_vendor_ids():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "900003"), (VendorName.RISKLINK, "501")),
+    ).collect()
 
-from rollup.schemas.columns import RollupScopeCol as RS
-from rollup.schemas.columns import AllFactorsCol as AF
-from rollup.stages.staging import apply_rollup_scope
+    assert filtered.select(AN.VENDOR, AN.ANALYSIS_ID).sort(AN.VENDOR).rows() == [
+        (VendorName.RISKLINK.value, "501"),
+        (VendorName.VERISK.value, "900003"),
+    ]
 
 
-def _scope(*rows: tuple[str, VendorName, str, bool]) -> pl.LazyFrame:
-    return pl.DataFrame({
-        RS.MODELLED_LOB: [r[0] for r in rows],
-        RS.VENDOR:       [r[1] for r in rows],
-        RS.ANALYSIS_ID:  [r[2] for r in rows],
-        RS.IN_ROLLUP:    [r[3] for r in rows],
-    }, schema={
-        RS.MODELLED_LOB: pl.String,
-        RS.VENDOR:       pl.String,
-        RS.ANALYSIS_ID:  pl.String,
-        RS.IN_ROLLUP:    pl.Boolean,
+def test_numeric_verisk_valid_analysis_still_joins_raw_label():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "900003")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 1
+    assert out[Y.MODELLED_REGION_PERIL].to_list() == ["EU_WS"]
+
+
+def test_verisk_text_label_is_not_a_valid_analysis_id():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "EU_WS")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 0
+
+
+def test_valid_analysis_filtered_metadata_drops_ylt_rows():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "DOES_NOT_MATCH")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 0
+
+
+def test_validate_one_peril_per_rollup_lob_accepts_single_peril():
+    ylt = pl.DataFrame({
+        Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
+        Y.REGION_PERIL_ID: [1, 1],
     }).lazy()
 
+    validate_one_peril_per_rollup_lob(ylt)
 
-def _scoped_ylt(label: str, *, modelled_lob: str = "HIC_HH_UK",
-                vendor: VendorName = VendorName.VERISK) -> pl.LazyFrame:
-    """Minimal post-staging YLT row with the (modelled_lob, vendor, modelled_label)
-    triple that apply_rollup_scope joins on."""
-    return pl.DataFrame({
-        Y.MODELLED_LOB:          [modelled_lob],
-        Y.VENDOR:                [vendor],
-        Y.MODELLED_REGION_PERIL: [label],
-    }, schema={
-        Y.MODELLED_LOB:          pl.String,
-        Y.VENDOR:                pl.String,
-        Y.MODELLED_REGION_PERIL: pl.String,
+
+def test_validate_one_peril_per_rollup_lob_rejects_multiple_perils():
+    ylt = pl.DataFrame({
+        Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
+        Y.REGION_PERIL_ID: [1, 2],
     }).lazy()
 
-
-def test_apply_rollup_scope_keeps_in_scope_rows():
-    ylt   = _scoped_ylt("EU_WS", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
-    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", True))
-    assert apply_rollup_scope(ylt, scope).collect().height == 1
-
-
-def test_apply_rollup_scope_drops_out_of_scope_rows():
-    ylt   = _scoped_ylt("EU_WS", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
-    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", False))
-    assert apply_rollup_scope(ylt, scope).collect().height == 0
-
-
-def test_apply_rollup_scope_drops_unlisted_rows():
-    """A (modelled_lob, vendor, analysis) triple absent from rollup_scope is dropped."""
-    ylt   = _scoped_ylt("EU_FL", modelled_lob="HIC_HH_UK", vendor=VendorName.VERISK)
-    scope = _scope(("HIC_HH_UK", VendorName.VERISK, "EU_WS", True))   # only EU_WS in scope
-    assert apply_rollup_scope(ylt, scope).collect().height == 0
+    with pytest.raises(ValueError, match="one peril per rollup_lob"):
+        validate_one_peril_per_rollup_lob(ylt)

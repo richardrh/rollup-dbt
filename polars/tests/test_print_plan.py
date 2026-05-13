@@ -83,6 +83,8 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
     ("ylt risklink",         "▶"),
     ("ep_summaries verisk",  "◆"),
     ("ep_summaries risklink","◆"),
+    ("lob_peril_validation", "◇"),
+    ("forecast_factors",     "◇"),
     ("output",               "◯"),
     ("totally unknown",      "·"),
 ])
@@ -145,6 +147,8 @@ def test_print_plan_renders_all_six_sections(tmp_path: Path):
     for title in ("seeds",
                   "ylt verisk",          "ylt risklink",
                   "ep_summaries verisk", "ep_summaries risklink",
+                  "lob_peril_validation",
+                  "forecast_factors",
                   "output"):
         assert title in out, f"section {title!r} missing from rendered output"
 
@@ -165,8 +169,8 @@ def test_print_plan_contains_status_pills(tmp_path: Path):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     out = _capture(plan)
 
-    # Seeds are all green: 12/12 ✓
-    assert "12/12" in out
+    # Seeds are all green: 11/11 ✓
+    assert "11/11" in out
     assert "✓" in out
     # YLT directories don't exist in tmp → 0/1 ✘ for each vendor
     assert "✘" in out

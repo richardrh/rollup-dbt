@@ -32,10 +32,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config.setup_logging(args.log_level)
 
-    if args.cmd is None and not args.dry_run and not args.yes:
-        parser.print_help()
-        return 0
-
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "derive-blending":   _cmd_derive_blending,
@@ -61,9 +57,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="verbosity (default WARNING; also settable via ROLLUP_LOG env var)",
     )
 
-    # Default-flow flags (no subcommand) — `rollup --yes` runs the pipeline,
-    # `rollup --dry-run` prints the plan. Kept on the top-level parser so
-    # bare `rollup ...` keeps working without a `run` subcommand.
+    # Default-flow flags (no subcommand) — bare `rollup` runs the interactive
+    # wizard, `rollup --yes` runs non-interactively, and `rollup --dry-run`
+    # prints the plan. Kept on the top-level parser so users don't need a
+    # separate `run` subcommand.
     parser.add_argument(
         "-y", "--yes", action="store_true",
         help="skip the interactive y/N confirmation",
@@ -72,16 +69,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="print the plan and exit without running the pipeline",
     )
-    parser.add_argument(
-        "-d", "--dump-interim", action="store_true",
-        help="also write audit_wide.parquet + audit_long.parquet to "
-             "<output_dir>/debug/ for read-across verification",
+    audit_group = parser.add_mutually_exclusive_group()
+    audit_group.add_argument(
+        "-d", "--dump-interim", dest="dump_interim", action="store_true", default=True,
+        help="write audit_wide.parquet + audit_long.parquet to <output_dir>/debug/ "
+             "for read-across verification (default)",
+    )
+    audit_group.add_argument(
+        "--no-audit", dest="dump_interim", action="store_false",
+        help="skip debug audit_wide.parquet and audit_long.parquet outputs",
     )
     parser.add_argument(
         "--min-loss", type=float, default=None, metavar="N",
         help="drop output rows whose loss < N. Default 1000 (production). "
              "Use --min-loss 0 to keep every event. Also settable via "
              "ROLLUP_MIN_LOSS env var or MIN_LOSS in config.py.",
+    )
+    blend_group = parser.add_mutually_exclusive_group()
+    blend_group.add_argument(
+        "--derive-blending", dest="derive_blending", action="store_true", default=True,
+        help="derive blending weights in-memory for this run when all vendor EP-summary long CSVs are present (default)",
+    )
+    blend_group.add_argument(
+        "--no-derive-blending", dest="derive_blending", action="store_false",
+        help="always use data/seeds/vor/blending_weights.csv for this run",
+    )
+    blend_group.add_argument(
+        "--use-blending-seed", dest="derive_blending", action="store_false",
+        help="explicitly use reviewed data/seeds/vor/blending_weights.csv instead of run-time EP derivation",
     )
 
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
@@ -156,39 +171,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Default flow: build the plan, prompt (or not), run the pipeline."""
-    from dataclasses import replace
+    from rollup.wizard import run_wizard
 
-    from rollup.pipeline import run
-
-    cfg = config.resolve()
-    if args.min_loss is not None:
-        cfg = replace(cfg, min_loss=args.min_loss)
-    plan = config.build_plan(cfg)
-
-    if args.dry_run:
-        if sys.stdout.isatty():
-            config.print_plan(plan)
-        else:
-            print(config.format_plan(plan))
-        return 0
-
-    if not plan.all_seeds_ok or not plan.all_ylt_ok:
-        # On stderr we use plain text — colour codes leak in CI logs.
-        print(config.format_plan(plan), file=sys.stderr)
-        print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
-        return 2
-
-    if not config.confirm(plan, assume_yes=args.yes):
-        print("aborted by user")
-        return 1
-
-    try:
-        run(cfg, dump_interim=args.dump_interim)
-    except Exception as e:
-        print(f"\npipeline failed: {type(e).__name__}: {e}", file=sys.stderr)
-        print("see docs/troubleshooting.md", file=sys.stderr)
-        return 2
-    return 0
+    return run_wizard(args)
 
 
 def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
@@ -220,6 +205,7 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     from rollup.config import VendorName
     from rollup.seeds import load_all
     from rollup.stages.blending import derive_blending_weights
+    from rollup.stages.staging import filter_valid_analyses
 
     cfg = config.resolve()
     output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
@@ -236,7 +222,7 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
         return 2
 
     seeds_obj = load_all(cfg.seeds_dir)
-    analyses = seeds_obj.analyses.collect()
+    analyses = filter_valid_analyses(seeds_obj.analyses, seeds_obj.valid_analyses).collect()
     perils   = seeds_obj.perils.collect()
 
     df = derive_blending_weights(rl_csvs, vk_csvs, analyses, perils)

@@ -29,13 +29,13 @@ Copy-Item config.example.py config.py
 macOS/Linux:
 
 ```bash
-mkdir -p data/ylt/verisk data/ylt/risklink data/output
+mkdir -p data/ylt/verisk data/ylt/risklink data/ep_summaries/verisk data/ep_summaries/risklink data/output
 ```
 
 Windows PowerShell:
 
 ```powershell
-New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/output
+New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/ep_summaries/verisk, data/ep_summaries/risklink, data/output
 ```
 
 Full walkthrough: [Loading your data](load-data.md).
@@ -46,15 +46,25 @@ Full walkthrough: [Loading your data](load-data.md).
 uv run rollup --dry-run
 ```
 
-Shows which files are present and which are missing. Safe to ignore missing files on first run.
+Shows which files are present and which are missing. YLT parquets and EP-summary `*.long.csv` files are required for the default run.
 
 ## 4. Run the pipeline
+
+Interactive wizard:
+
+```bash
+uv run rollup
+```
+
+Non-interactive run:
 
 ```bash
 uv run rollup --yes
 ```
 
-Takes ~30 seconds. Output parquets appear in `data/output/`.
+Takes ~30 seconds. Output parquets and audit/debug parquets appear in `data/output/`.
+Use `--no-audit` to skip `data/output/debug/`.
+Use `--use-blending-seed` only when you explicitly want the reviewed `data/seeds/vor/blending_weights.csv` instead of run-time EP-summary blending.
 
 ## 5. Inspect output
 

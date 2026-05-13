@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 import polars as pl
 
@@ -20,18 +21,18 @@ from rollup.seeds import Seeds
 from rollup.stages.factors import (
     attach_currency,
     attach_euws,
-    attach_fagross,
     attach_forecast_factors,
     attach_rank,
     attach_uplift,
     validate_fx_coverage,
 )
 from rollup.stages.staging import (
-    apply_rollup_scope,
+    filter_valid_analyses,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,
     normalize_risklink_ylt,
     normalize_verisk_ylt,
+    validate_one_peril_per_rollup_lob,
 )
 from rollup.validate import validate_schema
 from rollup.variants import VariantSpec, build_variants, forecast_dates_from_seed, forecast_tags
@@ -73,8 +74,11 @@ def count_event_id_orphans(
     orphans = collected[_ORPHAN_COUNT].item()
     if orphans:
         log.warning(
-            f"event-id orphans for vendor={vendor_filter}: "
-            f"{orphans:,} / {total:,} YLT rows have no match in air_events"
+            f"event catalogue validation incomplete for vendor={vendor_filter}: "
+            f"{orphans:,} / {total:,} YLT rows did not match "
+            "data/seeds/validation/air_events.csv. Calculations continue, "
+            "but ModelEventDay remains 0 and AIR event metadata is not validated. "
+            "Provide air_events.csv to validate/enrich event IDs."
         )
     else:
         log.info(f"event-id check ({vendor_filter}): {total:,}/{total:,} rows matched air_events")
@@ -91,43 +95,50 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         VendorName.RISKLINK: risklink.n_simulations,
     }
     log.info(f"forecast tags from seed: {tags}")
+    analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
 
     rl_norm = normalize_risklink_ylt(
         load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob),
-        seeds.analyses, seeds.perils, seeds.lobs,
+        analyses, seeds.perils, seeds.lobs,
     )
     vk_norm = normalize_verisk_ylt(
         load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob),
-        seeds.analyses, seeds.perils, seeds.lobs,
+        analyses, seeds.perils, seeds.lobs,
     )
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
+    validate_one_peril_per_rollup_lob(ylt)
     count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
 
     all_factors = (
         ylt
-        .pipe(apply_rollup_scope, seeds.rollup_scope)
         .pipe(attach_currency, seeds.fx_rates)
         .pipe(attach_forecast_factors, seeds.forecast_factors, tags)
         .pipe(attach_rank, n_sim=n_sim)
         .pipe(attach_euws, seeds.euws_rate_factors, seeds.euws_rank_overrides)
-        .pipe(attach_fagross, seeds.fineart_adjustments)
         .pipe(attach_uplift, seeds.blending_weights, n_sim=n_sim)
         .pipe(add_main_metrics, tags)
         .pipe(add_dialsup, tags[0])
     )
-    log.info(f"metrics: {3 + 3 * len(tags)} derived loss columns + 1 dialsup column")
+    log.info(f"metrics: {3 + 2 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
     return all_factors
 
 
-def run(cfg: config.Config, *, dump_interim: bool = False) -> None:
+def run(
+    cfg: config.Config,
+    *,
+    dump_interim: bool = False,
+    blending_weights: pl.LazyFrame | None = None,
+) -> None:
     """Run the pipeline end-to-end. One parquet per fan-out variant."""
     from rollup.seeds import load_all
 
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     seeds = load_all(cfg.seeds_dir)
+    if blending_weights is not None:
+        seeds = replace(seeds, blending_weights=blending_weights)
     validate_fx_coverage(seeds.fx_rates)
     fc_dates = forecast_dates_from_seed(seeds)
     tags = forecast_tags(fc_dates)

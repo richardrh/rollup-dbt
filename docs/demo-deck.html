@@ -53,8 +53,8 @@
 
   <section>
     <h2>3. Demo flow</h2>
-    <pre>uv run python -m rollup.cli --dry-run -y
-uv run python -m rollup.cli -y --min-loss 0 --dump-interim
+    <pre>uv run rollup --dry-run -y
+uv run rollup -y --min-loss 0
 uv run pytest polars/tests/test_deterministic_e2e.py -q</pre>
     <p>Optional if Docker SQL Server is available:</p>
     <pre>uv run pytest polars/tests/test_sql_integration.py -q --run-integration</pre>
@@ -113,12 +113,13 @@ uplift       = 750 / 1,000 = 0.75</pre>
 
   <section>
     <h2>8. Auditability</h2>
-    <p>With <code>--dump-interim</code>, the pipeline writes:</p>
+    <p>Audit outputs are written by default. The pipeline writes:</p>
     <ul>
       <li><code>audit_wide.parquet</code> — one row per event with factors left-to-right</li>
       <li><code>audit_long.parquet</code> — metric/value format for analysis</li>
       <li><code>mts_tbl_ylt_combined_all_factors.parquet</code> — default combined audit output</li>
     </ul>
+    <p>Use <code>--no-audit</code> only when debug parquets are not needed.</p>
   </section>
 
   <section>

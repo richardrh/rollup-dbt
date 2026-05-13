@@ -107,8 +107,8 @@ def test_at_least_one_variant_has_real_numbers(cfg, data_root):
 def test_variant_count_matches_plan(cfg, data_root):
     """Variant count: MAIN → n_vendors × n_dates; DIALSUP → n_vendors × 1.
 
-    DIALSUP is tag-independent (``loss / rate_to_gbp``) so one file per vendor
-    is sufficient. For 2 vendors × 3 dates that gives 6 main + 2 dialsup = 8.
+    DIALSUP uses the selected forecast tag, so one file per vendor is
+    sufficient. For 2 vendors × 3 dates that gives 6 main + 2 dialsup = 8.
     """
     from rollup.config import Flavor
     seeds    = load_all(cfg.seeds_dir)
@@ -172,8 +172,8 @@ def test_dump_interim_produces_audit_parquets(cfg, data_root):
         assert cols.index("euws_factor") < cols.index(f"loss_uplifted_capped_localccy_{y}_euws")
 
     # Long: N events × M metrics, all non-null.
-    # Metric columns: loss + 3 year-invariant + 3 chain stages × n_tags + 1 dialsup
-    assert long["metric_name"].n_unique() >= 1 + 3 + 3 * len(tags) + 1
+    # Metric columns: loss + 3 year-invariant + 2 chain stages × n_tags + 1 dialsup
+    assert long["metric_name"].n_unique() >= 1 + 3 + 2 * len(tags) + 1
     assert long.filter(pl.col("value").is_null()).height == 0
 
     print(f"\n[e2e] audit_wide: {wide.shape}, {len(wide.columns)} cols")

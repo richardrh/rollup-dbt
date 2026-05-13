@@ -11,8 +11,8 @@ fails with a concrete diff instead of a cryptic downstream join error.
 The peril dimension is split into four single-purpose tables:
 
     perils.csv           — one row per rollup peril (peril_id, name, region, peril_family)
-    analyses.csv         — (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-    rollup_scope.csv     — which (lob_id, vendor, analysis_id) triples are official
+    analyses.csv         — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
+    valid_analyses.csv   — which numeric vendor analysis IDs are official inputs
     blending_weights.csv — long-format (peril_id, sub_peril, vendor, weight)
 
 These replace january's god-table `dim_region_perils` (which mixed peril
@@ -61,7 +61,7 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
     "lobs":                F.REF_LOBS,
     "perils":              F.PERILS,
     "analyses":            F.ANALYSES,
-    "rollup_scope":        F.ROLLUP_SCOPE,
+    "valid_analyses":      F.VALID_ANALYSES,
     # vor: vendor blending / FX / forecast
     "blending_weights":    F.BLENDING_WEIGHTS,
     "forecast_factors":    F.REF_FORECAST_FACTORS,
@@ -69,7 +69,6 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
     "euws_rate_factors":   F.REF_EUWS_RATE_FACTORS,
     # adjustments
     "euws_rank_overrides": F.REF_EUWS_RANK_OVERRIDES,
-    "fineart_adjustments": F.REF_FINEART_ADJ,
     # validation: event catalogues (stubs until real data provided)
     "air_events":          F.REF_AIR_EVENTS,
     "risklink_events":     F.REF_RISKLINK_EVENTS,
@@ -79,12 +78,12 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
 # Seeds that MUST have rows for a real run — empty data here means the
 # pipeline will silently produce zero-row Hisco parquets. The plan reporter
 # treats an empty REQUIRED seed as a blocker (`Check.ok = False`); other
-# seeds may legitimately be empty stubs (e.g. `air_events`, `fineart_*`).
+# seeds may legitimately be empty stubs (e.g. event catalogues).
 REQUIRED_SEEDS: frozenset[str] = frozenset({
     "lobs",
     "perils",
     "analyses",
-    "rollup_scope",        # empty rollup_scope drops every YLT row
+    "valid_analyses",      # empty valid_analyses drops every YLT/EP row
     "blending_weights",
     "forecast_factors",    # empty → no forecast tags → no variants → no outputs
     "fx_rates",
@@ -101,13 +100,12 @@ SEED_FILES: dict[str, str] = {
     "lobs":                "business/lobs.csv",
     "perils":              "business/perils.csv",
     "analyses":            "business/analyses.csv",
-    "rollup_scope":        "business/rollup_scope.csv",
+    "valid_analyses":      "business/valid_analyses.csv",
     "blending_weights":    "vor/blending_weights.csv",
     "forecast_factors":    "vor/forecast_factors.csv",
     "fx_rates":            "vor/fx_rates.csv",
     "euws_rate_factors":   "vor/euws_rate_factors.csv",
     "euws_rank_overrides": "adjustments/euws_rank_overrides.csv",
-    "fineart_adjustments": "adjustments/fineart_adjustments.csv",
     "air_events":          "validation/air_events.csv",
     "risklink_events":     "validation/risklink_events.csv",
 }
@@ -166,13 +164,12 @@ class Seeds:
     lobs:                pl.LazyFrame
     perils:              pl.LazyFrame
     analyses:            pl.LazyFrame
-    rollup_scope:        pl.LazyFrame
+    valid_analyses:      pl.LazyFrame
     blending_weights:    pl.LazyFrame
     forecast_factors:    pl.LazyFrame
     fx_rates:            pl.LazyFrame
     euws_rate_factors:   pl.LazyFrame
     euws_rank_overrides: pl.LazyFrame
-    fineart_adjustments: pl.LazyFrame
     air_events:          pl.LazyFrame
     risklink_events:     pl.LazyFrame
 

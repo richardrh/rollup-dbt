@@ -76,7 +76,7 @@ Wire schema (matches AIR Touchstone export — CamelCase preserved):
 
 | column              | type     | notes |
 | ------------------- | -------- | ----- |
-| `Analysis`          | String   | label e.g. `EU_WS`; joined to `analyses.analysis_id` (vendor='verisk' rows). |
+| `Analysis`          | String   | label e.g. `EU_WS`; joined to `analyses.modelled_label` after numeric `analysis_id` filtering. |
 | `ExposureAttribute` | String   | the LOB on this row, e.g. `HIC_HH_UK`; joined to `lobs.modelled_lob`. |
 | `CatalogTypeCode`   | String   | filtered to `'STC'` (matches duckdb `int_vw_vk_ylt`). |
 | `EventID`           | Int64    | event identifier, used for the EUWS join. |
@@ -243,23 +243,22 @@ Maps each vendor's analysis to peril. For Verisk, `lob_id` is NULL (lob comes fr
 | column           | type    | notes |
 | ---------------- | ------- | ----- |
 | `vendor`         | String  | `'verisk'` or `'risklink'`. |
-| `analysis_id`    | String  | wire label (Verisk text or stringified RiskLink int). |
-| `modelled_label` | String  | display label; referenced by `rollup_scope.analysis_id`. |
+| `analysis_id`    | String  | numeric vendor analysis id, stored as text. Bundled Verisk IDs are placeholders. |
+| `modelled_label` | String  | vendor label used in Verisk `Analysis`, operator review, and EP labels. |
 | `peril_id`       | Int64   | FK into `perils.csv`. |
 | `lob_id`         | Int64   | FK into `lobs.csv`; NULL for Verisk, populated for RiskLink. |
 
 One row per vendor × analysis pair. Concatenate Verisk and RiskLink CSVs (header from one, body of both).
 
-#### 3. `rollup_scope.csv` — which (lob, vendor, analysis) triples are in scope (REQUIRED)
+#### 3. `valid_analyses.csv` — vendor-native analysis allow-list (REQUIRED)
 
-Pipeline filters YLT to rows marked `in_rollup=True`. Empty file or all-False → zero rows output.
+Pipeline filters YLT and EP summaries to listed `(vendor, analysis_id)` rows.
+Empty file → zero rows output.
 
-| column        | type    | notes |
-| ------------- | ------- | ----- |
-| `lob_id`      | Int64   | FK into `lobs.csv`. |
-| `vendor`      | String  | `'verisk'` or `'risklink'`. |
-| `analysis_id` | String  | modelled label from `analyses.csv`. |
-| `in_rollup`   | Boolean | True to keep, False to drop. |
+| column        | type   | notes |
+| ------------- | ------ | ----- |
+| `vendor`      | String | `'verisk'` or `'risklink'`. |
+| `analysis_id` | String | numeric vendor analysis id, stored as text for both vendors. Replace bundled Verisk placeholders with real IDs before production. |
 
 #### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
 
@@ -278,9 +277,9 @@ One row per (peril, vendor) pair. `sub_peril` is optional regional split label.
 
 **`air_events.csv`** — Verisk event catalogue. Pipeline runs without it but reports orphan warnings. Populate to silence.
 
-**`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
+**`risklink_events.csv`** — RiskLink event catalogue. Optional stub for future event-day enrichment.
 
-**`fineart_adjustments.csv`** — fine-art gross-to-net factors. Stub-empty by default; populate to apply real adjustments.
+**`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
 
 ---
 

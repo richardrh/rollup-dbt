@@ -9,6 +9,10 @@ import polars as pl
 
 from rollup.config import Config, VendorName
 from rollup.schemas import frames as F
+from rollup.schemas.columns import AnalysesCol as AN
+from rollup.schemas.columns import RefForecastFactorsCol as FF
+from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
@@ -56,13 +60,38 @@ class Plan:
                 return False
         return True
 
+    @property
+    def all_ep_ok(self) -> bool:
+        """All vendors have at least one EP-summary long CSV/file present."""
+        for vendor in self.config.vendors:
+            section = next((s for s in self.sections if s.title == f"ep_summaries {vendor.name}"), None)
+            if section is None or not any(c.ok for c in section.checks):
+                return False
+        return True
+
+    @property
+    def all_lob_peril_ok(self) -> bool:
+        """No rollup LOB maps to more than one peril in valid analysis metadata."""
+        section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
+        if section is None:
+            return True
+        return all(c.ok for c in section.checks)
+
+    @property
+    def has_lob_peril_conflict(self) -> bool:
+        """The one-peril-per-rollup-lob check found an actual conflict."""
+        section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
+        if section is None:
+            return False
+        return any((not c.ok) and "validation failed" in c.note for c in section.checks)
+
 
 def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     """Verify a seed: file exists, column headers match, count rows.
 
     A seed in `REQUIRED_SEEDS` with zero rows is reported as `ok=False` —
     the pipeline would silently produce zero-row Hisco parquets otherwise.
-    Non-required seeds (e.g. `air_events`, `fineart_adjustments`) may
+    Non-required seeds (e.g. `air_events`) may
     legitimately be empty stubs and are reported `ok=True` with `(stub)`.
     """
     if not spec.filename:
@@ -133,6 +162,7 @@ def _check_dir_glob(
     glob: str,
     parquet_schema: pl.Schema | None = None,
     optional_missing_ok: bool = False,
+    missing_note: str = "no files match pattern",
 ) -> list[Check]:
     """Generic dir-pattern check for YLT parquets and EP-summary files."""
     if not directory.exists():
@@ -143,7 +173,7 @@ def _check_dir_glob(
     if not files:
         if optional_missing_ok:
             return [Check(label=glob, path=directory, ok=True, note="optional; using blending_weights seed")]
-        return [Check(label=glob, path=directory, ok=False, note="no files match pattern")]
+        return [Check(label=glob, path=directory, ok=False, note=missing_note)]
     checks: list[Check] = []
     for path in files:
         if parquet_schema is not None and path.suffix == ".parquet":
@@ -153,7 +183,157 @@ def _check_dir_glob(
     return checks
 
 
-def build_plan(config: Config) -> Plan:
+def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
+    """Report forecast dates and coverage for scoped LOB/analysis rows.
+
+    Forecast factors join at runtime on ``(office, class)``. Missing rows are
+    currently filled as factor 1.0, so the plan surfaces coverage gaps before
+    the operator starts a run.
+    """
+    lobs_path = seeds_dir / "business" / "lobs.csv"
+    valid_path = seeds_dir / "business" / "valid_analyses.csv"
+    ff_path = seeds_dir / "vor" / "forecast_factors.csv"
+    if not lobs_path.exists() or not valid_path.exists() or not ff_path.exists():
+        return [Check(label="forecast coverage", path=seeds_dir, ok=False, note="missing seed input")]
+
+    try:
+        lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
+        valid_analyses = pl.read_csv(valid_path, schema=F.VALID_ANALYSES)
+        forecast = pl.read_csv(ff_path, schema=F.REF_FORECAST_FACTORS)
+    except Exception as e:
+        return [Check(label="forecast coverage", path=ff_path, ok=False, note=f"parse error: {e}")]
+
+    dates = forecast.select(FF.FORECAST_DATE).unique().sort(FF.FORECAST_DATE)
+    if dates.height == 0:
+        return [Check(label="forecast dates", path=ff_path, ok=False, note="no forecast dates found")]
+
+    date_labels = [d.isoformat() for d in dates[FF.FORECAST_DATE].to_list()]
+    checks = [
+        Check(
+            label="forecast dates",
+            path=ff_path,
+            ok=True,
+            rows=dates.height,
+            note=", ".join(date_labels),
+        )
+    ]
+
+    if valid_analyses.height == 0:
+        return checks + [Check(label="forecast coverage", path=valid_path, ok=False, note="valid_analyses is empty")]
+
+    scoped_lobs = lobs.select(LB.MODELLED_LOB, LB.OFFICE, LB.CLASS).unique()
+    expected = scoped_lobs.join(dates, how="cross")
+    actual = forecast.select(FF.OFFICE, FF.CLASS, FF.FORECAST_DATE).unique()
+    missing = expected.join(
+        actual,
+        left_on=[LB.OFFICE, LB.CLASS, FF.FORECAST_DATE],
+        right_on=[FF.OFFICE, FF.CLASS, FF.FORECAST_DATE],
+        how="anti",
+    )
+
+    if missing.height == 0:
+        checks.append(Check(
+            label="forecast coverage",
+            path=ff_path,
+            ok=True,
+            rows=expected.height,
+            note="all modelled_lob rows covered for every forecast date",
+        ))
+        return checks
+
+    examples = missing.select(
+        LB.MODELLED_LOB,
+        LB.OFFICE,
+        LB.CLASS,
+        FF.FORECAST_DATE,
+    ).head(5)
+    example_text = "; ".join(
+        f"{row[LB.MODELLED_LOB]} {row[LB.OFFICE]}/{row[LB.CLASS]} {row[FF.FORECAST_DATE]}"
+        for row in examples.iter_rows(named=True)
+    )
+    return checks + [Check(
+        label="forecast coverage",
+        path=ff_path,
+        ok=True,
+        rows=missing.height,
+        note=f"WARNING missing factors for scoped rows; examples: {example_text}",
+    )]
+
+
+def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
+    """Validate valid RiskLink analysis IDs keep one peril per rollup LOB.
+
+    RiskLink analysis metadata carries ``lob_id``, so this seed-only check can
+    catch operator allow-list mistakes before a run starts. Verisk LOBs live in
+    the YLT row and remain covered by the runtime staging validation.
+    """
+    lobs_path = seeds_dir / "business" / "lobs.csv"
+    analyses_path = seeds_dir / "business" / "analyses.csv"
+    valid_path = seeds_dir / "business" / "valid_analyses.csv"
+    if not lobs_path.exists() or not analyses_path.exists() or not valid_path.exists():
+        return [Check(label="one peril per rollup_lob", path=seeds_dir, ok=False, note="missing seed input")]
+
+    try:
+        lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
+        analyses = pl.read_csv(analyses_path, schema=F.ANALYSES)
+        valid_analyses = pl.read_csv(valid_path, schema=F.VALID_ANALYSES)
+    except Exception as e:
+        return [Check(label="one peril per rollup_lob", path=valid_path, ok=False, note=f"parse error: {e}")]
+
+    mapped = (
+        analyses
+        .join(
+            valid_analyses.unique(),
+            left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+            right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+            how="inner",
+        )
+        .filter(pl.col(AN.LOB_ID).is_not_null())
+        .join(lobs.select(LB.LOB_ID, LB.ROLLUP_LOB), on=AN.LOB_ID, how="left")
+        .filter(pl.col(LB.ROLLUP_LOB).is_not_null())
+        .select(LB.ROLLUP_LOB, AN.PERIL_ID)
+        .unique()
+    )
+    if mapped.height == 0:
+        return [Check(
+            label="one peril per rollup_lob",
+            path=valid_path,
+            ok=True,
+            note="no lob-specific valid analyses to validate",
+        )]
+
+    conflicts = (
+        mapped
+        .group_by(LB.ROLLUP_LOB)
+        .agg(
+            pl.col(AN.PERIL_ID).sort().alias("peril_ids"),
+            pl.len().alias("n_perils"),
+        )
+        .filter(pl.col("n_perils") > 1)
+    )
+    if conflicts.height == 0:
+        return [Check(
+            label="one peril per rollup_lob",
+            path=valid_path,
+            ok=True,
+            rows=mapped.select(LB.ROLLUP_LOB).unique().height,
+            note="valid analysis metadata maps each rollup_lob to one peril",
+        )]
+
+    examples = "; ".join(
+        f"{row[LB.ROLLUP_LOB]} -> {row['peril_ids']}"
+        for row in conflicts.head(5).iter_rows(named=True)
+    )
+    return [Check(
+        label="one peril per rollup_lob",
+        path=valid_path,
+        ok=False,
+        rows=conflicts.height,
+        note=f"one peril per rollup_lob validation failed; examples: {examples}",
+    )]
+
+
+def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
     sections: list[Section] = []
 
     seed_specs = discover_seeds(config.seeds_dir)
@@ -185,16 +365,30 @@ def build_plan(config: Config) -> Plan:
         ))
 
     for vendor in config.vendors:
+        ep_glob = "*.long.csv" if require_ep_summaries else vendor.ep_summary_glob
         sections.append(Section(
             title=f"ep_summaries {vendor.name}",
-            header=f"{vendor.ep_summary_dir}  pattern={vendor.ep_summary_glob}",
+            header=f"{vendor.ep_summary_dir}  pattern={ep_glob}",
             checks=_check_dir_glob(
                 vendor.name,
                 vendor.ep_summary_dir,
-                vendor.ep_summary_glob,
-                optional_missing_ok=True,
+                ep_glob,
+                optional_missing_ok=not require_ep_summaries,
+                missing_note="required for run-time blending derivation; use --use-blending-seed to bypass",
             ),
         ))
+
+    sections.append(Section(
+        title="lob_peril_validation",
+        header=str(config.seeds_dir / "business" / "valid_analyses.csv"),
+        checks=_check_one_peril_per_rollup_lob(config.seeds_dir),
+    ))
+
+    sections.append(Section(
+        title="forecast_factors",
+        header=str(config.seeds_dir / "vor" / "forecast_factors.csv"),
+        checks=_check_forecast_coverage(config.seeds_dir),
+    ))
 
     sections.append(Section(
         title="output",

@@ -1,7 +1,6 @@
 """Property-based tests for ``rollup.stages.staging``.
 
-Targets ``normalize_risklink_ylt``, ``normalize_verisk_ylt``, and
-``apply_rollup_scope``.
+Targets ``normalize_risklink_ylt`` and ``normalize_verisk_ylt``.
 
 All tests are marked ``@pytest.mark.fuzz`` and skipped unless
 ``--run-fuzz`` is passed.
@@ -23,10 +22,8 @@ from rollup.schemas.columns import (
     RawRisklinkYltCol as RLK,
     RawVeriskYltCol as VK,
     RefLobsCol as LB,
-    RollupScopeCol as RS,
 )
 from rollup.stages.staging import (
-    apply_rollup_scope,
     normalize_risklink_ylt,
     normalize_verisk_ylt,
 )
@@ -163,12 +160,14 @@ def _consistent_verisk_input(draw: st.DrawFn) -> tuple[
         LB.CLASS:              [f"class_{lid}" for lid in lob_ids],
     }, schema=F.REF_LOBS)
 
-    # Verisk analyses: lob_id is null (pl.Int64 null).
-    vk_analysis_ids = [f"VK_ANALYSIS_{pid}" for pid in peril_ids]
+    # Verisk analyses: numeric IDs in the allow-list, modelled labels in raw YLTs,
+    # and lob_id is null (pl.Int64 null).
+    vk_analysis_ids = [str(900000 + pid) for pid in peril_ids]
+    vk_modelled_labels = [f"VK_ANALYSIS_{pid}" for pid in peril_ids]
     analyses_df = pl.LazyFrame({
         AN.VENDOR:         [VendorName.VERISK] * n,
         AN.ANALYSIS_ID:    vk_analysis_ids,
-        AN.MODELLED_LABEL: vk_analysis_ids,
+        AN.MODELLED_LABEL: vk_modelled_labels,
         AN.PERIL_ID:       peril_ids,
         AN.LOB_ID:         [None] * n,
     }, schema=F.ANALYSES)
@@ -177,7 +176,7 @@ def _consistent_verisk_input(draw: st.DrawFn) -> tuple[
     row_indices = draw(st.lists(st.integers(min_value=0, max_value=n - 1), min_size=n_rows, max_size=n_rows))
 
     raw_vk_df = pl.LazyFrame({
-        VK.ANALYSIS:           [vk_analysis_ids[row_indices[i]] for i in range(n_rows)],
+        VK.ANALYSIS:           [vk_modelled_labels[row_indices[i]] for i in range(n_rows)],
         VK.EXPOSURE_ATTRIBUTE: [modelled_lobs[row_indices[i]] for i in range(n_rows)],
         VK.CATALOG_TYPE_CODE:  ["STC"] * n_rows,
         VK.EVENT_ID:           list(range(201, 201 + n_rows)),
@@ -271,51 +270,3 @@ def test_normalize_verisk_non_stc_rows_dropped(
         out_with = normalize_verisk_ylt(combined, analyses, perils, lobs).collect().height
         out_without = normalize_verisk_ylt(raw, analyses, perils, lobs).collect().height
         assert out_with == out_without
-
-
-# ---------------------------------------------------------------------------
-# Tests for apply_rollup_scope
-# ---------------------------------------------------------------------------
-
-@pytest.mark.fuzz
-@given(
-    ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50),
-    scope=lazyframe_from_schema(F.ROLLUP_SCOPE, min_rows=1, max_rows=20),
-)
-def test_apply_rollup_scope_only_drops_rows(
-    ylt: pl.LazyFrame,
-    scope: pl.LazyFrame,
-) -> None:
-    """``apply_rollup_scope`` is a filter: output rows <= input rows.
-    No new rows are introduced."""
-    out = apply_rollup_scope(ylt, scope).collect()
-    n_in = ylt.collect().height
-    assert out.height <= n_in
-
-
-@pytest.mark.fuzz
-@given(ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50))
-def test_apply_rollup_scope_with_empty_scope_returns_zero_rows(
-    ylt: pl.LazyFrame,
-) -> None:
-    """An empty rollup_scope returns zero rows (documented behaviour)."""
-    empty_scope = pl.LazyFrame(schema=F.ROLLUP_SCOPE)
-    out = apply_rollup_scope(ylt, empty_scope).collect()
-    assert out.height == 0
-
-
-@pytest.mark.fuzz
-@given(ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=1, max_rows=50))
-def test_apply_rollup_scope_with_all_in_rollup_false_returns_zero(
-    ylt: pl.LazyFrame,
-) -> None:
-    """A rollup_scope with all in_rollup=False returns zero rows."""
-    n = 5
-    scope = pl.LazyFrame({
-        RS.MODELLED_LOB: [f"lob_{i}" for i in range(n)],
-        RS.VENDOR:       ["risklink"] * n,
-        RS.ANALYSIS_ID:  [f"AN_{i}" for i in range(n)],
-        RS.IN_ROLLUP:    [False] * n,
-    }, schema=F.ROLLUP_SCOPE)
-    out = apply_rollup_scope(ylt, scope).collect()
-    assert out.height == 0

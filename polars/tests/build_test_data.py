@@ -29,14 +29,13 @@ from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefEuwsRankOverridesCol as EO
 from rollup.schemas.columns import RefEuwsRateFactorsCol as EU
-from rollup.schemas.columns import RefFineartAdjCol as FA
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import RefRisklinkEventsCol as RLE
-from rollup.schemas.columns import RollupScopeCol as RS
 from rollup.schemas.columns import StgRisklinkEpCol as REP
 from rollup.schemas.columns import StgVeriskEpCol as VEP
+from rollup.schemas.columns import ValidAnalysesCol as VA
 
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -67,22 +66,18 @@ PERILS = [
 
 # (vendor, analysis_id, modelled_label, peril_id, lob_id)
 ANALYSES = [
-    (VendorName.VERISK,   "EU_WS",  "EU_WS",  206, None),
-    (VendorName.VERISK,   "EU_FL",  "EU_FL",  216, None),
+    (VendorName.VERISK,   "900003", "EU_WS",  206, None),
+    (VendorName.VERISK,   "900002", "EU_FL",  216, None),
     (VendorName.RISKLINK, "501",    "EU_WS",  206, 1),
     (VendorName.RISKLINK, "502",    "EU_FL",  216, 2),
 ]
 
-# Every (modelled_lob, vendor, modelled_label) the YLT could carry — all in scope.
-# `analysis_id` here is the modelled_label (what staging exposes as
-# MODELLED_REGION_PERIL), not the raw RiskLink integer anlsid.
-ROLLUP_SCOPE = [
-    ("HIC_HH_UK",    VendorName.VERISK,   "EU_WS", True),
-    ("HIC_HH_UK",    VendorName.VERISK,   "EU_FL", True),
-    ("HSA_FA_EU_FR", VendorName.VERISK,   "EU_WS", True),
-    ("HSA_FA_EU_FR", VendorName.VERISK,   "EU_FL", True),
-    ("HIC_HH_UK",    VendorName.RISKLINK, "EU_WS", True),
-    ("HSA_FA_EU_FR", VendorName.RISKLINK, "EU_FL", True),
+# Vendor-native analysis IDs that may contribute YLT/EP rows.
+VALID_ANALYSES = [
+    (VendorName.VERISK,   "900003"),
+    (VendorName.VERISK,   "900002"),
+    (VendorName.RISKLINK, "501"),
+    (VendorName.RISKLINK, "502"),
 ]
 
 # Simple 50/50 blend on both perils. sub_peril=None → applies to all sub-perils.
@@ -158,9 +153,9 @@ def _write_seeds() -> None:
         AN.VENDOR, AN.ANALYSIS_ID, AN.MODELLED_LABEL, AN.PERIL_ID, AN.LOB_ID,
     ]).write_csv(SEEDS / "business/analyses.csv")
 
-    pl.DataFrame(ROLLUP_SCOPE, orient="row", schema=[
-        RS.MODELLED_LOB, RS.VENDOR, RS.ANALYSIS_ID, RS.IN_ROLLUP,
-    ]).write_csv(SEEDS / "business/rollup_scope.csv")
+    pl.DataFrame(VALID_ANALYSES, orient="row", schema=[
+        VA.VENDOR, VA.ANALYSIS_ID,
+    ]).write_csv(SEEDS / "business/valid_analyses.csv")
 
     # vor/
     pl.DataFrame(BLENDING_WEIGHTS, orient="row", schema=[
@@ -185,15 +180,6 @@ def _write_seeds() -> None:
         EO.ROLLUP_LOB, EO.MAX_RANK, EO.FACTOR,
     ]).write_csv(SEEDS / "adjustments/euws_rank_overrides.csv")
 
-    pl.DataFrame(schema={
-        FA.LOB_ID:              pl.Int64,
-        FA.REGION_PERIL_ID:     pl.Int64,
-        FA.APPLIES_TO_FA:       pl.Int64,
-        FA.ROLLUP_REGION_PERIL: pl.String,
-        FA.AAL_FACTOR:          pl.Float64,
-        FA.TAIL_FACTOR:         pl.Float64,
-    }).write_csv(SEEDS / "adjustments/fineart_adjustments.csv")
-
     # validation/ stubs — air_events populated by _write_air_events after YLTs are known
     pl.DataFrame(schema={
         RLE.EVENT_ID: pl.Int64,
@@ -210,8 +196,6 @@ def _write_verisk_ylt() -> list[tuple[int, int, int]]:
     # Analysis × ExposureAttribute × ModelCode × year × local event
     cases = [
         ("EU_WS", "HIC_HH_UK",    41),
-        ("EU_WS", "HSA_FA_EU_FR", 41),
-        ("EU_FL", "HIC_HH_UK",    92),
         ("EU_FL", "HSA_FA_EU_FR", 92),
     ]
     eid = 1000
@@ -285,30 +269,28 @@ def _write_air_events(verisk_triples: list[tuple[int, int, int]]) -> None:
 def _write_ep_summaries() -> None:
     """Tiny EP summaries — one row per (vendor, lob, peril, ep_type, rp)."""
     verisk_rows = []
-    for analysis in ("EU_WS", "EU_FL"):
-        for lob in ("HIC_HH_UK", "HSA_FA_EU_FR"):
-            for (rp, ep_type, gl) in [(0,    EpType.AAL, 100.0),
-                                      (200,  EpType.OEP, 500.0),
-                                      (1000, EpType.OEP, 1500.0)]:
-                verisk_rows.append({
-                    VEP.RP:       rp,
-                    VEP.EP_TYPE:  ep_type,
-                    VEP.ANALYSIS: analysis,
-                    VEP.LOB:      lob,
-                    VEP.GL:       gl,
-                })
+    for analysis, lob in (("EU_WS", "HIC_HH_UK"), ("EU_FL", "HSA_FA_EU_FR")):
+        for (rp, ep_type, gl) in [(0,    EpType.AAL, 100.0),
+                                  (200,  EpType.OEP, 500.0),
+                                  (1000, EpType.OEP, 1500.0)]:
+            verisk_rows.append({
+                VEP.RP:       rp,
+                VEP.EP_TYPE:  ep_type,
+                VEP.ANALYSIS: analysis,
+                VEP.LOB:      lob,
+                VEP.GL:       gl,
+            })
     pl.DataFrame(verisk_rows).write_csv(EP_V / "verisk_ep.csv")
 
     rl_rows = []
-    rid = 0
     for region_peril in ("EU_WS", "EU_FL"):
         lob = "HIC_HH_UK" if region_peril == "EU_WS" else "HSA_FA_EU_FR"
+        analysis_id = 501 if region_peril == "EU_WS" else 502
         for (rp, ep_type, gl) in [(0,    EpType.AAL, 120.0),
                                   (200,  EpType.OEP, 550.0),
                                   (1000, EpType.OEP, 1600.0)]:
-            rid += 1
             rl_rows.append({
-                REP.ID:           rid,
+                REP.ID:           analysis_id,
                 REP.RP:           rp,
                 REP.EP_TYPE:      ep_type,
                 REP.LOB:          lob,

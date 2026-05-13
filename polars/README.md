@@ -38,7 +38,7 @@ contract between the pipeline and the seeds + YLTs you supply.
    │ verisk  │                 │ lobs                │
    │risklink │                 │ perils              │  ← split-out
    └────┬────┘                 │ analyses            │  ← god-table
-        │                      │ rollup_scope        │  ← gone
+        │                      │ valid_analyses      │  ← allow-list
         │                      │ blending_weights    │
         │                      │ forecast / fx       │
         │                      │ euws (+overrides)   │
@@ -53,17 +53,17 @@ contract between the pipeline and the seeds + YLTs you supply.
                         ▼
    ┌──────────────────────────────────────────┐
    │ 2. factor chain (one attach_* per factor)│
-   │    rollup_scope filter →                 │
+   │    valid analysis gate →                 │
    │    FX → forecast(× N tags) → rank →      │
    │    euws (+ rank-threshold overrides)     │
-   │    → fa_gross → uplift                   │
+   │    → uplift                              │
    └────────────────────┬─────────────────────┘
                         │
                         ▼
    ┌──────────────────────────────────────────┐
    │ 3. metrics (column name traces chain)    │
    │    loss_uplifted_capped_localccy_{tag}_  │
-   │    euws_fagross  +  dialsup_{tag}        │
+   │    euws  +  dialsup                      │
    └────────────────────┬─────────────────────┘
                         │  .cache()  — single pass
              ┌──────────┴──────────┐
@@ -98,7 +98,7 @@ contract between the pipeline and the seeds + YLTs you supply.
 │   │   │   ├── columns.py      # StrEnum per logical frame
 │   │   │   └── frames.py       # pl.Schema per logical frame
 │   │   └── stages/
-│   │       ├── staging.py      # raw YLTs → NormalizedYlt + apply_rollup_scope
+│   │       ├── staging.py      # valid analyses + raw YLTs → NormalizedYlt
 │   │       ├── factors.py      # attach_* functions (one per factor)
 │   │       └── ep.py           # YLT → EP curve (aux, not in main chain)
 │   └── tests/                  # 97 tests including e2e

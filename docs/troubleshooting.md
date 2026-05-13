@@ -123,11 +123,11 @@ This is a safety gate — unexpected columns in SQL pushes can corrupt the downs
 
 **Symptom:** Hisco parquets are written to `data/output/` but every row has `ModelGrossLoss = 0`.
 
-**Cause:** A join earlier in the factor chain failed silently (returned 0 rows). Or: `rollup_scope.csv` is empty or no rows have `in_rollup=True`, so nothing passed the scope filter.
+**Cause:** A join earlier in the factor chain failed silently (returned 0 rows). Or: `valid_analyses.csv` is empty / does not include the vendor-native analysis IDs present in the YLTs and EP summaries.
 
 **Fix:**
-1. Verify `data/seeds/business/rollup_scope.csv` has rows with `in_rollup=true`.
-2. Cross-check that the `analyses.csv` `analysis_id` values include the `anlsid`s present in your YLT files.
+1. Verify `data/seeds/business/valid_analyses.csv` lists the intended `(vendor, analysis_id)` rows.
+2. Cross-check that `analyses.csv` includes the same vendor-native IDs and maps them to perils.
 3. Run with `--dump-interim` to write audit parquets: `uv run rollup --yes --dump-interim`. Inspect `data/output/debug/audit_wide.parquet` — the leftmost zero column tells you which join failed.
 
 ---

@@ -70,15 +70,28 @@ class AnalysesCol(StrEnum):
     Composite key (vendor, analysis_id). Replaces the union of
     `dim_rl_analysis` + `dim_region_perils.modelled_region_peril` rows.
 
-    `lob_id` is populated for RiskLink (one analysis maps to one (lob, peril))
-    and NULL for Verisk (analysis is peril-only; lob lives on the YLT row's
+    `analysis_id` is numeric for both vendors. `modelled_label` is the raw
+    vendor label used by Verisk YLT/EP files and display/reporting. `lob_id`
+    is populated for RiskLink (one analysis maps to one (lob, peril)) and NULL
+    for Verisk (analysis is peril-only; lob lives on the YLT row's
     `ExposureAttribute`).
     """
     VENDOR         = "vendor"           # "verisk" | "risklink"
-    ANALYSIS_ID    = "analysis_id"      # str — Verisk label, or stringified rl_analysis_id
-    MODELLED_LABEL = "modelled_label"   # display label (often same as analysis_id)
+    ANALYSIS_ID    = "analysis_id"      # str — numeric vendor analysis id
+    MODELLED_LABEL = "modelled_label"   # vendor display/modelled label
     PERIL_ID       = "peril_id"         # FK into perils.csv
     LOB_ID         = "lob_id"           # FK into lobs.csv; nullable for Verisk
+
+
+class ValidAnalysesCol(StrEnum):
+    """Explicit allow-list of vendor analysis IDs included in this rollup.
+
+    This is the operational inclusion gate. Analysis metadata still lives in
+    ``analyses.csv``; this table only decides which vendor-native analysis IDs
+    may contribute YLT/EP-summary rows.
+    """
+    VENDOR      = "vendor"       # "verisk" | "risklink"
+    ANALYSIS_ID = "analysis_id"  # str — numeric vendor analysis id
 
 
 class BlendingWeightsCol(StrEnum):
@@ -102,23 +115,6 @@ class BlendingWeightsCol(StrEnum):
     VENDOR        = "vendor"
     BASE_MODEL    = "base_model"      # "verisk" | "risklink"
     WEIGHT        = "weight"
-
-
-class RollupScopeCol(StrEnum):
-    """Which (modelled_lob, vendor, analysis_id) triples are in the official rollup.
-
-    The grain is `analysis_id` — NOT `peril_id` — because two analyses can
-    share a peril_id (e.g. `UK_WSSS` and `UK_WSSS_GCAdj` are both peril 206
-    but only ONE is official per LOB). Replaces the
-    `applies_to_{mga,prop,fa}` flag fan-out of `dim_region_perils`.
-
-    `modelled_lob` is the natural key from `lobs.csv` — readable without a
-    join, unlike the opaque integer `lob_id`.
-    """
-    MODELLED_LOB = "modelled_lob"
-    VENDOR       = "vendor"        # "verisk" | "risklink"
-    ANALYSIS_ID  = "analysis_id"   # the modelled_label / wire label per vendor
-    IN_ROLLUP    = "in_rollup"
 
 
 class RefLobsCol(StrEnum):
@@ -191,15 +187,6 @@ class RefRisklinkEventsCol(StrEnum):
     EVENT_ID = "event_id"
     YEAR     = "year"
     DAY      = "day"
-
-
-class RefFineartAdjCol(StrEnum):
-    LOB_ID              = "lob_id"
-    REGION_PERIL_ID     = "region_peril_id"
-    APPLIES_TO_FA       = "applies_to_fa"
-    ROLLUP_REGION_PERIL = "rollup_region_peril"
-    AAL_FACTOR          = "aal_factor"
-    TAIL_FACTOR         = "tail_factor"
 
 
 # ----- raw EP summaries (one row per RP × ep_type × lob × region_peril) -----
@@ -289,9 +276,6 @@ class AllFactorsCol(StrEnum):
     date to the seed = new `f_{tag}` column + new metric columns
     automatically; no code change.
 
-    `FA_GROSS_FACTOR` is the effective January-compatible factor: AAL rows
-    use `FA_GROSS_AAL_FACTOR`, while return-period buckets >= 200 use
-    `FA_GROSS_TAIL_FACTOR`.
     """
     # dims
     VENDOR                = "vendor"
@@ -325,17 +309,14 @@ class AllFactorsCol(StrEnum):
     RP                   = "rp"
     RP_BUCKET            = "rp_bucket"
     EUWS_FACTOR          = "euws_factor"
-    FA_GROSS_AAL_FACTOR  = "fa_gross_aal_factor"
-    FA_GROSS_TAIL_FACTOR = "fa_gross_tail_factor"
-    FA_GROSS_FACTOR      = "fa_gross_factor"
 
 
 class MetricCol(StrEnum):
     """Year-invariant derived loss metrics. Year-tagged metric column names
     are data-driven and built by the chain registry in `rollup/chain.py` —
     use `chain.col_after(stage, tag)` / `chain.main_loss_col(tag)` /
-    `chain.dialsup_col(tag)` / `chain.forecast_factor_col(tag)` to look them
-    up. Never hand-build the `loss_uplifted_capped_localccy_..._fagross`
+    `chain.forecast_factor_col(tag)` to look them
+    up. Never hand-build the `loss_uplifted_capped_localccy_..._euws`
     f-string — the registry IS the source of truth.
     """
     LOSS_UPLIFTED                 = "loss_uplifted"

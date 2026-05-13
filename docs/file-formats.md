@@ -20,7 +20,7 @@ as one lazy table. **CamelCase preserved** to match AIR Touchstone export.
 
 | column              | dtype   | notes |
 |---------------------|---------|-------|
-| `Analysis`          | String  | label e.g. `EU_WS`; joins to `analyses.analysis_id` (vendor='verisk'). |
+| `Analysis`          | String  | label e.g. `EU_WS`; joins to `analyses.modelled_label` after numeric `analysis_id` filtering. |
 | `ExposureAttribute` | String  | the LOB on this row, e.g. `HIC_HH_UK`; joins to `lobs.modelled_lob`. |
 | `CatalogTypeCode`   | String  | filtered to `'STC'` at staging. |
 | `EventID`           | Int64   | event identifier; used for the EUWS join. |
@@ -61,7 +61,7 @@ Filter to `PERSPCODE='RL'` (ground-up loss) before exporting.
 
 ## Seeds — `data/seeds/**/*.csv`
 
-The pipeline reads seed CSVs from fixed paths under `data/seeds/`. The 12
+The pipeline reads seed CSVs from fixed paths under `data/seeds/`. The 11
 schemas below are the contract; headers and dtypes are validated before run.
 
 ### `lobs` — `data/seeds/business/lobs.csv`
@@ -90,19 +90,20 @@ schemas below are the contract; headers and dtypes are validated before run.
 | column           | dtype  | notes |
 |------------------|--------|-------|
 | `vendor`         | String | `'verisk'` \| `'risklink'`. |
-| `analysis_id`    | String | Verisk label or stringified RL analysis id. |
-| `modelled_label` | String | display label e.g. `EU FL HD`. |
+| `analysis_id`    | String | numeric vendor analysis id, stored as text. Bundled Verisk values are placeholders. |
+| `modelled_label` | String | vendor label e.g. `EU_FL` / `EU FL HD`; Verisk raw `Analysis` joins here. |
 | `peril_id`       | Int64  | FK → `perils.peril_id`. |
 | `lob_id`         | Int64  | nullable for verisk; populated for risklink. |
 
-### `rollup_scope` — `data/seeds/business/rollup_scope.csv`
+### `valid_analyses` — `data/seeds/business/valid_analyses.csv`
 
-| column         | dtype   | notes |
-|----------------|---------|-------|
-| `modelled_lob` | String  | natural key from `lobs`. |
-| `vendor`       | String  | `'verisk'` \| `'risklink'`. |
-| `analysis_id`  | String  | the **modelled label** (e.g. `EU FL HD`), NOT the integer id. |
-| `in_rollup`    | Boolean | `true` to include in the official rollup. |
+| column        | dtype  | notes |
+|---------------|--------|-------|
+| `vendor`      | String | `'verisk'` \| `'risklink'`. |
+| `analysis_id` | String | numeric vendor analysis id, stored as text. Replace bundled Verisk placeholders with real IDs before production. |
+
+Only listed analysis IDs contribute YLT rows or EP-summary rows. Peril and LOB
+are still derived through `analyses.csv` and `lobs.csv`.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
@@ -156,19 +157,6 @@ Long format. Adding a forecast date is a data-only change.
 | `rollup_lob` | String  | joins to `lobs.rollup_lob`. |
 | `max_rank`   | Int64   | apply override when `rank ≤ max_rank`. |
 | `factor`     | Float64 | replacement factor. |
-
-### `fineart_adjustments` — `data/seeds/adjustments/fineart_adjustments.csv`
-
-Optional. Empty = no fine-art adjustment (factor 1.0 for all rows).
-
-| column                | dtype   | notes |
-|-----------------------|---------|-------|
-| `lob_id`              | Int64   | FK → `lobs.lob_id`. |
-| `region_peril_id`     | Int64   | FK → `perils.peril_id`. |
-| `applies_to_fa`       | Int64   | flag. |
-| `rollup_region_peril` | String  | display. |
-| `aal_factor`          | Float64 | applied today. |
-| `tail_factor`         | Float64 | carried but not applied (future tail-loss work). |
 
 ### `air_events` — `data/seeds/validation/air_events.csv`
 
@@ -281,7 +269,7 @@ per YLT event with columns laid out left-to-right in chain order:
 
 `[identity dims] → raw loss → uplift → uplift_capped → localccy → (per
 forecast tag: f_yyyymm → loss_..._fyyyymm) → (euws → loss_..._euws) →
-(fa_gross → loss_..._fagross) → dialsup`
+dialsup`
 
 You can read across one row and verify each multiplication. Best when you
 want to chase a specific event through the chain — the long-format file

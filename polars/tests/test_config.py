@@ -6,9 +6,14 @@ import io
 from pathlib import Path
 
 import pytest
+import polars as pl
 
 from rollup import config
 from rollup.config import EnvVar, VendorName
+from rollup.schemas.columns import AnalysesCol as AN
+from rollup.schemas.columns import RefForecastFactorsCol as FF
+from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.seeds import REQUIRED_SEEDS, SEEDS
 
 
@@ -118,12 +123,12 @@ def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
     """A required seed that is schema-valid but empty is flagged not-ok.
 
     Without this guard the pipeline would silently produce zero-row Hisco
-    parquets. We blank out rollup_scope after copying to simulate the state
+    parquets. We blank out valid_analyses after copying to simulate the state
     where the user hasn't yet populated that seed.
     """
     cfg = _cfg_with_seeds(tmp_path)
-    # Blank rollup_scope to header-only — still schema-valid, but empty
-    (cfg.seeds_dir / "business/rollup_scope.csv").write_text("modelled_lob,vendor,analysis_id,in_rollup\n")
+    # Blank valid_analyses to header-only — still schema-valid, but empty
+    (cfg.seeds_dir / "business/valid_analyses.csv").write_text("vendor,analysis_id\n")
     plan = config.build_plan(cfg)
     empty_required = {
         c.label for c in plan.seeds_section.checks
@@ -187,10 +192,81 @@ def test_format_plan_contains_every_section(tmp_path):
     for title in ("seeds",
                   f"ylt {VendorName.VERISK}",          f"ylt {VendorName.RISKLINK}",
                   f"ep_summaries {VendorName.VERISK}", f"ep_summaries {VendorName.RISKLINK}",
+                  "lob_peril_validation",
+                  "forecast_factors",
                   "output"):
         assert f"[{title}]" in text
     assert "Seeds:" in text
     assert "YLTs:" in text
+
+
+def test_forecast_coverage_section_reports_dates(tmp_path):
+    plan = config.build_plan(_cfg_with_seeds(tmp_path))
+    section = next(s for s in plan.sections if s.title == "forecast_factors")
+
+    date_check = next(c for c in section.checks if c.label == "forecast dates")
+    coverage_check = next(c for c in section.checks if c.label == "forecast coverage")
+
+    assert date_check.ok
+    assert date_check.rows > 0
+    assert coverage_check.ok
+    assert "covered" in coverage_check.note or "missing factors" in coverage_check.note
+
+
+def test_forecast_coverage_section_reports_missing_factors(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    ff_path = cfg.seeds_dir / "vor" / "forecast_factors.csv"
+    ff = pl.read_csv(ff_path)
+    first_date = ff[FF.FORECAST_DATE][0]
+    ff.filter(pl.col(FF.FORECAST_DATE) != first_date).write_csv(ff_path)
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "forecast_factors")
+    coverage_check = next(c for c in section.checks if c.label == "forecast coverage")
+
+    assert coverage_check.ok
+    assert coverage_check.rows > 0
+    assert "missing factors" in coverage_check.note
+
+
+def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    business = cfg.seeds_dir / "business"
+    pl.DataFrame({
+        LB.LOB_ID: [1, 2],
+        LB.MODELLED_LOB: ["LOB_A_SRC_1", "LOB_A_SRC_2"],
+        LB.ROLLUP_LOB: ["ROLLUP_A", "ROLLUP_A"],
+        LB.LOB_TYPE: ["prop", "prop"],
+        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household", "HIC UK Household"],
+        LB.OFFICE: ["UK", "UK"],
+        LB.CLASS: ["HH", "HH"],
+    }).write_csv(business / "lobs.csv")
+    pl.DataFrame({
+        AN.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
+        AN.ANALYSIS_ID: ["101", "102"],
+        AN.MODELLED_LABEL: ["A", "B"],
+        AN.PERIL_ID: [1, 2],
+        AN.LOB_ID: [1, 2],
+    }, schema={
+        AN.VENDOR: pl.String,
+        AN.ANALYSIS_ID: pl.String,
+        AN.MODELLED_LABEL: pl.String,
+        AN.PERIL_ID: pl.Int64,
+        AN.LOB_ID: pl.Int64,
+    }).write_csv(business / "analyses.csv")
+    pl.DataFrame({
+        VA.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
+        VA.ANALYSIS_ID: ["101", "102"],
+    }).write_csv(business / "valid_analyses.csv")
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "lob_peril_validation")
+    check = section.checks[0]
+
+    assert not check.ok
+    assert not plan.all_lob_peril_ok
+    assert "one peril per rollup_lob validation failed" in check.note
+    assert "ROLLUP_A" in check.note
 
 
 # -----------------------------------------------------------------------------
@@ -203,11 +279,11 @@ def test_confirm_with_assume_yes_skips_prompt(tmp_path, monkeypatch):
     assert config.confirm(plan, assume_yes=True, stream=io.StringIO()) is True
 
 
-def test_confirm_non_interactive_returns_true(tmp_path, monkeypatch):
+def test_confirm_non_interactive_returns_false(tmp_path, monkeypatch):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     monkeypatch.setattr("sys.stdin", io.StringIO(""))  # stdin.isatty() → False
     monkeypatch.setattr("builtins.input", lambda _: pytest.fail("input() called"))
-    assert config.confirm(plan, assume_yes=False, stream=io.StringIO()) is True
+    assert config.confirm(plan, assume_yes=False, stream=io.StringIO()) is False
 
 
 # -----------------------------------------------------------------------------

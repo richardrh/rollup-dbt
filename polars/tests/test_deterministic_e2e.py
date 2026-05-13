@@ -36,14 +36,13 @@ from rollup.schemas.columns import (
     RefAirEventsCol as AE,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
-    RefFineartAdjCol as FA,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
     RefLobsCol as LB,
     RefRisklinkEventsCol as RLE,
-    RollupScopeCol as RS,
     StgRisklinkEpCol as REP,
     StgVeriskEpCol as VEP,
+    ValidAnalysesCol as VA,
 )
 
 
@@ -83,7 +82,7 @@ def _write_minimal_seeds(root: Path) -> None:
 
     pl.DataFrame({
         AN.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-        AN.ANALYSIS_ID: ["EU_WS", "501"],
+        AN.ANALYSIS_ID: ["900003", "501"],
         AN.MODELLED_LABEL: ["EU_WS", "EU_WS"],
         AN.PERIL_ID: [1, 1],
         AN.LOB_ID: [None, 1],
@@ -96,11 +95,9 @@ def _write_minimal_seeds(root: Path) -> None:
     }).write_csv(seeds / "business" / "analyses.csv")
 
     pl.DataFrame({
-        RS.MODELLED_LOB: ["LOB_A", "LOB_A"],
-        RS.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-        RS.ANALYSIS_ID: ["EU_WS", "EU_WS"],
-        RS.IN_ROLLUP: [True, True],
-    }).write_csv(seeds / "business" / "rollup_scope.csv")
+        VA.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
+        VA.ANALYSIS_ID: ["900003", "501"],
+    }).write_csv(seeds / "business" / "valid_analyses.csv")
 
     blend_rows = [
         (1, rp, "Europe Wind", "deterministic 50/50", None, vendor, VendorName.VERISK, 0.5)
@@ -136,15 +133,6 @@ def _write_minimal_seeds(root: Path) -> None:
     pl.DataFrame({EO.ROLLUP_LOB: ["NO_MATCH"], EO.MAX_RANK: [0], EO.FACTOR: [1.0]}).write_csv(
         seeds / "adjustments" / "euws_rank_overrides.csv"
     )
-    pl.DataFrame(schema={
-        FA.LOB_ID: pl.Int64,
-        FA.REGION_PERIL_ID: pl.Int64,
-        FA.APPLIES_TO_FA: pl.Int64,
-        FA.ROLLUP_REGION_PERIL: pl.String,
-        FA.AAL_FACTOR: pl.Float64,
-        FA.TAIL_FACTOR: pl.Float64,
-    }).write_csv(seeds / "adjustments" / "fineart_adjustments.csv")
-
     pl.DataFrame({
         AE.EVENT_ID: [1, 2, 3, 4],
         AE.MODEL_ID: [41, 41, 41, 41],
@@ -167,7 +155,7 @@ def _write_fake_ep_summaries(root: Path) -> None:
         VEP.GL: [1000.0],
     }).write_csv(root / "ep_summaries" / VendorName.VERISK / "verisk.long.csv")
     pl.DataFrame({
-        REP.ID: [1],
+        REP.ID: [501],
         REP.RP: [0],
         REP.EP_TYPE: [EpType.AAL],
         REP.LOB: ["LOB_A"],
@@ -231,7 +219,7 @@ def deterministic_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_cli_pipeline_applies_hand_calculated_50_50_blend(deterministic_root: Path):
     assert cli_main(["--dry-run", "-y"]) == 0
-    assert cli_main(["-y", "--min-loss", "0", "--dump-interim"]) == 0
+    assert cli_main(["-y", "--min-loss", "0", "--dump-interim", "--no-derive-blending"]) == 0
 
     wide = pl.read_parquet(deterministic_root / "output" / "debug" / "audit_wide.parquet")
     verisk = wide.filter(pl.col(AF.VENDOR) == VendorName.VERISK)
@@ -267,6 +255,32 @@ def test_cli_derive_blending_reads_fake_ep_summary_files(deterministic_root: Pat
         & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
     )[BW.WEIGHT][0]
     vk_weight = derived.filter(
+        (pl.col(BW.PERIL_ID) == 1)
+        & (pl.col(BW.RETURN_PERIOD) == 0)
+        & (pl.col(BW.VENDOR) == VendorName.VERISK)
+    )[BW.WEIGHT][0]
+
+    assert rl_weight == pytest.approx(500.0 / 1500.0)
+    assert vk_weight == pytest.approx(1000.0 / 1500.0)
+
+
+def test_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from rollup.run_inputs import derive_blending_for_run
+
+    cfg = config.resolve()
+    blending = derive_blending_for_run(cfg)
+
+    assert blending.weights is not None
+    assert "derived" in blending.message
+    assert (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
+
+    df = blending.weights.collect()
+    rl_weight = df.filter(
+        (pl.col(BW.PERIL_ID) == 1)
+        & (pl.col(BW.RETURN_PERIOD) == 0)
+        & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
+    )[BW.WEIGHT][0]
+    vk_weight = df.filter(
         (pl.col(BW.PERIL_ID) == 1)
         & (pl.col(BW.RETURN_PERIOD) == 0)
         & (pl.col(BW.VENDOR) == VendorName.VERISK)
