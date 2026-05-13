@@ -83,6 +83,7 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
     ("ylt risklink",         "▶"),
     ("ep_summaries verisk",  "◆"),
     ("ep_summaries risklink","◆"),
+    ("lob_peril_validation", "◇"),
     ("forecast_factors",     "◇"),
     ("output",               "◯"),
     ("totally unknown",      "·"),
@@ -146,6 +147,7 @@ def test_print_plan_renders_all_six_sections(tmp_path: Path):
     for title in ("seeds",
                   "ylt verisk",          "ylt risklink",
                   "ep_summaries verisk", "ep_summaries risklink",
+                  "lob_peril_validation",
                   "forecast_factors",
                   "output"):
         assert title in out, f"section {title!r} missing from rendered output"

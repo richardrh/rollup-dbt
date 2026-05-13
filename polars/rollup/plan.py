@@ -9,8 +9,10 @@ import polars as pl
 
 from rollup.config import Config, VendorName
 from rollup.schemas import frames as F
+from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
 from rollup.validate import ColumnDiff, column_diff
 
@@ -66,6 +68,14 @@ class Plan:
             if section is None or not any(c.ok for c in section.checks):
                 return False
         return True
+
+    @property
+    def all_lob_peril_ok(self) -> bool:
+        """No rollup LOB maps to more than one peril in valid analysis metadata."""
+        section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
+        if section is None:
+            return True
+        return all(c.ok for c in section.checks)
 
 
 def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
@@ -242,6 +252,79 @@ def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
     )]
 
 
+def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
+    """Validate valid RiskLink analysis IDs keep one peril per rollup LOB.
+
+    RiskLink analysis metadata carries ``lob_id``, so this seed-only check can
+    catch operator allow-list mistakes before a run starts. Verisk LOBs live in
+    the YLT row and remain covered by the runtime staging validation.
+    """
+    lobs_path = seeds_dir / "business" / "lobs.csv"
+    analyses_path = seeds_dir / "business" / "analyses.csv"
+    valid_path = seeds_dir / "business" / "valid_analyses.csv"
+    if not lobs_path.exists() or not analyses_path.exists() or not valid_path.exists():
+        return [Check(label="one peril per rollup_lob", path=seeds_dir, ok=False, note="missing seed input")]
+
+    try:
+        lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
+        analyses = pl.read_csv(analyses_path, schema=F.ANALYSES)
+        valid_analyses = pl.read_csv(valid_path, schema=F.VALID_ANALYSES)
+    except Exception as e:
+        return [Check(label="one peril per rollup_lob", path=valid_path, ok=False, note=f"parse error: {e}")]
+
+    mapped = (
+        analyses
+        .join(
+            valid_analyses.unique(),
+            left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+            right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+            how="inner",
+        )
+        .filter(pl.col(AN.LOB_ID).is_not_null())
+        .join(lobs.select(LB.LOB_ID, LB.ROLLUP_LOB), on=AN.LOB_ID, how="left")
+        .filter(pl.col(LB.ROLLUP_LOB).is_not_null())
+        .select(LB.ROLLUP_LOB, AN.PERIL_ID)
+        .unique()
+    )
+    if mapped.height == 0:
+        return [Check(
+            label="one peril per rollup_lob",
+            path=valid_path,
+            ok=True,
+            note="no lob-specific valid analyses to validate",
+        )]
+
+    conflicts = (
+        mapped
+        .group_by(LB.ROLLUP_LOB)
+        .agg(
+            pl.col(AN.PERIL_ID).sort().alias("peril_ids"),
+            pl.len().alias("n_perils"),
+        )
+        .filter(pl.col("n_perils") > 1)
+    )
+    if conflicts.height == 0:
+        return [Check(
+            label="one peril per rollup_lob",
+            path=valid_path,
+            ok=True,
+            rows=mapped.select(LB.ROLLUP_LOB).unique().height,
+            note="valid analysis metadata maps each rollup_lob to one peril",
+        )]
+
+    examples = "; ".join(
+        f"{row[LB.ROLLUP_LOB]} -> {row['peril_ids']}"
+        for row in conflicts.head(5).iter_rows(named=True)
+    )
+    return [Check(
+        label="one peril per rollup_lob",
+        path=valid_path,
+        ok=False,
+        rows=conflicts.height,
+        note=f"one peril per rollup_lob validation failed; examples: {examples}",
+    )]
+
+
 def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
     sections: list[Section] = []
 
@@ -286,6 +369,12 @@ def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
                 missing_note="required for run-time blending derivation; use --use-blending-seed to bypass",
             ),
         ))
+
+    sections.append(Section(
+        title="lob_peril_validation",
+        header=str(config.seeds_dir / "business" / "valid_analyses.csv"),
+        checks=_check_one_peril_per_rollup_lob(config.seeds_dir),
+    ))
 
     sections.append(Section(
         title="forecast_factors",

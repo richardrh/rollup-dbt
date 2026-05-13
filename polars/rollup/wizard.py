@@ -42,9 +42,14 @@ def run_wizard(args: RunArgs) -> int:
 
     if args.dry_run:
         _render_plan(plan, stream=sys.stdout)
-        return 0
+        return 0 if plan.all_lob_peril_ok else 2
 
-    if not plan.all_seeds_ok or not plan.all_ylt_ok or (args.derive_blending and not plan.all_ep_ok):
+    if (
+        not plan.all_seeds_ok
+        or not plan.all_ylt_ok
+        or (args.derive_blending and not plan.all_ep_ok)
+        or not plan.all_lob_peril_ok
+    ):
         _render_plan(plan, stream=sys.stderr)
         print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)
         return 2

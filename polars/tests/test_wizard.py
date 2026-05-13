@@ -123,6 +123,57 @@ def test_run_wizard_renders_rich_plan_for_tty_failures(monkeypatch):
     assert "RICH PLAN" in stderr.getvalue()
 
 
+def test_run_wizard_dry_run_fails_on_lob_peril_validation(monkeypatch, capsys):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    cfg = config.resolve()
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ep_summaries verisk", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+        Section("ep_summaries risklink", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+        Section("lob_peril_validation", "valid", [
+            Check("one peril per rollup_lob", cfg.seeds_dir, False, note="one peril per rollup_lob validation failed"),
+        ]),
+    ])
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
+
+    assert run_wizard(Args(dry_run=True)) == 2
+    assert "one peril per rollup_lob validation failed" in capsys.readouterr().out
+
+
+def test_run_wizard_interactive_fails_on_lob_peril_validation(monkeypatch, capsys):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    cfg = config.resolve()
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ep_summaries verisk", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+        Section("ep_summaries risklink", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+        Section("lob_peril_validation", "valid", [
+            Check("one peril per rollup_lob", cfg.seeds_dir, False, note="one peril per rollup_lob validation failed"),
+        ]),
+    ])
+    calls: list[dict] = []
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
+    monkeypatch.setattr("rollup.pipeline.run", lambda *_args, **_kwargs: calls.append({}))
+
+    assert run_wizard(Args(yes=False)) == 2
+    assert calls == []
+    captured = capsys.readouterr()
+    assert "one peril per rollup_lob validation failed" in captured.err
+    assert "fix the failing checks" in captured.err
+
+
 def test_interactive_review_collects_operator_choices(monkeypatch):
     from rollup import config
     from rollup.plan import Plan, Section, Check

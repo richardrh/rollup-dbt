@@ -10,7 +10,10 @@ import polars as pl
 
 from rollup import config
 from rollup.config import EnvVar, VendorName
+from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import RefForecastFactorsCol as FF
+from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.seeds import REQUIRED_SEEDS, SEEDS
 
 
@@ -189,6 +192,7 @@ def test_format_plan_contains_every_section(tmp_path):
     for title in ("seeds",
                   f"ylt {VendorName.VERISK}",          f"ylt {VendorName.RISKLINK}",
                   f"ep_summaries {VendorName.VERISK}", f"ep_summaries {VendorName.RISKLINK}",
+                  "lob_peril_validation",
                   "forecast_factors",
                   "output"):
         assert f"[{title}]" in text
@@ -223,6 +227,46 @@ def test_forecast_coverage_section_reports_missing_factors(tmp_path):
     assert coverage_check.ok
     assert coverage_check.rows > 0
     assert "missing factors" in coverage_check.note
+
+
+def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    business = cfg.seeds_dir / "business"
+    pl.DataFrame({
+        LB.LOB_ID: [1, 2],
+        LB.MODELLED_LOB: ["LOB_A_SRC_1", "LOB_A_SRC_2"],
+        LB.ROLLUP_LOB: ["ROLLUP_A", "ROLLUP_A"],
+        LB.LOB_TYPE: ["prop", "prop"],
+        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household", "HIC UK Household"],
+        LB.OFFICE: ["UK", "UK"],
+        LB.CLASS: ["HH", "HH"],
+    }).write_csv(business / "lobs.csv")
+    pl.DataFrame({
+        AN.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
+        AN.ANALYSIS_ID: ["101", "102"],
+        AN.MODELLED_LABEL: ["A", "B"],
+        AN.PERIL_ID: [1, 2],
+        AN.LOB_ID: [1, 2],
+    }, schema={
+        AN.VENDOR: pl.String,
+        AN.ANALYSIS_ID: pl.String,
+        AN.MODELLED_LABEL: pl.String,
+        AN.PERIL_ID: pl.Int64,
+        AN.LOB_ID: pl.Int64,
+    }).write_csv(business / "analyses.csv")
+    pl.DataFrame({
+        VA.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
+        VA.ANALYSIS_ID: ["101", "102"],
+    }).write_csv(business / "valid_analyses.csv")
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "lob_peril_validation")
+    check = section.checks[0]
+
+    assert not check.ok
+    assert not plan.all_lob_peril_ok
+    assert "one peril per rollup_lob validation failed" in check.note
+    assert "ROLLUP_A" in check.note
 
 
 # -----------------------------------------------------------------------------
