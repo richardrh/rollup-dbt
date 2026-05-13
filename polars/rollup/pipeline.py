@@ -33,6 +33,7 @@ from rollup.stages.staging import (
     load_raw_verisk_ylt,
     normalize_risklink_ylt,
     normalize_verisk_ylt,
+    validate_one_peril_per_rollup_lob,
 )
 from rollup.validate import validate_schema
 from rollup.variants import VariantSpec, build_variants, forecast_dates_from_seed, forecast_tags
@@ -107,6 +108,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
     )
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
+    validate_one_peril_per_rollup_lob(ylt)
     count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
 
     all_factors = (
