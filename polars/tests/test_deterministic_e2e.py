@@ -41,9 +41,9 @@ from rollup.schemas.columns import (
     RefFxRatesCol as FX,
     RefLobsCol as LB,
     RefRisklinkEventsCol as RLE,
-    RollupScopeCol as RS,
     StgRisklinkEpCol as REP,
     StgVeriskEpCol as VEP,
+    ValidAnalysesCol as VA,
 )
 
 
@@ -96,11 +96,9 @@ def _write_minimal_seeds(root: Path) -> None:
     }).write_csv(seeds / "business" / "analyses.csv")
 
     pl.DataFrame({
-        RS.MODELLED_LOB: ["LOB_A", "LOB_A"],
-        RS.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-        RS.ANALYSIS_ID: ["EU_WS", "EU_WS"],
-        RS.IN_ROLLUP: [True, True],
-    }).write_csv(seeds / "business" / "rollup_scope.csv")
+        VA.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
+        VA.ANALYSIS_ID: ["EU_WS", "501"],
+    }).write_csv(seeds / "business" / "valid_analyses.csv")
 
     blend_rows = [
         (1, rp, "Europe Wind", "deterministic 50/50", None, vendor, VendorName.VERISK, 0.5)
@@ -167,7 +165,7 @@ def _write_fake_ep_summaries(root: Path) -> None:
         VEP.GL: [1000.0],
     }).write_csv(root / "ep_summaries" / VendorName.VERISK / "verisk.long.csv")
     pl.DataFrame({
-        REP.ID: [1],
+        REP.ID: [501],
         REP.RP: [0],
         REP.EP_TYPE: [EpType.AAL],
         REP.LOB: ["LOB_A"],

@@ -205,6 +205,7 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
     from rollup.config import VendorName
     from rollup.seeds import load_all
     from rollup.stages.blending import derive_blending_weights
+    from rollup.stages.staging import filter_valid_analyses
 
     cfg = config.resolve()
     output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
@@ -221,7 +222,7 @@ def _cmd_derive_blending(args: argparse.Namespace) -> int:
         return 2
 
     seeds_obj = load_all(cfg.seeds_dir)
-    analyses = seeds_obj.analyses.collect()
+    analyses = filter_valid_analyses(seeds_obj.analyses, seeds_obj.valid_analyses).collect()
     perils   = seeds_obj.perils.collect()
 
     df = derive_blending_weights(rl_csvs, vk_csvs, analyses, perils)

@@ -26,6 +26,7 @@ from .columns import (
     RollupScopeCol,
     StgRisklinkEpCol,
     StgVeriskEpCol,
+    ValidAnalysesCol,
 )
 
 
@@ -77,6 +78,11 @@ ANALYSES: pl.Schema = pl.Schema({
     AnalysesCol.MODELLED_LABEL: pl.String,
     AnalysesCol.PERIL_ID:       pl.Int64,
     AnalysesCol.LOB_ID:         pl.Int64,   # nullable for Verisk
+})
+
+VALID_ANALYSES: pl.Schema = pl.Schema({
+    ValidAnalysesCol.VENDOR:      pl.String,
+    ValidAnalysesCol.ANALYSIS_ID: pl.String,
 })
 
 BLENDING_WEIGHTS: pl.Schema = pl.Schema({

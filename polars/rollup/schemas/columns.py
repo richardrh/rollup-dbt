@@ -81,6 +81,17 @@ class AnalysesCol(StrEnum):
     LOB_ID         = "lob_id"           # FK into lobs.csv; nullable for Verisk
 
 
+class ValidAnalysesCol(StrEnum):
+    """Explicit allow-list of vendor analysis IDs included in this rollup.
+
+    This is the operational inclusion gate. Analysis metadata still lives in
+    ``analyses.csv``; this table only decides which vendor-native analysis IDs
+    may contribute YLT/EP-summary rows.
+    """
+    VENDOR      = "vendor"       # "verisk" | "risklink"
+    ANALYSIS_ID = "analysis_id"  # str — Verisk label, or stringified rl_analysis_id
+
+
 class BlendingWeightsCol(StrEnum):
     """Per (peril_id, return_period, vendor) blend weight — long format.
 

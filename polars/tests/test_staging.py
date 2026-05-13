@@ -14,7 +14,8 @@ from rollup.schemas.columns import PerilsCol as P
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
-from rollup.stages.staging import normalize_risklink_ylt, normalize_verisk_ylt
+from rollup.schemas.columns import ValidAnalysesCol as VA
+from rollup.stages.staging import filter_valid_analyses, normalize_risklink_ylt, normalize_verisk_ylt
 
 
 # --------------------------------------------------------------------------- #
@@ -87,6 +88,13 @@ def _lobs() -> pl.LazyFrame:
     }, schema=F.REF_LOBS).lazy()
 
 
+def _valid_analyses(*rows: tuple[VendorName, str]) -> pl.LazyFrame:
+    return pl.DataFrame({
+        VA.VENDOR: [r[0] for r in rows],
+        VA.ANALYSIS_ID: [r[1] for r in rows],
+    }, schema=F.VALID_ANALYSES).lazy()
+
+
 # --------------------------------------------------------------------------- #
 # Tests                                                                       #
 # --------------------------------------------------------------------------- #
@@ -154,6 +162,26 @@ def test_normalized_outputs_match_schema():
     vk = normalize_verisk_ylt  (_raw_verisk_ylt(),   _analyses(), _perils(), _lobs()).collect()
     assert rl.schema == F.NORMALIZED_YLT
     assert vk.schema == F.NORMALIZED_YLT
+
+
+def test_filter_valid_analyses_keeps_only_vendor_native_ids():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.RISKLINK, "501")),
+    ).collect()
+
+    assert filtered.select(AN.VENDOR, AN.ANALYSIS_ID).rows() == [(VendorName.RISKLINK, "501")]
+
+
+def test_valid_analysis_filtered_metadata_drops_ylt_rows():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "DOES_NOT_MATCH")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 0
 
 
 # --------------------------------------------------------------------------- #

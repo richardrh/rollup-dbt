@@ -43,6 +43,7 @@ _RL_PROP_TMP       = "rl_proportion"
 _VK_PROP_TMP        = "vk_proportion"
 _PERIL_NAME_TMP    = "peril_name"
 _VENDOR_TMP        = "vendor"
+_ANALYSIS_ID_TMP   = "analysis_id"
 _EP_TYPE_TMP       = "ep_type"
 _LOB_TMP           = "lob"
 _PERIL_LABEL_TMP   = "peril_label"
@@ -61,10 +62,11 @@ def _canonical_ep_rows(long_csvs: list[Path], vendor: VendorName) -> pl.DataFram
     Source files keep their native column names at the boundary:
     RiskLink uses ``region_peril`` while Verisk uses ``analysis`` for the peril
     label. Everything downstream of this adapter works with the same columns:
-    vendor, rp, ep_type, lob, peril_label, gl.
+    vendor, analysis_id, rp, ep_type, lob, peril_label, gl.
     """
     schema = {
         _VENDOR_TMP:      pl.String,
+        _ANALYSIS_ID_TMP: pl.String,
         _RP_TMP:          pl.Int64,
         _EP_TYPE_TMP:     pl.String,
         _LOB_TMP:         pl.String,
@@ -79,13 +81,16 @@ def _canonical_ep_rows(long_csvs: list[Path], vendor: VendorName) -> pl.DataFram
 
     if vendor == VendorName.RISKLINK:
         peril_label_col = RL.REGION_PERIL
+        analysis_id_expr = pl.col(RL.ID).cast(pl.String)
     elif vendor == VendorName.VERISK:
         peril_label_col = VK.ANALYSIS if VK.ANALYSIS in ep.columns else "analysis"
+        analysis_id_expr = pl.col(peril_label_col).cast(pl.String)
     else:
         raise ValueError(f"unknown vendor {vendor!r}")
 
     return ep.select(
         pl.lit(vendor.value).alias(_VENDOR_TMP),
+        analysis_id_expr.alias(_ANALYSIS_ID_TMP),
         pl.col(RL.RP).cast(pl.Int64).alias(_RP_TMP),
         pl.col(RL.EP_TYPE).cast(pl.String).alias(_EP_TYPE_TMP),
         pl.col(RL.LOB).cast(pl.String).alias(_LOB_TMP),
@@ -113,24 +118,24 @@ def _aal_by_rp_peril(
         & pl.col(_RP_TMP).is_in(target_return_periods)
     )
 
-    label_to_pid = (
+    analysis_to_pid = (
         analyses
         .filter(pl.col(AN.VENDOR) == vendor.value)
         .select(
-            pl.col(AN.MODELLED_LABEL).alias(_PERIL_LABEL_TMP),
+            pl.col(AN.ANALYSIS_ID).alias(_ANALYSIS_ID_TMP),
             pl.col(AN.PERIL_ID),
         )
         .unique()
     )
 
-    joined = ep_filter.join(label_to_pid, on=_PERIL_LABEL_TMP, how="left")
+    joined = ep_filter.join(analysis_to_pid, on=_ANALYSIS_ID_TMP, how="left")
 
     unmapped = joined.filter(pl.col(AN.PERIL_ID).is_null())
     if unmapped.height > 0:
-        bad_labels = unmapped[_PERIL_LABEL_TMP].unique().sort().to_list()
+        bad_ids = unmapped[_ANALYSIS_ID_TMP].unique().sort().to_list()
         log.warning(
-            f"{vendor.value}: {len(bad_labels)} EP-summary labels not in "
-            f"analyses.csv: {bad_labels}"
+            f"{vendor.value}: {len(bad_ids)} EP-summary analysis IDs not in "
+            f"valid analyses/analyses.csv: {bad_ids}"
         )
 
     return (
@@ -226,7 +231,7 @@ def derive_blending_weights(
     if out.height == 0:
         raise ValueError(
             "derive_blending_weights produced 0 rows — every EP-summary "
-            "label was unmapped. Check `analyses.modelled_label` covers "
-            "the labels seen in the long CSVs."
+            "analysis ID was unmapped. Check `valid_analyses.csv` and "
+            "`analyses.analysis_id` cover the IDs seen in the long CSVs."
         )
     return out

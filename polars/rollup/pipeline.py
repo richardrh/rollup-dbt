@@ -28,7 +28,7 @@ from rollup.stages.factors import (
     validate_fx_coverage,
 )
 from rollup.stages.staging import (
-    apply_rollup_scope,
+    filter_valid_analyses,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,
     normalize_risklink_ylt,
@@ -95,14 +95,15 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
         VendorName.RISKLINK: risklink.n_simulations,
     }
     log.info(f"forecast tags from seed: {tags}")
+    analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
 
     rl_norm = normalize_risklink_ylt(
         load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob),
-        seeds.analyses, seeds.perils, seeds.lobs,
+        analyses, seeds.perils, seeds.lobs,
     )
     vk_norm = normalize_verisk_ylt(
         load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob),
-        seeds.analyses, seeds.perils, seeds.lobs,
+        analyses, seeds.perils, seeds.lobs,
     )
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
@@ -110,7 +111,6 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
 
     all_factors = (
         ylt
-        .pipe(apply_rollup_scope, seeds.rollup_scope)
         .pipe(attach_currency, seeds.fx_rates)
         .pipe(attach_forecast_factors, seeds.forecast_factors, tags)
         .pipe(attach_rank, n_sim=n_sim)

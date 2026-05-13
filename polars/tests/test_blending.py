@@ -103,7 +103,9 @@ def test_canonical_ep_rows_aligns_vendor_specific_labels(tmp_path: Path):
     rl = _canonical_ep_rows([rl_csv], VendorName.RISKLINK)
     vk = _canonical_ep_rows([vk_csv], VendorName.VERISK)
 
-    assert rl.columns == vk.columns == ["vendor", "rp", "ep_type", "lob", "peril_label", "gl"]
+    assert rl.columns == vk.columns == ["vendor", "analysis_id", "rp", "ep_type", "lob", "peril_label", "gl"]
+    assert rl["analysis_id"].to_list() == ["1"]
+    assert vk["analysis_id"].to_list() == ["EU_FL"]
     assert rl["peril_label"].to_list() == ["EU FL HD"]
     assert vk["peril_label"].to_list() == ["EU_FL"]
     assert rl["vendor"].to_list() == [VendorName.RISKLINK.value]
@@ -244,13 +246,13 @@ def test_derive_blending_handles_missing_vendor(tmp_path: Path):
 # test_derive_blending_warns_on_unmapped_label
 # ---------------------------------------------------------------------------
 
-def test_derive_blending_warns_on_unmapped_label(tmp_path: Path, caplog):
-    """A long CSV row with an unknown region_peril must be skipped with a warning."""
+def test_derive_blending_warns_on_unmapped_analysis_id(tmp_path: Path, caplog):
+    """A long CSV row with an unknown analysis ID must be skipped with a warning."""
     rows = [
         # Valid row — maps to peril 1
         {RL.ID: 1, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ",        RL.GL: 100.0},
-        # Unknown label — should be skipped with a warning
-        {RL.ID: 2, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "made-up label", RL.GL: 999.0},
+        # Unknown analysis ID — should be skipped with a warning
+        {RL.ID: 999, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 999.0},
     ]
     rl_csv = _write_rl_long_csv(tmp_path, rows)
     vk_csv = tmp_path / "verisk_ep_summary.long.csv"  # absent
@@ -267,8 +269,21 @@ def test_derive_blending_warns_on_unmapped_label(tmp_path: Path, caplog):
     # Only peril 1 should appear.
     assert set(df[BW.PERIL_ID].to_list()) == {1}
 
-    # A warning must have been logged mentioning the bad label.
+    # A warning must have been logged mentioning the bad ID.
     warning_text = " ".join(r.message for r in caplog.records if r.levelno >= logging.WARNING)
-    assert "made-up label" in warning_text, (
-        f"expected warning mentioning 'made-up label'; got: {warning_text!r}"
+    assert "999" in warning_text, (
+        f"expected warning mentioning analysis ID 999; got: {warning_text!r}"
     )
+
+
+def test_derive_blending_filters_ep_rows_via_filtered_analyses(tmp_path: Path):
+    """Only analysis IDs present in the filtered analyses table contribute to weights."""
+    rl_csv = _write_rl_long_csv(tmp_path, [
+        {RL.ID: 1, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU EQ", RL.GL: 100.0},
+        {RL.ID: 2, RL.RP: 0, RL.EP_TYPE: "AAL", RL.LOB: "MGA", RL.REGION_PERIL: "EU FL", RL.GL: 900.0},
+    ])
+    analyses = _make_analyses().filter(pl.col(AN.ANALYSIS_ID) == "1")
+
+    out = derive_blending_weights([rl_csv], [], analyses, _make_perils())
+
+    assert set(out[BW.PERIL_ID].to_list()) == {1}

@@ -21,6 +21,7 @@ from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import RollupScopeCol as RS
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.validate import validate_schema
 
 
@@ -102,6 +103,29 @@ def _analyses_for(vendor: VendorName, analyses: pl.LazyFrame) -> pl.LazyFrame:
             pl.col(AN.PERIL_ID).alias(Y.REGION_PERIL_ID),
             pl.col(AN.LOB_ID),                  # nullable for verisk; populated for risklink
         )
+    )
+
+
+def filter_valid_analyses(
+    analyses: pl.LazyFrame,
+    valid_analyses: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Keep only analysis metadata explicitly listed in valid_analyses.
+
+    The allow-list is keyed by vendor-native ``analysis_id``. For RiskLink this
+    is the raw numeric analysis id cast to string; for Verisk it is the raw
+    ``Analysis`` label. Downstream staging and EP blending then use only these
+    valid analysis rows.
+    """
+    valid = valid_analyses.select(
+        pl.col(VA.VENDOR),
+        pl.col(VA.ANALYSIS_ID),
+    ).unique()
+    return analyses.join(
+        valid,
+        left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+        right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+        how="inner",
     )
 
 

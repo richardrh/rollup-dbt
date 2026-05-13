@@ -15,6 +15,7 @@ from rollup import config
 from rollup.config import VendorName
 from rollup.seeds import load_all
 from rollup.stages.blending import derive_blending_weights
+from rollup.stages.staging import filter_valid_analyses
 
 
 @dataclass(frozen=True)
@@ -48,10 +49,11 @@ def derive_blending_for_run(cfg: config.Config) -> BlendingInput:
         )
 
     seeds_obj = load_all(cfg.seeds_dir)
+    analyses = filter_valid_analyses(seeds_obj.analyses, seeds_obj.valid_analyses).collect()
     df = derive_blending_weights(
         csvs_by_vendor[VendorName.RISKLINK],
         csvs_by_vendor[VendorName.VERISK],
-        seeds_obj.analyses.collect(),
+        analyses,
         seeds_obj.perils.collect(),
     )
     debug_dir = cfg.output_dir / "debug"

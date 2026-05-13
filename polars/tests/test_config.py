@@ -120,12 +120,12 @@ def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
     """A required seed that is schema-valid but empty is flagged not-ok.
 
     Without this guard the pipeline would silently produce zero-row Hisco
-    parquets. We blank out rollup_scope after copying to simulate the state
+    parquets. We blank out valid_analyses after copying to simulate the state
     where the user hasn't yet populated that seed.
     """
     cfg = _cfg_with_seeds(tmp_path)
-    # Blank rollup_scope to header-only — still schema-valid, but empty
-    (cfg.seeds_dir / "business/rollup_scope.csv").write_text("modelled_lob,vendor,analysis_id,in_rollup\n")
+    # Blank valid_analyses to header-only — still schema-valid, but empty
+    (cfg.seeds_dir / "business/valid_analyses.csv").write_text("vendor,analysis_id\n")
     plan = config.build_plan(cfg)
     empty_required = {
         c.label for c in plan.seeds_section.checks
