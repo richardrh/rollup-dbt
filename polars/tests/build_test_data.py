@@ -66,16 +66,16 @@ PERILS = [
 
 # (vendor, analysis_id, modelled_label, peril_id, lob_id)
 ANALYSES = [
-    (VendorName.VERISK,   "EU_WS",  "EU_WS",  206, None),
-    (VendorName.VERISK,   "EU_FL",  "EU_FL",  216, None),
+    (VendorName.VERISK,   "900003", "EU_WS",  206, None),
+    (VendorName.VERISK,   "900002", "EU_FL",  216, None),
     (VendorName.RISKLINK, "501",    "EU_WS",  206, 1),
     (VendorName.RISKLINK, "502",    "EU_FL",  216, 2),
 ]
 
 # Vendor-native analysis IDs that may contribute YLT/EP rows.
 VALID_ANALYSES = [
-    (VendorName.VERISK,   "EU_WS"),
-    (VendorName.VERISK,   "EU_FL"),
+    (VendorName.VERISK,   "900003"),
+    (VendorName.VERISK,   "900002"),
     (VendorName.RISKLINK, "501"),
     (VendorName.RISKLINK, "502"),
 ]

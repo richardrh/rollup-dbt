@@ -26,8 +26,8 @@ joins later.
 
 ```
 perils.csv            — one row per rollup peril (peril_id, name, region, peril_family)
-analyses.csv          — (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-valid_analyses.csv    — vendor-native analysis IDs allowed into this run
+analyses.csv          — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
+valid_analyses.csv    — numeric vendor analysis IDs allowed into this run
 blending_weights.csv  — long-format (peril_id, return_period, vendor, base_model, weight)
 lobs.csv              — LOB dimension + office + class
 forecast_factors.csv  — (class, office, forecast_date) → factor
@@ -43,7 +43,7 @@ risklink_events.csv   — RiskLink event catalogue (event_id, year, day)
 | `lobs.csv`                 | 62                  | dbt          |
 | `perils.csv`               | **stub (0)**        | duckdb export — required |
 | `analyses.csv`             | **stub (0)**        | duckdb export — required |
-| `valid_analyses.csv`       | 13                  | operator-owned allow-list — required |
+| `valid_analyses.csv`       | 12                  | operator-owned allow-list — required |
 | `blending_weights.csv`     | **stub (0)**        | duckdb export — required |
 | `forecast_factors.csv`     | 78                  | dbt — bump per forecast cycle |
 | `fx_rates.csv`             | 6 (handcrafted)     | replace with real FX snapshot before prod |
@@ -65,8 +65,8 @@ each have one job:
 | split table              | role                                                                  |
 | ------------------------ | --------------------------------------------------------------------- |
 | `perils.csv`             | the peril dimension itself — `peril_id` is the canonical primary key shared across vendors. `peril_family` ("FL", "WS", …) is available for seed derivation and QA. |
-| `analyses.csv`           | `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL (lob lives on the YLT row). |
-| `valid_analyses.csv`     | explicit allow-list of vendor-native analysis IDs included in the rollup. Replaces per-LOB `applies_to_{mga,prop,fa}` filtering. |
+| `analyses.csv`           | numeric `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL and raw AIR labels live in `modelled_label`. |
+| `valid_analyses.csv`     | explicit allow-list of numeric vendor analysis IDs included in the rollup. Bundled Verisk IDs are placeholders. Replaces per-LOB `applies_to_{mga,prop,fa}` filtering. |
 | `blending_weights.csv`   | long-format blend weights. Adding a vendor is a new row, not a new column. |
 
 What this beats:

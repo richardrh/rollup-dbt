@@ -139,10 +139,10 @@ WHERE ep_type='AAL' AND official_rollup=1;
 ```
 
 polars: `stages/staging.py::filter_valid_analyses`. The metadata catalogue
-is filtered to `valid_analyses.csv` on vendor-native `(vendor, analysis_id)`
-before YLT normalisation, so only listed Verisk `Analysis` labels and
-RiskLink `anlsid` values can join into the pipeline. EP-summary blending uses
-the same filtered analysis metadata.
+is filtered to `valid_analyses.csv` on numeric vendor-native
+`(vendor, analysis_id)` before YLT normalisation. Verisk YLT/EP rows then join
+through `analyses.modelled_label`, while RiskLink rows join through `anlsid`.
+EP-summary blending uses the same filtered analysis metadata.
 
 The pre-flight `build_plan` reporter blocks the run when
 `valid_analyses.csv` is empty (otherwise the inner join would silently drop
@@ -452,9 +452,10 @@ analyses can share a `peril_id`.
 ### 9.2 polars schema
 
 `valid_analyses.csv` has grain `(vendor, analysis_id)` where `analysis_id`
-is vendor-native: Verisk `Analysis` label or stringified RiskLink `anlsid` /
-EP-summary `ID`. It is only an allow-list; `analyses.csv` still maps IDs to
-perils, and `lobs.csv` maps LOBs.
+is the vendor-native numeric ID stored as text for both vendors. Verisk raw
+`Analysis` labels live in `analyses.modelled_label`; after numeric filtering,
+staging joins Verisk YLT/EP rows on that label. It is only an allow-list;
+`analyses.csv` still maps IDs to perils, and `lobs.csv` maps LOBs.
 
 ### 9.3 Population SQL
 

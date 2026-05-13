@@ -62,7 +62,9 @@ def _canonical_ep_rows(long_csvs: list[Path], vendor: VendorName) -> pl.DataFram
     Source files keep their native column names at the boundary:
     RiskLink uses ``region_peril`` while Verisk uses ``analysis`` for the peril
     label. Everything downstream of this adapter works with the same columns:
-    vendor, analysis_id, rp, ep_type, lob, peril_label, gl.
+        vendor, analysis_id, rp, ep_type, lob, peril_label, gl. For Verisk,
+        ``analysis_id`` here is the raw EP ``analysis`` label; it is resolved
+        through ``analyses.modelled_label`` after the numeric allow-list filter.
     """
     schema = {
         _VENDOR_TMP:      pl.String,
@@ -118,11 +120,12 @@ def _aal_by_rp_peril(
         & pl.col(_RP_TMP).is_in(target_return_periods)
     )
 
+    analysis_key = AN.ANALYSIS_ID if vendor == VendorName.RISKLINK else AN.MODELLED_LABEL
     analysis_to_pid = (
         analyses
         .filter(pl.col(AN.VENDOR) == vendor.value)
         .select(
-            pl.col(AN.ANALYSIS_ID).alias(_ANALYSIS_ID_TMP),
+            pl.col(analysis_key).alias(_ANALYSIS_ID_TMP),
             pl.col(AN.PERIL_ID),
         )
         .unique()
@@ -134,7 +137,7 @@ def _aal_by_rp_peril(
     if unmapped.height > 0:
         bad_ids = unmapped[_ANALYSIS_ID_TMP].unique().sort().to_list()
         log.warning(
-            f"{vendor.value}: {len(bad_ids)} EP-summary analysis IDs not in "
+            f"{vendor.value}: {len(bad_ids)} EP-summary analysis labels/IDs not in "
             f"valid analyses/analyses.csv: {bad_ids}"
         )
 

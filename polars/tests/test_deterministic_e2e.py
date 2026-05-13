@@ -82,7 +82,7 @@ def _write_minimal_seeds(root: Path) -> None:
 
     pl.DataFrame({
         AN.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-        AN.ANALYSIS_ID: ["EU_WS", "501"],
+        AN.ANALYSIS_ID: ["900003", "501"],
         AN.MODELLED_LABEL: ["EU_WS", "EU_WS"],
         AN.PERIL_ID: [1, 1],
         AN.LOB_ID: [None, 1],
@@ -96,7 +96,7 @@ def _write_minimal_seeds(root: Path) -> None:
 
     pl.DataFrame({
         VA.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-        VA.ANALYSIS_ID: ["EU_WS", "501"],
+        VA.ANALYSIS_ID: ["900003", "501"],
     }).write_csv(seeds / "business" / "valid_analyses.csv")
 
     blend_rows = [

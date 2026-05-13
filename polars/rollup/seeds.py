@@ -11,8 +11,8 @@ fails with a concrete diff instead of a cryptic downstream join error.
 The peril dimension is split into four single-purpose tables:
 
     perils.csv           — one row per rollup peril (peril_id, name, region, peril_family)
-    analyses.csv         — (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-    valid_analyses.csv   — which vendor-native analysis IDs are official inputs
+    analyses.csv         — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
+    valid_analyses.csv   — which numeric vendor analysis IDs are official inputs
     blending_weights.csv — long-format (peril_id, sub_peril, vendor, weight)
 
 These replace january's god-table `dim_region_perils` (which mixed peril

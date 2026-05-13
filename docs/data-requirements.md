@@ -76,7 +76,7 @@ Wire schema (matches AIR Touchstone export — CamelCase preserved):
 
 | column              | type     | notes |
 | ------------------- | -------- | ----- |
-| `Analysis`          | String   | label e.g. `EU_WS`; joined to `analyses.analysis_id` (vendor='verisk' rows). |
+| `Analysis`          | String   | label e.g. `EU_WS`; joined to `analyses.modelled_label` after numeric `analysis_id` filtering. |
 | `ExposureAttribute` | String   | the LOB on this row, e.g. `HIC_HH_UK`; joined to `lobs.modelled_lob`. |
 | `CatalogTypeCode`   | String   | filtered to `'STC'` (matches duckdb `int_vw_vk_ylt`). |
 | `EventID`           | Int64    | event identifier, used for the EUWS join. |
@@ -243,8 +243,8 @@ Maps each vendor's analysis to peril. For Verisk, `lob_id` is NULL (lob comes fr
 | column           | type    | notes |
 | ---------------- | ------- | ----- |
 | `vendor`         | String  | `'verisk'` or `'risklink'`. |
-| `analysis_id`    | String  | wire label (Verisk text or stringified RiskLink int). |
-| `modelled_label` | String  | display label used for operator review and EP labels. |
+| `analysis_id`    | String  | numeric vendor analysis id, stored as text. Bundled Verisk IDs are placeholders. |
+| `modelled_label` | String  | vendor label used in Verisk `Analysis`, operator review, and EP labels. |
 | `peril_id`       | Int64   | FK into `perils.csv`. |
 | `lob_id`         | Int64   | FK into `lobs.csv`; NULL for Verisk, populated for RiskLink. |
 
@@ -258,7 +258,7 @@ Empty file → zero rows output.
 | column        | type   | notes |
 | ------------- | ------ | ----- |
 | `vendor`      | String | `'verisk'` or `'risklink'`. |
-| `analysis_id` | String | Verisk `Analysis` label or stringified RiskLink `anlsid` / EP `ID`. |
+| `analysis_id` | String | numeric vendor analysis id, stored as text for both vendors. Replace bundled Verisk placeholders with real IDs before production. |
 
 #### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
 

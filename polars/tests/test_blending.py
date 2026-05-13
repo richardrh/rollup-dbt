@@ -24,11 +24,11 @@ from rollup.schemas.columns import (
 # ---------------------------------------------------------------------------
 
 def _make_analyses() -> pl.DataFrame:
-    """Minimal analyses table: two risklink perils (1, 2) and one verisk peril (1)."""
+    """Minimal analyses table with numeric IDs and vendor labels."""
     return pl.DataFrame(
         {
             AN.VENDOR:         ["risklink", "risklink", "verisk"],
-            AN.ANALYSIS_ID:    ["1",        "2",        "EU_EQ"],
+            AN.ANALYSIS_ID:    ["1",        "2",        "900001"],
             AN.MODELLED_LABEL: ["EU EQ",    "EU FL",    "EU_EQ"],
             AN.PERIL_ID:       [1,          2,          1],
             AN.LOB_ID:         [10,         20,         None],

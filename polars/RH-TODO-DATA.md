@@ -155,7 +155,7 @@ handles the Excel number formatting (e.g. `"1,806,464"`) for you.
 | column | type | example |
 |--------|------|---------|
 | `vendor` | string | `verisk` or `risklink` |
-| `analysis_id` | string | `EU_WS` / `501` |
+| `analysis_id` | string | numeric ID, e.g. `900003` / `501` |
 | `modelled_label` | string | `EU_WS` |
 | `peril_id` | integer | `206` |
 | `lob_id` | integer or empty | `3` (RiskLink only — leave blank for Verisk rows) |
@@ -169,10 +169,10 @@ Which vendor-native analysis IDs are in the official rollup.
 | column | type | example |
 |--------|------|---------|
 | `vendor` | string | `verisk` or `risklink` |
-| `analysis_id` | string | `EU_WS` or `501` |
+| `analysis_id` | string | numeric ID, e.g. `900003` or `501` |
 
-`analysis_id` here must match the vendor-native ID: Verisk `Analysis`, or
-stringified RiskLink `anlsid` / EP-summary `ID`.
+`analysis_id` here must match the vendor-native numeric ID for both vendors.
+Verisk raw `Analysis` labels belong in `analyses.modelled_label`.
 
 ---
 
@@ -258,7 +258,7 @@ You need at minimum `GBP→GBP = 1.0` and `EUR→GBP = <rate>`.
 
 - `peril_family` must be `"FL"` not `"Flood"` / `"fl"` / `"FL "`.
 - `vendor` must be lowercase: `verisk` / `risklink`.
-- `valid_analyses.analysis_id` must match vendor-native IDs, not display labels.
+- `valid_analyses.analysis_id` must match numeric vendor-native IDs, not display labels.
 - `analyses.lob_id`: blank for Verisk rows, populated for RiskLink rows.
 - `forecast_factors.office` must match `lobs.office` exactly (case + spacing).
 

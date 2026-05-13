@@ -54,8 +54,8 @@ def _rl_ep_csv_bytes(peril_labels: list[str], aals: list[float]) -> bytes:
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["id", "rp", "ep_type", "lob", "region_peril", "gl"])
-    for label, aal in zip(peril_labels, aals):
-        writer.writerow([1, 0, "AAL", "all", label, aal])
+    for idx, (label, aal) in enumerate(zip(peril_labels, aals), start=1):
+        writer.writerow([idx, 0, "AAL", "all", label, aal])
     return buf.getvalue().encode()
 
 
@@ -76,10 +76,14 @@ def _analyses_df(
     peril_labels: list[str],
     peril_ids: list[int],
 ) -> pl.DataFrame:
-    """Minimal analyses DataFrame: one row per (vendor, analysis_id/label, peril_id)."""
+    """Minimal analyses DataFrame: numeric IDs plus vendor modelled labels."""
+    if vendor == VendorName.RISKLINK:
+        analysis_ids = [str(i) for i in range(1, len(peril_labels) + 1)]
+    else:
+        analysis_ids = [str(900000 + i) for i in range(1, len(peril_labels) + 1)]
     return pl.DataFrame({
         AN.VENDOR:         [vendor.value] * len(peril_labels),
-        AN.ANALYSIS_ID:    peril_labels,
+        AN.ANALYSIS_ID:    analysis_ids,
         AN.MODELLED_LABEL: peril_labels,
         AN.PERIL_ID:       peril_ids,
         AN.LOB_ID:         [None] * len(peril_labels),

@@ -70,13 +70,15 @@ class AnalysesCol(StrEnum):
     Composite key (vendor, analysis_id). Replaces the union of
     `dim_rl_analysis` + `dim_region_perils.modelled_region_peril` rows.
 
-    `lob_id` is populated for RiskLink (one analysis maps to one (lob, peril))
-    and NULL for Verisk (analysis is peril-only; lob lives on the YLT row's
+    `analysis_id` is numeric for both vendors. `modelled_label` is the raw
+    vendor label used by Verisk YLT/EP files and display/reporting. `lob_id`
+    is populated for RiskLink (one analysis maps to one (lob, peril)) and NULL
+    for Verisk (analysis is peril-only; lob lives on the YLT row's
     `ExposureAttribute`).
     """
     VENDOR         = "vendor"           # "verisk" | "risklink"
-    ANALYSIS_ID    = "analysis_id"      # str — Verisk label, or stringified rl_analysis_id
-    MODELLED_LABEL = "modelled_label"   # display label (often same as analysis_id)
+    ANALYSIS_ID    = "analysis_id"      # str — numeric vendor analysis id
+    MODELLED_LABEL = "modelled_label"   # vendor display/modelled label
     PERIL_ID       = "peril_id"         # FK into perils.csv
     LOB_ID         = "lob_id"           # FK into lobs.csv; nullable for Verisk
 
@@ -89,7 +91,7 @@ class ValidAnalysesCol(StrEnum):
     may contribute YLT/EP-summary rows.
     """
     VENDOR      = "vendor"       # "verisk" | "risklink"
-    ANALYSIS_ID = "analysis_id"  # str — Verisk label, or stringified rl_analysis_id
+    ANALYSIS_ID = "analysis_id"  # str — numeric vendor analysis id
 
 
 class BlendingWeightsCol(StrEnum):

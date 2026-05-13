@@ -20,7 +20,7 @@ as one lazy table. **CamelCase preserved** to match AIR Touchstone export.
 
 | column              | dtype   | notes |
 |---------------------|---------|-------|
-| `Analysis`          | String  | label e.g. `EU_WS`; joins to `analyses.analysis_id` (vendor='verisk'). |
+| `Analysis`          | String  | label e.g. `EU_WS`; joins to `analyses.modelled_label` after numeric `analysis_id` filtering. |
 | `ExposureAttribute` | String  | the LOB on this row, e.g. `HIC_HH_UK`; joins to `lobs.modelled_lob`. |
 | `CatalogTypeCode`   | String  | filtered to `'STC'` at staging. |
 | `EventID`           | Int64   | event identifier; used for the EUWS join. |
@@ -61,7 +61,7 @@ Filter to `PERSPCODE='RL'` (ground-up loss) before exporting.
 
 ## Seeds — `data/seeds/**/*.csv`
 
-The pipeline reads seed CSVs from fixed paths under `data/seeds/`. The 12
+The pipeline reads seed CSVs from fixed paths under `data/seeds/`. The 11
 schemas below are the contract; headers and dtypes are validated before run.
 
 ### `lobs` — `data/seeds/business/lobs.csv`
@@ -90,8 +90,8 @@ schemas below are the contract; headers and dtypes are validated before run.
 | column           | dtype  | notes |
 |------------------|--------|-------|
 | `vendor`         | String | `'verisk'` \| `'risklink'`. |
-| `analysis_id`    | String | Verisk label or stringified RL analysis id. |
-| `modelled_label` | String | display label e.g. `EU FL HD`. |
+| `analysis_id`    | String | numeric vendor analysis id, stored as text. Bundled Verisk values are placeholders. |
+| `modelled_label` | String | vendor label e.g. `EU_FL` / `EU FL HD`; Verisk raw `Analysis` joins here. |
 | `peril_id`       | Int64  | FK → `perils.peril_id`. |
 | `lob_id`         | Int64  | nullable for verisk; populated for risklink. |
 
@@ -100,7 +100,7 @@ schemas below are the contract; headers and dtypes are validated before run.
 | column        | dtype  | notes |
 |---------------|--------|-------|
 | `vendor`      | String | `'verisk'` \| `'risklink'`. |
-| `analysis_id` | String | vendor-native ID: Verisk `Analysis` label or stringified RiskLink `ID`/`anlsid`. |
+| `analysis_id` | String | numeric vendor analysis id, stored as text. Replace bundled Verisk placeholders with real IDs before production. |
 
 Only listed analysis IDs contribute YLT rows or EP-summary rows. Peril and LOB
 are still derived through `analyses.csv` and `lobs.csv`.

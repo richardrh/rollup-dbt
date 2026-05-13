@@ -66,7 +66,7 @@ def _analyses() -> pl.LazyFrame:
     """One verisk + one risklink analysis pointing at peril 206 (EU_WS)."""
     return pl.DataFrame({
         AN.VENDOR:         [VendorName.VERISK,   VendorName.RISKLINK],
-        AN.ANALYSIS_ID:    ["EU_WS",             "501"],
+        AN.ANALYSIS_ID:    ["900003",            "501"],
         AN.MODELLED_LABEL: ["EU_WS",             "EU_WS"],
         AN.PERIL_ID:       [206,                 206],
         AN.LOB_ID:         [None,                42],   # NULL for verisk; populated for risklink
@@ -170,13 +170,39 @@ def test_normalized_outputs_match_schema():
     assert vk.schema == F.NORMALIZED_YLT
 
 
-def test_filter_valid_analyses_keeps_only_vendor_native_ids():
+def test_filter_valid_analyses_keeps_only_numeric_vendor_ids():
     filtered = filter_valid_analyses(
         _analyses(),
-        _valid_analyses((VendorName.RISKLINK, "501")),
+        _valid_analyses((VendorName.VERISK, "900003"), (VendorName.RISKLINK, "501")),
     ).collect()
 
-    assert filtered.select(AN.VENDOR, AN.ANALYSIS_ID).rows() == [(VendorName.RISKLINK, "501")]
+    assert filtered.select(AN.VENDOR, AN.ANALYSIS_ID).sort(AN.VENDOR).rows() == [
+        (VendorName.RISKLINK.value, "501"),
+        (VendorName.VERISK.value, "900003"),
+    ]
+
+
+def test_numeric_verisk_valid_analysis_still_joins_raw_label():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "900003")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 1
+    assert out[Y.MODELLED_REGION_PERIL].to_list() == ["EU_WS"]
+
+
+def test_verisk_text_label_is_not_a_valid_analysis_id():
+    filtered = filter_valid_analyses(
+        _analyses(),
+        _valid_analyses((VendorName.VERISK, "EU_WS")),
+    )
+
+    out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
+
+    assert out.height == 0
 
 
 def test_valid_analysis_filtered_metadata_drops_ylt_rows():

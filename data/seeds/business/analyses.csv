@@ -1,11 +1,11 @@
 vendor,analysis_id,modelled_label,peril_id,lob_id
-verisk,EU_EQ,EU_EQ,1,
-verisk,EU_FL,EU_FL,2,
-verisk,EU_WS,EU_WS,3,
-verisk,EU_WS_GCAdj,EU_WS_GCAdj,3,
-verisk,UK_FL,UK_FL,4,
-verisk,UK_WSSS,UK_WSSS,5,
-verisk,UK_WSSS_GCAdj,UK_WSSS_GCAdj,5,
+verisk,900001,EU_EQ,1,
+verisk,900002,EU_FL,2,
+verisk,900003,EU_WS,3,
+verisk,900004,EU_WS_GCAdj,3,
+verisk,900005,UK_FL,4,
+verisk,900006,UK_WSSS,5,
+verisk,900007,UK_WSSS_GCAdj,5,
 risklink,1,EU FL HD,2,38
 risklink,2,EUxESGB EQ Adj,1,38
 risklink,3,GB FL HD,4,29

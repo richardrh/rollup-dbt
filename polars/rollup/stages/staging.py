@@ -91,13 +91,19 @@ def _peril_dim(perils: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _analyses_for(vendor: VendorName, analyses: pl.LazyFrame) -> pl.LazyFrame:
-    """Vendor-filtered analyses with the modelled label aliased so the join
-    against the YLT's analysis-string column lands cleanly."""
+    """Vendor-filtered analyses with both numeric ID and modelled label.
+
+    ``analysis_id`` is the operator-facing numeric allow-list key. Verisk raw
+    YLTs still carry the modelled analysis label, so Verisk staging joins on
+    ``modelled_label`` after ``filter_valid_analyses`` has applied the numeric
+    ID gate.
+    """
     return (
         analyses
         .filter(pl.col(AN.VENDOR) == vendor)
         .select(
             pl.col(AN.ANALYSIS_ID),
+            pl.col(AN.MODELLED_LABEL),
             pl.col(AN.MODELLED_LABEL).alias(Y.MODELLED_REGION_PERIL),
             pl.col(AN.PERIL_ID).alias(Y.REGION_PERIL_ID),
             pl.col(AN.LOB_ID),                  # nullable for verisk; populated for risklink
@@ -111,10 +117,9 @@ def filter_valid_analyses(
 ) -> pl.LazyFrame:
     """Keep only analysis metadata explicitly listed in valid_analyses.
 
-    The allow-list is keyed by vendor-native ``analysis_id``. For RiskLink this
-    is the raw numeric analysis id cast to string; for Verisk it is the raw
-    ``Analysis`` label. Downstream staging and EP blending then use only these
-    valid analysis rows.
+    The allow-list is keyed by vendor-native numeric ``analysis_id`` for both
+    RiskLink and Verisk. Downstream staging and EP blending then use only these
+    valid analysis rows; Verisk raw rows still join by ``modelled_label``.
     """
     valid = valid_analyses.select(
         pl.col(VA.VENDOR),
@@ -221,7 +226,7 @@ def normalize_verisk_ylt(
 
     For Verisk, `analyses.lob_id` is NULL — the analysis is peril-only and
     the LOB lives on the YLT row's `ExposureAttribute`. Join chain:
-        raw.Analysis           → analyses.analysis_id (vendor='verisk') → peril_id
+        raw.Analysis           → analyses.modelled_label (vendor='verisk') → peril_id
         analyses.peril_id      → perils.peril_id → name + region + peril_family
         raw.ExposureAttribute  → lobs.modelled_lob → lob_id + ...
     Filters `trim(upper(CatalogTypeCode)) LIKE '%STC%'` (matches january).
@@ -234,7 +239,7 @@ def normalize_verisk_ylt(
     out = (
         raw
         .filter(pl.col(VK.CATALOG_TYPE_CODE).str.strip_chars().str.to_uppercase().str.contains("STC"))
-        .join(vk_analyses,        left_on=VK.ANALYSIS,           right_on=AN.ANALYSIS_ID, how="inner")
+        .join(vk_analyses,        left_on=VK.ANALYSIS,           right_on=AN.MODELLED_LABEL, how="inner")
         .join(_peril_dim(perils),                                on=Y.REGION_PERIL_ID,    how="inner")
         .join(_lob_dim(lobs),     left_on=VK.EXPOSURE_ATTRIBUTE, right_on=LB.MODELLED_LOB, how="inner")
         .select(

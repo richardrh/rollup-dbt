@@ -20,14 +20,17 @@ data/seeds/business/valid_analyses.csv
 
 ```csv
 vendor,analysis_id
-verisk,EU_FL
+verisk,900002
 risklink,29
 ```
 
-`analysis_id` is vendor-native:
+`analysis_id` is the vendor-native numeric analysis ID, stored as text:
 
-- Verisk: raw `Analysis` label.
+- Verisk: numeric analysis ID; raw `Analysis` labels live in `analyses.modelled_label`.
 - RiskLink: stringified raw `anlsid` / EP-summary `ID`.
+
+The bundled Verisk IDs are placeholders and must be replaced with real Verisk
+analysis IDs before production.
 
 Only listed IDs can contribute YLT rows or EP-summary rows. Peril and LOB are
 not repeated in this table; they come from `analyses.csv` and `lobs.csv`.

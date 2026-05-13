@@ -45,7 +45,7 @@ Copy parquets with filename pattern `air_ylt_*.parquet`.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `Analysis` | String | e.g. `EU_WS`, joined to `analyses.csv` |
+| `Analysis` | String | e.g. `EU_WS`, joined to `analyses.modelled_label` after numeric ID filtering |
 | `ExposureAttribute` | String | LOB string (e.g. `HIC_HH_UK`) |
 | `CatalogTypeCode` | String | filter: only `STC` rows kept |
 | `EventID` | Int64 | event identifier |
