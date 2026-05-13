@@ -126,9 +126,10 @@ The whole DAG (factors + metrics + fan-outs + audits) goes through one
 optimisation pass. Shared work — and all factor computations are shared
 across variants — is computed once.
 
-## Interim audit parquets (`--dump-interim`)
+## Audit parquets (`--no-audit` to skip)
 
-Two artefacts written under `<output_dir>/debug/` when the flag is set:
+Two artefacts are written under `<output_dir>/debug/` by default. Use
+`--no-audit` to skip them for faster, smaller runs:
 
 - **`audit_wide.parquet`** — one row per YLT event, columns ordered so the
   factor chain reads left-to-right. Every factor sits next to the metric
@@ -193,7 +194,7 @@ effects. Composed by `build_all_factors` in `pipeline.py`. Full list:
   YLT carries `office` + `lob_class` (from lobs) and
   `peril_name` + `region` + `peril_family` (from perils) so factor stages
   downstream have semantic dims without re-joining. `valid_analyses.csv`
-  is the gate: only listed vendor-native analysis IDs contribute rows.
+  is the gate: only listed numeric vendor analysis IDs contribute rows.
 - `rollup/stages/factors.py` — `attach_currency`,
   `attach_forecast_factors`, `attach_rank`, `attach_euws`,
   `attach_uplift`.

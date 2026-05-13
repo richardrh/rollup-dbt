@@ -18,18 +18,46 @@ New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/ep_
 
 All seed CSVs already exist in `data/seeds/` as templates.
 
-## Step 1 — Populate the 4 blocker seeds
+## Step 1 — Populate the run-scope seeds
 
-Copy these CSVs into `data/seeds/vor/`:
+Copy these CSVs into their fixed seed locations:
 
-1. **`perils.csv`** — peril dimension (peril_id, name, region, peril_family)
-2. **`analyses.csv`** — maps (vendor, analysis_id) to peril_id
-3. **`valid_analyses.csv`** — vendor-native analysis IDs allowed into the run
-4. **`blending_weights.csv`** — per-peril RiskLink / Verisk proportions
+1. **`data/seeds/business/perils.csv`** — peril dimension (`peril_id`, `name`, `region`, `peril_family`)
+2. **`data/seeds/business/analyses.csv`** — numeric vendor analysis ID → peril, plus RiskLink LOB
+3. **`data/seeds/business/valid_analyses.csv`** — numeric vendor analysis IDs allowed into the run
+4. **`data/seeds/vor/blending_weights.csv`** — reviewed fallback RiskLink / Verisk proportions
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
 Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `risklink_events.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
+
+### Step 1a — Check numeric analysis IDs before running
+
+`analysis_id` is numeric for **both** vendors, stored as text in CSVs.
+RiskLink uses the raw `anlsid` / EP-summary `ID`. Verisk raw YLT and EP files
+still contain labels such as `EU_WS`; those labels must be stored in
+`analyses.modelled_label` and are joined only after the numeric allow-list has
+filtered `analyses.csv`.
+
+Example `analyses.csv` rows:
+
+```csv
+vendor,analysis_id,modelled_label,peril_id,lob_id
+verisk,900003,EU_WS,3,
+risklink,13,EUxGB WS,3,16
+```
+
+Example `valid_analyses.csv` rows:
+
+```csv
+vendor,analysis_id
+verisk,900003
+risklink,13
+```
+
+The bundled Verisk IDs (`900001`–`900007`) are placeholders. Replace them with
+real Verisk numeric analysis IDs before production, keeping the Verisk labels
+in `modelled_label`.
 
 **Verify:**
 ```bash
@@ -119,6 +147,8 @@ uv run rollup ep-summary-to-csv
 
 Produce long CSVs with columns: `rp`, `ep_type`, `analysis`, `lob`, `gl`.
 Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
+The `analysis` values are Verisk labels (for example `EU_WS`) and must match
+`analyses.modelled_label`, not the numeric placeholder/production ID.
 
 **Step 4c — Optional: regenerate blending_weights.csv seed:**
 
