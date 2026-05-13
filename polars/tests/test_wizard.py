@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rollup.wizard import run_wizard
+from rollup.wizard import _interactive_review, run_wizard
 
 
 @dataclass
@@ -87,3 +87,26 @@ def test_run_wizard_requires_ep_summaries_for_default_derivation(monkeypatch, ca
     assert run_wizard(Args(derive_blending=True)) == 2
     assert calls == []
     assert "fix the failing checks" in capsys.readouterr().err
+
+
+def test_interactive_review_collects_operator_choices(monkeypatch):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    cfg = config.resolve()
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("forecast_factors", "forecast", [Check("forecast dates", cfg.seeds_dir, True, note="2026-01-01")]),
+    ])
+    args = Args(derive_blending=True, dump_interim=True)
+    answers = iter(["", "", "n", "0", "n", "y"])
+
+    monkeypatch.setattr(config, "print_plan", lambda _plan: None)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    reviewed = _interactive_review(cfg, plan, args)
+
+    assert reviewed is not None
+    assert reviewed.min_loss == 0
+    assert args.derive_blending is False
+    assert args.dump_interim is False

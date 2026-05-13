@@ -54,9 +54,11 @@ def run_wizard(args: RunArgs) -> int:
             print("aborted by user")
             return 1
     elif sys.stdin.isatty():
-        if not _interactive_review(cfg, plan, args):
+        reviewed_cfg = _interactive_review(cfg, plan, args)
+        if reviewed_cfg is None:
             print("aborted by user")
             return 1
+        cfg = reviewed_cfg
     elif not config.confirm(plan, assume_yes=False, stream=sys.stdout):
         print("aborted by user")
         return 1
@@ -81,27 +83,71 @@ def run_wizard(args: RunArgs) -> int:
     return 0
 
 
-def _interactive_review(cfg: config.Config, plan: config.Plan, args: RunArgs) -> bool:
+def _interactive_review(cfg: config.Config, plan: config.Plan, args: RunArgs) -> config.Config | None:
     """Operator wizard for TTY runs."""
     config.print_plan(plan)
-    print("Run settings")
+    print("Input paths")
     print(f"  seeds       : {cfg.seeds_dir}")
     print(f"  output      : {cfg.output_dir}")
     for vendor in cfg.vendors:
         print(f"  {vendor.name} YLT : {vendor.ylt_dir} ({vendor.ylt_glob})")
         print(f"  {vendor.name} EP  : {vendor.ep_summary_dir} (*.long.csv)")
-    print(f"  min loss    : {cfg.min_loss:g}")
-    print(f"  audit       : {'on' if args.dump_interim else 'off'}")
-    print(f"  blending    : {'derive from EP summaries' if args.derive_blending else 'reviewed blending_weights.csv'}")
-    print(f"  SQL push    : {'available after run' if cfg.mssql_conn_str else 'not configured'}")
-    return _ask_yes("Proceed with rollup run? [y/N]: ")
+    if not _ask_yes("Use these input paths? [Y/n]: ", default=True):
+        return None
+
+    forecast = _forecast_summary(plan)
+    print("Forecast factors")
+    print(f"  {forecast}")
+    if not _ask_yes("Continue with these forecast factors? [Y/n]: ", default=True):
+        return None
+
+    print("Blending")
+    if args.derive_blending:
+        if not _ask_yes("Derive blending from EP-summary long CSVs? [Y/n]: ", default=True):
+            args.derive_blending = False
+            print("  using reviewed blending_weights.csv for this run")
+    else:
+        print("  using reviewed blending_weights.csv for this run")
+
+    cfg = replace(cfg, min_loss=_prompt_min_loss(cfg.min_loss))
+    if not _ask_yes(f"Write debug audit outputs? [{'Y/n' if args.dump_interim else 'y/N'}]: ", default=args.dump_interim):
+        args.dump_interim = False
+    else:
+        args.dump_interim = True
+
+    print(f"SQL push after run: {'available' if cfg.mssql_conn_str else 'not configured'}")
+    return cfg if _ask_yes("Proceed with full rollup run? [y/N]: ") else None
 
 
-def _ask_yes(prompt: str) -> bool:
+def _ask_yes(prompt: str, *, default: bool = False) -> bool:
     try:
-        return input(prompt).strip().lower() in _YES
+        reply = input(prompt).strip().lower()
     except EOFError:
         return False
+    if not reply:
+        return default
+    return reply in _YES
+
+
+def _prompt_min_loss(current: float) -> float:
+    try:
+        reply = input(f"Minimum loss threshold [{current:g}]: ").strip()
+    except EOFError:
+        return current
+    if not reply:
+        return current
+    try:
+        return float(reply)
+    except ValueError:
+        print(f"invalid min loss {reply!r}; keeping {current:g}")
+        return current
+
+
+def _forecast_summary(plan: config.Plan) -> str:
+    section = next((s for s in plan.sections if s.title == "forecast_factors"), None)
+    if section is None:
+        return "forecast_factors section missing"
+    return "; ".join(f"{c.label}: {c.note}" for c in section.checks if c.note) or "no forecast details"
 
 
 def _maybe_push_sql() -> None:
