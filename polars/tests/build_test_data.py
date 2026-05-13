@@ -206,8 +206,6 @@ def _write_verisk_ylt() -> list[tuple[int, int, int]]:
     # Analysis × ExposureAttribute × ModelCode × year × local event
     cases = [
         ("EU_WS", "HIC_HH_UK",    41),
-        ("EU_WS", "HSA_FA_EU_FR", 41),
-        ("EU_FL", "HIC_HH_UK",    92),
         ("EU_FL", "HSA_FA_EU_FR", 92),
     ]
     eid = 1000
@@ -281,18 +279,17 @@ def _write_air_events(verisk_triples: list[tuple[int, int, int]]) -> None:
 def _write_ep_summaries() -> None:
     """Tiny EP summaries — one row per (vendor, lob, peril, ep_type, rp)."""
     verisk_rows = []
-    for analysis in ("EU_WS", "EU_FL"):
-        for lob in ("HIC_HH_UK", "HSA_FA_EU_FR"):
-            for (rp, ep_type, gl) in [(0,    EpType.AAL, 100.0),
-                                      (200,  EpType.OEP, 500.0),
-                                      (1000, EpType.OEP, 1500.0)]:
-                verisk_rows.append({
-                    VEP.RP:       rp,
-                    VEP.EP_TYPE:  ep_type,
-                    VEP.ANALYSIS: analysis,
-                    VEP.LOB:      lob,
-                    VEP.GL:       gl,
-                })
+    for analysis, lob in (("EU_WS", "HIC_HH_UK"), ("EU_FL", "HSA_FA_EU_FR")):
+        for (rp, ep_type, gl) in [(0,    EpType.AAL, 100.0),
+                                  (200,  EpType.OEP, 500.0),
+                                  (1000, EpType.OEP, 1500.0)]:
+            verisk_rows.append({
+                VEP.RP:       rp,
+                VEP.EP_TYPE:  ep_type,
+                VEP.ANALYSIS: analysis,
+                VEP.LOB:      lob,
+                VEP.GL:       gl,
+            })
     pl.DataFrame(verisk_rows).write_csv(EP_V / "verisk_ep.csv")
 
     rl_rows = []
