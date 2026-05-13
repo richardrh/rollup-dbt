@@ -77,6 +77,14 @@ class Plan:
             return True
         return all(c.ok for c in section.checks)
 
+    @property
+    def has_lob_peril_conflict(self) -> bool:
+        """The one-peril-per-rollup-lob check found an actual conflict."""
+        section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
+        if section is None:
+            return False
+        return any((not c.ok) and "validation failed" in c.note for c in section.checks)
+
 
 def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     """Verify a seed: file exists, column headers match, count rows.

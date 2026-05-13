@@ -42,7 +42,7 @@ def run_wizard(args: RunArgs) -> int:
 
     if args.dry_run:
         _render_plan(plan, stream=sys.stdout)
-        return 0 if plan.all_lob_peril_ok else 2
+        return 2 if plan.has_lob_peril_conflict else 0
 
     if (
         not plan.all_seeds_ok
