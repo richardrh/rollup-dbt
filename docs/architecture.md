@@ -165,7 +165,7 @@ rollup.staging     loaded risklink YLT: …/risklink_ylt_*.parquet
 rollup.staging     loaded verisk YLT: …/air_ylt_*.parquet
 rollup.pipeline    staging: normalised YLTs concatenated
 rollup.pipeline    event-id check (verisk): 80/80 rows matched air_events
-rollup.staging     rollup_scope: filtered YLT to in_rollup=True triples
+rollup.staging     valid analyses filtered YLT inputs
 rollup.factors     currency: required_currency derived from CDS class; rate_to_gbp attached
 rollup.factors     forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
 rollup.factors     euws: factor attached, rank overrides applied from seed
@@ -193,12 +193,12 @@ Each stage is a pure function: `(LazyFrame, seed(s)) → LazyFrame`. No side
 effects. Composed by `build_all_factors` in `pipeline.py`. Full list:
 
 - `rollup/stages/staging.py` — `load_raw_{verisk,risklink}_ylt`,
-  `normalize_{verisk,risklink}_ylt`, `apply_rollup_scope`. The normalised
+  `filter_valid_analyses`, `normalize_{verisk,risklink}_ylt`,
+  `validate_one_peril_per_rollup_lob`. The normalised
   YLT carries `office` + `lob_class` (from lobs) and
   `peril_name` + `region` + `peril_family` (from perils) so factor stages
-  downstream have semantic dims without re-joining. `apply_rollup_scope`
-  is a gate (not a factor) — it inner-joins `rollup_scope` to drop rows
-  not officially in the rollup.
+  downstream have semantic dims without re-joining. `valid_analyses.csv`
+  is the gate: only listed vendor-native analysis IDs contribute rows.
 - `rollup/stages/factors.py` — `attach_currency`,
   `attach_forecast_factors`, `attach_rank`, `attach_euws`,
   `attach_fagross`, `attach_uplift`.
@@ -212,7 +212,7 @@ and `pl.lit(VendorName.X)` work as drop-in replacements for raw strings:
 
 | enum            | values                          | where it appears             |
 | --------------- | ------------------------------- | ---------------------------- |
-| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `blending_weights.vendor`, `rollup_scope.vendor` |
+| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `valid_analyses.vendor`, `blending_weights.vendor` |
 | `CurrencyCode`  | `GBP` / `EUR`                   | `attach_currency` derivation; values land in `required_currency` |
 | `EpType`        | `AAL` / `AEP` / `OEP`           | `EP_TYPE` column emitted by `ep_curve_from_ylt` |
 | `EnvVar`        | `ROLLUP_*` env var names        | every `os.getenv` / `monkeypatch.setenv` call |

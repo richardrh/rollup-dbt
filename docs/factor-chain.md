@@ -42,21 +42,21 @@ left-to-right and verify the arithmetic step by step.
 `pipeline.build_all_factors` is the composition. It reads top-down:
 
 ```python
-# 1. staging — raw YLTs → NormalizedYlt union (carries office, lob_class,
-#    peril_name, region, peril_family)
+# 1. staging — filter analyses to valid_analyses, then raw YLTs →
+#    NormalizedYlt union (carries office, lob_class, peril_name, region,
+#    peril_family)
+analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
 rl_norm = normalize_risklink_ylt(load_raw_risklink_ylt(...),
-                                  seeds.analyses, seeds.perils, seeds.lobs)
+                                  analyses, seeds.perils, seeds.lobs)
 vk_norm = normalize_verisk_ylt  (load_raw_verisk_ylt(...),
-                                  seeds.analyses, seeds.perils, seeds.lobs)
+                                  analyses, seeds.perils, seeds.lobs)
 ylt = pl.concat([rl_norm, vk_norm])
 
-# 2. observation — orphan count for downstream alerting
+# 2. validation / observation
+validate_one_peril_per_rollup_lob(ylt)
 count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
 
-# 3. scope filter — drop rows not officially in the rollup
-ylt = apply_rollup_scope(ylt, seeds.rollup_scope)
-
-# 4. factors — one function per factor, each ~15 LOC in stages/factors.py
+# 3. factors — one function per factor, each ~15 LOC in stages/factors.py
 ylt = attach_currency        (ylt, seeds.fx_rates)
 ylt = attach_forecast_factors(ylt, seeds.forecast_factors, tags)
 ylt = attach_rank            (ylt, n_sim=n_sim)                         # rank + rp_bucket

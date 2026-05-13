@@ -244,22 +244,21 @@ Maps each vendor's analysis to peril. For Verisk, `lob_id` is NULL (lob comes fr
 | ---------------- | ------- | ----- |
 | `vendor`         | String  | `'verisk'` or `'risklink'`. |
 | `analysis_id`    | String  | wire label (Verisk text or stringified RiskLink int). |
-| `modelled_label` | String  | display label; referenced by `rollup_scope.analysis_id`. |
+| `modelled_label` | String  | display label used for operator review and EP labels. |
 | `peril_id`       | Int64   | FK into `perils.csv`. |
 | `lob_id`         | Int64   | FK into `lobs.csv`; NULL for Verisk, populated for RiskLink. |
 
 One row per vendor × analysis pair. Concatenate Verisk and RiskLink CSVs (header from one, body of both).
 
-#### 3. `rollup_scope.csv` — which (lob, vendor, analysis) triples are in scope (REQUIRED)
+#### 3. `valid_analyses.csv` — vendor-native analysis allow-list (REQUIRED)
 
-Pipeline filters YLT to rows marked `in_rollup=True`. Empty file or all-False → zero rows output.
+Pipeline filters YLT and EP summaries to listed `(vendor, analysis_id)` rows.
+Empty file → zero rows output.
 
-| column        | type    | notes |
-| ------------- | ------- | ----- |
-| `lob_id`      | Int64   | FK into `lobs.csv`. |
-| `vendor`      | String  | `'verisk'` or `'risklink'`. |
-| `analysis_id` | String  | modelled label from `analyses.csv`. |
-| `in_rollup`   | Boolean | True to keep, False to drop. |
+| column        | type   | notes |
+| ------------- | ------ | ----- |
+| `vendor`      | String | `'verisk'` or `'risklink'`. |
+| `analysis_id` | String | Verisk `Analysis` label or stringified RiskLink `anlsid` / EP `ID`. |
 
 #### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
 

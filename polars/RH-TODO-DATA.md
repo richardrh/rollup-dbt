@@ -162,18 +162,17 @@ handles the Excel number formatting (e.g. `"1,806,464"`) for you.
 
 ---
 
-### `data/seeds/rollup_scope.csv`
+### `data/seeds/valid_analyses.csv`
 
-Which (lob, vendor, analysis) combinations are in the official rollup.
+Which vendor-native analysis IDs are in the official rollup.
 
 | column | type | example |
 |--------|------|---------|
-| `lob_id` | integer | `3` |
 | `vendor` | string | `verisk` or `risklink` |
-| `analysis_id` | string | `EU_WS` |
-| `in_rollup` | boolean | `true` |
+| `analysis_id` | string | `EU_WS` or `501` |
 
-`analysis_id` here must match `modelled_label` from `analyses.csv` — not the raw RiskLink integer.
+`analysis_id` here must match the vendor-native ID: Verisk `Analysis`, or
+stringified RiskLink `anlsid` / EP-summary `ID`.
 
 ---
 
@@ -259,7 +258,7 @@ You need at minimum `GBP→GBP = 1.0` and `EUR→GBP = <rate>`.
 
 - `peril_family` must be `"FL"` not `"Flood"` / `"fl"` / `"FL "`.
 - `vendor` must be lowercase: `verisk` / `risklink`.
-- `rollup_scope.analysis_id` must match `analyses.modelled_label` (e.g. `EU_WS`), not the raw RiskLink integer.
+- `valid_analyses.analysis_id` must match vendor-native IDs, not display labels.
 - `analyses.lob_id`: blank for Verisk rows, populated for RiskLink rows.
 - `forecast_factors.office` must match `lobs.office` exactly (case + spacing).
 

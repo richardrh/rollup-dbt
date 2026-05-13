@@ -15,7 +15,7 @@ into snake_case (`year_id`, `event_id`, `rate_to_gbp`). See
 `rollup/schemas/columns.py`.
 
 The peril dimension was **split out of the `dim_region_perils` god-table**
-into four single-purpose seeds — `perils`, `analyses`, `rollup_scope`,
+into focused seeds — `perils`, `analyses`, `valid_analyses`,
 `blending_weights`. References below to "perils.csv etc." mean the new
 split, not the legacy duckdb table. See
 [`data-requirements.md`](data-requirements.md) for the export SQL.
@@ -127,7 +127,7 @@ applies rank-threshold overrides from `euws_rank_overrides.csv`.
 Sim counts (10 000 / 100 000) live on `Vendor.n_simulations` in
 `rollup/config.py`.
 
-### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) → `apply_rollup_scope` — **done**
+### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) → `filter_valid_analyses` — **done**
 
 duckdb keeps only (lob_id, region_peril_id) pairs that have an AAL row
 in `vw_ep` AND `official_rollup = 1`:
@@ -138,14 +138,14 @@ FROM vw_ep
 WHERE ep_type='AAL' AND official_rollup=1;
 ```
 
-polars: `stages/staging.py::apply_rollup_scope`. Inner-joins the
-post-staging YLT against `rollup_scope.csv` on
-`(lob_id, vendor, modelled_region_peril)`, keeping only rows where
-`in_rollup=True`. Replaces january's `applies_to_{mga,prop,fa}` flag
-fan-out and the scope-by-EP-presence filter.
+polars: `stages/staging.py::filter_valid_analyses`. The metadata catalogue
+is filtered to `valid_analyses.csv` on vendor-native `(vendor, analysis_id)`
+before YLT normalisation, so only listed Verisk `Analysis` labels and
+RiskLink `anlsid` values can join into the pipeline. EP-summary blending uses
+the same filtered analysis metadata.
 
 The pre-flight `build_plan` reporter blocks the run when
-`rollup_scope.csv` is empty (otherwise the inner join would silently drop
+`valid_analyses.csv` is empty (otherwise the inner join would silently drop
 every YLT row) — see `seeds.REQUIRED_SEEDS`.
 
 ---
@@ -433,7 +433,7 @@ math doesn't depend on `air_events`).
 
 ---
 
-## 9. Official rollup selection — `rollup_scope.csv` — **done**
+## 9. Official rollup selection — `valid_analyses.csv` — **done**
 
 ### 9.1 How january computed `official_rollup`
 
@@ -456,30 +456,29 @@ analyses can share a `peril_id`.
 
 ### 9.2 polars schema
 
-`rollup_scope.csv` (in the new four-way split) has grain
-`(lob_id, vendor, analysis_id, in_rollup)` where `analysis_id` is the
-**modelled label** (matches `analyses.modelled_label` and the YLT's
-`MODELLED_REGION_PERIL` after staging) — explicitly chosen to
-distinguish analyses that share a peril_id.
+`valid_analyses.csv` has grain `(vendor, analysis_id)` where `analysis_id`
+is vendor-native: Verisk `Analysis` label or stringified RiskLink `anlsid` /
+EP-summary `ID`. It is only an allow-list; `analyses.csv` still maps IDs to
+perils, and `lobs.csv` maps LOBs.
 
 ### 9.3 Population SQL
 
-CROSS JOIN of `reference.lobs × dim_region_perils` with the CASE flag
-collapsed to `in_rollup` boolean — see the `rollup_scope.csv` section in
+Export or maintain the vendor-native analysis IDs selected for the run — see
+the `valid_analyses.csv` section in
 [`data-requirements.md`](data-requirements.md) for the
-copy-pasteable query.
+copy-pasteable contract.
 
 ### 9.4 Where it's applied
 
-`stages/staging.py::apply_rollup_scope`, called in
-`rollup/pipeline.py::build_all_factors` immediately after staging:
+`stages/staging.py::filter_valid_analyses`, called in
+`rollup/pipeline.py::build_all_factors` before normalising YLTs:
 ```python
-ylt = ylt.pipe(apply_rollup_scope, seeds.rollup_scope)
+analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
 ```
 
-Inner-join keyed on `(lob_id, vendor, modelled_region_peril)` keeping
-`in_rollup=True` rows. The pre-flight `build_plan` blocks runs when
-`rollup_scope` is empty (would silently drop every row).
+The filtered analysis metadata becomes the only join target for YLTs and EP
+summaries. The pre-flight `build_plan` blocks runs when `valid_analyses` is
+empty (would silently drop every row).
 
 ---
 
@@ -495,7 +494,7 @@ SQL to re-export from january's duckdb when refreshing.
 | `lobs.csv`                 | dbt (`hisco_org__lobs.csv`)                                    |
 | `perils.csv`               | duckdb export from `loader.main.dim_region_perils` (DISTINCT)  |
 | `analyses.csv`             | duckdb export — verisk + risklink rows                         |
-| `rollup_scope.csv`         | duckdb export — CROSS JOIN lobs × dim_region_perils with CASE  |
+| `valid_analyses.csv`       | operator-owned vendor-native analysis allow-list               |
 | `blending_weights.csv`     | duckdb export — long-pivot of `blending_factors`               |
 | `forecast_factors.csv`     | dbt (`hisco_org__forecast_factors.csv`)                        |
 | `fx_rates.csv`             | handcrafted (replace before prod)                              |
@@ -515,7 +514,7 @@ nine `REQUIRED_SEEDS` have zero rows.
 | # | polars location                                           | calcs replaced                                                                        | status |
 | - | --------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------ |
 | 1 | `stages/staging.py::normalize_{risklink,verisk}_ylt`      | `int_vw_rl_ylt`, `int_vw_vk_ylt`                                                      | done   |
-| 2 | `stages/staging.py::apply_rollup_scope`                   | `int_vw_analysis_is_valid` + `vw_ep`'s `official_rollup` CASE                         | done   |
+| 2 | `stages/staging.py::filter_valid_analyses`                | `int_vw_analysis_is_valid` + `vw_ep`'s `official_rollup` CASE                         | done   |
 | 3 | `stages/factors.py::attach_rank`                          | ranking part of `int_vw_funnel_ylt_combined_ranked*`                                  | done   |
 | 4 | `stages/factors.py::attach_currency`                      | `int_vw_blending_factors_with_forecast_ccy` (CCY derivation + FX join)                | done   |
 | 5 | `stages/factors.py::attach_forecast_factors`              | `int_vw_blending_factors_with_forecast`                                               | done   |

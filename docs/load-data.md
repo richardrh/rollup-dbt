@@ -24,7 +24,7 @@ Copy these CSVs into `data/seeds/vor/`:
 
 1. **`perils.csv`** — peril dimension (peril_id, name, region, peril_family)
 2. **`analyses.csv`** — maps (vendor, analysis_id) to peril_id
-3. **`rollup_scope.csv`** — which (lob, vendor, analysis) pairs are in scope
+3. **`valid_analyses.csv`** — vendor-native analysis IDs allowed into the run
 4. **`blending_weights.csv`** — per-peril RiskLink / Verisk proportions
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).

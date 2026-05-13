@@ -95,14 +95,15 @@ schemas below are the contract; headers and dtypes are validated before run.
 | `peril_id`       | Int64  | FK → `perils.peril_id`. |
 | `lob_id`         | Int64  | nullable for verisk; populated for risklink. |
 
-### `rollup_scope` — `data/seeds/business/rollup_scope.csv`
+### `valid_analyses` — `data/seeds/business/valid_analyses.csv`
 
-| column         | dtype   | notes |
-|----------------|---------|-------|
-| `modelled_lob` | String  | natural key from `lobs`. |
-| `vendor`       | String  | `'verisk'` \| `'risklink'`. |
-| `analysis_id`  | String  | the **modelled label** (e.g. `EU FL HD`), NOT the integer id. |
-| `in_rollup`    | Boolean | `true` to include in the official rollup. |
+| column        | dtype  | notes |
+|---------------|--------|-------|
+| `vendor`      | String | `'verisk'` \| `'risklink'`. |
+| `analysis_id` | String | vendor-native ID: Verisk `Analysis` label or stringified RiskLink `ID`/`anlsid`. |
+
+Only listed analysis IDs contribute YLT rows or EP-summary rows. Peril and LOB
+are still derived through `analyses.csv` and `lobs.csv`.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
