@@ -41,7 +41,7 @@ Run these from repo root:
 
 ```bash
 uv run rollup --dry-run -y
-uv run rollup -y --min-loss 0
+uv run rollup --yes --min-loss 0
 uv run pytest polars/tests/test_deterministic_e2e.py -q
 ```
 
@@ -59,7 +59,8 @@ The dry-run shows:
 
 - Seed files and row counts
 - Vendor YLT files and schema checks
-- EP summary availability
+- Required EP-summary long CSV availability for default blending derivation
+- Forecast factor dates and scoped coverage
 - Output directory
 - SQL configured or parquet-only mode
 
@@ -146,7 +147,7 @@ Speaker note: “When a number looks wrong, we can inspect every factor that pro
 Latest validation on this branch:
 
 ```text
-Default suite: 193 passed, 97 skipped
+Default suite: 201 passed, 97 skipped
 Fuzz suite:    90 passed
 SQL suite:     7 passed
 ```

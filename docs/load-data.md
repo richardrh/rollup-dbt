@@ -94,10 +94,10 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 ## Step 4 — Deriving blending weights from EP summaries
 
 EP summaries (long-format CSVs) are used to derive per-peril blending proportions
-and the base model. A normal `uv run rollup` run derives blending weights
-in-memory when every vendor has `*.long.csv` EP summaries, writes the derived
-CSV to `data/output/debug/derived_blending_weights.csv`, and does **not**
-overwrite the reviewed seed.
+and the base model. A normal `uv run rollup` run requires every vendor to have
+`*.long.csv` EP summaries, derives blending weights in-memory, writes the
+derived CSV to `data/output/debug/derived_blending_weights.csv`, and does
+**not** overwrite the reviewed seed.
 
 **Step 4a — Convert Excel to long CSV (RiskLink only):**
 
@@ -150,7 +150,8 @@ At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
 `0`, `200`, `1000`, or `10000`, then joined to the matching blending weight.
 
-Use `uv run rollup --no-derive-blending` to force a run to use the reviewed
+Use `uv run rollup --use-blending-seed` (or the legacy alias
+`--no-derive-blending`) to explicitly force a run to use the reviewed
 `blending_weights.csv` seed even when EP-summary long CSVs are present.
 
 ## Step 5 — Full verification
@@ -169,6 +170,7 @@ uv run rollup --yes        # non-interactive
 ```
 
 Output: Hisco parquets plus audit/debug parquets in `data/output/` (~15–40 seconds depending on data size).
+The interactive wizard confirms input paths, forecast factor coverage, blending mode, minimum loss, audit outputs, and optional SQL push.
 
 **Inspect output:**
 ```bash
@@ -181,6 +183,7 @@ uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;
 uv run rollup --yes --min-loss 0           # keep all rows
 uv run rollup --yes --log-level INFO       # see factor-chain trace
 uv run rollup --yes --no-audit             # skip debug parquets
+uv run rollup --yes --use-blending-seed    # reviewed seed instead of EP-derived blending
 ```
 
 Or set in `config.py`: `MIN_LOSS = 500`, `LOG = "INFO"`, etc.
