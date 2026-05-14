@@ -24,9 +24,10 @@ See [`../polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md) for the
 simple collect-these-files checklist — this doc is the detailed schema
 reference the checklist points at.
 
-Override any path with `ROLLUP_DATA_DIR`, `ROLLUP_SEEDS_DIR`,
-`ROLLUP_OUTPUT_DIR`, `ROLLUP_YLT_VERISK_DIR`, `ROLLUP_YLT_RISKLINK_DIR`,
-`ROLLUP_EP_VERISK_DIR`, `ROLLUP_EP_RISKLINK_DIR`.
+Override paths persistently in `rollup.local.toml` (`[paths]` and
+`[vendors.<vendor>]`) or per process with `ROLLUP_DATA_DIR`,
+`ROLLUP_SEEDS_DIR`, `ROLLUP_OUTPUT_DIR`, `ROLLUP_YLT_VERISK_DIR`,
+`ROLLUP_YLT_RISKLINK_DIR`, `ROLLUP_EP_VERISK_DIR`, `ROLLUP_EP_RISKLINK_DIR`.
 
 ---
 

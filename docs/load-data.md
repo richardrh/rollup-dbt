@@ -216,7 +216,7 @@ uv run rollup --yes --no-audit             # skip debug parquets
 uv run rollup --yes --use-blending-seed    # reviewed seed instead of EP-derived blending
 ```
 
-Or set in `config.py`: `MIN_LOSS = 500`, `LOG = "INFO"`, etc.
+Or set persistent values in `rollup.local.toml`: `[run].min_loss = 500`, `[logging].level = "INFO"`, etc.
 
 ## If something breaks
 

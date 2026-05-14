@@ -263,7 +263,7 @@ def test_resolve_picks_up_min_loss_env(monkeypatch):
 
 
 def test_resolve_default_min_loss_is_1000(monkeypatch):
-    """Absent env var + no config.py → 1000.0 (production default)."""
+    """Absent env var + no local config → 1000.0 (production default)."""
     monkeypatch.delenv(config.EnvVar.MIN_LOSS, raising=False)
     cfg = config.resolve()
     assert cfg.min_loss == 1000.0

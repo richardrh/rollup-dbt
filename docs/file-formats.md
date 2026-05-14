@@ -231,7 +231,7 @@ Override precedence (highest first):
 
 1. **CLI flag** — `--min-loss 2500` for a one-off
 2. **Env var** — `ROLLUP_MIN_LOSS=0` for the shell session / CI
-3. **`config.py` at the repo root** — `MIN_LOSS = 500.0` for set-and-forget
+3. **`rollup.local.toml` at the repo root** — `[run].min_loss = 500.0` for set-and-forget
 4. **Code default** — `1000.0` if nothing above is set
 
 To **disable** the filter (keep every row, e.g. for full audit work):
@@ -239,17 +239,18 @@ To **disable** the filter (keep every row, e.g. for full audit work):
 ```bash
 uv run rollup --yes --min-loss 0
 # or, persistent:
-echo "MIN_LOSS = 0.0" >> config.py
+cp rollup.example.toml rollup.local.toml
+# edit [run] min_loss = 0.0
 ```
 
-The repo ships a `config.example.py` template:
+The repo ships a `rollup.example.toml` template:
 
 ```bash
-cp config.example.py config.py
+cp rollup.example.toml rollup.local.toml
 # edit MIN_LOSS or any other override
 ```
 
-`config.py` is **gitignored** — it never goes to git, credentials and
+`rollup.local.toml` is **gitignored** — it never goes to git, credentials and
 local paths stay private. The plan reports the active threshold:
 
 ```bash
@@ -377,8 +378,9 @@ config issues without destroying any tables.
 
 ### What `push-to-sql` does
 
-1. Reads the connection string from `ROLLUP_MSSQL_CONN_STR` (or
-   `MSSQL_CONN_STR` in `config.py` at the repo root). Aborts cleanly if absent.
+1. Reads the connection string from `[sql].mssql_conn_str` in
+   `rollup.local.toml` (or `ROLLUP_MSSQL_CONN_STR` for CI/shell overrides).
+   Aborts cleanly if absent.
 2. Globs `Hisco*.parquet` under `data/output/`.
 3. Prints the destination connection (credentials redacted), the target
    schema, the output dir, and the list of files with their sizes — then
@@ -388,7 +390,14 @@ config issues without destroying any tables.
 
 ### Connection string
 
-Windows auth (no credentials inline — recommended):
+Persistent local config (recommended for operator machines):
+
+```toml
+[sql]
+mssql_conn_str = "mssql+pyodbc://server/database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
+```
+
+Windows auth as a one-off shell override:
 
 ```bash
 export ROLLUP_MSSQL_CONN_STR='mssql+pyodbc://server/database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes'
@@ -400,7 +409,7 @@ SQL auth:
 export ROLLUP_MSSQL_CONN_STR='mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server'
 ```
 
-Or set `MSSQL_CONN_STR` in `config.py` at the repo root (gitignored — credentials never go to git). Both reports redact `user:pass@` when displayed.
+Both reports redact `user:pass@` when displayed.
 
 ### Flags
 
