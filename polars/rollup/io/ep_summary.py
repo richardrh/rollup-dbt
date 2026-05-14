@@ -22,7 +22,7 @@ from rollup.schemas.columns import StgRisklinkEpCol as RL
 from rollup.schemas.columns import StgVeriskEpCol as VK
 
 
-_HEADER_ROW = 7   # 1-indexed
+_HEADER_ROW = 7   # 1-indexed default for GC exports with prefixed RP columns
 _DATA_START_ROW = 8
 _EP_SHEET = "OEPAEP Curves"
 _VERISK_PML_SHEET = "PML by LOB"
@@ -44,6 +44,24 @@ def _clean(v):
     return v
 
 
+def _clean_header(v) -> str | None:
+    if v is None:
+        return None
+    if isinstance(v, str):
+        stripped = v.strip()
+        return stripped or None
+    return str(v).strip()
+
+
+def _find_header_row(rows: list[tuple], required: tuple[str, ...], path: Path, sheet: str) -> int:
+    """Return the 0-indexed header row containing the required columns."""
+    for idx, row in enumerate(rows[:20]):
+        cleaned = {_clean_header(v) for v in row}
+        if all(col in cleaned for col in required):
+            return idx
+    raise ValueError(f"{path}: missing required columns {required!r} in sheet {sheet!r}")
+
+
 def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
     """Read a RiskLink EP-summary xlsx, return long-format DataFrame matching STG_RISKLINK_EP.
 
@@ -60,33 +78,44 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
     finally:
         wb.close()
 
-    if len(rows) < _DATA_START_ROW:
-        raise ValueError(
-            f"{path}: '{_EP_SHEET}' has fewer than {_DATA_START_ROW} rows"
-        )
-
-    header = list(rows[_HEADER_ROW - 1])
-    data = [list(r) for r in rows[_DATA_START_ROW - 1:]]
+    header_row = _find_header_row(rows, ("ID", "LOB", "RegionPeril", "AAL"), path, _EP_SHEET)
+    header = list(rows[header_row])
+    ep_type_header = list(rows[header_row - 1]) if header_row > 0 else []
+    data = [list(r) for r in rows[header_row + 1:]]
 
     # Map column name -> index. Skip leading/trailing blank columns.
     col_idx: dict[str, int] = {
-        name: i
+        cleaned: i
         for i, name in enumerate(header)
-        if isinstance(name, str) and name.strip()
+        if (cleaned := _clean_header(name)) is not None
     }
 
     for required in ("ID", "LOB", "RegionPeril", "AAL"):
         if required not in col_idx:
             raise ValueError(
-                f"{path}: missing required column {required!r} in header row {_HEADER_ROW}"
+                f"{path}: missing required column {required!r} in header row {header_row + 1}"
             )
 
     # Identify OEP_<int> / AEP_<int> columns; ignore non-numeric suffixes.
     rp_columns: list[tuple[int, int, str]] = []   # (col_idx, rp, ep_type)
-    for c in col_idx:
+    for idx, name in enumerate(header):
+        c = _clean_header(name)
+        if c is None:
+            continue
         m = _RP_COLUMN.match(c)
         if m:
-            rp_columns.append((col_idx[c], int(m["rp"]), m["kind"]))
+            rp_columns.append((idx, int(m["rp"]), m["kind"]))
+            continue
+
+        # Some RiskLink workbooks have one row of EP types (OEP/AEP) above a
+        # header row where the RP columns are bare numbers: 2, 5, 10, ...
+        if idx < len(ep_type_header):
+            kind = str(ep_type_header[idx] or "").strip().upper()
+            if kind in {"OEP", "AEP"}:
+                try:
+                    rp_columns.append((idx, int(float(c)), kind))
+                except ValueError:
+                    pass
     rp_columns.sort(key=lambda t: (t[2], t[1]))   # OEP first, then AEP, by RP
 
     out_rows: list[dict[str, int | float | str | None]] = []

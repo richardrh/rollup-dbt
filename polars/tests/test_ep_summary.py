@@ -70,6 +70,20 @@ def _write_verisk_fixture(path: Path) -> None:
     wb.save(path)
 
 
+def _write_risklink_numeric_header_fixture(path: Path) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OEPAEP Curves"
+    ws.append([None])
+    ws.append([None])
+    ws.append([None])
+    ws.append([None])
+    ws.append([None, None, None, None, None, None, None, None, "OEP", "OEP", "AEP"])
+    ws.append([None, None, "ID", " Segment ", "LOB", "RegionPeril", " AAL ", " STD ", 2, 200, 2])
+    ws.append([None, None, 101, "LOB_A-GB FL", "LOB_A", "GB FL", 10.0, 1.0, 20.0, 30.0, 40.0])
+    wb.save(path)
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -113,6 +127,19 @@ def test_read_risklink_ep_summary_oep_rps_are_correct():
     assert not missing, (
         f"OEP return periods missing from output: {sorted(missing)}"
     )
+
+
+def test_read_risklink_ep_summary_supports_numeric_rp_headers(tmp_path: Path):
+    xlsx = tmp_path / "risklink_numeric_header.xlsx"
+    _write_risklink_numeric_header_fixture(xlsx)
+
+    df = read_risklink_ep_summary(xlsx)
+
+    assert df.schema == F.STG_RISKLINK_EP
+    assert df.height == 4
+    assert set(df[RL.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
+    assert set(df[RL.RP].to_list()) == {0, 2, 200}
+    assert set(df[RL.ID].to_list()) == {101}
 
 
 @_SKIP_IF_MISSING
