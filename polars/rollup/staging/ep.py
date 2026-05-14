@@ -19,7 +19,7 @@ DEFAULT_RETURN_PERIODS: list[int] = [
 ]
 
 # Grouping key + dims that are constant within a key (first() == any()).
-_KEY  = [Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID]
+_KEY = [Y.VENDOR, Y.LOB_ID, Y.REGION_PERIL_ID]
 _DIMS = [Y.ROLLUP_LOB, Y.PERIL_NAME, Y.REGION, Y.PERIL_FAMILY, Y.CDS_CAT_CLASS_NAME]
 
 
@@ -38,14 +38,10 @@ def ep_curve_from_ylt(
     rps = target_return_periods or DEFAULT_RETURN_PERIODS
 
     # Per-year aggregates: compute AEP (sum) and OEP (max) in one pass.
-    per_year = (
-        ylt
-        .group_by([*_KEY, Y.YEAR_ID])
-        .agg(
-            pl.sum(Y.LOSS).alias(EpType.AEP),
-            pl.max(Y.LOSS).alias(EpType.OEP),
-            *[pl.first(c).alias(c) for c in _DIMS],
-        )
+    per_year = ylt.group_by([*_KEY, Y.YEAR_ID]).agg(
+        pl.sum(Y.LOSS).alias(EpType.AEP),
+        pl.max(Y.LOSS).alias(EpType.OEP),
+        *[pl.first(c).alias(c) for c in _DIMS],
     )
 
     # Unpivot AEP/OEP into long form, then assign deterministic row-order ranks
@@ -62,21 +58,22 @@ def ep_curve_from_ylt(
         .sort([*_KEY, EP.EP_TYPE, EP.LOSS, Y.YEAR_ID], descending=[False, False, False, False, True, False])
         .with_columns(
             pl.int_range(1, pl.len() + 1)
-                .over([*_KEY, EP.EP_TYPE])
-                .cast(pl.Int64)
-                .alias(EP.RANK_NUM),
+            .over([*_KEY, EP.EP_TYPE])
+            .cast(pl.Int64)
+            .alias(EP.RANK_NUM),
         )
         .with_columns(
             (pl.lit(n_simulations, dtype=pl.Float64) / pl.col(EP.RANK_NUM))
-                .floor().cast(pl.Int64).alias(EP.RETURN_PERIOD),
+            .floor()
+            .cast(pl.Int64)
+            .alias(EP.RETURN_PERIOD),
         )
         .filter(pl.col(EP.RETURN_PERIOD).is_in(rps))
     )
 
     # AAL: total_loss / n_sims, one row per key. Rank/return-period fixed at 0.
     aal = (
-        ylt
-        .group_by(_KEY)
+        ylt.group_by(_KEY)
         .agg(
             *[pl.first(c).alias(c) for c in _DIMS],
             (pl.sum(Y.LOSS) / n_simulations).alias(EP.LOSS),

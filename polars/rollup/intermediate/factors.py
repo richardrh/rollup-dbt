@@ -2,7 +2,7 @@
 
 Each factor is one function: takes a LazyFrame + the seed(s) it needs,
 returns the LazyFrame with one or more new factor columns attached. The
-composition in `pipeline.build_all_factors` calls them in order; the
+composition in `pipeline.build_intermediate` calls them in order; the
 cumulative factor chain is visible in the output column names.
 
 ==============================================================================
@@ -22,11 +22,11 @@ Say you want to add a `broker_commission_factor`. Do this:
   3. Write `attach_broker_commission(ylt, broker_commissions)` below. Keep
      it small — a select + a left join + a fill_null(1.0).
 
-  4. Call it from `pipeline.build_all_factors` in the right order (before
+  4. Call it from `pipeline.build_intermediate` in the right order (before
      metrics; usually: after EUWS, before dialsup).
 
   5. Pick a column-name suffix (e.g. `_brokercomm`). In the metrics loop
-     inside `build_all_factors`, chain the new factor in:
+     inside `rollup.intermediate.metrics`, chain the new factor in:
          loss_..._{tag}_euws_brokercomm =
            loss_..._{tag}_euws * broker_commission_factor
      Update `audit_wide`'s ordering so the factor sits next to the metric
@@ -54,7 +54,7 @@ from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 
 
-log = logging.getLogger("rollup.factors")
+log = logging.getLogger("rollup.intermediate.factors")
 
 # Working / temporary column names — exist only inside one stage. Kept as
 # module-level constants so every reference is traceable from `pl.col(...)`.

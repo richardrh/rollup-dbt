@@ -103,7 +103,7 @@ Three layers, fail fast at each:
 1. **Seed load** — `rollup/seeds.py` scans each CSV through
    `pl.scan_csv(..., schema=...)`; `validate_schema` runs on the result.
    Drift → `SchemaError` with a column-level diff.
-2. **Stage entry + exit** — every function in `stages/` calls
+2. **Model entry + exit** — dbt-layer model functions call
    `validate_schema` on its inputs and outputs.
 3. **Plan reporter** — `config.build_plan(cfg)` sniffs each seed's actual
    CSV header against its expected columns *before* the pipeline starts,
@@ -115,7 +115,8 @@ The duckdb pipeline materialised `mts_tbl_ylt_combined_all_factors` because
 ~20 downstream views read from it. We do the same with polars lazy `.cache()`:
 
 ```python
-all_factors = build_all_factors(cfg, seeds).cache()     # computed exactly once
+intermediate = build_intermediate(cfg, seeds, staging, tags)
+all_factors = intermediate.all_factors.cache()          # computed exactly once
 fanout_lfs  = [fanout_hisco(all_factors, v) for v in variants]
 audit_lfs   = [audit_wide(all_factors, tags),
                audit_long(all_factors, tags)] if dump_interim else []
@@ -145,7 +146,7 @@ Standard `logging`. Single tree rooted at `rollup`:
 
 - `rollup.seeds` — seed loads.
 - `rollup.staging` — YLT parquet scans.
-- `rollup.factors` — per-factor stages.
+- `rollup.intermediate.factors` — per-factor stages.
 - `rollup.pipeline` — orchestration + event-id checks + fan-out writes.
 
 Default level is `WARNING` (silent for a clean run). Enable info trace via
@@ -164,10 +165,10 @@ rollup.staging     loaded verisk YLT: …/air_ylt_*.parquet
 rollup.pipeline    staging: normalised YLTs concatenated
 rollup.pipeline    event-id check (verisk): 80/80 rows matched air_events
 rollup.staging     valid analyses filtered YLT inputs
-rollup.factors     currency: required_currency derived from CDS class; rate_to_gbp attached
-rollup.factors     forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
-rollup.factors     euws: factor attached, rank overrides applied from seed
-rollup.factors     uplift: rp_bucket proportions + base_model from seed; AAL via window functions
+rollup.intermediate.factors  currency: required_currency derived from CDS class; rate_to_gbp attached
+rollup.intermediate.factors  forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
+rollup.intermediate.factors  euws: factor attached, rank overrides applied from seed
+rollup.intermediate.factors  uplift: rp_bucket proportions + base_model from seed; AAL via window functions
 rollup.pipeline    metrics: 9 derived loss columns + 1 dialsup column
 rollup.pipeline    fanout: wrote HiscoAIR_202601_main.parquet (80 rows)
 ...
@@ -184,22 +185,26 @@ so orphans don't abort the run. The count is surfaced (returned + logged)
 so a downstream check (e.g. cron alert, Slack post) can act on it. If you
 want to abort on orphans, wrap the call in your own guard at the call site.
 
-## Stage modules
+## dbt-layer modules
 
-Each stage is a pure function: `(LazyFrame, seed(s)) → LazyFrame`. No side
-effects. Composed by `build_all_factors` in `pipeline.py`. Full list:
+Each model is a pure function: `(LazyFrame, seed(s)) → LazyFrame`. No side
+effects. Composed by the linear DAG in `pipeline.py`. Full list:
 
-- `rollup/stages/staging.py` — `load_raw_{verisk,risklink}_ylt`,
+- `rollup/staging/ylt.py` — `load_raw_{verisk,risklink}_ylt`,
   `filter_valid_analyses`, `normalize_{verisk,risklink}_ylt`,
   `validate_one_peril_per_rollup_lob`. The normalised
   YLT carries `office` + `lob_class` (from lobs) and
   `peril_name` + `region` + `peril_family` (from perils) so factor stages
   downstream have semantic dims without re-joining. `valid_analyses.csv`
   is the gate: only listed numeric vendor analysis IDs contribute rows.
-- `rollup/stages/factors.py` — `attach_currency`,
+- `rollup/intermediate/factors.py` — `attach_currency`,
   `attach_forecast_factors`, `attach_rank`, `attach_euws`,
   `attach_uplift`.
-- `rollup/stages/ep.py` — `ep_curve_from_ylt` (auxiliary; not in the main
+- `rollup/intermediate/metrics.py` — `add_main_metrics`, `add_dialsup`.
+- `rollup/marts/hisco.py` and `rollup/marts/variants.py` — Hisco fanout
+  shape and variant definitions.
+- `rollup/reports/summary.py` — operator-facing report model.
+- `rollup/staging/ep.py` — `ep_curve_from_ylt` (auxiliary; not in the main
   fan-out chain, but used by integration tests).
 
 ## Domain constants — `rollup/config.py`

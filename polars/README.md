@@ -19,7 +19,7 @@ uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser
-uv run pytest -q                         # 150 unit + 6 integration tests, ~5s (integration skipped by default)
+uv run pytest -q                         # run the default suite (integration skipped by default)
 ```
 
 `python -m rollup` is equivalent.
@@ -92,15 +92,18 @@ contract between the pipeline and the seeds + YLTs you supply.
 │   │   ├── config.py           # Vendor + Flavor + VendorName + EnvVar
 │   │   ├── seeds.py            # typed seed loaders + REQUIRED_SEEDS gate
 │   │   ├── validate.py         # validate_schema + SchemaError
-│   │   ├── pipeline.py         # orchestrator + build_all_factors + audit + CLI
+│   │   ├── pipeline.py         # linear DAG orchestrator + audit + CLI
 │   │   ├── schemas/
 │   │   │   ├── columns.py      # StrEnum per logical frame
 │   │   │   └── frames.py       # pl.Schema per logical frame
-│   │   └── stages/
-│   │       ├── staging.py      # valid analyses + raw YLTs → NormalizedYlt
-│   │       ├── factors.py      # attach_* functions (one per factor)
-│   │       └── ep.py           # YLT → EP curve (aux, not in main chain)
-│   └── tests/                  # 97 tests including e2e
+│   │   ├── staging/            # raw vendor inputs → typed staging models
+│   │   │   ├── ylt.py          # valid analyses + raw YLTs → NormalizedYlt
+│   │   │   └── ep.py           # YLT → EP curve (aux, not in main chain)
+│   │   ├── intermediate/       # factor attachment + derived metrics
+│   │   ├── marts/              # Hisco fanout + variant specs
+│   │   ├── reports/            # summary report model
+│   │   └── io/                 # output writers and external sinks
+│   └── tests/                  # 241 passing tests including e2e
 │       ├── test_e2e.py         # the synthetic end-to-end run
 │       ├── build_test_data.py  # generator for tests/data/
 │       └── data/               # gitignored; test inputs + outputs

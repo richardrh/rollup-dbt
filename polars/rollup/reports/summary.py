@@ -10,7 +10,7 @@ actuarial summary at three grains:
 The function returns a long DataFrame; the writer in
 `rollup.io.report_writer` turns it into the operator-facing CSV/xlsx.
 
-EP semantics — kept consistent with `rollup.stages.ep`:
+EP semantics — kept consistent with `rollup.staging.ep`:
 
     AAL  = sum(metric) / n_sim
     AEP  = aggregate-per-year (sum)  ranked DESC, rp = floor(n_sim / rank)
