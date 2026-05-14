@@ -183,7 +183,15 @@ def run(
 
     all_factors = build_all_factors(cfg, seeds).cache()
 
-    fanout_lfs = [fanout_hisco(all_factors, variant, min_loss=cfg.min_loss) for variant in variants]
+    fanout_lfs = [
+        fanout_hisco(
+            all_factors,
+            variant,
+            min_loss=cfg.min_loss,
+            risklink_events=seeds.risklink_events,
+        )
+        for variant in variants
+    ]
     long_lf = audit_long(all_factors, tags, min_loss=cfg.min_loss)
     wide_lf = audit_wide(all_factors, tags) if dump_interim else None
     if cfg.min_loss > 0:
