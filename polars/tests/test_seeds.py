@@ -1,4 +1,4 @@
-"""Each CSV under `polars/seeds/` loads clean and matches its declared schema."""
+"""Each seed under `data/seeds/` loads clean and matches its declared schema."""
 
 from __future__ import annotations
 
@@ -29,11 +29,8 @@ def test_seed_file_map_matches_schema_registry():
 
 def test_discover_returns_fixed_relative_paths():
     discovered = {spec.name: spec.filename for spec in seeds.discover(SEEDS_DIR)}
-    assert discovered["air_events"] == "validation/verisk_events.parquet"
-    assert discovered["risklink_events"] == "validation/risklink_flood22_model_events.parquet"
     for name, filename in seeds.SEED_FILES.items():
-        if name not in {"air_events", "risklink_events"}:
-            assert discovered[name] == filename
+        assert discovered[name] == filename
 
 
 def test_discover_does_not_guess_by_header(tmp_path):
@@ -80,11 +77,23 @@ def test_populated_seeds_have_rows():
     assert bundle.fx_rates.collect().height == 6
 
 
-def test_event_catalogue_seeds_load_when_populated_or_stubbed():
-    """Event catalogue seeds may be populated parquet files or CSV stubs."""
+def test_event_catalogue_seeds_load_from_authoritative_parquets():
+    """Event catalogue seeds are parquet exports projected into canonical schema."""
     bundle = seeds.load_all(SEEDS_DIR)
-    for name in ("air_events", "risklink_events"):
-        assert getattr(bundle, name).select(pl.len()).collect().item() >= 0
+    assert bundle.air_events.collect().height > 0
+    assert bundle.risklink_events.collect().height > 0
+
+
+def test_event_catalogue_csv_fallbacks_are_not_discovered(tmp_path):
+    validation = tmp_path / "validation"
+    validation.mkdir()
+    (validation / "air_events.csv").write_text("event_id,model_id,event,year,day\n")
+    (validation / "risklink_events.csv").write_text("event_id,year,day\n")
+
+    discovered = {spec.name: spec.filename for spec in seeds.discover(tmp_path)}
+
+    assert discovered["air_events"] == ""
+    assert discovered["risklink_events"] == ""
 
 
 # -----------------------------------------------------------------------------

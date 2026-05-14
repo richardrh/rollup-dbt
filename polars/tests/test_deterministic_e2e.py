@@ -33,13 +33,11 @@ from rollup.schemas.columns import (
     PerilsCol as P,
     RawRisklinkYltCol as RLK,
     RawVeriskYltCol as VK,
-    RefAirEventsCol as AE,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
     RefLobsCol as LB,
-    RefRisklinkEventsCol as RLE,
     StgRisklinkEpCol as REP,
     StgVeriskEpCol as VEP,
     ValidAnalysesCol as VA,
@@ -135,15 +133,17 @@ def _write_minimal_seeds(root: Path) -> None:
         seeds / "adjustments" / "euws_rank_overrides.csv"
     )
     pl.DataFrame({
-        AE.EVENT_ID: [1, 2, 3, 4],
-        AE.MODEL_ID: [41, 41, 41, 41],
-        AE.EVENT: [1, 2, 3, 4],
-        AE.YEAR: [1, 1, 1, 1],
-        AE.DAY: [1, 2, 3, 4],
-    }).write_csv(seeds / "validation" / "air_events.csv")
-    pl.DataFrame(schema={RLE.EVENT_ID: pl.Int64, RLE.YEAR: pl.Int64, RLE.DAY: pl.Int64}).write_csv(
-        seeds / "validation" / "risklink_events.csv"
-    )
+        "EventID": [1, 2, 3, 4],
+        "ModelID": [41, 41, 41, 41],
+        "Event": [1, 2, 3, 4],
+        "Year": [1, 1, 1, 1],
+        "Day": [1, 2, 3, 4],
+    }).write_parquet(seeds / "validation" / "verisk_events.parquet")
+    pl.DataFrame(schema={
+        "ModelEventID": pl.Int64,
+        "ModelOccurrenceYear": pl.Int64,
+        "ModelOccurrenceDate": pl.Date,
+    }).write_parquet(seeds / "validation" / "risklink_flood22_model_events.parquet")
 
 
 def _write_fake_ep_summaries(root: Path) -> None:

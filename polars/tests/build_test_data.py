@@ -26,13 +26,11 @@ from rollup.schemas.columns import EpType
 from rollup.schemas.columns import PerilsCol as P
 from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
-from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefEuwsRankOverridesCol as EO
 from rollup.schemas.columns import RefEuwsRateFactorsCol as EU
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import RefLobsCol as LB
-from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.schemas.columns import StgRisklinkEpCol as REP
 from rollup.schemas.columns import StgVeriskEpCol as VEP
 from rollup.schemas.columns import ValidAnalysesCol as VA
@@ -180,12 +178,13 @@ def _write_seeds() -> None:
         EO.ROLLUP_LOB, EO.MAX_RANK, EO.FACTOR,
     ]).write_csv(SEEDS / "adjustments/euws_rank_overrides.csv")
 
-    # validation/ stubs — air_events populated by _write_air_events after YLTs are known
+    # validation/ catalogue — RiskLink rows are authoritative parquet exports
+    # projected by the seed loader into the canonical event/year/day shape.
     pl.DataFrame(schema={
-        RLE.EVENT_ID: pl.Int64,
-        RLE.YEAR:     pl.Int64,
-        RLE.DAY:      pl.Int64,
-    }).write_csv(SEEDS / "validation/risklink_events.csv")
+        "ModelEventID": pl.Int64,
+        "ModelOccurrenceYear": pl.Int64,
+        "ModelOccurrenceDate": pl.Date,
+    }).write_parquet(SEEDS / "validation/risklink_flood22_model_events.parquet")
 
 
 def _write_verisk_ylt() -> list[tuple[int, int, int]]:
@@ -254,16 +253,16 @@ def _write_air_events(verisk_triples: list[tuple[int, int, int]]) -> None:
     rows = []
     for eid, year_id, model_code in verisk_triples:
         rows.append({
-            AE.EVENT_ID: eid,
-            AE.MODEL_ID: model_code,
-            AE.EVENT:    eid,
-            AE.YEAR:     year_id,
-            AE.DAY:      ((eid % 365) + 1),
+            "EventID": eid,
+            "ModelID": model_code,
+            "Event":   eid,
+            "Year":    year_id,
+            "Day":     ((eid % 365) + 1),
         })
     pl.DataFrame(rows, schema={
-        AE.EVENT_ID: pl.Int64, AE.MODEL_ID: pl.Int64, AE.EVENT: pl.Int64,
-        AE.YEAR: pl.Int64, AE.DAY: pl.Int64,
-    }).write_csv(SEEDS / "validation/air_events.csv")
+        "EventID": pl.Int64, "ModelID": pl.Int64, "Event": pl.Int64,
+        "Year": pl.Int64, "Day": pl.Int64,
+    }).write_parquet(SEEDS / "validation/verisk_events.parquet")
 
 
 def _write_ep_summaries() -> None:
