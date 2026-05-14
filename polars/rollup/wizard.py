@@ -156,6 +156,7 @@ def _render_plan(plan: config.Plan, *, stream: TextIO) -> None:
 
 def _maybe_push_sql() -> None:
     if not _ask_yes("Push output parquets to SQL now? [y/N]: "):
+        print("skipped SQL push")
         return
     from argparse import Namespace
     from rollup.cli import _cmd_push_to_sql

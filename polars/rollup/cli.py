@@ -398,7 +398,7 @@ def _confirm_push(
     push_yes: bool,
     *,
     stdin=None,
-    input_func: Callable[[str], str] = input,
+    input_func: Callable[[str], str] | None = None,
 ) -> tuple[int | None, str, str]:
     """Return `(exit_code, stdout, stderr)` for push confirmation.
 
@@ -407,6 +407,7 @@ def _confirm_push(
     if push_yes:
         return None, "", ""
     stdin = stdin or sys.stdin
+    input_func = input_func or input
     if not stdin.isatty():
         return 2, "", _lines([
             "error: refusing to push without --yes when stdin is not a TTY "
@@ -417,7 +418,7 @@ def _confirm_push(
     except EOFError:
         reply = ""
     if reply not in {"y", "yes"}:
-        return 1, _lines(["aborted by user"]), ""
+        return 0, _lines(["skipped SQL push"]), ""
     return None, "", ""
 
 
