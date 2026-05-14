@@ -30,7 +30,7 @@ _EP_DIR = (
 )
 _VERISK_EP = (
     Path(__file__).resolve().parent.parent.parent
-    / "data" / "ep_summaries" / "verisk" / "Hiscox Rnl26 - Verisk Results.xlsx"
+    / "data" / "ep_summaries" / "verisk" / "verisk.xlsx"
 )
 
 _SKIP_IF_MISSING = pytest.mark.skipif(
