@@ -1,0 +1,36 @@
+# Local rollup configuration template.
+# Copy to `rollup.local.toml` at the repo root, then edit for your machine.
+# `rollup.local.toml` is gitignored because it may contain SQL connection strings.
+
+[run]
+# Drop output rows whose loss is below this value. The code default is 1000.0.
+# Set to 0.0 to disable the filter entirely.
+# min_loss = 1000.0
+
+[sql]
+# Connection string used by `rollup test-sql` and `rollup push-to-sql`.
+# Windows auth (no credentials inline — recommended):
+# mssql_conn_str = "mssql+pyodbc://server/database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
+# SQL auth:
+# mssql_conn_str = "mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server"
+
+[paths]
+# Default layout under <repo>/data/ is usually correct. Override only when the
+# data directory lives elsewhere. Relative paths resolve from the repo root.
+# data_dir = "/mnt/storage/rollup/data"
+# seeds_dir = "/mnt/storage/rollup/seeds"
+# output_dir = "/mnt/storage/rollup/output"
+
+[vendors.verisk]
+# ylt_dir = "/mnt/storage/rollup/data/ylt/verisk"
+# ylt_glob = "air_ylt_*.parquet"
+# ep_summary_dir = "/mnt/storage/rollup/data/ep_summaries/verisk"
+
+[vendors.risklink]
+# ylt_dir = "/mnt/storage/rollup/data/ylt/risklink"
+# ylt_glob = "risklink_ylt_*.parquet"
+# ep_summary_dir = "/mnt/storage/rollup/data/ep_summaries/risklink"
+
+[logging]
+# Default WARNING. Override per run with --log-level or ROLLUP_LOG.
+# level = "INFO"
