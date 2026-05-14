@@ -1,26 +1,26 @@
-"""Pipeline orchestrator."""
+"""Linear dbt-style pipeline orchestrator.
+
+The flow is intentionally visible in this file:
+
+    seeds + raw data -> staging -> intermediate -> marts -> reports/outputs
+
+Model functions build Polars LazyFrames. This orchestrator decides where to
+collect for validation, final parquet writes, audit outputs, and report files.
+"""
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, replace
 
 import polars as pl
 
 from rollup import config
 from rollup.audit import audit_long, audit_wide
 from rollup.config import VendorName
-from rollup.fanout import fanout_hisco
-from rollup.io.report_writer import write_report
-from rollup.metrics.dialsup import add_dialsup
-from rollup.metrics.main_chain import add_main_metrics
-from rollup.schemas import frames as F
-from rollup.schemas.columns import AllFactorsCol as AF
-from rollup.schemas.columns import NormalizedYltCol as Y
-from rollup.schemas.columns import RefAirEventsCol as AE
-from rollup.schemas.columns import RefRisklinkEventsCol as RLE
-from rollup.seeds import Seeds
-from rollup.stages.report import build_report
-from rollup.stages.factors import (
+from rollup.intermediate import (
+    add_dialsup,
+    add_main_metrics,
     attach_currency,
     attach_euws,
     attach_forecast_factors,
@@ -28,7 +28,15 @@ from rollup.stages.factors import (
     attach_uplift,
     validate_fx_coverage,
 )
-from rollup.stages.staging import (
+from rollup.io.report_writer import write_report
+from rollup.marts import fanout_hisco
+from rollup.reports import build_report
+from rollup.schemas import frames as F
+from rollup.schemas.columns import NormalizedYltCol as Y
+from rollup.schemas.columns import RefAirEventsCol as AE
+from rollup.schemas.columns import RefRisklinkEventsCol as RLE
+from rollup.seeds import Seeds
+from rollup.staging import (
     filter_valid_analyses,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,
@@ -49,6 +57,39 @@ _AUDIT_LONG_FILE = "audit_long.parquet"
 _AE_MATCH_TMP = "_ae_match"
 _ORPHAN_COUNT = "orphans"
 _TOTAL_COUNT = "total"
+
+
+@dataclass(frozen=True)
+class StagingModels:
+    """Typed staging LazyFrames produced from seeds and raw vendor YLT scans."""
+
+    ylt: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class IntermediateModels:
+    """Business-calculation LazyFrames built from staging models."""
+
+    all_factors: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class MartModels:
+    """Output-shaped LazyFrames ready for materialisation."""
+
+    variants: list[VariantSpec]
+    fanouts: list[pl.LazyFrame]
+    audit_long: pl.LazyFrame
+    audit_wide: pl.LazyFrame | None = None
+
+
+@dataclass(frozen=True)
+class CollectedMarts:
+    """Eager DataFrames collected at the named mart output boundary."""
+
+    fanouts: list[pl.DataFrame]
+    audit_long: pl.DataFrame
+    audit_wide: pl.DataFrame | None
 
 
 def count_event_id_orphans(
@@ -119,34 +160,51 @@ def count_risklink_event_id_orphans(
     return orphans
 
 
-def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
-    """Build the all-factors LazyFrame from staging through metrics."""
+def build_staging(cfg: config.Config, seeds: Seeds) -> StagingModels:
+    """Build staging models from raw vendor inputs and seed dimensions."""
     verisk = cfg.vendor(VendorName.VERISK)
     risklink = cfg.vendor(VendorName.RISKLINK)
-    tags = forecast_tags(forecast_dates_from_seed(seeds))
-    n_sim: dict[VendorName, int] = {
-        VendorName.VERISK: verisk.n_simulations,
-        VendorName.RISKLINK: risklink.n_simulations,
-    }
-    log.info(f"forecast tags from seed: {tags}")
     analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
 
     rl_norm = normalize_risklink_ylt(
         load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob),
-        analyses, seeds.perils, seeds.lobs,
+        analyses,
+        seeds.perils,
+        seeds.lobs,
     )
     vk_norm = normalize_verisk_ylt(
         load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob),
-        analyses, seeds.perils, seeds.lobs,
+        analyses,
+        seeds.perils,
+        seeds.lobs,
     )
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
-    validate_one_peril_per_rollup_lob(ylt)
-    count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
-    count_risklink_event_id_orphans(ylt, seeds.risklink_events)
+    return StagingModels(ylt=ylt)
+
+
+def validate_staging(staging: StagingModels, seeds: Seeds) -> None:
+    """Collect only the explicit staging validation checks."""
+    validate_one_peril_per_rollup_lob(staging.ylt)
+    count_event_id_orphans(staging.ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
+    count_risklink_event_id_orphans(staging.ylt, seeds.risklink_events)
+
+
+def build_intermediate(
+    cfg: config.Config,
+    seeds: Seeds,
+    staging: StagingModels,
+    tags: list[str],
+) -> IntermediateModels:
+    """Build intermediate factor and metric models from staging models."""
+    n_sim: dict[VendorName, int] = {
+        VendorName.VERISK: cfg.vendor(VendorName.VERISK).n_simulations,
+        VendorName.RISKLINK: cfg.vendor(VendorName.RISKLINK).n_simulations,
+    }
+    log.info(f"forecast tags from seed: {tags}")
 
     all_factors = (
-        ylt
+        staging.ylt
         .pipe(attach_currency, seeds.fx_rates)
         .pipe(attach_forecast_factors, seeds.forecast_factors, tags)
         .pipe(attach_rank, n_sim=n_sim)
@@ -157,29 +215,30 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
     )
     log.info(f"metrics: {3 + 2 * len(tags)} derived loss columns + 1 dialsup column")
     validate_schema(all_factors, F.ALL_FACTORS, name="all_factors", strict=False)
-    return all_factors
+    return IntermediateModels(all_factors=all_factors)
 
 
-def run(
+def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
+    """Compatibility wrapper: build staging + intermediate all-factors model."""
+    tags = forecast_tags(forecast_dates_from_seed(seeds))
+    staging = build_staging(cfg, seeds)
+    validate_staging(staging, seeds)
+    return build_intermediate(cfg, seeds, staging, tags).all_factors
+
+
+def build_marts(
     cfg: config.Config,
+    seeds: Seeds,
+    intermediate: IntermediateModels,
+    variants: list[VariantSpec],
+    tags: list[str],
     *,
-    dump_interim: bool = False,
-) -> None:
-    """Run the pipeline end-to-end. One parquet per fan-out variant."""
-    from rollup.seeds import load_all
+    dump_interim: bool,
+) -> MartModels:
+    """Build mart LazyFrames for Hisco fanout and audit outputs."""
+    all_factors = intermediate.all_factors.cache()
 
-    cfg.output_dir.mkdir(parents=True, exist_ok=True)
-
-    seeds = load_all(cfg.seeds_dir)
-    validate_fx_coverage(seeds.fx_rates)
-    fc_dates = forecast_dates_from_seed(seeds)
-    tags = forecast_tags(fc_dates)
-    variants = build_variants(fc_dates, cfg.vendors)
-    log.info(f"plan: {len(variants)} Hisco variants across {len(cfg.vendors)} vendors")
-
-    all_factors = build_all_factors(cfg, seeds).cache()
-
-    fanout_lfs = [
+    fanouts = [
         fanout_hisco(
             all_factors,
             variant,
@@ -194,40 +253,101 @@ def run(
     if cfg.min_loss > 0:
         log.info(f"min_loss filter: dropping rows where loss < {cfg.min_loss}")
 
-    plan_lfs: list[pl.LazyFrame] = list(fanout_lfs)
+    return MartModels(
+        variants=variants,
+        fanouts=fanouts,
+        audit_long=long_lf,
+        audit_wide=wide_lf,
+    )
+
+
+def collect_marts(marts: MartModels) -> CollectedMarts:
+    """Named collection boundary for final mart parquet outputs."""
+    plan_lfs: list[pl.LazyFrame] = list(marts.fanouts)
     long_idx = len(plan_lfs)
-    plan_lfs.append(long_lf)
+    plan_lfs.append(marts.audit_long)
     wide_idx = None
-    if wide_lf is not None:
+    if marts.audit_wide is not None:
         wide_idx = len(plan_lfs)
-        plan_lfs.append(wide_lf)
+        plan_lfs.append(marts.audit_wide)
 
     collected = pl.collect_all(plan_lfs)
-    fanout_dfs = collected[:len(variants)]
-    long_df = collected[long_idx]
-    wide_df = collected[wide_idx] if wide_idx is not None else None
+    return CollectedMarts(
+        fanouts=collected[:len(marts.variants)],
+        audit_long=collected[long_idx],
+        audit_wide=collected[wide_idx] if wide_idx is not None else None,
+    )
 
-    for df, variant in zip(fanout_dfs, variants, strict=True):
+
+def write_marts(cfg: config.Config, marts: MartModels, collected: CollectedMarts) -> None:
+    """Write collected mart outputs to parquet sinks."""
+    for df, variant in zip(collected.fanouts, marts.variants, strict=True):
         out_path = cfg.output_dir / f"{variant.name}.parquet"
         df.write_parquet(out_path)
         log.info(f"fanout: wrote {variant.name}.parquet ({df.height:,} rows)")
 
     long_path = cfg.output_dir / "mts_tbl_ylt_combined_all_factors.parquet"
-    long_df.write_parquet(long_path)
-    log.info(f"wrote {long_path.name} ({long_df.height:,} rows)")
+    collected.audit_long.write_parquet(long_path)
+    log.info(f"wrote {long_path.name} ({collected.audit_long.height:,} rows)")
 
-    if dump_interim:
-        debug_dir = cfg.output_dir / _AUDIT_SUBDIR
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        wide_df.write_parquet(debug_dir / _AUDIT_WIDE_FILE)
-        long_df.write_parquet(debug_dir / _AUDIT_LONG_FILE)
-        log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
-        log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
 
+def write_debug_outputs(cfg: config.Config, collected: CollectedMarts) -> None:
+    """Write optional debug/audit output artifacts."""
+    if collected.audit_wide is None:
+        return
+
+    debug_dir = cfg.output_dir / _AUDIT_SUBDIR
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    collected.audit_wide.write_parquet(debug_dir / _AUDIT_WIDE_FILE)
+    collected.audit_long.write_parquet(debug_dir / _AUDIT_LONG_FILE)
+    log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
+    log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
+
+
+def write_reports(
+    cfg: config.Config,
+    intermediate: IntermediateModels,
+    variants: list[VariantSpec],
+) -> None:
+    """Collect and write presentation report artifacts after mart outputs."""
     try:
-        report = build_report(all_factors, variants)
+        report = build_report(intermediate.all_factors, variants)
         write_report(report, cfg.output_dir)
     except Exception as e:
-        # Report generation is downstream of the deliverables — never let it
-        # fail the run. Surface the error loudly; the parquets are already on disk.
         log.error(f"report: failed to generate end-of-run summary ({type(e).__name__}: {e})")
+
+
+def _load_seeds(cfg: config.Config, blending_weights: pl.LazyFrame | None) -> Seeds:
+    """Load seeds/raw references and apply optional run-time seed overrides."""
+    from rollup.seeds import load_all
+
+    seeds = load_all(cfg.seeds_dir)
+    if blending_weights is not None:
+        seeds = replace(seeds, blending_weights=blending_weights)
+    validate_fx_coverage(seeds.fx_rates)
+    return seeds
+
+
+def run(
+    cfg: config.Config,
+    *,
+    dump_interim: bool = False,
+    blending_weights: pl.LazyFrame | None = None,
+) -> None:
+    """Run the pipeline end-to-end. One parquet per fan-out variant."""
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+
+    seeds = _load_seeds(cfg, blending_weights)
+    fc_dates = forecast_dates_from_seed(seeds)
+    tags = forecast_tags(fc_dates)
+    variants = build_variants(fc_dates, cfg.vendors)
+    log.info(f"plan: {len(variants)} Hisco variants across {len(cfg.vendors)} vendors")
+
+    staging = build_staging(cfg, seeds)
+    validate_staging(staging, seeds)
+    intermediate = build_intermediate(cfg, seeds, staging, tags)
+    marts = build_marts(cfg, seeds, intermediate, variants, tags, dump_interim=dump_interim)
+    collected = collect_marts(marts)
+    write_marts(cfg, marts, collected)
+    write_debug_outputs(cfg, collected)
+    write_reports(cfg, intermediate, variants)

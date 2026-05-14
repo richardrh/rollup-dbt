@@ -5,13 +5,14 @@ Wired up two ways:
   * Console script (preferred):   `uv run rollup …`
   * Module form:                  `uv run python -m rollup …`
 
-`rollup --help` lists every subcommand. The default flow (no subcommand)
-runs the pipeline; `--dry-run` prints the plan and exits.
+`rollup --help` lists every subcommand. The obvious non-wizard front doors are
+`rollup run` and `rollup plan`; the legacy default flow (no subcommand) still
+runs the same pipeline, and `--dry-run` still prints the plan and exits.
 
 Subcommand handlers (`_cmd_*`) live in this file and stay deliberately
-thin — they parse arguments, hand off to a stage / IO module, and shape
+thin — they parse arguments, hand off to a layer / IO module, and shape
 the exit code. Real work lives in `rollup.pipeline`, `rollup.io`, and
-`rollup.stages`.
+the dbt-style layer packages under `rollup.{staging,intermediate,marts,reports}`.
 """
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     config.setup_logging(args.log_level)
 
     handler = {
+        "run":               _cmd_run,
+        "plan":              _cmd_plan,
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
         "test-sql":          _cmd_test_sql,
         "push-to-sql":       _cmd_push_to_sql,
@@ -85,6 +88,40 @@ def _build_parser() -> argparse.ArgumentParser:
              "ROLLUP_MIN_LOSS env var or [run].min_loss in rollup.local.toml.",
     )
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
+
+    run_p = sub.add_parser(
+        "run",
+        help="Run the linear pipeline: staging → intermediate → marts → reports.",
+    )
+    run_p.add_argument(
+        "-y", "--yes", action="store_true", default=argparse.SUPPRESS,
+        help="skip the interactive y/N confirmation",
+    )
+    run_p.add_argument(
+        "--dry-run", action="store_true", default=argparse.SUPPRESS,
+        help="print the plan and exit without running the pipeline",
+    )
+    run_audit_group = run_p.add_mutually_exclusive_group()
+    run_audit_group.add_argument(
+        "-d", "--dump-interim", dest="dump_interim", action="store_true",
+        default=argparse.SUPPRESS,
+        help="write audit_wide.parquet + audit_long.parquet to <output_dir>/debug/ (default)",
+    )
+    run_audit_group.add_argument(
+        "--no-audit", dest="dump_interim", action="store_false",
+        default=argparse.SUPPRESS,
+        help="skip debug audit_wide.parquet and audit_long.parquet outputs",
+    )
+    run_p.add_argument(
+        "--min-loss", type=float, default=argparse.SUPPRESS, metavar="N",
+        help="drop output rows whose loss < N. Default 1000 (production).",
+    )
+
+    plan_p = sub.add_parser("plan", help="Print the pre-run plan for the linear pipeline and exit.")
+    plan_p.add_argument(
+        "--min-loss", type=float, default=argparse.SUPPRESS, metavar="N",
+        help="show the plan using this minimum-loss override",
+    )
 
     sub.add_parser(
         "ep-summary-to-csv",
@@ -147,6 +184,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     """Default flow: build the plan, prompt (or not), run the pipeline."""
     from rollup.wizard import run_wizard
 
+    return run_wizard(args)
+
+
+def _cmd_plan(args: argparse.Namespace) -> int:
+    """Non-wizard front door for rendering the pipeline plan."""
+    from rollup.wizard import run_wizard
+
+    args.dry_run = True
     return run_wizard(args)
 
 

@@ -176,6 +176,48 @@ def test_rollup_dry_run_does_not_print_help(tmp_path, monkeypatch):
     assert "Pipeline plan" in output or "[seeds]" in output
 
 
+def test_rollup_plan_subcommand_prints_plan(tmp_path, monkeypatch):
+    """`rollup plan` is the explicit non-wizard front door for preflight checks."""
+    from rollup.cli import main
+
+    monkeypatch.setenv("ROLLUP_SEEDS_DIR", str(tmp_path / "seeds"))
+    monkeypatch.setenv("ROLLUP_OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("ROLLUP_YLT_VERISK_DIR", str(tmp_path / "ylt_v"))
+    monkeypatch.setenv("ROLLUP_YLT_RISKLINK_DIR", str(tmp_path / "ylt_r"))
+    monkeypatch.setenv("ROLLUP_EP_VERISK_DIR", str(tmp_path / "ep_v"))
+    monkeypatch.setenv("ROLLUP_EP_RISKLINK_DIR", str(tmp_path / "ep_r"))
+
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        rc = main(["plan"])
+
+    assert rc == 0
+    assert "Pipeline plan" in buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("argv", "attr", "expected"),
+    [
+        (["--yes", "run"], "yes", True),
+        (["run", "--yes"], "yes", True),
+        (["--dry-run", "run"], "dry_run", True),
+        (["run", "--dry-run"], "dry_run", True),
+        (["--no-audit", "run"], "dump_interim", False),
+        (["run", "--no-audit"], "dump_interim", False),
+        (["--min-loss", "0", "run"], "min_loss", 0.0),
+        (["run", "--min-loss", "0"], "min_loss", 0.0),
+    ],
+)
+def test_rollup_run_subcommand_preserves_flags_before_or_after(argv, attr, expected):
+    """`rollup --flag run` behaves like `rollup run --flag`."""
+    from rollup.cli import _build_parser
+
+    args = _build_parser().parse_args(argv)
+
+    assert args.cmd == "run"
+    assert getattr(args, attr) == expected
+
+
 def test_audit_outputs_default_on_and_can_be_disabled():
     """Audit/debug parquets are now default-on for operator explainability."""
     from rollup.cli import _build_parser
