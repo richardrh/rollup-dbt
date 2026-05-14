@@ -12,6 +12,7 @@ from rollup.config import CurrencyCode, Flavor, Vendor, VendorName
 from rollup.pipeline import (
     StagingModels,
     VariantSpec,
+    _write_lazy_parquet,
     build_intermediate,
     build_variants,
     count_event_id_orphans,
@@ -121,6 +122,15 @@ def test_build_variants_names_match_hisco_pattern():
         else:
             # DIALSUP: one file per vendor — no date in the filename
             assert v.forecast_tag not in v.name
+
+
+def test_write_lazy_parquet_writes_file_and_returns_rows(tmp_path):
+    out = tmp_path / "nested" / "frame.parquet"
+    rows = _write_lazy_parquet(pl.DataFrame({"x": [1, 2, 3]}).lazy(), out)
+
+    assert rows == 3
+    assert out.exists()
+    assert pl.read_parquet(out)["x"].to_list() == [1, 2, 3]
 
 
 # -----------------------------------------------------------------------------

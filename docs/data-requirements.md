@@ -79,7 +79,7 @@ Wire schema (matches AIR Touchstone export — CamelCase preserved):
 | `NetOfPreCatLoss`   | Float64  | the loss carried into the chain. |
 | `filename`          | String   | passthrough. |
 
-### `data/ylt/risklink/risklink_ylt_*.parquet` (≈ 100 000 simulation years)
+### `data/ylt/risklink/risklink_ylt*.parquet` (≈ 100 000 simulation years)
 
 Wire schema (matches RiskLink export — lowercase):
 

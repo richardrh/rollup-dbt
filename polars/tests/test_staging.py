@@ -5,7 +5,6 @@ NormalizedYlt for both vendors."""
 from __future__ import annotations
 
 import polars as pl
-import pytest
 
 from rollup.config import VendorName
 from rollup.schemas import frames as F

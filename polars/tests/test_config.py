@@ -320,7 +320,7 @@ def test_forecast_coverage_section_reports_missing_factors(tmp_path):
     assert "missing factors" in coverage_check.note
 
 
-def test_lob_peril_validation_warns_duplicate_analyses_for_lob_peril(tmp_path):
+def test_lob_peril_validation_flags_multiple_analyses_for_lob_peril(tmp_path):
     cfg = _cfg_with_seeds(tmp_path)
     business = cfg.seeds_dir / "business"
     pl.DataFrame({
@@ -355,10 +355,10 @@ def test_lob_peril_validation_warns_duplicate_analyses_for_lob_peril(tmp_path):
     section = next(s for s in plan.sections if s.title == "lob_peril_validation")
     check = section.checks[0]
 
-    assert check.ok
-    assert plan.all_lob_peril_ok
-    assert "WARNING duplicate valid analyses for LOB/peril" in check.note
-    assert "lob=1 peril=1" in check.note
+    assert not check.ok
+    assert not plan.all_lob_peril_ok
+    assert "one analysis per lob/peril validation failed" in check.note
+    assert "LOB_A_SRC_1" in check.note
 
 
 # -----------------------------------------------------------------------------

@@ -100,15 +100,10 @@ def _consistent_risklink_input(draw: st.DrawFn) -> tuple[
     row_indices = draw(st.lists(st.integers(min_value=0, max_value=n - 1), min_size=n_rows, max_size=n_rows))
 
     raw_rl_df = pl.LazyFrame({
-        RLK.SIMULATION_SET_ID: [1] * n_rows,
         RLK.YEAR_ID:           list(range(1, n_rows + 1)),
         RLK.EVENT_ID:          list(range(101, 101 + n_rows)),
-        RLK.DATE:              ["2024-01-01"] * n_rows,
         RLK.P_VALUE:           [0.01] * n_rows,
         RLK.ANLS_ID:           [1000 + row_indices[i] for i in range(n_rows)],
-        RLK.NAME:              ["test"] * n_rows,
-        RLK.DESCRIPTION:       ["desc"] * n_rows,
-        RLK.RATE:              [1.0] * n_rows,
         RLK.MEAN_LOSS:         [1000.0] * n_rows,
         RLK.STD_DEV:           [100.0] * n_rows,
         RLK.EXP_VALUE:         [500.0] * n_rows,

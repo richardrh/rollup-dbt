@@ -97,7 +97,7 @@ uv run rollup --dry-run
 
 ## Step 3 — Drop RiskLink YLTs into `data/ylt/risklink/`
 
-Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns).
+Copy parquets with filename pattern `risklink_ylt*.parquet` (lowercase columns).
 
 **Required schema:**
 

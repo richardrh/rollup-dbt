@@ -159,7 +159,7 @@ Sample INFO trace from an end-to-end run:
 rollup.seeds       loading 11 seeds from …/seeds
 rollup.pipeline    plan: 8 Hisco variants across 2 vendors
 rollup.pipeline    forecast tags from seed: ['202601', '202607', '202701']
-rollup.staging     loaded risklink YLT: …/risklink_ylt_*.parquet
+rollup.staging     loaded risklink YLT: …/risklink_ylt*.parquet
 rollup.staging     loaded verisk YLT: …/air_ylt_*.parquet
 rollup.pipeline    staging: normalised YLTs concatenated
 rollup.pipeline    event-id check (verisk): 80/80 rows matched air_events

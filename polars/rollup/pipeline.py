@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import polars as pl
 
@@ -350,3 +351,10 @@ def run(
     write_marts(cfg, marts, collected)
     write_debug_outputs(cfg, collected)
     write_reports(cfg, intermediate, variants)
+
+
+def _write_lazy_parquet(lf: pl.LazyFrame, path: Path) -> int:
+    """Write a LazyFrame directly to parquet and return the written row count."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lf.sink_parquet(path)
+    return pl.scan_parquet(path).select(pl.len()).collect().item()

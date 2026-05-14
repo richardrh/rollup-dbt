@@ -217,7 +217,7 @@ Multiple chunk files fine — the pipeline globs them all.
 
 Pipeline uses `NetOfPreCatLoss` as the loss column. Filters to `CatalogTypeCode = 'STC'`.
 
-### `data/ylt/risklink/risklink_ylt_*.parquet`
+### `data/ylt/risklink/risklink_ylt*.parquet`
 
 | column | type |
 |--------|------|

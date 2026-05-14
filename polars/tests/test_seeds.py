@@ -10,9 +10,11 @@ import pytest
 from rollup import seeds
 from rollup.config import CurrencyCode
 from rollup.schemas import frames as F
+from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import RefLobsCol as LB
+from rollup.schemas.columns import ValidAnalysesCol as VA
 from rollup.validate import SchemaError
 
 
@@ -148,3 +150,51 @@ def test_lobs_has_office_and_class():
     df = bundle.lobs.collect()
     assert LB.OFFICE in df.columns
     assert LB.CLASS in df.columns
+
+
+def test_valid_analyses_uses_verisk_gcadj_wind_labels():
+    bundle = seeds.load_all(SEEDS_DIR)
+    valid = bundle.valid_analyses.collect()
+    analyses = bundle.analyses.collect()
+
+    labels = set(
+        analyses
+        .join(
+            valid,
+            left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+            right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+            how="inner",
+        )
+        .filter(pl.col(AN.VENDOR) == "verisk")
+        [AN.MODELLED_LABEL]
+        .to_list()
+    )
+
+    assert labels == {"EU_EQ", "EU_FL", "EU_WS_GCAdj", "UK_FL", "UK_WSSS_GCAdj"}
+    assert "EU_WS" not in labels
+    assert "UK_WSSS" not in labels
+
+
+def test_valid_risklink_has_one_analysis_per_lob_peril():
+    bundle = seeds.load_all(SEEDS_DIR)
+    valid = bundle.valid_analyses.collect()
+    analyses = bundle.analyses.collect()
+
+    risklink_valid = (
+        analyses
+        .join(
+            valid,
+            left_on=[AN.VENDOR, AN.ANALYSIS_ID],
+            right_on=[VA.VENDOR, VA.ANALYSIS_ID],
+            how="inner",
+        )
+        .filter(pl.col(AN.VENDOR) == "risklink")
+    )
+    duplicates = (
+        risklink_valid
+        .group_by(AN.LOB_ID, AN.PERIL_ID)
+        .len()
+        .filter(pl.col("len") > 1)
+    )
+
+    assert duplicates.height == 0
