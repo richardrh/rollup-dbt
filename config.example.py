@@ -42,7 +42,7 @@ no min-loss filter).
 # YLT_VERISK_DIR   = "/mnt/storage/rollup/data/ylt/verisk"
 # YLT_VERISK_GLOB  = "air_ylt_*.parquet"
 # YLT_RISKLINK_DIR = "/mnt/storage/rollup/data/ylt/risklink"
-# YLT_RISKLINK_GLOB= "risklink_ylt_*.parquet"
+# YLT_RISKLINK_GLOB= "risklink_ylt*.parquet"
 # EP_VERISK_DIR    = "/mnt/storage/rollup/data/ep_summaries/verisk"
 # EP_RISKLINK_DIR  = "/mnt/storage/rollup/data/ep_summaries/risklink"
 

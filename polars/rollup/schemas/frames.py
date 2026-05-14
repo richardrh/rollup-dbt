@@ -31,15 +31,10 @@ from .columns import (
 # ----- raw -----
 
 RAW_RISKLINK_YLT: pl.Schema = pl.Schema({
-    RawRisklinkYltCol.SIMULATION_SET_ID: pl.Int64,
     RawRisklinkYltCol.YEAR_ID:           pl.Int64,
     RawRisklinkYltCol.EVENT_ID:          pl.Int64,
-    RawRisklinkYltCol.DATE:              pl.String,
     RawRisklinkYltCol.P_VALUE:           pl.Float64,
     RawRisklinkYltCol.ANLS_ID:           pl.Int64,
-    RawRisklinkYltCol.NAME:              pl.String,
-    RawRisklinkYltCol.DESCRIPTION:       pl.String,
-    RawRisklinkYltCol.RATE:              pl.Float64,
     RawRisklinkYltCol.MEAN_LOSS:         pl.Float64,
     RawRisklinkYltCol.STD_DEV:           pl.Float64,
     RawRisklinkYltCol.EXP_VALUE:         pl.Float64,

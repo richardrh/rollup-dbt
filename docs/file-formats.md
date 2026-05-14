@@ -32,7 +32,7 @@ as one lazy table. **CamelCase preserved** to match AIR Touchstone export.
 | `NetOfPreCatLoss`   | Float64 | **the loss carried into the chain**. |
 | `filename`          | String  | passthrough. |
 
-### `data/ylt/risklink/risklink_ylt_*.parquet`
+### `data/ylt/risklink/risklink_ylt*.parquet`
 
 **One row per (yearid, eventid, anlsid)** — *not* a per-period summary.
 Filter to `PERSPCODE='RL'` (ground-up loss) before exporting.

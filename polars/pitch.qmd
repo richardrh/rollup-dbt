@@ -144,7 +144,7 @@ schema, and reports status in plain language. Then it asks permission.
   <span class="t-ok">✓</span> air_ylt_c1.parquet                       <span class="t-num">148.3 MB</span>
   <span class="t-ok">✓</span> air_ylt_c2.parquet                       <span class="t-num">102.5 MB</span>
 
-<span class="t-hdr">[ylt risklink]</span>  <span class="t-path">data/ylt/risklink/</span>  <span class="t-dim">risklink_ylt_*.parquet</span>  <span class="t-dim">n_simulations=</span><span class="t-num">100,000</span>
+<span class="t-hdr">[ylt risklink]</span>  <span class="t-path">data/ylt/risklink/</span>  <span class="t-dim">risklink_ylt*.parquet</span>  <span class="t-dim">n_simulations=</span><span class="t-num">100,000</span>
   <span class="t-ok">✓</span> risklink_ylt_01.parquet                    <span class="t-num">2.1 GB</span>
 
 <span class="t-dim">Seeds:</span> <span class="t-ok">12/12</span> <span class="t-dim">valid.</span>   <span class="t-dim">YLTs:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>   <span class="t-dim">EP summaries:</span> <span class="t-ok">2/2</span> <span class="t-dim">vendors.</span>

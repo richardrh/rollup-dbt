@@ -106,7 +106,7 @@ def _risklink(data_root: Path) -> Vendor:
         hisco_label="RMS",
         n_simulations=100_000,
         ylt_dir=_env_path(EnvVar.YLT_RISKLINK_DIR, data_root / "ylt" / VendorName.RISKLINK),
-        ylt_glob=os.getenv(EnvVar.YLT_RISKLINK_GLOB, "risklink_ylt_*.parquet"),
+        ylt_glob=os.getenv(EnvVar.YLT_RISKLINK_GLOB, "risklink_ylt*.parquet"),
         ep_summary_dir=_env_path(EnvVar.EP_RISKLINK_DIR, data_root / "ep_summaries" / VendorName.RISKLINK),
     )
 

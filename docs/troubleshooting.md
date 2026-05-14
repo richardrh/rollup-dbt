@@ -32,7 +32,7 @@ Quick reference for the nine most common pipeline failures. Each lists the sympt
 
 **Fix:** Filenames must match the pattern exactly:
 - Verisk: `air_ylt_*.parquet`
-- RiskLink: `risklink_ylt_*.parquet`
+- RiskLink: `risklink_ylt*.parquet`
 
 Check your files in `data/ylt/verisk/` and `data/ylt/risklink/` against these patterns.
 

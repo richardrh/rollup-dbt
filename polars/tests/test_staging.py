@@ -28,15 +28,10 @@ from rollup.stages.staging import (
 
 def _raw_risklink_ylt() -> pl.LazyFrame:
     return pl.DataFrame({
-        RLK.SIMULATION_SET_ID: [1],
         RLK.YEAR_ID:           [2026],
         RLK.EVENT_ID:          [100],
-        RLK.DATE:              ["2026-01-01"],
         RLK.P_VALUE:           [0.5],
         RLK.ANLS_ID:           [501],
-        RLK.NAME:              ["x"],
-        RLK.DESCRIPTION:       ["x"],
-        RLK.RATE:              [0.01],
         RLK.MEAN_LOSS:         [1.0],
         RLK.STD_DEV:           [0.1],
         RLK.EXP_VALUE:         [1.0],

@@ -52,7 +52,7 @@ def _make_config(tmp_path: Path, populate_seeds: bool = True) -> config.Config:
                           tmp_path / "ep" / VendorName.VERISK),
             config.Vendor(VendorName.RISKLINK, "RMS", 100_000,
                           tmp_path / "ylt" / VendorName.RISKLINK,
-                          "risklink_ylt_*.parquet",
+                          "risklink_ylt*.parquet",
                           tmp_path / "ep" / VendorName.RISKLINK),
         ),
     )

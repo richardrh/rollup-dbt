@@ -43,7 +43,7 @@ def test_risklink_n_simulations_is_100k():
     v = config.resolve().vendor(VendorName.RISKLINK)
     assert v.n_simulations == 100_000
     assert v.hisco_label == "RMS"
-    assert v.ylt_glob == "risklink_ylt_*.parquet"
+    assert v.ylt_glob == "risklink_ylt*.parquet"
 
 
 def test_paths_default_under_repo_root():
@@ -98,7 +98,7 @@ def _cfg_with_seeds(tmp_path: Path, populate: bool = True) -> config.Config:
                           tmp_path / "ep" / VendorName.VERISK),
             config.Vendor(VendorName.RISKLINK, "RMS", 100_000,
                           tmp_path / "ylt" / VendorName.RISKLINK,
-                          "risklink_ylt_*.parquet",
+                          "risklink_ylt*.parquet",
                           tmp_path / "ep" / VendorName.RISKLINK),
         ),
     )

@@ -67,7 +67,7 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
                    tmp_path / "ep" / VendorName.VERISK),
             Vendor(VendorName.RISKLINK, "RMS", 100_000,
                    tmp_path / "ylt" / VendorName.RISKLINK,
-                   "risklink_ylt_*.parquet",
+                   "risklink_ylt*.parquet",
                    tmp_path / "ep" / VendorName.RISKLINK),
         ),
     )

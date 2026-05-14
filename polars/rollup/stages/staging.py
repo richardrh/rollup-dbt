@@ -34,7 +34,7 @@ log = logging.getLogger("rollup.staging")
 def load_raw_risklink_ylt(
     parquet_dir: Path,
     *,
-    glob: str = "risklink_ylt_*.parquet",
+    glob: str = "risklink_ylt*.parquet",
 ) -> pl.LazyFrame:
     """Scan every RiskLink YLT parquet under `parquet_dir` matching `glob`."""
     pattern = parquet_dir / glob
