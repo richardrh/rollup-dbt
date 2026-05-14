@@ -11,6 +11,7 @@ from rollup.config import Flavor, Vendor, VendorName
 from rollup.fanout import fanout_hisco
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import HiscoFanoutCol as H
+from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.variants import VariantSpec
 
@@ -37,10 +38,22 @@ def _all_factors(name: VendorName) -> pl.LazyFrame:
     return pl.DataFrame({
         AF.BASE_MODEL:         [name.value, name.value, name.value],
         AF.MODEL_EVENT_ID:     [10, 20, 30],
+        AF.EVENT_ID:           [10, 20, 30],
         AF.YEAR_ID:            [1, 1, 2],
+        AF.MODEL_CODE:         [41, 41, 41],
         AF.REQUIRED_CURRENCY:  ["GBP", "GBP", "GBP"],
         AF.CDS_CAT_CLASS_NAME: ["class", "class", "class"],
         _METRIC:               [100.0, 200.0, 300.0],
+    }).lazy()
+
+
+def _air_events() -> pl.LazyFrame:
+    return pl.DataFrame({
+        AE.EVENT_ID: [1000010, 1000020],
+        AE.MODEL_ID: [41, 41],
+        AE.EVENT:    [10, 20],
+        AE.YEAR:     [1, 1],
+        AE.DAY:      [11, 22],
     }).lazy()
 
 
@@ -72,7 +85,19 @@ def test_risklink_fanout_without_event_catalogue_keeps_zero_day_fallback():
     assert out[H.MODEL_EVENT_DAY].to_list() == [0, 0, 0]
 
 
-def test_verisk_fanout_ignores_risklink_event_catalogue():
+def test_verisk_fanout_enriches_model_event_id_and_day_from_air_events():
+    out = fanout_hisco(
+        _all_factors(VendorName.VERISK),
+        _variant(VendorName.VERISK),
+        air_events=_air_events(),
+    ).collect()
+
+    assert out.height == 3
+    assert out[H.MODEL_EVENT_ID].to_list() == [1000010, 1000020, None]
+    assert out[H.MODEL_EVENT_DAY].to_list() == [11, 22, None]
+
+
+def test_verisk_fanout_ignores_risklink_event_catalogue_without_air_events():
     out = fanout_hisco(
         _all_factors(VendorName.VERISK),
         _variant(VendorName.VERISK),

@@ -61,7 +61,7 @@ def count_event_id_orphans(
     """Count Verisk-style event IDs that are absent from the air_events seed."""
     ae = air_events.select(
         pl.col(AE.YEAR).alias(Y.YEAR_ID),
-        pl.col(AE.EVENT_ID),
+        pl.col(AE.EVENT).alias(Y.EVENT_ID),
         pl.col(AE.MODEL_ID).alias(Y.MODEL_CODE),
     ).with_columns(pl.lit(True).alias(_AE_MATCH_TMP))
 
@@ -80,7 +80,7 @@ def count_event_id_orphans(
             f"event catalogue validation incomplete for vendor={vendor_filter}: "
             f"{orphans:,} / {total:,} YLT rows did not match "
             "data/seeds/validation/verisk_events.parquet. Calculations continue, "
-            "but ModelEventDay remains 0 and AIR event metadata is not validated. "
+            "but ModelEventDay cannot be enriched and AIR event metadata is not validated. "
             "Provide verisk_events.parquet to validate/enrich event IDs."
         )
     else:
@@ -188,6 +188,7 @@ def run(
             all_factors,
             variant,
             min_loss=cfg.min_loss,
+            air_events=seeds.air_events,
             risklink_events=seeds.risklink_events,
         )
         for variant in variants

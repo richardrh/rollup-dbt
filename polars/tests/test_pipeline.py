@@ -186,7 +186,7 @@ def _risklink_ylt_for_orphan_test(event_ids: list[int]) -> pl.LazyFrame:
 
 def _air_events_seed(event_ids: list[int]) -> pl.LazyFrame:
     return pl.DataFrame({
-        AE.EVENT_ID: event_ids,
+        AE.EVENT_ID: [event_id + 1_000_000 for event_id in event_ids],
         AE.MODEL_ID: [41] * len(event_ids),
         AE.EVENT:    event_ids,
         AE.YEAR:     [1] * len(event_ids),
@@ -220,7 +220,7 @@ def test_count_event_id_orphans_counts_unmatched_rows(caplog):
     message = caplog.text
     assert "event catalogue validation incomplete" in message
     assert "data/seeds/validation/verisk_events.parquet" in message
-    assert "ModelEventDay remains 0" in message
+    assert "ModelEventDay cannot be enriched" in message
 
 
 def test_count_risklink_event_id_orphans_counts_unmatched_rows(caplog):
