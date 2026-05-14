@@ -110,7 +110,7 @@ Two pieces of pipeline logic determine the scope:
 
 #### 1. The `base_model` rule (which event_ids end up in the output)
 
-`attach_uplift` in `polars/rollup/stages/factors.py` reads `base_model` from
+`attach_uplift` in `polars/rollup/intermediate/factors.py` reads `base_model` from
 `blending_weights.csv`. The seed is the runtime lookup:
 
 ```
