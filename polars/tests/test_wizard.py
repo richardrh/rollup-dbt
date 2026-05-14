@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 import io
 
-from rollup.wizard import _interactive_review, run_wizard
+from rollup.wizard import ReviewResult, _interactive_review, run_wizard
 
 
 @dataclass
@@ -59,6 +60,42 @@ def test_run_wizard_invokes_pipeline_with_prepared_inputs(monkeypatch):
 
     assert run_wizard(Args(dump_interim=True)) == 0
     assert calls == [{"cfg": cfg, "dump_interim": True}]
+
+
+def test_run_wizard_post_run_sql_decline_skips_push(monkeypatch, capsys):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    class TtyInput(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    cfg = replace(config.resolve(), mssql_conn_str="mssql://user:secret@server/db")
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ep_summaries verisk", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+        Section("ep_summaries risklink", "ep-dir", [Check("ep", cfg.output_dir, True)]),
+    ])
+    run_calls: list[dict] = []
+    push_calls: list[object] = []
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
+    monkeypatch.setattr(
+        "rollup.wizard._interactive_review",
+        lambda *_args, **_kwargs: ReviewResult(config=cfg, dump_interim=True),
+    )
+    monkeypatch.setattr("rollup.pipeline.run", lambda _cfg, **kwargs: run_calls.append(kwargs))
+    monkeypatch.setattr("rollup.cli._cmd_push_to_sql", lambda args: push_calls.append(args) or 0)
+    monkeypatch.setattr("sys.stdin", TtyInput(""))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "n")
+
+    assert run_wizard(Args(yes=False)) == 0
+    assert run_calls == [{"dump_interim": True}]
+    assert push_calls == []
+    assert "skipped SQL push" in capsys.readouterr().out
 
 
 def test_run_wizard_uses_seed_by_default_without_requiring_ep_summaries(monkeypatch):

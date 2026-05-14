@@ -14,6 +14,7 @@ Covers:
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import io
 import sys
 from pathlib import Path
@@ -561,7 +562,7 @@ def test_confirm_push_refuses_non_tty_without_yes():
     assert "refusing to push without --yes" in stderr
 
 
-def test_confirm_push_abort_message_when_user_declines():
+def test_confirm_push_skip_message_when_user_declines():
     from rollup.cli import _confirm_push
 
     class TtyInput(io.StringIO):
@@ -574,9 +575,86 @@ def test_confirm_push_abort_message_when_user_declines():
         input_func=lambda _: "n",
     )
 
-    assert code == 1
-    assert stdout == "aborted by user\n"
+    assert code == 0
+    assert stdout == "skipped SQL push\n"
     assert stderr == ""
+
+
+@pytest.mark.parametrize("reply", ["n", ""])
+def test_push_to_sql_interactive_decline_skips_without_engine(tmp_path, monkeypatch, capsys, reply):
+    from rollup.cli import main
+
+    class TtyInput(io.StringIO):
+        def isatty(self):
+            return True
+
+    cfg = replace(_make_config(tmp_path), mssql_conn_str="mssql://user:secret@server/db")
+    cfg.output_dir.mkdir()
+    (cfg.output_dir / "HiscoAIR_202601_main.parquet").write_bytes(b"parquet")
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr("sys.stdin", TtyInput(""))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": reply)
+    monkeypatch.setattr(
+        "rollup.io.sql_push.make_engine",
+        lambda *_args, **_kwargs: pytest.fail("SQL engine should not be created"),
+    )
+    monkeypatch.setattr(
+        "rollup.io.sql_push.push_parquet_to_sql",
+        lambda *_args, **_kwargs: pytest.fail("SQL push should not be called"),
+    )
+
+    assert main(["push-to-sql"]) == 0
+    captured = capsys.readouterr()
+    assert "skipped SQL push" in captured.out
+    assert "aborted" not in captured.out.lower()
+
+
+def test_push_to_sql_non_interactive_without_yes_still_errors(tmp_path, monkeypatch, capsys):
+    from rollup.cli import main
+
+    cfg = replace(_make_config(tmp_path), mssql_conn_str="mssql://user:secret@server/db")
+    cfg.output_dir.mkdir()
+    (cfg.output_dir / "HiscoAIR_202601_main.parquet").write_bytes(b"parquet")
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr(
+        "rollup.io.sql_push.make_engine",
+        lambda *_args, **_kwargs: pytest.fail("SQL engine should not be created"),
+    )
+
+    assert main(["push-to-sql"]) == 2
+    captured = capsys.readouterr()
+    assert "refusing to push without --yes" in captured.err
+
+
+def test_push_to_sql_yes_proceeds(tmp_path, monkeypatch):
+    from rollup.cli import main
+
+    class FakeEngine:
+        disposed = False
+
+        def dispose(self):
+            self.disposed = True
+
+    cfg = replace(_make_config(tmp_path), mssql_conn_str="mssql://user:secret@server/db")
+    cfg.output_dir.mkdir()
+    parquet = cfg.output_dir / "HiscoAIR_202601_main.parquet"
+    parquet.write_bytes(b"parquet")
+    engine = FakeEngine()
+    pushed: list[tuple[Path, object, str | None]] = []
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr("rollup.io.sql_push.make_engine", lambda conn_str: engine)
+    monkeypatch.setattr(
+        "rollup.io.sql_push.push_parquet_to_sql",
+        lambda p, *, engine, schema: pushed.append((p, engine, schema)) or 7,
+    )
+
+    assert main(["push-to-sql", "--yes", "--schema", "marts"]) == 0
+    assert pushed == [(parquet, engine, "marts")]
+    assert engine.disposed is True
 
 
 def test_push_error_report_includes_diagnostic_hint():
