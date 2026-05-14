@@ -1,9 +1,12 @@
 """Convert wide EP-summary xlsx exports into long-format CSVs that match the
 STG_RISKLINK_EP / STG_VERISK_EP schemas.
 
-Source: 'OEPAEP Curves' sheet. Title decoration in rows 1-6, header at row 7,
-data from row 8 onward. Wide layout has one column per (ep_type, return_period):
-AAL, OEP_2, OEP_5, ..., OEP_10000, AEP_2, ..., AEP_10000.
+RiskLink source: 'OEPAEP Curves' sheet. Title decoration in rows 1-6, header
+at row 7, data from row 8 onward. Wide layout has one column per
+(ep_type, return_period): AAL, OEP_2, OEP_5, ..., AEP_2, ...
+
+Verisk source: 'PML by LOB' sheet. Header at row 7, data from row 8 onward.
+Wide layout has aal_0.0, aep_<rp>.0, and oep_<rp>.0 columns.
 
 Long format: one row per (id, rp, ep_type, lob, region_peril, gl) for risklink.
 - ep_type in {'AAL', 'OEP', 'AEP'}
@@ -19,17 +22,19 @@ import polars as pl
 
 from rollup.config import VendorName
 from rollup.schemas.columns import StgRisklinkEpCol as RL
-from rollup.schemas.columns import StgVeriskEpCol as VK  # noqa: F401 — reserved for future use
+from rollup.schemas.columns import StgVeriskEpCol as VK
 
 
 _HEADER_ROW = 7   # 1-indexed
 _DATA_START_ROW = 8
 _EP_SHEET = "OEPAEP Curves"
+_VERISK_PML_SHEET = "PML by LOB"
 
 # Strict — only OEP_<int> / AEP_<int> are accepted as RP columns.
 # A header like 'OEP_DIFF' or 'AEP_TOTAL' is silently ignored, not parsed
 # as a return period (which would crash int() and skip the whole file).
 _RP_COLUMN = re.compile(r"^(?P<kind>OEP|AEP)_(?P<rp>\d+)$")
+_VERISK_RP_COLUMN = re.compile(r"^(?P<kind>oep|aep)_(?P<rp>\d+(?:\.0+)?)$", re.IGNORECASE)
 
 
 def _clean(v):
@@ -160,6 +165,101 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
     )
 
 
+def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
+    """Read a Verisk EP-summary xlsx, return long-format STG_VERISK_EP rows.
+
+    Reads the 'PML by LOB' sheet. Header row is row 7 (1-indexed); data begins
+    at row 8. Returns one row per (rp, ep_type, analysis, lob). ``aal_0.0`` is
+    emitted as ``ep_type='AAL', rp=0`` and ``aep_*/oep_*`` columns become the
+    corresponding return period rows.
+    """
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        ws = wb[_VERISK_PML_SHEET]
+        rows = list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+    if len(rows) < _DATA_START_ROW:
+        raise ValueError(
+            f"{path}: '{_VERISK_PML_SHEET}' has fewer than {_DATA_START_ROW} rows"
+        )
+
+    header = list(rows[_HEADER_ROW - 1])
+    data = [list(r) for r in rows[_DATA_START_ROW - 1:]]
+    col_idx: dict[str, int] = {
+        str(name).strip(): i
+        for i, name in enumerate(header)
+        if name is not None and str(name).strip()
+    }
+
+    for required in ("Analysis", "ExposureAttribute", "aal_0.0"):
+        if required not in col_idx:
+            raise ValueError(
+                f"{path}: missing required column {required!r} in header row {_HEADER_ROW}"
+            )
+
+    rp_columns: list[tuple[int, int, str]] = []
+    for c in col_idx:
+        m = _VERISK_RP_COLUMN.match(c)
+        if m:
+            rp_columns.append((col_idx[c], int(float(m["rp"])), m["kind"].upper()))
+    rp_columns.sort(key=lambda t: (t[2], t[1]))
+
+    out_rows: list[dict[str, int | float | str | None]] = []
+    for row in data:
+        if all(c is None or (isinstance(c, str) and c.strip() == "") for c in row):
+            continue
+
+        analysis = _clean(row[col_idx["Analysis"]]) if col_idx["Analysis"] < len(row) else None
+        lob = (
+            _clean(row[col_idx["ExposureAttribute"]])
+            if col_idx["ExposureAttribute"] < len(row)
+            else None
+        )
+        if analysis is None or lob is None:
+            continue
+
+        aal_raw = _clean(row[col_idx["aal_0.0"]]) if col_idx["aal_0.0"] < len(row) else None
+        if aal_raw is not None:
+            try:
+                out_rows.append({
+                    VK.RP:       0,
+                    VK.EP_TYPE:  "AAL",
+                    VK.ANALYSIS: str(analysis),
+                    VK.LOB:      str(lob),
+                    VK.GL:       float(aal_raw),
+                })
+            except (TypeError, ValueError):
+                pass
+
+        for idx, rp, kind in rp_columns:
+            v = _clean(row[idx]) if idx < len(row) else None
+            if v is None:
+                continue
+            try:
+                out_rows.append({
+                    VK.RP:       rp,
+                    VK.EP_TYPE:  kind,
+                    VK.ANALYSIS: str(analysis),
+                    VK.LOB:      str(lob),
+                    VK.GL:       float(v),
+                })
+            except (TypeError, ValueError):
+                continue
+
+    return pl.DataFrame(
+        out_rows,
+        schema={
+            VK.RP:       pl.Int64,
+            VK.EP_TYPE:  pl.String,
+            VK.ANALYSIS: pl.String,
+            VK.LOB:      pl.String,
+            VK.GL:       pl.Float64,
+        },
+    )
+
+
 def write_long_csv(df: pl.DataFrame, output: Path) -> None:
     """Write `df` as CSV to `output`, creating parent directories as needed."""
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -182,8 +282,7 @@ def convert_ep_summaries_to_csv(ep_dir: Path, vendor: VendorName) -> list[Path]:
             if vendor == VendorName.RISKLINK:
                 df = read_risklink_ep_summary(xlsx)
             else:
-                # Verisk reader to be added once a sample xlsx is available.
-                continue
+                df = read_verisk_ep_summary(xlsx)
         except (KeyError, ValueError):
             continue
 
