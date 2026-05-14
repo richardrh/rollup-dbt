@@ -21,7 +21,6 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from rollup import config
 from rollup.cli import main as cli_main
 from rollup.config import CurrencyCode, EnvVar, VendorName
 from rollup.schemas.columns import (
@@ -33,13 +32,11 @@ from rollup.schemas.columns import (
     PerilsCol as P,
     RawRisklinkYltCol as RLK,
     RawVeriskYltCol as VK,
-    RefAirEventsCol as AE,
     RefEuwsRankOverridesCol as EO,
     RefEuwsRateFactorsCol as EU,
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
     RefLobsCol as LB,
-    RefRisklinkEventsCol as RLE,
     StgRisklinkEpCol as REP,
     StgVeriskEpCol as VEP,
     ValidAnalysesCol as VA,
@@ -71,6 +68,7 @@ def _write_minimal_seeds(root: Path) -> None:
         LB.CDS_CAT_CLASS_NAME: ["LOB UK Test"],
         LB.OFFICE: ["UK"],
         LB.CLASS: ["HH"],
+        LB.CURRENCY: ["GBP"],
     }).write_csv(seeds / "business" / "lobs.csv")
 
     pl.DataFrame({
@@ -134,15 +132,17 @@ def _write_minimal_seeds(root: Path) -> None:
         seeds / "adjustments" / "euws_rank_overrides.csv"
     )
     pl.DataFrame({
-        AE.EVENT_ID: [1, 2, 3, 4],
-        AE.MODEL_ID: [41, 41, 41, 41],
-        AE.EVENT: [1, 2, 3, 4],
-        AE.YEAR: [1, 1, 1, 1],
-        AE.DAY: [1, 2, 3, 4],
-    }).write_csv(seeds / "validation" / "air_events.csv")
-    pl.DataFrame(schema={RLE.EVENT_ID: pl.Int64, RLE.YEAR: pl.Int64, RLE.DAY: pl.Int64}).write_csv(
-        seeds / "validation" / "risklink_events.csv"
-    )
+        "EventID": [1, 2, 3, 4],
+        "ModelID": [41, 41, 41, 41],
+        "Event": [1, 2, 3, 4],
+        "Year": [1, 1, 1, 1],
+        "Day": [1, 2, 3, 4],
+    }).write_parquet(seeds / "validation" / "verisk_events.parquet")
+    pl.DataFrame(schema={
+        "ModelEventID": pl.Int64,
+        "ModelOccurrenceYear": pl.Int64,
+        "ModelOccurrenceDate": pl.Date,
+    }).write_parquet(seeds / "validation" / "risklink_flood22_model_events.parquet")
 
 
 def _write_fake_ep_summaries(root: Path) -> None:
@@ -219,7 +219,8 @@ def deterministic_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_cli_pipeline_applies_hand_calculated_50_50_blend(deterministic_root: Path):
     assert cli_main(["--dry-run", "-y"]) == 0
-    assert cli_main(["-y", "--min-loss", "0", "--dump-interim", "--no-derive-blending"]) == 0
+    assert cli_main(["-y", "--min-loss", "0", "--dump-interim"]) == 0
+    assert not (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
 
     wide = pl.read_parquet(deterministic_root / "output" / "debug" / "audit_wide.parquet")
     verisk = wide.filter(pl.col(AF.VENDOR) == VendorName.VERISK)
@@ -241,50 +242,3 @@ def test_cli_pipeline_applies_hand_calculated_50_50_blend(deterministic_root: Pa
         row = dialsup.filter(pl.col(H.MODEL_EVENT_ID) == event_id)
         assert row.height == 1
         assert row[H.MODEL_GROSS_LOSS][0] == pytest.approx(expected_loss)
-
-
-def test_cli_derive_blending_reads_fake_ep_summary_files(deterministic_root: Path, tmp_path: Path):
-    output = tmp_path / "derived_blending_weights.csv"
-
-    assert cli_main(["derive-blending", "--output", str(output)]) == 0
-
-    derived = pl.read_csv(output)
-    rl_weight = derived.filter(
-        (pl.col(BW.PERIL_ID) == 1)
-        & (pl.col(BW.RETURN_PERIOD) == 0)
-        & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
-    )[BW.WEIGHT][0]
-    vk_weight = derived.filter(
-        (pl.col(BW.PERIL_ID) == 1)
-        & (pl.col(BW.RETURN_PERIOD) == 0)
-        & (pl.col(BW.VENDOR) == VendorName.VERISK)
-    )[BW.WEIGHT][0]
-
-    assert rl_weight == pytest.approx(500.0 / 1500.0)
-    assert vk_weight == pytest.approx(1000.0 / 1500.0)
-
-
-def test_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
-    from rollup.run_inputs import derive_blending_for_run
-
-    cfg = config.resolve()
-    blending = derive_blending_for_run(cfg)
-
-    assert blending.weights is not None
-    assert "derived" in blending.message
-    assert (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
-
-    df = blending.weights.collect()
-    rl_weight = df.filter(
-        (pl.col(BW.PERIL_ID) == 1)
-        & (pl.col(BW.RETURN_PERIOD) == 0)
-        & (pl.col(BW.VENDOR) == VendorName.RISKLINK)
-    )[BW.WEIGHT][0]
-    vk_weight = df.filter(
-        (pl.col(BW.PERIL_ID) == 1)
-        & (pl.col(BW.RETURN_PERIOD) == 0)
-        & (pl.col(BW.VENDOR) == VendorName.VERISK)
-    )[BW.WEIGHT][0]
-
-    assert rl_weight == pytest.approx(500.0 / 1500.0)
-    assert vk_weight == pytest.approx(1000.0 / 1500.0)

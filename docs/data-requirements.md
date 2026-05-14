@@ -14,7 +14,7 @@ Schema reference. For the step-by-step procedure, see [Loading your data](load-d
     ├── ylt/
     │   ├── verisk/*.parquet
     │   └── risklink/*.parquet
-    ├── ep_summaries/         ← required by default for run-time blend derivation
+    ├── ep_summaries/         ← optional review inputs
     │   ├── verisk/*.csv
     │   └── risklink/*.csv
     └── output/               ← pipeline writes here
@@ -46,25 +46,12 @@ region_peril, gl)` for risklink.
 AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 (e.g. `2`, `5`, ..., `10000`).
 
-### Deriving blending weights from EP summaries
+### Blending weights are provided reference data
 
-After converting xlsx to long CSV (above), normal runs derive blending weights
-in memory and write an audit copy to
-`data/output/debug/derived_blending_weights.csv`; they do **not** overwrite the
-reviewed seed. To deliberately refresh the reviewed seed, run:
-
-    uv run rollup derive-blending
-
-Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
-computes per-peril totals for AAL, 1-in-200 OEP, 1-in-1000 OEP, and
-1-in-10000 OEP, and writes
-`data/seeds/vor/blending_weights.csv` with proportions:
-
-    rl_proportion = rl_aal / (rl_aal + vk_aal)
-    vk_proportion = 1 - rl_proportion
-
-Use `uv run rollup --use-blending-seed` only when you explicitly want the
-reviewed `blending_weights.csv` instead of run-time EP-summary derivation.
+Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. The
+pipeline does **not** derive model weights from EP summaries; provide the seed
+from the blending-factor table that specifies each model's share, such as
+50/50 or 80/20.
 
 ---
 
@@ -124,8 +111,7 @@ Two pieces of pipeline logic determine the scope:
 #### 1. The `base_model` rule (which event_ids end up in the output)
 
 `attach_uplift` in `polars/rollup/stages/factors.py` reads `base_model` from
-`blending_weights.csv`. The generated seed defaults flood perils to RiskLink
-and all other perils to Verisk, but the seed is the runtime lookup:
+`blending_weights.csv`. The seed is the runtime lookup:
 
 ```
 base_model = blending_weights.base_model  -- per peril_id lookup
@@ -280,9 +266,9 @@ One row per (peril, vendor) pair. `sub_peril` is optional regional split label.
 
 ### Optional seeds (improve output quality)
 
-**`air_events.csv`** — Verisk event catalogue. Pipeline runs without it but reports orphan warnings. Populate to silence.
+**`verisk_events.parquet`** — Verisk event catalogue. Used to enrich Verisk `ModelEventID`/`ModelEventDay`; missing rows report orphan warnings.
 
-**`risklink_events.csv`** — RiskLink event catalogue. Optional stub for future event-day enrichment.
+**`risklink_flood22_model_events.parquet`** — RiskLink event catalogue. Used to enrich `ModelEventDay` for the January-style `rl_withdayid` fanout.
 
 **`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
 

@@ -43,7 +43,7 @@ def test_risklink_n_simulations_is_100k():
     v = config.resolve().vendor(VendorName.RISKLINK)
     assert v.n_simulations == 100_000
     assert v.hisco_label == "RMS"
-    assert v.ylt_glob == "risklink_ylt_*.parquet"
+    assert v.ylt_glob == "risklink_ylt*.parquet"
 
 
 def test_paths_default_under_repo_root():
@@ -189,7 +189,7 @@ def _cfg_with_seeds(tmp_path: Path, populate: bool = True) -> config.Config:
                           tmp_path / "ep" / VendorName.VERISK),
             config.Vendor(VendorName.RISKLINK, "RMS", 100_000,
                           tmp_path / "ylt" / VendorName.RISKLINK,
-                          "risklink_ylt_*.parquet",
+                          "risklink_ylt*.parquet",
                           tmp_path / "ep" / VendorName.RISKLINK),
         ),
     )
@@ -320,24 +320,25 @@ def test_forecast_coverage_section_reports_missing_factors(tmp_path):
     assert "missing factors" in coverage_check.note
 
 
-def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
+def test_lob_peril_validation_warns_duplicate_analyses_for_lob_peril(tmp_path):
     cfg = _cfg_with_seeds(tmp_path)
     business = cfg.seeds_dir / "business"
     pl.DataFrame({
-        LB.LOB_ID: [1, 2],
-        LB.MODELLED_LOB: ["LOB_A_SRC_1", "LOB_A_SRC_2"],
-        LB.ROLLUP_LOB: ["ROLLUP_A", "ROLLUP_A"],
-        LB.LOB_TYPE: ["prop", "prop"],
-        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household", "HIC UK Household"],
-        LB.OFFICE: ["UK", "UK"],
-        LB.CLASS: ["HH", "HH"],
+        LB.LOB_ID: [1],
+        LB.MODELLED_LOB: ["LOB_A_SRC_1"],
+        LB.ROLLUP_LOB: ["ROLLUP_A"],
+        LB.LOB_TYPE: ["prop"],
+        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household"],
+        LB.OFFICE: ["UK"],
+        LB.CLASS: ["HH"],
+        LB.CURRENCY: ["GBP"],
     }).write_csv(business / "lobs.csv")
     pl.DataFrame({
         AN.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
         AN.ANALYSIS_ID: ["101", "102"],
         AN.MODELLED_LABEL: ["A", "B"],
-        AN.PERIL_ID: [1, 2],
-        AN.LOB_ID: [1, 2],
+        AN.PERIL_ID: [1, 1],
+        AN.LOB_ID: [1, 1],
     }, schema={
         AN.VENDOR: pl.String,
         AN.ANALYSIS_ID: pl.String,
@@ -354,10 +355,10 @@ def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
     section = next(s for s in plan.sections if s.title == "lob_peril_validation")
     check = section.checks[0]
 
-    assert not check.ok
-    assert not plan.all_lob_peril_ok
-    assert "one peril per rollup_lob validation failed" in check.note
-    assert "ROLLUP_A" in check.note
+    assert check.ok
+    assert plan.all_lob_peril_ok
+    assert "WARNING duplicate valid analyses for LOB/peril" in check.note
+    assert "lob=1 peril=1" in check.note
 
 
 # -----------------------------------------------------------------------------
@@ -431,8 +432,8 @@ def test_seed_section_reports_dtype_drift(tmp_path):
     # lobs.csv: lob_id is Int64 in REF_LOBS. Write a value that won't coerce.
     bad = cfg.seeds_dir / "business" / "lobs.csv"
     bad.write_text(
-        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class\n"
-        "abc,foo,bar,baz,quux,L,X\n"  # 'abc' isn't an Int64
+        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class,currency\n"
+        "abc,foo,bar,baz,quux,L,X,GBP\n"  # 'abc' isn't an Int64
     )
     plan = config.build_plan(cfg)
     chk = next(c for c in plan.seeds_section.checks if c.label == "lobs")

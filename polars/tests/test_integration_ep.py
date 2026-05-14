@@ -35,7 +35,7 @@ from rollup.schemas.columns import EpType
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.stages.ep import ep_curve_from_ylt
-from rollup.stages.staging import load_raw_verisk_ylt
+from rollup.staging import load_raw_verisk_ylt
 
 
 OUTPUTS_DIR = Path(__file__).resolve().parent / "outputs"
@@ -87,6 +87,7 @@ def _project_to_normalized(raw: pl.LazyFrame) -> pl.LazyFrame:
             pl.col(VK.ANALYSIS).alias(Y.PERIL_NAME),                    # placeholder
             pl.lit("EU").alias(Y.REGION),                               # placeholder
             pl.lit("WS").alias(Y.PERIL_FAMILY),                         # placeholder
+            pl.lit("GBP").alias(Y.CURRENCY),                            # placeholder
             pl.col(VK.MODEL_CODE).alias(Y.MODEL_CODE),
             pl.col(VK.YEAR_ID).alias(Y.YEAR_ID),
             pl.col(VK.EVENT_ID).alias(Y.EVENT_ID),
@@ -173,7 +174,7 @@ def test_overall_ep_curve_for_excel_diff(normalized_ylt):
     df.write_csv(out_path)
 
     aal_row = df.filter(pl.col(EP.EP_TYPE) == EpType.AAL).row(0, named=True)
-    aal_from_curve = aal_row[EP.ANNUAL_LOSS]
+    aal_from_curve = aal_row[EP.LOSS]
 
     # Independent sanity: AAL from the curve must equal sum(loss)/n_sims.
     total_loss = normalized_ylt.select(pl.col(Y.LOSS).sum()).collect().item()

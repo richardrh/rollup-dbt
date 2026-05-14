@@ -14,7 +14,6 @@ class Args:
     dry_run: bool = False
     yes: bool = True
     dump_interim: bool = True
-    derive_blending: bool = False
 
 
 def test_run_wizard_dry_run_prints_plan(monkeypatch, capsys):
@@ -39,7 +38,6 @@ def test_run_wizard_dry_run_prints_plan(monkeypatch, capsys):
 def test_run_wizard_invokes_pipeline_with_prepared_inputs(monkeypatch):
     from rollup import config
     from rollup.plan import Plan, Section, Check
-    from rollup.run_inputs import BlendingInput
 
     cfg = config.resolve()
     plan = Plan(config=cfg, sections=[
@@ -55,19 +53,15 @@ def test_run_wizard_invokes_pipeline_with_prepared_inputs(monkeypatch):
     monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
     monkeypatch.setattr(config, "confirm", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
-        "rollup.wizard.derive_blending_for_run",
-        lambda _cfg: BlendingInput(weights="weights", message="derived"),
-    )
-    monkeypatch.setattr(
         "rollup.pipeline.run",
         lambda cfg_arg, **kwargs: calls.append({"cfg": cfg_arg, **kwargs}),
     )
 
-    assert run_wizard(Args(derive_blending=True, dump_interim=True)) == 0
-    assert calls == [{"cfg": cfg, "dump_interim": True, "blending_weights": "weights"}]
+    assert run_wizard(Args(dump_interim=True)) == 0
+    assert calls == [{"cfg": cfg, "dump_interim": True}]
 
 
-def test_run_wizard_requires_ep_summaries_for_default_derivation(monkeypatch, capsys):
+def test_run_wizard_uses_seed_by_default_without_requiring_ep_summaries(monkeypatch):
     from rollup import config
     from rollup.plan import Plan, Section, Check
 
@@ -83,11 +77,11 @@ def test_run_wizard_requires_ep_summaries_for_default_derivation(monkeypatch, ca
 
     monkeypatch.setattr(config, "resolve", lambda: cfg)
     monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
-    monkeypatch.setattr("rollup.pipeline.run", lambda *_args, **_kwargs: calls.append({}))
+    monkeypatch.setattr(config, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("rollup.pipeline.run", lambda _cfg, **kwargs: calls.append(kwargs))
 
-    assert run_wizard(Args(derive_blending=True)) == 2
-    assert calls == []
-    assert "fix the failing checks" in capsys.readouterr().err
+    assert run_wizard(Args()) == 0
+    assert calls == [{"dump_interim": True}]
 
 
 def test_run_wizard_renders_rich_plan_for_tty_failures(monkeypatch):
@@ -101,7 +95,7 @@ def test_run_wizard_renders_rich_plan_for_tty_failures(monkeypatch):
     cfg = config.resolve()
     plan = Plan(config=cfg, sections=[
         Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
-        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, False)]),
         Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
         Section("ep_summaries verisk", "ep-dir", [Check("*.long.csv", cfg.output_dir, False)]),
         Section("ep_summaries risklink", "ep-dir", [Check("*.long.csv", cfg.output_dir, True)]),
@@ -118,7 +112,7 @@ def test_run_wizard_renders_rich_plan_for_tty_failures(monkeypatch):
     monkeypatch.setattr(config, "print_plan", fake_print_plan)
     monkeypatch.setattr("sys.stderr", stderr)
 
-    assert run_wizard(Args(derive_blending=True)) == 2
+    assert run_wizard(Args()) == 2
     assert rendered == [stderr]
     assert "RICH PLAN" in stderr.getvalue()
 
@@ -183,8 +177,8 @@ def test_interactive_review_collects_operator_choices(monkeypatch):
         Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
         Section("forecast_factors", "forecast", [Check("forecast dates", cfg.seeds_dir, True, note="2026-01-01")]),
     ])
-    args = Args(derive_blending=True, dump_interim=True)
-    answers = iter(["", "", "n", "0", "n", "y"])
+    args = Args(dump_interim=True)
+    answers = iter(["", "", "0", "n", "y"])
 
     monkeypatch.setattr(config, "print_plan", lambda _plan: None)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
@@ -192,6 +186,7 @@ def test_interactive_review_collects_operator_choices(monkeypatch):
     reviewed = _interactive_review(cfg, plan, args)
 
     assert reviewed is not None
-    assert reviewed.min_loss == 0
-    assert args.derive_blending is False
-    assert args.dump_interim is False
+    assert reviewed.config.min_loss == 0
+    assert reviewed.dump_interim is False
+    # caller's args must not be mutated by the wizard
+    assert args.dump_interim is True

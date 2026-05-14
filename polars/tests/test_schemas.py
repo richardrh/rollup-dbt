@@ -62,6 +62,7 @@ def _normalized_ylt_frame(**overrides) -> pl.DataFrame:
         Y.PERIL_NAME: ["Europe Winter Storm"],
         Y.REGION: ["EU"],
         Y.PERIL_FAMILY: ["WS"],
+        Y.CURRENCY: ["GBP"],
         Y.MODEL_CODE: [0],
         Y.YEAR_ID: [1],
         Y.EVENT_ID: [1],

@@ -22,9 +22,9 @@ rollup-dbt/              ← repo root (this is where you cloned it)
 
 ## EP summaries — long-format CSVs
 
-EP summaries feed `rollup derive-blending`, which computes AAL-weighted blending
-proportions between RiskLink and Verisk for every peril. The pipeline reads the
-files in `data/ep_summaries/<vendor>/` as CSV and expects the **long format**
+EP summaries are optional review inputs. Blending proportions between RiskLink
+and Verisk come from the provided `data/seeds/vor/blending_weights.csv` table,
+not from these files. If supplied, the pipeline expects the **long format**
 described below — one row per (lob, region_peril / analysis, return period,
 ep_type). This is different from the wide format that RMS exports natively
 (one column per return period). Conversion instructions are at the bottom of

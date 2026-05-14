@@ -1,4 +1,4 @@
-"""Each CSV under `polars/seeds/` loads clean and matches its declared schema."""
+"""Each seed under `data/seeds/` loads clean and matches its declared schema."""
 
 from __future__ import annotations
 
@@ -29,7 +29,8 @@ def test_seed_file_map_matches_schema_registry():
 
 def test_discover_returns_fixed_relative_paths():
     discovered = {spec.name: spec.filename for spec in seeds.discover(SEEDS_DIR)}
-    assert discovered == seeds.SEED_FILES
+    for name, filename in seeds.SEED_FILES.items():
+        assert discovered[name] == filename
 
 
 def test_discover_does_not_guess_by_header(tmp_path):
@@ -53,7 +54,7 @@ def test_discover_does_not_guess_by_header(tmp_path):
 def test_seed_file_exists_and_schema_matches(spec):
     path = SEEDS_DIR / spec.filename
     assert path.exists(), f"seed file missing: {path}"
-    lf = pl.scan_csv(path, schema=spec.schema)
+    lf = seeds.load_seed_file(path, spec.schema, name=spec.name)
     assert lf.collect_schema() == spec.schema
 
 
@@ -76,11 +77,23 @@ def test_populated_seeds_have_rows():
     assert bundle.fx_rates.collect().height == 6
 
 
-def test_optional_stub_seeds_are_valid():
-    """event catalogue seeds are stub-empty but schema-valid."""
+def test_event_catalogue_seeds_load_from_authoritative_parquets():
+    """Event catalogue seeds are parquet exports projected into canonical schema."""
     bundle = seeds.load_all(SEEDS_DIR)
-    for name in ("air_events", "risklink_events"):
-        assert getattr(bundle, name).collect().height == 0, f"{name} should be stub-empty"
+    assert bundle.air_events.collect().height > 0
+    assert bundle.risklink_events.collect().height > 0
+
+
+def test_event_catalogue_csv_fallbacks_are_not_discovered(tmp_path):
+    validation = tmp_path / "validation"
+    validation.mkdir()
+    (validation / "air_events.csv").write_text("event_id,model_id,event,year,day\n")
+    (validation / "risklink_events.csv").write_text("event_id,year,day\n")
+
+    discovered = {spec.name: spec.filename for spec in seeds.discover(tmp_path)}
+
+    assert discovered["air_events"] == ""
+    assert discovered["risklink_events"] == ""
 
 
 # -----------------------------------------------------------------------------

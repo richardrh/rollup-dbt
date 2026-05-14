@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 
 from rollup.chain import forecast_factor_col
-from rollup.metrics.dialsup import add_dialsup
+from rollup.intermediate.metrics import add_dialsup
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import NormalizedYltCol as Y
 

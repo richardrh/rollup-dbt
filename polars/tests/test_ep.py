@@ -45,7 +45,7 @@ def test_ep_curve_aal_equals_total_over_n():
     aal = out.filter(pl.col(EP.EP_TYPE) == EpType.AAL)
     assert aal.height == 1
     # 100 + 50 + 200 + 25 + 75 = 450; AAL = 450 / 5 = 90
-    assert aal[EP.ANNUAL_LOSS][0] == 90.0
+    assert aal[EP.LOSS][0] == 90.0
     assert aal[EP.RANK_NUM][0] == 0
     assert aal[EP.RETURN_PERIOD][0] == 0
 
@@ -66,7 +66,7 @@ def test_ep_curve_oep_ranking():
     )
     # losses ranked: 200, 100, 75, 50, 25
     # rank 1 -> rp=5, rank 2 -> rp=2, rank 5 -> rp=1
-    losses_by_rank = dict(zip(out[EP.RANK_NUM].to_list(), out[EP.ANNUAL_LOSS].to_list()))
+    losses_by_rank = dict(zip(out[EP.RANK_NUM].to_list(), out[EP.LOSS].to_list()))
     assert losses_by_rank[1] == 200.0
     assert losses_by_rank[2] == 100.0
     assert losses_by_rank[3] == 75.0
@@ -75,7 +75,7 @@ def test_ep_curve_oep_ranking():
 
 
 def test_ep_curve_tied_losses_get_row_order_ranks_not_dense_ranks():
-    """Tied annual losses get deterministic row-order ranks, not shared dense ranks."""
+    """Tied losses get deterministic row-order ranks, not shared dense ranks."""
     rows = []
     losses_by_year = {2: 100.0, 1: 100.0, 3: 50.0}
     for year_id, loss in losses_by_year.items():
@@ -108,4 +108,4 @@ def test_ep_curve_tied_losses_get_row_order_ranks_not_dense_ranks():
     )
 
     assert out[EP.RANK_NUM].to_list() == [1, 2, 3]
-    assert out[EP.ANNUAL_LOSS].to_list() == [100.0, 100.0, 50.0]
+    assert out[EP.LOSS].to_list() == [100.0, 100.0, 50.0]

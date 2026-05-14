@@ -148,6 +148,17 @@ def test_long_format_audit_written_by_default(cfg, data_root):
           f"{df['metric_name'].n_unique()} distinct metrics")
 
 
+def test_dump_interim_false_skips_debug_audit_parquets(cfg, data_root):
+    debug_dir = data_root / "output" / "debug"
+    for p in debug_dir.glob("*.parquet") if debug_dir.exists() else []:
+        p.unlink()
+
+    run(cfg, dump_interim=False)
+
+    assert not (debug_dir / "audit_wide.parquet").exists()
+    assert not (debug_dir / "audit_long.parquet").exists()
+
+
 def test_dump_interim_produces_audit_parquets(cfg, data_root):
     debug_dir = data_root / "output" / "debug"
     for p in debug_dir.glob("*.parquet") if debug_dir.exists() else []:

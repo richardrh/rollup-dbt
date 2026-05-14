@@ -1,4 +1,4 @@
-"""Unit tests for rollup/stages/factors.py — one block per attach_* function.
+"""Unit tests for rollup/intermediate/factors.py — one block per attach_* function.
 
 Each test builds minimal LazyFrames inline so the assertions are
 self-contained and fast (no CSV I/O, no pipeline setup).
@@ -20,7 +20,7 @@ from rollup.schemas.columns import (
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
 )
-from rollup.stages.factors import (
+from rollup.intermediate.factors import (
     MissingFxRateError,
     _blend_weights_by_peril_bucket,
     attach_currency,
@@ -52,6 +52,7 @@ def _ylt(
     year_id: int = 2026,
     loss: float = 1000.0,
     cds_cat_class_name: str = "HIC UK Household",
+    currency: str = CurrencyCode.GBP,
 ) -> pl.LazyFrame:
     """Minimal YLT row with the columns that factor functions require.
 
@@ -73,6 +74,7 @@ def _ylt(
         Y.OFFICE:              [office],
         Y.LOB_CLASS:           [lob_class],
         Y.CDS_CAT_CLASS_NAME:  [cds_cat_class_name],
+        Y.CURRENCY:            [currency],
     }, schema={
         Y.VENDOR:              pl.String,
         Y.LOB_ID:              pl.Int64,
@@ -88,6 +90,7 @@ def _ylt(
         Y.OFFICE:              pl.String,
         Y.LOB_CLASS:           pl.String,
         Y.CDS_CAT_CLASS_NAME:  pl.String,
+        Y.CURRENCY:            pl.String,
     }).lazy()
 
 
@@ -127,7 +130,7 @@ def test_attach_currency_does_not_raise_on_missing_fx_rate():
     """attach_currency no longer validates FX coverage — that moved to validate_fx_coverage.
     The downstream join produces a null rate_to_gbp row; the caller is responsible
     for calling validate_fx_coverage before building the factor chain."""
-    ylt = _ylt(cds_cat_class_name="HSA EU Fine Art")
+    ylt = _ylt(currency=CurrencyCode.EUR)
     fx  = _fx_seed((CurrencyCode.GBP, 1.0))   # EUR is missing
     # Does not raise — null rate will remain until the LazyFrame is consumed
     out = attach_currency(ylt, fx).collect()
@@ -135,7 +138,7 @@ def test_attach_currency_does_not_raise_on_missing_fx_rate():
 
 
 def test_attach_currency_attaches_rate_when_present():
-    ylt = _ylt(cds_cat_class_name="HSA EU Fine Art")
+    ylt = _ylt(currency=CurrencyCode.EUR)
     fx  = _fx_seed((CurrencyCode.GBP, 1.0), (CurrencyCode.EUR, 0.88))
     out = attach_currency(ylt, fx).collect()
     assert out[AF.REQUIRED_CURRENCY][0] == CurrencyCode.EUR

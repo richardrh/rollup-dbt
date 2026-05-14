@@ -68,3 +68,28 @@ def validate_schema(
         extras = [c for c in actual.names() if c not in expected.names()]
         if extras:
             raise SchemaError(f"[{name}] unexpected columns: {extras}")
+
+
+def validate_column_in_enum(
+    frame: pl.DataFrame | pl.LazyFrame,
+    column: str,
+    allowed: set[str],
+    *,
+    name: str,
+) -> None:
+    """Assert every value in `column` is a member of `allowed`.
+
+    Polars `pl.String` cannot encode a closed value set at the schema level, so
+    seeds that carry a domain enum (e.g. `base_model ∈ {verisk, risklink}`) get
+    a runtime check at load. A typo in the CSV would otherwise silently mean a
+    different vendor's AAL becomes the uplift denominator — invisible at every
+    layer until the output numbers are wrong.
+    """
+    materialized = frame.collect() if isinstance(frame, pl.LazyFrame) else frame
+    actual = set(materialized[column].drop_nulls().unique().to_list())
+    invalid = sorted(actual - allowed)
+    if invalid:
+        raise SchemaError(
+            f"[{name}] column {column!r} has values outside the allowed set "
+            f"{sorted(allowed)}: {invalid}"
+        )

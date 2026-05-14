@@ -162,7 +162,7 @@ def _risklink(
         ylt_glob=get_str(
             EnvVar.YLT_RISKLINK_GLOB,
             "YLT_RISKLINK_GLOB",
-            "risklink_ylt_*.parquet",
+            "risklink_ylt*.parquet",
             ("vendors", "risklink", "ylt_glob"),
             ("ylt_risklink_glob",),
         ),
