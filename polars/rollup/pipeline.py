@@ -29,7 +29,7 @@ from rollup.intermediate import (
     validate_fx_coverage,
 )
 from rollup.io.report_writer import write_report
-from rollup.marts import fanout_hisco
+from rollup.marts import VariantSpec, build_variants, fanout_hisco, forecast_dates_from_seed, forecast_tags
 from rollup.reports import build_report
 from rollup.schemas import frames as F
 from rollup.schemas.columns import NormalizedYltCol as Y
@@ -45,7 +45,6 @@ from rollup.staging import (
     validate_one_peril_per_rollup_lob,
 )
 from rollup.validate import validate_schema
-from rollup.variants import VariantSpec, build_variants, forecast_dates_from_seed, forecast_tags
 
 
 log = logging.getLogger("rollup.pipeline")

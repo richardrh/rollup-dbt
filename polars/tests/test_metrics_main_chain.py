@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 
 from rollup.chain import CHAIN_BASE, col_after, forecast_factor_col, main_loss_col
-from rollup.metrics.main_chain import add_main_metrics
+from rollup.intermediate.metrics import add_main_metrics
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import MetricCol as M
 from rollup.schemas.columns import NormalizedYltCol as Y

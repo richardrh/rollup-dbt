@@ -16,7 +16,7 @@ from rollup.schemas.columns import RawRisklinkYltCol as RLK
 from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import ValidAnalysesCol as VA
-from rollup.stages.staging import (
+from rollup.staging import (
     filter_valid_analyses,
     normalize_risklink_ylt,
     normalize_verisk_ylt,

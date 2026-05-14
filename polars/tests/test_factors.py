@@ -1,4 +1,4 @@
-"""Unit tests for rollup/stages/factors.py — one block per attach_* function.
+"""Unit tests for rollup/intermediate/factors.py — one block per attach_* function.
 
 Each test builds minimal LazyFrames inline so the assertions are
 self-contained and fast (no CSV I/O, no pipeline setup).
@@ -20,7 +20,7 @@ from rollup.schemas.columns import (
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
 )
-from rollup.stages.factors import (
+from rollup.intermediate.factors import (
     MissingFxRateError,
     _blend_weights_by_peril_bucket,
     attach_currency,

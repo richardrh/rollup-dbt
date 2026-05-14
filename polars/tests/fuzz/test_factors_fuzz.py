@@ -1,4 +1,4 @@
-"""Property-based tests for ``rollup.stages.factors``.
+"""Property-based tests for ``rollup.intermediate.factors``.
 
 Targets ``attach_currency``, ``attach_rank``, ``attach_uplift``,
 ``attach_forecast_factors``, and ``validate_fx_coverage``.
@@ -28,7 +28,7 @@ from rollup.schemas.columns import (
     RefForecastFactorsCol as FF,
     RefFxRatesCol as FX,
 )
-from rollup.stages.factors import (
+from rollup.intermediate.factors import (
     MissingFxRateError,
     attach_currency,
     attach_forecast_factors,

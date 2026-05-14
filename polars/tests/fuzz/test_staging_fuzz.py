@@ -1,4 +1,4 @@
-"""Property-based tests for ``rollup.stages.staging``.
+"""Property-based tests for ``rollup.staging``.
 
 Targets ``normalize_risklink_ylt`` and ``normalize_verisk_ylt``.
 
@@ -23,7 +23,7 @@ from rollup.schemas.columns import (
     RawVeriskYltCol as VK,
     RefLobsCol as LB,
 )
-from rollup.stages.staging import (
+from rollup.staging import (
     normalize_risklink_ylt,
     normalize_verisk_ylt,
 )

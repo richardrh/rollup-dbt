@@ -1,6 +1,6 @@
 """Staging models: seeds + raw vendor inputs -> typed canonical tables."""
 
-from rollup.stages.staging import (
+from rollup.staging.ylt import (
     filter_valid_analyses,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,

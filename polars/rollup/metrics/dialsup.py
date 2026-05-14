@@ -1,32 +1,8 @@
-"""DIALSUP metric.
+"""Compatibility wrapper for DIALSUP metric models.
 
-This module owns the single transformation that produces the ``dialsup``
-metric column. Keeping it outside the pipeline orchestrator makes the metric
-lineage explicit.
+New code should import from :mod:`rollup.intermediate.metrics`.
 """
 
-from __future__ import annotations
+from rollup.intermediate.metrics import add_dialsup
 
-import polars as pl
-
-from rollup.chain import DIALSUP_COL, forecast_factor_col
-from rollup.schemas.columns import AllFactorsCol as AF
-from rollup.schemas.columns import NormalizedYltCol as Y
-
-
-def add_dialsup(ylt: pl.LazyFrame, forecast_tag: str) -> pl.LazyFrame:
-    """Add the tag-independent DIALSUP sensitivity metric.
-
-    ``dialsup = loss * forecast * euws``
-
-    The DIALSUP fanout is intentionally a single output, so it uses the first
-    forecast tag chosen for that fanout rather than emitting one metric per tag.
-    It bypasses uplift, uplift cap, and FX/local-currency conversion.
-    """
-    return ylt.with_columns(
-        (
-            pl.col(Y.LOSS)
-            * pl.col(forecast_factor_col(forecast_tag))
-            * pl.col(AF.EUWS_FACTOR)
-        ).alias(DIALSUP_COL),
-    )
+__all__ = ["add_dialsup"]

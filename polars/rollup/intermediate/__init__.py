@@ -1,8 +1,6 @@
 """Intermediate models: factor attachment, blending, and metrics calculations."""
 
-from rollup.metrics.dialsup import add_dialsup
-from rollup.metrics.main_chain import add_main_metrics
-from rollup.stages.factors import (
+from rollup.intermediate.factors import (
     MissingFxRateError,
     attach_currency,
     attach_euws,
@@ -11,6 +9,7 @@ from rollup.stages.factors import (
     attach_uplift,
     validate_fx_coverage,
 )
+from rollup.intermediate.metrics import add_dialsup, add_main_metrics
 
 __all__ = [
     "MissingFxRateError",

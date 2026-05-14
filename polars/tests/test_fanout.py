@@ -8,12 +8,11 @@ from pathlib import Path
 import polars as pl
 
 from rollup.config import Flavor, Vendor, VendorName
-from rollup.fanout import fanout_hisco
+from rollup.marts import VariantSpec, fanout_hisco
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import HiscoFanoutCol as H
 from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefRisklinkEventsCol as RLE
-from rollup.variants import VariantSpec
 
 
 _METRIC = "loss_uplifted_capped_localccy_202601_euws"
