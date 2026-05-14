@@ -146,7 +146,7 @@ Standard `logging`. Single tree rooted at `rollup`:
 
 - `rollup.seeds` — seed loads.
 - `rollup.staging` — YLT parquet scans.
-- `rollup.factors` — per-factor stages.
+- `rollup.intermediate.factors` — per-factor stages.
 - `rollup.pipeline` — orchestration + event-id checks + fan-out writes.
 
 Default level is `WARNING` (silent for a clean run). Enable info trace via
@@ -165,10 +165,10 @@ rollup.staging     loaded verisk YLT: …/air_ylt_*.parquet
 rollup.pipeline    staging: normalised YLTs concatenated
 rollup.pipeline    event-id check (verisk): 80/80 rows matched air_events
 rollup.staging     valid analyses filtered YLT inputs
-rollup.factors     currency: required_currency derived from CDS class; rate_to_gbp attached
-rollup.factors     forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
-rollup.factors     euws: factor attached, rank overrides applied from seed
-rollup.factors     uplift: rp_bucket proportions + base_model from seed; AAL via window functions
+rollup.intermediate.factors  currency: required_currency derived from CDS class; rate_to_gbp attached
+rollup.intermediate.factors  forecast: 3 factor columns attached — ['f_202601', 'f_202607', 'f_202701']
+rollup.intermediate.factors  euws: factor attached, rank overrides applied from seed
+rollup.intermediate.factors  uplift: rp_bucket proportions + base_model from seed; AAL via window functions
 rollup.pipeline    metrics: 9 derived loss columns + 1 dialsup column
 rollup.pipeline    fanout: wrote HiscoAIR_202601_main.parquet (80 rows)
 ...

@@ -159,9 +159,9 @@ A materialised `vw_ep` equivalent is therefore not required in the main DAG.
 The unioned `vw_ep` would still be useful for excel-diff QA — see
 `tests/test_integration_ep.py`.
 
-If/when it lands, the polars version would be
-`stages.ep_summary.build_vw_ep(rl_ep, vk_ep, lobs, perils)` — `lobs` +
-`perils` replace the `dim_region_perils` join.
+If/when it lands, the polars version should be a staging-layer model such as
+`rollup.staging.ep_summary.build_vw_ep(rl_ep, vk_ep, lobs, perils)` —
+`lobs` + `perils` replace the `dim_region_perils` join.
 
 ---
 
@@ -380,7 +380,7 @@ rp  = CASE base_model
       END
 ```
 
-polars: `stages.ep.ep_curve_from_ylt`. Generalised to any
+polars: `rollup.staging.ep.ep_curve_from_ylt`. Generalised to any
 `n_simulations`; defaults use `DEFAULT_RETURN_PERIODS`. Used by
 `tests/test_integration_ep.py` against the real Verisk YLT (gated on
 parquets being present locally).

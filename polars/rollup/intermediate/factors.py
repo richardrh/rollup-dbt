@@ -54,7 +54,7 @@ from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefFxRatesCol as FX
 
 
-log = logging.getLogger("rollup.factors")
+log = logging.getLogger("rollup.intermediate.factors")
 
 # Working / temporary column names — exist only inside one stage. Kept as
 # module-level constants so every reference is traceable from `pl.col(...)`.

@@ -19,7 +19,7 @@ uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser
-uv run pytest -q                         # 150 unit + 6 integration tests, ~5s (integration skipped by default)
+uv run pytest -q                         # 241 passed, 88 skipped locally (integration skipped by default)
 ```
 
 `python -m rollup` is equivalent.
@@ -103,7 +103,7 @@ contract between the pipeline and the seeds + YLTs you supply.
 │   │   ├── marts/              # Hisco fanout + variant specs
 │   │   ├── reports/            # summary report model
 │   │   └── io/                 # output writers and external sinks
-│   └── tests/                  # 97 tests including e2e
+│   └── tests/                  # 241 passing tests including e2e
 │       ├── test_e2e.py         # the synthetic end-to-end run
 │       ├── build_test_data.py  # generator for tests/data/
 │       └── data/               # gitignored; test inputs + outputs
