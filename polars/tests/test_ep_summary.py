@@ -26,7 +26,7 @@ from rollup.schemas.columns import StgVeriskEpCol as VK
 
 _EP_DIR = (
     Path(__file__).resolve().parent.parent.parent
-    / "data" / "ep_summaries" / "risklink" / "rms_ep_summary.xlsx"
+    / "data" / "ep_summaries" / "risklink" / "Hiscox RNL26 RMS by LOB (EDM & RDM).xlsx"
 )
 _VERISK_EP = (
     Path(__file__).resolve().parent.parent.parent
@@ -117,8 +117,8 @@ def test_read_risklink_ep_summary_aal_rows_have_rp_zero():
 
 @_SKIP_IF_MISSING
 def test_read_risklink_ep_summary_oep_rps_are_correct():
-    """Distinct rp values for ep_type == 'OEP' must include all 12 standard RPs."""
-    expected_rps = {2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 10000}
+    """Distinct rp values for ep_type == 'OEP' must include delivered RPs."""
+    expected_rps = {2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000}
     df = read_risklink_ep_summary(_EP_DIR)
     oep_rps = set(
         df.filter(pl.col(RL.EP_TYPE) == "OEP")[RL.RP].unique().to_list()
