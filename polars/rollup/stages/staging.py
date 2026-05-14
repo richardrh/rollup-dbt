@@ -133,38 +133,6 @@ def filter_valid_analyses(
     )
 
 
-def validate_one_peril_per_rollup_lob(ylt: pl.LazyFrame) -> None:
-    """Fail if any rollup LOB contains more than one canonical peril.
-
-    The valid-analysis model assumes each rollup LOB is associated with one
-    rollup peril. If the YLT inputs contain multiple perils for one rollup LOB,
-    downstream vendor blending would be ambiguous, so fail before factor stages.
-    """
-    conflicts = (
-        ylt
-        .select(Y.ROLLUP_LOB, Y.REGION_PERIL_ID)
-        .unique()
-        .group_by(Y.ROLLUP_LOB)
-        .agg(
-            pl.col(Y.REGION_PERIL_ID).sort().alias("peril_ids"),
-            pl.len().alias("n_perils"),
-        )
-        .filter(pl.col("n_perils") > 1)
-        .collect()
-    )
-    if conflicts.height == 0:
-        return
-
-    examples = "; ".join(
-        f"{row[Y.ROLLUP_LOB]} -> {row['peril_ids']}"
-        for row in conflicts.head(5).iter_rows(named=True)
-    )
-    raise ValueError(
-        "one peril per rollup_lob validation failed; "
-        f"examples: {examples}"
-    )
-
-
 # --------------------------------------------------------------------------- #
 # Normalizers                                                                 #
 # --------------------------------------------------------------------------- #

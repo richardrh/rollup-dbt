@@ -229,24 +229,24 @@ def test_forecast_coverage_section_reports_missing_factors(tmp_path):
     assert "missing factors" in coverage_check.note
 
 
-def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
+def test_lob_peril_validation_flags_multiple_analyses_for_lob_peril(tmp_path):
     cfg = _cfg_with_seeds(tmp_path)
     business = cfg.seeds_dir / "business"
     pl.DataFrame({
-        LB.LOB_ID: [1, 2],
-        LB.MODELLED_LOB: ["LOB_A_SRC_1", "LOB_A_SRC_2"],
-        LB.ROLLUP_LOB: ["ROLLUP_A", "ROLLUP_A"],
-        LB.LOB_TYPE: ["prop", "prop"],
-        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household", "HIC UK Household"],
-        LB.OFFICE: ["UK", "UK"],
-        LB.CLASS: ["HH", "HH"],
+        LB.LOB_ID: [1],
+        LB.MODELLED_LOB: ["LOB_A_SRC_1"],
+        LB.ROLLUP_LOB: ["ROLLUP_A"],
+        LB.LOB_TYPE: ["prop"],
+        LB.CDS_CAT_CLASS_NAME: ["HIC UK Household"],
+        LB.OFFICE: ["UK"],
+        LB.CLASS: ["HH"],
     }).write_csv(business / "lobs.csv")
     pl.DataFrame({
         AN.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
         AN.ANALYSIS_ID: ["101", "102"],
         AN.MODELLED_LABEL: ["A", "B"],
-        AN.PERIL_ID: [1, 2],
-        AN.LOB_ID: [1, 2],
+        AN.PERIL_ID: [1, 1],
+        AN.LOB_ID: [1, 1],
     }, schema={
         AN.VENDOR: pl.String,
         AN.ANALYSIS_ID: pl.String,
@@ -265,8 +265,8 @@ def test_lob_peril_validation_flags_multiple_perils_for_rollup_lob(tmp_path):
 
     assert not check.ok
     assert not plan.all_lob_peril_ok
-    assert "one peril per rollup_lob validation failed" in check.note
-    assert "ROLLUP_A" in check.note
+    assert "one analysis per lob/peril validation failed" in check.note
+    assert "LOB_A_SRC_1" in check.note
 
 
 # -----------------------------------------------------------------------------

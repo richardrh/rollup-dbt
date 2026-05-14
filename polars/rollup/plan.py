@@ -260,25 +260,27 @@ def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
     )]
 
 
-def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
-    """Validate valid RiskLink analysis IDs keep one peril per rollup LOB.
+def _check_one_analysis_per_lob_peril(seeds_dir: Path) -> list[Check]:
+    """Validate the allow-list selects one analysis per LOB/peril key.
 
-    RiskLink analysis metadata carries ``lob_id``, so this seed-only check can
-    catch operator allow-list mistakes before a run starts. Verisk LOBs live in
-    the YLT row and remain covered by the runtime staging validation.
+    RiskLink analysis metadata carries ``lob_id``, so the key is
+    ``(vendor, lob_id, peril_id)``. Verisk analysis metadata is peril-level and
+    the LOB arrives on the YLT row, so the key is ``(vendor, peril_id)``. This
+    catches ambiguous operator selections such as both default and adjusted
+    analyses for the same modelling bucket.
     """
     lobs_path = seeds_dir / "business" / "lobs.csv"
     analyses_path = seeds_dir / "business" / "analyses.csv"
     valid_path = seeds_dir / "business" / "valid_analyses.csv"
     if not lobs_path.exists() or not analyses_path.exists() or not valid_path.exists():
-        return [Check(label="one peril per rollup_lob", path=seeds_dir, ok=False, note="missing seed input")]
+        return [Check(label="one analysis per lob/peril", path=seeds_dir, ok=False, note="missing seed input")]
 
     try:
         lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
         analyses = pl.read_csv(analyses_path, schema=F.ANALYSES)
         valid_analyses = pl.read_csv(valid_path, schema=F.VALID_ANALYSES)
     except Exception as e:
-        return [Check(label="one peril per rollup_lob", path=valid_path, ok=False, note=f"parse error: {e}")]
+        return [Check(label="one analysis per lob/peril", path=valid_path, ok=False, note=f"parse error: {e}")]
 
     mapped = (
         analyses
@@ -288,48 +290,51 @@ def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
             right_on=[VA.VENDOR, VA.ANALYSIS_ID],
             how="inner",
         )
-        .filter(pl.col(AN.LOB_ID).is_not_null())
-        .join(lobs.select(LB.LOB_ID, LB.ROLLUP_LOB), on=AN.LOB_ID, how="left")
-        .filter(pl.col(LB.ROLLUP_LOB).is_not_null())
-        .select(LB.ROLLUP_LOB, AN.PERIL_ID)
-        .unique()
+        .join(lobs.select(LB.LOB_ID, LB.MODELLED_LOB), on=AN.LOB_ID, how="left")
+        .with_columns(
+            pl.when(pl.col(AN.LOB_ID).is_null())
+            .then(pl.lit("<all Verisk LOBs>"))
+            .otherwise(pl.col(LB.MODELLED_LOB))
+            .alias("lob_key"),
+        )
     )
     if mapped.height == 0:
         return [Check(
-            label="one peril per rollup_lob",
+            label="one analysis per lob/peril",
             path=valid_path,
             ok=True,
-            note="no lob-specific valid analyses to validate",
+            note="no valid analyses to validate",
         )]
 
     conflicts = (
         mapped
-        .group_by(LB.ROLLUP_LOB)
+        .group_by(AN.VENDOR, "lob_key", AN.PERIL_ID)
         .agg(
-            pl.col(AN.PERIL_ID).sort().alias("peril_ids"),
-            pl.len().alias("n_perils"),
+            pl.col(AN.ANALYSIS_ID).sort().alias("analysis_ids"),
+            pl.col(AN.MODELLED_LABEL).sort().alias("modelled_labels"),
+            pl.len().alias("n_analyses"),
         )
-        .filter(pl.col("n_perils") > 1)
+        .filter(pl.col("n_analyses") > 1)
     )
     if conflicts.height == 0:
         return [Check(
-            label="one peril per rollup_lob",
+            label="one analysis per lob/peril",
             path=valid_path,
             ok=True,
-            rows=mapped.select(LB.ROLLUP_LOB).unique().height,
-            note="valid analysis metadata maps each rollup_lob to one peril",
+            rows=mapped.select(AN.VENDOR, "lob_key", AN.PERIL_ID).unique().height,
+            note="valid analyses select at most one analysis per lob/peril",
         )]
 
     examples = "; ".join(
-        f"{row[LB.ROLLUP_LOB]} -> {row['peril_ids']}"
+        f"{row[AN.VENDOR]} {row['lob_key']} peril={row[AN.PERIL_ID]} -> {row['analysis_ids']}"
         for row in conflicts.head(5).iter_rows(named=True)
     )
     return [Check(
-        label="one peril per rollup_lob",
+        label="one analysis per lob/peril",
         path=valid_path,
         ok=False,
         rows=conflicts.height,
-        note=f"one peril per rollup_lob validation failed; examples: {examples}",
+        note=f"one analysis per lob/peril validation failed; examples: {examples}",
     )]
 
 
@@ -381,7 +386,7 @@ def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
     sections.append(Section(
         title="lob_peril_validation",
         header=str(config.seeds_dir / "business" / "valid_analyses.csv"),
-        checks=_check_one_peril_per_rollup_lob(config.seeds_dir),
+        checks=_check_one_analysis_per_lob_peril(config.seeds_dir),
     ))
 
     sections.append(Section(

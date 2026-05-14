@@ -5,7 +5,6 @@ NormalizedYlt for both vendors."""
 from __future__ import annotations
 
 import polars as pl
-import pytest
 
 from rollup.config import VendorName
 from rollup.schemas import frames as F
@@ -20,7 +19,6 @@ from rollup.stages.staging import (
     filter_valid_analyses,
     normalize_risklink_ylt,
     normalize_verisk_ylt,
-    validate_one_peril_per_rollup_lob,
 )
 
 
@@ -214,22 +212,3 @@ def test_valid_analysis_filtered_metadata_drops_ylt_rows():
     out = normalize_verisk_ylt(_raw_verisk_ylt(), filtered, _perils(), _lobs()).collect()
 
     assert out.height == 0
-
-
-def test_validate_one_peril_per_rollup_lob_accepts_single_peril():
-    ylt = pl.DataFrame({
-        Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
-        Y.REGION_PERIL_ID: [1, 1],
-    }).lazy()
-
-    validate_one_peril_per_rollup_lob(ylt)
-
-
-def test_validate_one_peril_per_rollup_lob_rejects_multiple_perils():
-    ylt = pl.DataFrame({
-        Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
-        Y.REGION_PERIL_ID: [1, 2],
-    }).lazy()
-
-    with pytest.raises(ValueError, match="one peril per rollup_lob"):
-        validate_one_peril_per_rollup_lob(ylt)
