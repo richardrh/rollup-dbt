@@ -62,6 +62,97 @@ def test_env_overrides_win(monkeypatch, tmp_path):
     assert cfg.vendor(VendorName.VERISK).ylt_dir == (tmp_path / "v").resolve()
 
 
+def test_toml_config_supplies_paths_sql_and_run_settings(monkeypatch, tmp_path):
+    toml_path = tmp_path / "rollup.local.toml"
+    toml_path.write_text(
+        """
+[run]
+min_loss = 2500.0
+
+[sql]
+mssql_conn_str = "mssql+pyodbc://server/database?trusted_connection=yes"
+
+[paths]
+data_dir = "data-local"
+seeds_dir = "seeds-local"
+output_dir = "output-local"
+
+[vendors.verisk]
+ylt_dir = "ylt/verisk-local"
+ylt_glob = "vk_*.parquet"
+ep_summary_dir = "ep/verisk-local"
+
+[vendors.risklink]
+ylt_dir = "ylt/risklink-local"
+ylt_glob = "rl_*.parquet"
+ep_summary_dir = "ep/risklink-local"
+"""
+    )
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LOCAL_TOML_CONFIG", toml_path)
+    monkeypatch.setattr(config, "LEGACY_PY_CONFIG", tmp_path / "missing_config.py")
+
+    cfg = config.resolve()
+
+    assert cfg.min_loss == 2500.0
+    assert cfg.mssql_conn_str == "mssql+pyodbc://server/database?trusted_connection=yes"
+    assert cfg.seeds_dir == (tmp_path / "seeds-local").resolve()
+    assert cfg.output_dir == (tmp_path / "output-local").resolve()
+    assert cfg.vendor(VendorName.VERISK).ylt_dir == (tmp_path / "ylt/verisk-local").resolve()
+    assert cfg.vendor(VendorName.VERISK).ylt_glob == "vk_*.parquet"
+    assert cfg.vendor(VendorName.VERISK).ep_summary_dir == (tmp_path / "ep/verisk-local").resolve()
+    assert cfg.vendor(VendorName.RISKLINK).ylt_dir == (tmp_path / "ylt/risklink-local").resolve()
+    assert cfg.vendor(VendorName.RISKLINK).ylt_glob == "rl_*.parquet"
+    assert cfg.vendor(VendorName.RISKLINK).ep_summary_dir == (tmp_path / "ep/risklink-local").resolve()
+
+
+def test_env_overrides_toml_config(monkeypatch, tmp_path):
+    toml_path = tmp_path / "rollup.local.toml"
+    toml_path.write_text(
+        """
+[sql]
+mssql_conn_str = "mssql+pyodbc://toml/database"
+
+[paths]
+seeds_dir = "toml-seeds"
+"""
+    )
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LOCAL_TOML_CONFIG", toml_path)
+    monkeypatch.setattr(config, "LEGACY_PY_CONFIG", tmp_path / "missing_config.py")
+    monkeypatch.setenv(EnvVar.SEEDS_DIR, str(tmp_path / "env-seeds"))
+    monkeypatch.setenv(EnvVar.MSSQL_CONN_STR, "mssql+pyodbc://env/database")
+
+    cfg = config.resolve()
+
+    assert cfg.seeds_dir == (tmp_path / "env-seeds").resolve()
+    assert cfg.mssql_conn_str == "mssql+pyodbc://env/database"
+
+
+def test_setup_logging_uses_toml_level(monkeypatch, tmp_path):
+    toml_path = tmp_path / "rollup.local.toml"
+    toml_path.write_text('[logging]\nlevel = "INFO"\n')
+    monkeypatch.setattr(config, "LOCAL_TOML_CONFIG", toml_path)
+    monkeypatch.setattr(config, "LEGACY_PY_CONFIG", tmp_path / "missing_config.py")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("logging.basicConfig", lambda **kwargs: captured.update(kwargs))
+
+    config.setup_logging()
+
+    assert captured["level"] == "INFO"
+
+
+def test_malformed_toml_config_raises_systemexit(monkeypatch, tmp_path):
+    toml_path = tmp_path / "rollup.local.toml"
+    toml_path.write_text("[sql\n")
+    monkeypatch.setattr(config, "LOCAL_TOML_CONFIG", toml_path)
+
+    with pytest.raises(SystemExit) as exc_info:
+        config.resolve()
+
+    assert "rollup.local.toml has a problem" in str(exc_info.value)
+
+
 def test_unknown_vendor_raises():
     """Runtime check survives even if a caller bypasses the type system."""
     from typing import cast

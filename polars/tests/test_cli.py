@@ -254,7 +254,7 @@ def test_load_local_config_raises_systemexit_on_syntax_error(tmp_path, monkeypat
     bad_config = tmp_path / "config.py"
     bad_config.write_text("this is not valid python !!! @@@")
 
-    monkeypatch.setattr("rollup.config.REPO_ROOT", tmp_path)
+    monkeypatch.setattr("rollup.config.LEGACY_PY_CONFIG", bad_config)
     with pytest.raises(SystemExit) as exc_info:
         config._load_local_config()
     msg = str(exc_info.value)

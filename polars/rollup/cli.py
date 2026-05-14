@@ -83,7 +83,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--min-loss", type=float, default=None, metavar="N",
         help="drop output rows whose loss < N. Default 1000 (production). "
              "Use --min-loss 0 to keep every event. Also settable via "
-             "ROLLUP_MIN_LOSS env var or MIN_LOSS in config.py.",
+             "ROLLUP_MIN_LOSS env var or [run].min_loss in rollup.local.toml.",
     )
     blend_group = parser.add_mutually_exclusive_group()
     blend_group.add_argument(
@@ -131,8 +131,8 @@ def _build_parser() -> argparse.ArgumentParser:
     push = sub.add_parser(
         "push-to-sql",
         help="Push the Hisco fanout parquets in data/output/ to SQL Server. "
-             "Each table is dropped and recreated. Requires ROLLUP_MSSQL_CONN_STR "
-             "(or MSSQL_CONN_STR in config.py).",
+             "Each table is dropped and recreated. Requires [sql].mssql_conn_str "
+             "in rollup.local.toml or ROLLUP_MSSQL_CONN_STR.",
     )
     push.add_argument(
         "--schema", default=None, metavar="SCHEMA",
@@ -262,7 +262,8 @@ def _cmd_test_sql(args: argparse.Namespace) -> int:
 
 def _sql_conn_missing_message() -> str:
     return (
-        "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+        "error: [sql].mssql_conn_str in rollup.local.toml "
+        "(or ROLLUP_MSSQL_CONN_STR) "
         "is not set. Cannot test SQL Server connection.\n"
     )
 
@@ -317,8 +318,9 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
     """Push the Hisco fanout parquets in `data/output/` to SQL Server.
 
     Lists the parquets, prompts for confirmation, then drops + recreates each
-    target table. The connection string comes from `ROLLUP_MSSQL_CONN_STR` (or
-    `MSSQL_CONN_STR` in `config.py`); aborts with exit-2 if it isn't set.
+    target table. The connection string comes from `[sql].mssql_conn_str` in
+    `rollup.local.toml` (or `ROLLUP_MSSQL_CONN_STR`); aborts with exit-2 if it
+    isn't set.
     """
     from rollup.config import redact_conn_str
     from rollup.io.sql_push import list_pushable_parquets, make_engine, push_parquet_to_sql
@@ -367,7 +369,8 @@ def _cmd_push_to_sql(args: argparse.Namespace) -> int:
 
 def _push_conn_missing_message() -> str:
     return (
-        "error: ROLLUP_MSSQL_CONN_STR (or MSSQL_CONN_STR in config.py) "
+        "error: [sql].mssql_conn_str in rollup.local.toml "
+        "(or ROLLUP_MSSQL_CONN_STR) "
         "is not set. Cannot push to SQL Server.\n"
     )
 

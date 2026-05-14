@@ -149,7 +149,8 @@ Standard `logging`. Single tree rooted at `rollup`:
 - `rollup.pipeline` — orchestration + event-id checks + fan-out writes.
 
 Default level is `WARNING` (silent for a clean run). Enable info trace via
-`--log-level INFO` on the CLI or `ROLLUP_LOG=INFO` env var. Format:
+`--log-level INFO` on the CLI, `[logging].level = "INFO"` in
+`rollup.local.toml`, or `ROLLUP_LOG=INFO` env var. Format:
 `HH:MM:SS  LEVEL  module  message`.
 
 Sample INFO trace from an end-to-end run:
