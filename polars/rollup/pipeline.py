@@ -143,7 +143,7 @@ def run(
     variants = build_variants(fc_dates, cfg.vendors)
     log.info(f"plan: {len(variants)} Hisco variants across {len(cfg.vendors)} vendors")
 
-    all_factors = build_all_factors(cfg, seeds).cache()
+    all_factors = build_all_factors(cfg, seeds)
 
     fanout_lfs = [fanout_hisco(all_factors, variant, min_loss=cfg.min_loss) for variant in variants]
     long_lf = audit_long(all_factors, tags, min_loss=cfg.min_loss)
@@ -151,32 +151,26 @@ def run(
     if cfg.min_loss > 0:
         log.info(f"min_loss filter: dropping rows where loss < {cfg.min_loss}")
 
-    plan_lfs: list[pl.LazyFrame] = list(fanout_lfs)
-    long_idx = len(plan_lfs)
-    plan_lfs.append(long_lf)
-    wide_idx = None
-    if wide_lf is not None:
-        wide_idx = len(plan_lfs)
-        plan_lfs.append(wide_lf)
-
-    collected = pl.collect_all(plan_lfs)
-    fanout_dfs = collected[:len(variants)]
-    long_df = collected[long_idx]
-    wide_df = collected[wide_idx] if wide_idx is not None else None
-
-    for df, variant in zip(fanout_dfs, variants, strict=True):
+    for lf, variant in zip(fanout_lfs, variants, strict=True):
         out_path = cfg.output_dir / f"{variant.name}.parquet"
-        df.write_parquet(out_path)
-        log.info(f"fanout: wrote {variant.name}.parquet ({df.height:,} rows)")
+        rows = _write_lazy_parquet(lf, out_path)
+        log.info(f"fanout: wrote {variant.name}.parquet ({rows:,} rows)")
 
     long_path = cfg.output_dir / "mts_tbl_ylt_combined_all_factors.parquet"
-    long_df.write_parquet(long_path)
-    log.info(f"wrote {long_path.name} ({long_df.height:,} rows)")
+    rows = _write_lazy_parquet(long_lf, long_path)
+    log.info(f"wrote {long_path.name} ({rows:,} rows)")
 
     if dump_interim:
         debug_dir = cfg.output_dir / _AUDIT_SUBDIR
         debug_dir.mkdir(parents=True, exist_ok=True)
-        wide_df.write_parquet(debug_dir / _AUDIT_WIDE_FILE)
-        long_df.write_parquet(debug_dir / _AUDIT_LONG_FILE)
+        _write_lazy_parquet(wide_lf, debug_dir / _AUDIT_WIDE_FILE)
+        _write_lazy_parquet(long_lf, debug_dir / _AUDIT_LONG_FILE)
         log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
         log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
+
+
+def _write_lazy_parquet(lf: pl.LazyFrame, path: Path) -> int:
+    """Write a LazyFrame directly to parquet and return the written row count."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lf.sink_parquet(path)
+    return pl.scan_parquet(path).select(pl.len()).collect().item()
