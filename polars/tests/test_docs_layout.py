@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -24,4 +25,5 @@ def test_docs_reference_canonical_dbt_style_rollup_layout() -> None:
     assert "rollup.factors" not in docs
     assert "rollup.staging.ep.ep_curve_from_ylt" in docs
     assert "rollup.intermediate.factors" in docs
-    assert "241 passed, 88 skipped" in docs
+    assert "uv run pytest -q" in docs
+    assert not re.search(r"\b\d+ passed, \d+ skipped\b", docs)

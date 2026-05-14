@@ -19,7 +19,7 @@ uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser
-uv run pytest -q                         # 241 passed, 88 skipped locally (integration skipped by default)
+uv run pytest -q                         # run the default suite (integration skipped by default)
 ```
 
 `python -m rollup` is equivalent.
