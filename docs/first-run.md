@@ -14,14 +14,14 @@ macOS/Linux:
 
 ```bash
 uv sync
-cp config.example.py config.py
+cp rollup.example.toml rollup.local.toml
 ```
 
 Windows PowerShell:
 
 ```powershell
 uv sync
-Copy-Item config.example.py config.py
+Copy-Item rollup.example.toml rollup.local.toml
 ```
 
 ## 2. Create data directories
@@ -84,6 +84,6 @@ See [Troubleshooting](troubleshooting.md).
 
 - **Real vendor data:** see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md)
 - **Understand the math:** [Calculations](calculations.md) and [Factor chain](factor-chain.md)
-- **Push to SQL:** set `MSSQL_CONN_STR` in `config.py`, then `uv run rollup push-to-sql --yes`
+- **Push to SQL:** set `[sql].mssql_conn_str` in `rollup.local.toml`, then `uv run rollup push-to-sql --yes`
 - **Add a new factor:** [Factor chain](factor-chain.md)
 - **Run tests:** `uv run pytest polars/ -q`

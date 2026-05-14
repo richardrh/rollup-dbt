@@ -23,7 +23,7 @@ def test_quickstart_has_windows_install_and_directory_steps():
     quickstart = _read_doc("docs/first-run.md")
 
     assert "mkdir -p data/ylt/{" not in quickstart
-    assert "Copy-Item config.example.py config.py" in quickstart
+    assert "Copy-Item rollup.example.toml rollup.local.toml" in quickstart
     assert "New-Item -ItemType Directory -Force" in quickstart
 
 
@@ -32,4 +32,4 @@ def test_docs_index_has_windows_setup_commands():
 
     assert "Windows PowerShell" in index
     assert "Set-Location rollup-dbt" in index
-    assert "Copy-Item config.example.py config.py" in index
+    assert "Copy-Item rollup.example.toml rollup.local.toml" in index

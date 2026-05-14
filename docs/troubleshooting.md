@@ -44,10 +44,10 @@ Check your files in `data/ylt/verisk/` and `data/ylt/risklink/` against these pa
 
 **Cause:** No SQL Server connection configured.
 
-**Fix:** Copy the example config and fill it in:
+**Fix:** Copy the example TOML config and fill it in:
 ```bash
-cp polars/config.example.py polars/config.py
-# Edit config.py and set MSSQL_CONN_STR
+cp rollup.example.toml rollup.local.toml
+# Edit rollup.local.toml and set [sql].mssql_conn_str
 ```
 
 Alternatively, set the environment variable directly:
@@ -64,7 +64,7 @@ export ROLLUP_MSSQL_CONN_STR="Driver=ODBC Driver 17 for SQL Server;Server=...;UI
 **Cause:** Server unreachable, wrong server name, network/DNS issue, or firewall blocking.
 
 **Fix:** 
-1. Verify the server name in `polars/config.py` or your connection string is correct.
+1. Verify the server name in `rollup.local.toml` or your connection string is correct.
 2. Try connecting with another tool (SQL Server Management Studio, `sqlcmd`, or `mssql-cli`) to confirm the server itself is reachable.
 3. Check network/firewall settings if other tools can't reach it either.
 
@@ -79,9 +79,9 @@ export ROLLUP_MSSQL_CONN_STR="Driver=ODBC Driver 17 for SQL Server;Server=...;UI
 **Fix:** Install "ODBC Driver 17 for SQL Server" from Microsoft:
 - https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
 
-Then verify your connection string in `polars/config.py` uses the correct driver name:
-```python
-driver=ODBC+Driver+17+for+SQL+Server
+Then verify your connection string in `rollup.local.toml` uses the correct driver name:
+```toml
+mssql_conn_str = "mssql+pyodbc://server/database?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
 ```
 
 ---

@@ -12,7 +12,7 @@ Turns vendor catastrophe-loss YLT parquets into Hisco loss parquets, optionally 
    git clone <repo>
    cd rollup-dbt
    uv sync
-   cp config.example.py config.py
+   cp rollup.example.toml rollup.local.toml
    ```
 
    Windows PowerShell:
@@ -21,7 +21,7 @@ Turns vendor catastrophe-loss YLT parquets into Hisco loss parquets, optionally 
    git clone <repo>
    Set-Location rollup-dbt
    uv sync
-   Copy-Item config.example.py config.py
+   Copy-Item rollup.example.toml rollup.local.toml
    ```
 
 2. **Drop your data into `data/`:** see [Loading your data](load-data.md)

@@ -127,7 +127,7 @@ Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,
 ```bash
 # from repo root
 uv sync                                 # install dependencies
-cp config.example.py config.py          # local config (gitignored; edit to set MSSQL_CONN_STR or MIN_LOSS)
+cp rollup.example.toml rollup.local.toml # local config (gitignored; edit SQL/min_loss/paths)
 
 # (Optional) Tab completion for bash/zsh — add to ~/.bashrc or ~/.zshrc for persistence
 eval "$(register-python-argcomplete rollup)"
