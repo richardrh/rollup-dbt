@@ -68,7 +68,7 @@ uv run rollup --yes
 
 Takes ~30 seconds. Output parquets and audit/debug parquets appear in `data/output/`.
 Use `--no-audit` to skip `data/output/debug/`.
-Normal runs use the reviewed `data/seeds/vor/blending_weights.csv`; use `--derive-blending` only to opt into run-time EP-summary blending.
+Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` model shares.
 
 ## 5. Inspect output
 

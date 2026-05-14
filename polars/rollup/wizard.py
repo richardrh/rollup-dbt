@@ -1,8 +1,8 @@
 """Interactive/default run orchestration.
 
 The CLI module should parse arguments and dispatch. This module owns the run
-flow: resolve configuration, build/render the plan, collect optional run inputs,
-confirm with the operator, and invoke the pipeline.
+flow: resolve configuration, build/render the plan, confirm with the operator,
+and invoke the pipeline.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import TextIO
 from rich.console import Console
 
 from rollup import config
-from rollup.run_inputs import derive_blending_for_run
 
 
 _YES = {"y", "yes"}
@@ -27,7 +26,6 @@ class ReviewResult:
 
     config: config.Config
     dump_interim: bool
-    derive_blending: bool
 
 
 def run_wizard(args: argparse.Namespace) -> int:
@@ -37,7 +35,7 @@ def run_wizard(args: argparse.Namespace) -> int:
     cfg = config.resolve()
     if args.min_loss is not None:
         cfg = replace(cfg, min_loss=args.min_loss)
-    plan = config.build_plan(cfg, require_ep_summaries=args.derive_blending)
+    plan = config.build_plan(cfg)
 
     if args.dry_run:
         _render_plan(plan, stream=sys.stdout)
@@ -46,7 +44,6 @@ def run_wizard(args: argparse.Namespace) -> int:
     if (
         not plan.all_seeds_ok
         or not plan.all_ylt_ok
-        or (args.derive_blending and not plan.all_ep_ok)
         or not plan.all_lob_peril_ok
     ):
         _render_plan(plan, stream=sys.stderr)
@@ -54,8 +51,6 @@ def run_wizard(args: argparse.Namespace) -> int:
         return 2
 
     dump_interim = args.dump_interim
-    derive_blending = args.derive_blending
-
     if args.yes:
         if not config.confirm(plan, assume_yes=True, stream=sys.stdout):
             print("aborted by user")
@@ -67,21 +62,14 @@ def run_wizard(args: argparse.Namespace) -> int:
             return 1
         cfg = reviewed.config
         dump_interim = reviewed.dump_interim
-        derive_blending = reviewed.derive_blending
     elif not config.confirm(plan, assume_yes=False, stream=sys.stdout):
         print("aborted by user")
         return 1
 
-    blending_weights = None
-    if derive_blending:
-        blending = derive_blending_for_run(cfg)
-        blending_weights = blending.weights
-        print(blending.message)
-    else:
-        print("blending: using blending_weights.csv")
+    print("blending: using blending_weights.csv")
 
     try:
-        run(cfg, dump_interim=dump_interim, blending_weights=blending_weights)
+        run(cfg, dump_interim=dump_interim)
     except Exception as e:
         print(f"\npipeline failed: {type(e).__name__}: {e}", file=sys.stderr)
         print("see docs/troubleshooting.md", file=sys.stderr)
@@ -112,14 +100,8 @@ def _interactive_review(
     if not _ask_yes("Continue with these forecast factors? [Y/n]: ", default=True):
         return None
 
-    derive_blending = args.derive_blending
     print("Blending")
-    if derive_blending:
-        if not _ask_yes("Derive blending from EP-summary long CSVs? [Y/n]: ", default=True):
-            derive_blending = False
-            print("  using reviewed blending_weights.csv for this run")
-    else:
-        print("  using reviewed blending_weights.csv for this run (default)")
+    print("  using reviewed blending_weights.csv for this run")
 
     cfg = replace(cfg, min_loss=_prompt_min_loss(cfg.min_loss))
     dump_interim = _ask_yes(
@@ -130,7 +112,7 @@ def _interactive_review(
     print(f"SQL push after run: {'available' if cfg.mssql_conn_str else 'not configured'}")
     if not _ask_yes("Proceed with full rollup run? [y/N]: "):
         return None
-    return ReviewResult(config=cfg, dump_interim=dump_interim, derive_blending=derive_blending)
+    return ReviewResult(config=cfg, dump_interim=dump_interim)
 
 
 def _ask_yes(prompt: str, *, default: bool = False) -> bool:

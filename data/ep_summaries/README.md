@@ -1,12 +1,10 @@
 # EP Summaries
 
-These files feed `rollup derive-blending` and the opt-in `rollup --derive-blending`
-run mode, which compute per-peril AAL-weighted blending proportions between
-RiskLink and Verisk.
+These files are optional review inputs for vendor EP summaries.
 
 Drop long-format CSVs here. Normal pipeline runs use the reviewed
-`data/seeds/vor/blending_weights.csv` seed; EP summary CSVs are read only by the
-explicit blending derivation flows. Original xlsx files may coexist but are not
+`data/seeds/vor/blending_weights.csv` seed; EP summary CSVs do not calculate or
+override model blending weights. Original xlsx files may coexist but are not
 read after conversion.
 
 ---

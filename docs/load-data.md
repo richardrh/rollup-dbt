@@ -25,7 +25,7 @@ Copy these CSVs into their fixed seed locations:
 1. **`data/seeds/business/perils.csv`** — peril dimension (`peril_id`, `name`, `region`, `peril_family`)
 2. **`data/seeds/business/analyses.csv`** — numeric vendor analysis ID → peril, plus RiskLink LOB
 3. **`data/seeds/business/valid_analyses.csv`** — numeric vendor analysis IDs allowed into the run
-4. **`data/seeds/vor/blending_weights.csv`** — reviewed fallback RiskLink / Verisk proportions
+4. **`data/seeds/vor/blending_weights.csv`** — reviewed RiskLink / Verisk proportions
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
@@ -119,13 +119,12 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 
 **Need RiskLink?** Yes if modeling flood perils (`peril_family = 'FL'`); optional for wind/EQ.
 
-## Step 4 — Review blending weights and optionally derive from EP summaries
+## Step 4 — Review blending weights
 
 Normal `uv run rollup` runs use the fixed, reviewed
-`data/seeds/vor/blending_weights.csv` seed. EP summaries (long-format CSVs) are
-only needed when you explicitly opt into deriving per-peril blending proportions
-with `--derive-blending` or when refreshing the seed with the `derive-blending`
-subcommand.
+`data/seeds/vor/blending_weights.csv` seed. Provide this from the
+blending-factor table that specifies model shares (for example 50/50 or 80/20).
+EP summaries do not calculate or override these weights.
 
 **Step 4a — Convert Excel to long CSV (RiskLink only):**
 
@@ -150,23 +149,7 @@ Copy to `data/ep_summaries/verisk/` (files must end in `.long.csv`).
 The `analysis` values are Verisk labels (for example `EU_WS`) and must match
 `analyses.modelled_label`, not the numeric placeholder/production ID.
 
-**Step 4c — Optional: regenerate blending_weights.csv seed:**
-
-```bash
-uv run rollup derive-blending
-```
-
-Reads `*.long.csv` files under `data/ep_summaries/{vendor}/`. For each target
-bucket (`0`=AAL, `200`=1-in-200 OEP, `1000`=1-in-1000 OEP,
-`10000`=1-in-10000 OEP), computes:
-
-```python
-rl_prop = rl_aal / (rl_aal + vk_aal)   # when total > 0; else 0.5
-vk_prop = 1 - rl_prop
-```
-
-The explicit subcommand writes the reviewed seed to
-`data/seeds/vor/blending_weights.csv` with schema:
+`data/seeds/vor/blending_weights.csv` uses this schema:
 
 | column | meaning |
 |---|---|
@@ -180,11 +163,7 @@ At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
 `0`, `200`, `1000`, or `10000`, then joined to the matching blending weight.
 
-Use `uv run rollup --derive-blending` to derive weights in-memory for one run
-from complete EP-summary long CSVs. This writes an audit copy to
-`data/output/debug/derived_blending_weights.csv` and does **not** overwrite the
-reviewed seed. `--use-blending-seed` and `--no-derive-blending` are explicit
-aliases for the default seed-backed behavior.
+Weights are applied exactly as provided by the seed.
 
 ## Step 5 — Full verification
 
@@ -202,7 +181,7 @@ uv run rollup --yes        # non-interactive
 ```
 
 Output: Hisco parquets plus audit/debug parquets in `data/output/` (~15–40 seconds depending on data size).
-The interactive wizard confirms input paths, forecast factor coverage, blending mode, minimum loss, audit outputs, and optional SQL push.
+The interactive wizard confirms input paths, forecast factor coverage, minimum loss, audit outputs, and optional SQL push.
 
 **Inspect output:**
 ```bash
@@ -215,7 +194,6 @@ uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;
 uv run rollup --yes --min-loss 0           # keep all rows
 uv run rollup --yes --log-level INFO       # see factor-chain trace
 uv run rollup --yes --no-audit             # skip debug parquets
-uv run rollup --yes --derive-blending      # opt into run-time EP-derived blending
 ```
 
 Or set persistent values in `rollup.local.toml`: `[run].min_loss = 500`, `[logging].level = "INFO"`, etc.

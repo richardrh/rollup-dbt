@@ -14,7 +14,7 @@ Schema reference. For the step-by-step procedure, see [Loading your data](load-d
     ├── ylt/
     │   ├── verisk/*.parquet
     │   └── risklink/*.parquet
-    ├── ep_summaries/         ← optional unless --derive-blending is selected
+    ├── ep_summaries/         ← optional review inputs
     │   ├── verisk/*.csv
     │   └── risklink/*.csv
     └── output/               ← pipeline writes here
@@ -46,26 +46,12 @@ region_peril, gl)` for risklink.
 AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 (e.g. `2`, `5`, ..., `10000`).
 
-### Deriving blending weights from EP summaries
+### Blending weights are provided reference data
 
-Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. After
-converting xlsx to long CSV (above), use `uv run rollup --derive-blending` to
-derive blending weights in memory for one run and write an audit copy to
-`data/output/debug/derived_blending_weights.csv`; this does **not** overwrite
-the reviewed seed. To deliberately refresh the reviewed seed, run:
-
-    uv run rollup derive-blending
-
-Reads the `*.long.csv` files under `data/ep_summaries/{vendor}/`,
-computes per-peril totals for AAL, 1-in-200 OEP, 1-in-1000 OEP, and
-1-in-10000 OEP, and writes
-`data/seeds/vor/blending_weights.csv` with proportions:
-
-    rl_proportion = rl_aal / (rl_aal + vk_aal)
-    vk_proportion = 1 - rl_proportion
-
-`uv run rollup --use-blending-seed` and `uv run rollup --no-derive-blending`
-are explicit aliases for the default seed-backed behavior.
+Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. The
+pipeline does **not** derive model weights from EP summaries; provide the seed
+from the blending-factor table that specifies each model's share, such as
+50/50 or 80/20.
 
 ---
 
@@ -125,8 +111,7 @@ Two pieces of pipeline logic determine the scope:
 #### 1. The `base_model` rule (which event_ids end up in the output)
 
 `attach_uplift` in `polars/rollup/stages/factors.py` reads `base_model` from
-`blending_weights.csv`. The generated seed defaults flood perils to RiskLink
-and all other perils to Verisk, but the seed is the runtime lookup:
+`blending_weights.csv`. The seed is the runtime lookup:
 
 ```
 base_model = blending_weights.base_model  -- per peril_id lookup

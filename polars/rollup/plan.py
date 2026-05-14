@@ -334,7 +334,7 @@ def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
     )]
 
 
-def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
+def build_plan(config: Config, *, require_ep_summaries: bool = False) -> Plan:
     sections: list[Section] = []
 
     seed_specs = discover_seeds(config.seeds_dir)
@@ -375,7 +375,7 @@ def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
                 vendor.ep_summary_dir,
                 ep_glob,
                 optional_missing_ok=not require_ep_summaries,
-                missing_note="required only when --derive-blending is selected",
+                missing_note="optional; use ep-summary-to-csv to generate long CSVs for review",
             ),
         ))
 

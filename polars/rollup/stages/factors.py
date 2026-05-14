@@ -187,6 +187,20 @@ def attach_currency(ylt: pl.LazyFrame, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
     return out.with_columns(pl.col(AF.RATE_TO_GBP).cast(pl.Float64))
 
 
+def _forecast_factor_expr(tag: str) -> pl.Expr:
+    y_, m_ = int(tag[:4]), int(tag[4:6])
+    return (
+        pl.col(FF.FACTOR)
+        .filter(
+            (pl.col(FF.FORECAST_DATE).dt.year() == y_)
+            & (pl.col(FF.FORECAST_DATE).dt.month() == m_)
+        )
+        .first()
+        .cast(pl.Float64)
+        .alias(forecast_factor_col(tag))
+    )
+
+
 def attach_forecast_factors(
     ylt: pl.LazyFrame,
     forecast_factors: pl.LazyFrame,
@@ -200,25 +214,23 @@ def attach_forecast_factors(
     staging — no separate lobs join required here. Missing (office,class)
     in the seed → factor 1.0 (multiplicative pass-through, documented).
     """
-    for tag in tags:
-        y_, m_ = int(tag[:4]), int(tag[4:6])
-        col = forecast_factor_col(tag)
-        ff = (
-            forecast_factors
-            .filter(
-                (pl.col(FF.FORECAST_DATE).dt.year()  == y_) &
-                (pl.col(FF.FORECAST_DATE).dt.month() == m_)
-            )
-            .select(
-                pl.col(FF.OFFICE),
-                pl.col(FF.CLASS).alias(Y.LOB_CLASS),
-                pl.col(FF.FACTOR).alias(col).cast(pl.Float64),
-            )
-        )
-        ylt = (
-            ylt.join(ff, on=[Y.OFFICE, Y.LOB_CLASS], how="left")
-               .with_columns(pl.col(col).fill_null(1.0))
-        )
+    if not tags:
+        return ylt
+
+    factor_cols = [forecast_factor_col(tag) for tag in tags]
+    factor_exprs = [_forecast_factor_expr(tag) for tag in tags]
+    ff_wide = (
+        forecast_factors
+        .group_by(FF.OFFICE, FF.CLASS)
+        .agg(factor_exprs)
+        .rename({FF.CLASS: Y.LOB_CLASS})
+    )
+
+    ylt = (
+        ylt
+        .join(ff_wide, on=[Y.OFFICE, Y.LOB_CLASS], how="left")
+        .with_columns([pl.col(col).fill_null(1.0) for col in factor_cols])
+    )
     log.info(f"forecast: {len(tags)} factor columns attached — {[forecast_factor_col(t) for t in tags]}")
     return ylt
 
@@ -444,8 +456,6 @@ def attach_uplift(
     uplift_factor = blended_AAL / base_model_AAL, where:
         blended_AAL    = vk_proportion × vk_AAL + rl_proportion × rl_AAL
         base_model     = from blending_weights.base_model (per peril_id).
-                         The derive_blending_weights step sets this to
-                         "risklink" for FL perils and "verisk" otherwise.
         base_model_AAL = AAL of whichever vendor is named as base_model
 
     AAL per (vendor, lob_id, region_peril_id) = sum(loss) / n_sim for that vendor.

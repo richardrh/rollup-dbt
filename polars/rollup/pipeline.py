@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 
 import polars as pl
 
@@ -165,7 +164,6 @@ def run(
     cfg: config.Config,
     *,
     dump_interim: bool = False,
-    blending_weights: pl.LazyFrame | None = None,
 ) -> None:
     """Run the pipeline end-to-end. One parquet per fan-out variant."""
     from rollup.seeds import load_all
@@ -173,8 +171,6 @@ def run(
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     seeds = load_all(cfg.seeds_dir)
-    if blending_weights is not None:
-        seeds = replace(seeds, blending_weights=blending_weights)
     validate_fx_coverage(seeds.fx_rates)
     fc_dates = forecast_dates_from_seed(seeds)
     tags = forecast_tags(fc_dates)

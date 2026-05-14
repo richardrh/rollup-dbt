@@ -39,12 +39,9 @@ simulation YLTs** (`data/ylt/verisk/air_ylt_c1.parquet` +
 them transparently.
 
 EP summaries are currently delivered as Excel/long CSV inputs
-(`data/ep_summaries/risklink/*.xlsx`, `*.long.csv`, etc.). January derived
-`rl_proportion` / `vk_proportion` for blending from these. The polars default
-run uses the fixed reviewed `data/seeds/vor/blending_weights.csv` seed. Use
-`--derive-blending` to derive blend proportions in-memory from complete vendor
-long CSVs for one run and write an audit copy to
-`data/output/debug/derived_blending_weights.csv`.
+(`data/ep_summaries/risklink/*.xlsx`, `*.long.csv`, etc.) for review. Blending
+model shares come from the fixed reviewed `data/seeds/vor/blending_weights.csv`
+seed, which is populated from the provided blending-factor table.
 
 ---
 
@@ -156,11 +153,9 @@ every YLT row) — see `seeds.REQUIRED_SEEDS`.
 
 ### 2.1 `vw_ep` — **todo (materialised view not required)**
 
-January unioned RL + VK EP summaries to derive `rl_proportion` /
-`vk_proportion` for blending. The polars default run reads reviewed
-`blending_weights.csv`; `--derive-blending` can derive those proportions
-directly from vendor `*.long.csv` EP summaries for one run. A materialised
-`vw_ep` equivalent is therefore not required in the main DAG.
+January unioned RL + VK EP summaries upstream of the blending-factor application.
+The polars run reads reviewed `blending_weights.csv` directly for model shares.
+A materialised `vw_ep` equivalent is therefore not required in the main DAG.
 The unioned `vw_ep` would still be useful for excel-diff QA — see
 `tests/test_integration_ep.py`.
 
@@ -220,8 +215,7 @@ model has no events for a group.
 
 January matched `rollup_region_peril IN ('EU_FL', 'UK_FL')` — string
 substring on a derived label. polars stores `base_model` in
-`blending_weights.csv`; `derive-blending` defaults flood perils to RiskLink,
-but runtime uplift reads the seed so operators can override per peril.
+`blending_weights.csv`; runtime uplift reads the provided seed per peril.
 
 ### 3.4 Forecast factors → `attach_forecast_factors` — **done**
 

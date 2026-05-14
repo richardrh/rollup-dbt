@@ -34,7 +34,6 @@ def main(argv: list[str] | None = None) -> int:
 
     handler = {
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
-        "derive-blending":   _cmd_derive_blending,
         "test-sql":          _cmd_test_sql,
         "push-to-sql":       _cmd_push_to_sql,
         "docs":              _cmd_docs,
@@ -85,37 +84,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "Use --min-loss 0 to keep every event. Also settable via "
              "ROLLUP_MIN_LOSS env var or [run].min_loss in rollup.local.toml.",
     )
-    blend_group = parser.add_mutually_exclusive_group()
-    blend_group.add_argument(
-        "--derive-blending", dest="derive_blending", action="store_true", default=False,
-        help="derive blending weights in-memory from EP-summary long CSVs for this run only",
-    )
-    blend_group.add_argument(
-        "--no-derive-blending", dest="derive_blending", action="store_false",
-        help="use data/seeds/vor/blending_weights.csv for this run (default)",
-    )
-    blend_group.add_argument(
-        "--use-blending-seed", dest="derive_blending", action="store_false",
-        help="explicitly use reviewed data/seeds/vor/blending_weights.csv (default)",
-    )
-
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
 
     sub.add_parser(
         "ep-summary-to-csv",
         help="Convert wide EP-summary xlsx files under data/ep_summaries/{vendor}/ "
              "into long-format CSVs next to them.",
-    )
-
-    blend = sub.add_parser(
-        "derive-blending",
-        help="Derive blending_weights.csv from EP-summary long CSVs "
-             "(run ep-summary-to-csv first).",
-    )
-    blend.add_argument(
-        "--output", type=Path, default=None,
-        help="Where to write the blending_weights CSV. "
-             "Default: <seeds_dir>/vor/blending_weights.csv (overwrites the existing seed).",
     )
 
     test_sql = sub.add_parser(
@@ -197,39 +171,6 @@ def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
     for p in written:
         print(f"wrote {p}")
     print(f"total: {len(written)} csv file(s)")
-    return 0
-
-
-def _cmd_derive_blending(args: argparse.Namespace) -> int:
-    """Compute blending_weights.csv from the long-format EP CSVs."""
-    from rollup.config import VendorName
-    from rollup.seeds import load_all
-    from rollup.stages.blending import derive_blending_weights
-    from rollup.stages.staging import filter_valid_analyses
-
-    cfg = config.resolve()
-    output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
-
-    rl_csvs = sorted(cfg.vendor(VendorName.RISKLINK).ep_summary_dir.glob("*.long.csv"))
-    vk_csvs = sorted(cfg.vendor(VendorName.VERISK).ep_summary_dir.glob("*.long.csv"))
-    if not rl_csvs and not vk_csvs:
-        print(
-            "error: no EP-summary long CSVs found under "
-            "data/ep_summaries/{verisk,risklink}/. "
-            "Run `rollup ep-summary-to-csv` first.",
-            file=sys.stderr,
-        )
-        return 2
-
-    seeds_obj = load_all(cfg.seeds_dir)
-    analyses = filter_valid_analyses(seeds_obj.analyses, seeds_obj.valid_analyses).collect()
-    perils   = seeds_obj.perils.collect()
-
-    df = derive_blending_weights(rl_csvs, vk_csvs, analyses, perils)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    df.write_csv(output)
-    print(f"wrote {output}  ({df.height:,} rows)")
-    print(df.head(20))
     return 0
 
 

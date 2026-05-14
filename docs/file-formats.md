@@ -107,8 +107,8 @@ are still derived through `analyses.csv` and `lobs.csv`.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
-Long format. Generate with `uv run rollup derive-blending`
-once `ep-summary-to-csv` has run.
+Long format. Provide this from the reviewed blending-factor table. The pipeline
+does not derive these weights from EP summaries.
 
 | column        | dtype   | notes |
 |---------------|---------|-------|
@@ -200,15 +200,9 @@ direct pipeline input. Convert to long format with:
 The resulting `<stem>.long.csv` has `(id, rp, ep_type, lob, region_peril, gl)`
 for risklink (`STG_RISKLINK_EP` schema).
 
-Then derive blending weights:
-
-    uv run rollup derive-blending
-
-Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. Use
-`uv run rollup --derive-blending` to derive weights in-memory from these long
-CSVs for one run and write `data/output/debug/derived_blending_weights.csv` for
-audit. The explicit `derive-blending` subcommand rewrites the reviewed seed from
-AAL plus 1-in-200, 1-in-1000, and 1-in-10000 OEP totals.
+EP summaries are review inputs only. They do not produce or override
+`data/seeds/vor/blending_weights.csv`; provide that seed from the reviewed
+blending-factor table.
 
 ---
 

@@ -187,15 +187,17 @@ def test_audit_outputs_default_on_and_can_be_disabled():
     assert parser.parse_args(["--no-audit"]).dump_interim is False
 
 
-def test_run_time_blending_uses_seed_by_default_and_can_be_derived():
+def test_ep_summary_blending_derivation_flags_are_not_exposed():
     from rollup.cli import _build_parser
 
     parser = _build_parser()
 
-    assert parser.parse_args([]).derive_blending is False
-    assert parser.parse_args(["--derive-blending"]).derive_blending is True
-    assert parser.parse_args(["--no-derive-blending"]).derive_blending is False
-    assert parser.parse_args(["--use-blending-seed"]).derive_blending is False
+    assert not hasattr(parser.parse_args([]), "derive_blending")
+    for args in (["--derive-blending"], ["--no-derive-blending"], ["--use-blending-seed"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args(args)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["derive-blending"])
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +236,7 @@ def test_cmd_run_catches_pipeline_exception(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("ROLLUP_EP_RISKLINK_DIR",   str(tmp_path / "ep_r"))
 
     with patch("rollup.pipeline.run", side_effect=RuntimeError("injected boom")):
-        rc = main(["--yes", "--use-blending-seed"])
+        rc = main(["--yes"])
 
     assert rc == 2
     captured = capsys.readouterr()
