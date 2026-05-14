@@ -162,7 +162,7 @@ def test_convert_ep_summaries_writes_csv(tmp_path: Path):
     assert df.height >= 1000, f"expected >= 1000 rows, got {df.height}"
 
 
-def test_read_verisk_ep_summary_returns_long_format(tmp_path: Path):
+def test_read_verisk_ep_summary_filters_to_stc_rows(tmp_path: Path):
     xlsx = tmp_path / "verisk.xlsx"
     _write_verisk_fixture(xlsx)
 
@@ -176,7 +176,7 @@ def test_read_verisk_ep_summary_returns_long_format(tmp_path: Path):
     assert set(df[VK.LOB].to_list()) == {"LOB_A"}
 
 
-def test_convert_ep_summaries_writes_verisk_csv(tmp_path: Path):
+def test_convert_ep_summaries_writes_verisk_fixture_csv(tmp_path: Path):
     xlsx = tmp_path / "verisk.xlsx"
     _write_verisk_fixture(xlsx)
 
@@ -202,3 +202,43 @@ def test_real_verisk_ep_summary_analysis_labels_match_expected():
         "UK_WSSS_GCAdj",
     }
     assert df.filter(pl.col(VK.EP_TYPE) == "AAL").select(VK.RP).unique().item() == 0
+
+
+@_SKIP_VERISK_IF_MISSING
+def test_read_real_verisk_ep_summary_returns_long_format():
+    df = read_verisk_ep_summary(_VERISK_EP)
+
+    assert df.schema == F.STG_VERISK_EP
+    assert df.height > 1000
+
+
+@_SKIP_VERISK_IF_MISSING
+def test_read_verisk_ep_summary_aal_rows_have_rp_zero():
+    df = read_verisk_ep_summary(_VERISK_EP)
+    aal = df.filter(pl.col(VK.EP_TYPE) == "AAL")
+
+    assert aal.height > 0
+    assert aal.filter(pl.col(VK.RP) != 0).height == 0
+
+
+@_SKIP_VERISK_IF_MISSING
+def test_read_verisk_ep_summary_oep_rps_are_correct():
+    df = read_verisk_ep_summary(_VERISK_EP)
+    expected_rps = {2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000}
+    oep_rps = set(df.filter(pl.col(VK.EP_TYPE) == "OEP")[VK.RP].unique().to_list())
+
+    assert expected_rps <= oep_rps
+
+
+@_SKIP_VERISK_IF_MISSING
+def test_convert_ep_summaries_writes_verisk_csv(tmp_path: Path):
+    dest_xlsx = tmp_path / "verisk.xlsx"
+    shutil.copy2(_VERISK_EP, dest_xlsx)
+
+    written = convert_ep_summaries_to_csv(tmp_path, VendorName.VERISK)
+
+    assert len(written) == 1
+    csv_path = written[0]
+    assert csv_path.name == "verisk.long.csv"
+    df = pl.read_csv(csv_path, schema=F.STG_VERISK_EP)
+    assert df.height > 1000

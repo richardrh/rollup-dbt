@@ -5,13 +5,14 @@ Wired up two ways:
   * Console script (preferred):   `uv run rollup …`
   * Module form:                  `uv run python -m rollup …`
 
-`rollup --help` lists every subcommand. The default flow (no subcommand)
-runs the pipeline; `--dry-run` prints the plan and exits.
+`rollup --help` lists every subcommand. The obvious non-wizard front doors are
+`rollup run` and `rollup plan`; the legacy default flow (no subcommand) still
+runs the same pipeline, and `--dry-run` still prints the plan and exits.
 
 Subcommand handlers (`_cmd_*`) live in this file and stay deliberately
-thin — they parse arguments, hand off to a stage / IO module, and shape
+thin — they parse arguments, hand off to a layer / IO module, and shape
 the exit code. Real work lives in `rollup.pipeline`, `rollup.io`, and
-`rollup.stages`.
+the dbt-style layer packages under `rollup.{staging,intermediate,marts,reports}`.
 """
 from __future__ import annotations
 
@@ -33,8 +34,9 @@ def main(argv: list[str] | None = None) -> int:
     config.setup_logging(args.log_level)
 
     handler = {
+        "run":               _cmd_run,
+        "plan":              _cmd_plan,
         "ep-summary-to-csv": _cmd_ep_summary_to_csv,
-        "derive-blending":   _cmd_derive_blending,
         "test-sql":          _cmd_test_sql,
         "push-to-sql":       _cmd_push_to_sql,
         "docs":              _cmd_docs,
@@ -85,37 +87,46 @@ def _build_parser() -> argparse.ArgumentParser:
              "Use --min-loss 0 to keep every event. Also settable via "
              "ROLLUP_MIN_LOSS env var or [run].min_loss in rollup.local.toml.",
     )
-    blend_group = parser.add_mutually_exclusive_group()
-    blend_group.add_argument(
-        "--derive-blending", dest="derive_blending", action="store_true", default=True,
-        help="derive blending weights in-memory for this run when all vendor EP-summary long CSVs are present (default)",
+    sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
+
+    run_p = sub.add_parser(
+        "run",
+        help="Run the linear pipeline: staging → intermediate → marts → reports.",
     )
-    blend_group.add_argument(
-        "--no-derive-blending", dest="derive_blending", action="store_false",
-        help="always use data/seeds/vor/blending_weights.csv for this run",
+    run_p.add_argument(
+        "-y", "--yes", action="store_true", default=argparse.SUPPRESS,
+        help="skip the interactive y/N confirmation",
     )
-    blend_group.add_argument(
-        "--use-blending-seed", dest="derive_blending", action="store_false",
-        help="explicitly use reviewed data/seeds/vor/blending_weights.csv instead of run-time EP derivation",
+    run_p.add_argument(
+        "--dry-run", action="store_true", default=argparse.SUPPRESS,
+        help="print the plan and exit without running the pipeline",
+    )
+    run_audit_group = run_p.add_mutually_exclusive_group()
+    run_audit_group.add_argument(
+        "-d", "--dump-interim", dest="dump_interim", action="store_true",
+        default=argparse.SUPPRESS,
+        help="write audit_wide.parquet + audit_long.parquet to <output_dir>/debug/ (default)",
+    )
+    run_audit_group.add_argument(
+        "--no-audit", dest="dump_interim", action="store_false",
+        default=argparse.SUPPRESS,
+        help="skip debug audit_wide.parquet and audit_long.parquet outputs",
+    )
+    run_p.add_argument(
+        "--min-loss", type=float, default=argparse.SUPPRESS, metavar="N",
+        help="drop output rows whose loss < N. Default 1000 (production).",
     )
 
-    sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
+    plan_p = sub.add_parser("plan", help="Print the pre-run plan for the linear pipeline and exit.")
+    plan_p.add_argument(
+        "--min-loss", type=float, default=argparse.SUPPRESS, metavar="N",
+        help="show the plan using this minimum-loss override",
+    )
 
     sub.add_parser(
         "ep-summary-to-csv",
         help="Convert wide EP-summary xlsx files under data/ep_summaries/{vendor}/ "
              "into long-format CSVs next to them.",
-    )
-
-    blend = sub.add_parser(
-        "derive-blending",
-        help="Derive blending_weights.csv from EP-summary long CSVs "
-             "(run ep-summary-to-csv first).",
-    )
-    blend.add_argument(
-        "--output", type=Path, default=None,
-        help="Where to write the blending_weights CSV. "
-             "Default: <seeds_dir>/vor/blending_weights.csv (overwrites the existing seed).",
     )
 
     test_sql = sub.add_parser(
@@ -176,6 +187,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return run_wizard(args)
 
 
+def _cmd_plan(args: argparse.Namespace) -> int:
+    """Non-wizard front door for rendering the pipeline plan."""
+    from rollup.wizard import run_wizard
+
+    args.dry_run = True
+    return run_wizard(args)
+
+
 def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
     """Convert every xlsx under each vendor's ep_summary_dir into a long-CSV sibling."""
     from rollup.io.ep_summary import convert_ep_summaries_to_csv
@@ -197,39 +216,6 @@ def _cmd_ep_summary_to_csv(args: argparse.Namespace) -> int:
     for p in written:
         print(f"wrote {p}")
     print(f"total: {len(written)} csv file(s)")
-    return 0
-
-
-def _cmd_derive_blending(args: argparse.Namespace) -> int:
-    """Compute blending_weights.csv from the long-format EP CSVs."""
-    from rollup.config import VendorName
-    from rollup.seeds import load_all
-    from rollup.stages.blending import derive_blending_weights
-    from rollup.stages.staging import filter_valid_analyses
-
-    cfg = config.resolve()
-    output = args.output or (cfg.seeds_dir / "vor" / "blending_weights.csv")
-
-    rl_csvs = sorted(cfg.vendor(VendorName.RISKLINK).ep_summary_dir.glob("*.long.csv"))
-    vk_csvs = sorted(cfg.vendor(VendorName.VERISK).ep_summary_dir.glob("*.long.csv"))
-    if not rl_csvs and not vk_csvs:
-        print(
-            "error: no EP-summary long CSVs found under "
-            "data/ep_summaries/{verisk,risklink}/. "
-            "Run `rollup ep-summary-to-csv` first.",
-            file=sys.stderr,
-        )
-        return 2
-
-    seeds_obj = load_all(cfg.seeds_dir)
-    analyses = filter_valid_analyses(seeds_obj.analyses, seeds_obj.valid_analyses).collect()
-    perils   = seeds_obj.perils.collect()
-
-    df = derive_blending_weights(rl_csvs, vk_csvs, analyses, perils)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    df.write_csv(output)
-    print(f"wrote {output}  ({df.height:,} rows)")
-    print(df.head(20))
     return 0
 
 

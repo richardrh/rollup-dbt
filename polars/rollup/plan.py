@@ -13,7 +13,7 @@ from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import ValidAnalysesCol as VA
-from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
+from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds, load_seed_file
 from rollup.validate import ColumnDiff, column_diff
 
 
@@ -71,7 +71,7 @@ class Plan:
 
     @property
     def all_lob_peril_ok(self) -> bool:
-        """No rollup LOB maps to more than one peril in valid analysis metadata."""
+        """Valid analysis metadata selects at most one analysis per LOB/peril."""
         section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
         if section is None:
             return True
@@ -79,7 +79,7 @@ class Plan:
 
     @property
     def has_lob_peril_conflict(self) -> bool:
-        """The one-peril-per-rollup-lob check found an actual conflict."""
+        """The one-analysis-per-LOB/peril check found an actual conflict."""
         section = next((s for s in self.sections if s.title == "lob_peril_validation"), None)
         if section is None:
             return False
@@ -100,20 +100,21 @@ def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     if not path.exists():
         return Check(label=spec.name, path=path, ok=False, note="missing")
     try:
-        sniff = pl.scan_csv(path).collect_schema().names()
-        expected = set(spec.schema.names())
-        missing = expected - set(sniff)
-        extra = set(sniff) - expected
-        if missing or extra:
-            bits = []
-            if missing:
-                bits.append(f"missing={sorted(missing)}")
-            if extra:
-                bits.append(f"unexpected={sorted(extra)}")
-            return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
-
-        pl.read_csv(path, schema=spec.schema, n_rows=1)
-        rows = pl.scan_csv(path, schema=spec.schema).select(pl.len()).collect().item()
+        if path.suffix != ".parquet":
+            sniff = pl.scan_csv(path).collect_schema().names()
+            expected = set(spec.schema.names())
+            missing = expected - set(sniff)
+            extra = set(sniff) - expected
+            if missing or extra:
+                bits = []
+                if missing:
+                    bits.append(f"missing={sorted(missing)}")
+                if extra:
+                    bits.append(f"unexpected={sorted(extra)}")
+                return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
+            pl.read_csv(path, schema=spec.schema, n_rows=1)
+        lf = load_seed_file(path, spec.schema, name=spec.name)
+        rows = lf.select(pl.len()).collect().item()
         if rows == 0 and spec.name in REQUIRED_SEEDS:
             return Check(
                 label=spec.name,
@@ -151,7 +152,8 @@ def _check_ylt_parquet(path: Path, expected_schema: pl.Schema, name: str) -> Che
         return Check(label=name, path=path, ok=False, note=f"parse error: {e}")
     size_mb = path.stat().st_size / 1e6
     diffs = column_diff(actual, expected_schema)
-    if not diffs:
+    blocking_diffs = [d for d in diffs if d.kind != "unexpected"]
+    if not blocking_diffs:
         return Check(label=name, path=path, ok=True, note=f"{size_mb:.1f} MB | schema OK")
     return Check(label=name, path=path, ok=False, note=f"{size_mb:.1f} MB | {_format_diffs(diffs)}")
 
@@ -338,7 +340,7 @@ def _check_one_analysis_per_lob_peril(seeds_dir: Path) -> list[Check]:
     )]
 
 
-def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
+def build_plan(config: Config, *, require_ep_summaries: bool = False) -> Plan:
     sections: list[Section] = []
 
     seed_specs = discover_seeds(config.seeds_dir)
@@ -379,7 +381,7 @@ def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
                 vendor.ep_summary_dir,
                 ep_glob,
                 optional_missing_ok=not require_ep_summaries,
-                missing_note="required for run-time blending derivation; use --use-blending-seed to bypass",
+                missing_note="optional; use ep-summary-to-csv to generate long CSVs for review",
             ),
         ))
 

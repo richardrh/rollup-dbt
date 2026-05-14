@@ -97,6 +97,7 @@ REF_LOBS: pl.Schema = pl.Schema({
     RefLobsCol.CDS_CAT_CLASS_NAME: pl.String,
     RefLobsCol.OFFICE:             pl.String,
     RefLobsCol.CLASS:              pl.String,
+    RefLobsCol.CURRENCY:           pl.String,
 })
 
 REF_FORECAST_FACTORS: pl.Schema = pl.Schema({
@@ -176,6 +177,7 @@ NORMALIZED_YLT: pl.Schema = pl.Schema({
     NormalizedYltCol.PERIL_NAME:            pl.String,
     NormalizedYltCol.REGION:                pl.String,
     NormalizedYltCol.PERIL_FAMILY:          pl.String,
+    NormalizedYltCol.CURRENCY:              pl.String,
     NormalizedYltCol.MODEL_CODE:            pl.Int64,
     NormalizedYltCol.YEAR_ID:               pl.Int64,
     NormalizedYltCol.EVENT_ID:              pl.Int64,
@@ -194,7 +196,7 @@ EP_CURVE: pl.Schema = pl.Schema({
     EpCurveCol.EP_TYPE:             pl.String,
     EpCurveCol.RANK_NUM:            pl.Int64,
     EpCurveCol.RETURN_PERIOD:       pl.Int64,
-    EpCurveCol.ANNUAL_LOSS:         pl.Float64,
+    EpCurveCol.LOSS:                pl.Float64,
 })
 
 # ALL_FACTORS = dim + factor scalars. Derived metrics are joined in via MetricCol.

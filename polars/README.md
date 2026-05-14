@@ -16,7 +16,6 @@ uv run rollup --yes --no-audit           # skip debug audit parquets
 uv run rollup --yes --min-loss 0         # disable default loss filter (keep every row)
 uv run rollup --yes --log-level INFO     # show factor-chain trace
 uv run rollup ep-summary-to-csv          # convert wide xlsx → long CSV
-uv run rollup derive-blending            # rewrite blending_weights from AAL/200/1000/10000 EP buckets
 uv run rollup test-sql                   # probe SQL connection (read-only)
 uv run rollup push-to-sql                # push 8 Hisco parquets to SQL Server
 uv run rollup docs                       # open the docs site in your browser
@@ -112,7 +111,7 @@ contract between the pipeline and the seeds + YLTs you supply.
     ├── ylt/
     │   ├── verisk/*.parquet    # 10,000 simulation years (AIR)
     │   └── risklink/*.parquet  # 100,000 simulation years (RMS)
-    ├── ep_summaries/           # required by default for EP-derived blending
+    ├── ep_summaries/           # optional review inputs
     │   ├── verisk/*.long.csv
     │   └── risklink/*.long.csv
     └── output/                 # pipeline writes Hisco{AIR,RMS}_*.parquet

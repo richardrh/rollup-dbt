@@ -8,21 +8,29 @@ from pathlib import Path
 import polars as pl
 
 from rollup import config
-from rollup.config import Flavor, Vendor, VendorName
+from rollup.config import CurrencyCode, Flavor, Vendor, VendorName
 from rollup.pipeline import (
+    StagingModels,
     VariantSpec,
     _write_lazy_parquet,
+    build_intermediate,
     build_variants,
     count_event_id_orphans,
     count_risklink_event_id_orphans,
     forecast_dates_from_seed,
 )
+from rollup.schemas import frames as F
 from rollup.schemas.columns import AllFactorsCol as AF
+from rollup.schemas.columns import BlendingWeightsCol as BW
+from rollup.schemas.columns import RefEuwsRankOverridesCol as EO
+from rollup.schemas.columns import RefEuwsRateFactorsCol as EU
+from rollup.schemas.columns import RefForecastFactorsCol as FF
+from rollup.schemas.columns import RefFxRatesCol as FX
 from rollup.schemas.columns import MetricCol as M
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefRisklinkEventsCol as RLE
-from rollup.seeds import load_all
+from rollup.seeds import Seeds, load_all
 
 
 SEEDS_DIR = Path(__file__).resolve().parents[2] / "data" / "seeds"
@@ -148,6 +156,72 @@ def test_end_to_end_variants_from_real_seed():
     assert len({v.name for v in variants}) == len(variants)
 
 
+def _minimal_staging_ylt() -> pl.LazyFrame:
+    return pl.DataFrame({
+        Y.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
+        Y.LOB_ID: [1, 1],
+        Y.MODELLED_LOB: ["LOB_A", "LOB_A"],
+        Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
+        Y.LOB_TYPE: ["prop", "prop"],
+        Y.CDS_CAT_CLASS_NAME: ["LOB UK Test", "LOB UK Test"],
+        Y.OFFICE: ["UK", "UK"],
+        Y.LOB_CLASS: ["HH", "HH"],
+        Y.REGION_PERIL_ID: [1, 1],
+        Y.MODELLED_REGION_PERIL: ["EU_WS", "EU_WS"],
+        Y.PERIL_NAME: ["Europe Wind", "Europe Wind"],
+        Y.REGION: ["EU", "EU"],
+        Y.PERIL_FAMILY: ["WS", "WS"],
+        Y.CURRENCY: [CurrencyCode.GBP, CurrencyCode.GBP],
+        Y.MODEL_CODE: [41, 0],
+        Y.YEAR_ID: [1, 1],
+        Y.EVENT_ID: [10, 20],
+        Y.LOSS: [100.0, 200.0],
+    }, schema=F.NORMALIZED_YLT).lazy()
+
+
+def _minimal_intermediate_seeds() -> Seeds:
+    empty = pl.DataFrame().lazy()
+    return Seeds(
+        lobs=empty, perils=empty, analyses=empty, valid_analyses=empty,
+        blending_weights=pl.DataFrame({
+            BW.PERIL_ID: [1, 1], BW.RETURN_PERIOD: [10000, 10000],
+            BW.PERIL_NAME: ["Europe Wind", "Europe Wind"], BW.DESCRIPTION: ["test", "test"],
+            BW.SUB_PERIL: [None, None], BW.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
+            BW.BASE_MODEL: [VendorName.VERISK, VendorName.VERISK], BW.WEIGHT: [0.5, 0.5],
+        }, schema=F.BLENDING_WEIGHTS).lazy(),
+        forecast_factors=pl.DataFrame({
+            FF.CLASS: ["HH"], FF.OFFICE: ["UK"], FF.OFFICE_ISO2: ["UK"],
+            FF.FORECAST_DATE: [date(2026, 1, 1)], FF.FACTOR: [1.0],
+        }, schema=F.REF_FORECAST_FACTORS).lazy(),
+        fx_rates=pl.DataFrame({
+            FX.CURRENCY_CODE: [CurrencyCode.GBP], FX.TARGET_CURRENCY: [CurrencyCode.GBP],
+            FX.RATE_DATE: [date(2026, 1, 1)], FX.RATE: [1.0],
+        }, schema=F.REF_FX_RATES).lazy(),
+        euws_rate_factors=pl.DataFrame({
+            EU.MODEL_EVENT_ID: [10, 20], EU.OCC_YEAR: [1, 1], EU.FACTOR: [1.0, 1.0],
+        }, schema=F.REF_EUWS_RATE_FACTORS).lazy(),
+        euws_rank_overrides=pl.DataFrame({
+            EO.ROLLUP_LOB: ["NO_MATCH"], EO.MAX_RANK: [0], EO.FACTOR: [1.0],
+        }, schema=F.REF_EUWS_RANK_OVERRIDES).lazy(),
+        air_events=empty, risklink_events=empty,
+    )
+
+
+def test_intermediate_layer_builds_lazy_without_collecting(monkeypatch):
+    """Intermediate model construction remains lazy; collection is an orchestrator boundary."""
+    cfg = config.Config(
+        seeds_dir=Path("/tmp/seeds"), output_dir=Path("/tmp/out"),
+        vendors=(_fake_vendor(VendorName.VERISK, "AIR"), _fake_vendor(VendorName.RISKLINK, "RMS")),
+    )
+
+    def _forbidden_collect(self, *args, **kwargs):
+        raise AssertionError("model construction should not collect")
+
+    monkeypatch.setattr(pl.LazyFrame, "collect", _forbidden_collect)
+    models = build_intermediate(cfg, _minimal_intermediate_seeds(), StagingModels(ylt=_minimal_staging_ylt()), ["202601"])
+    assert isinstance(models.all_factors, pl.LazyFrame)
+
+
 # -----------------------------------------------------------------------------
 # Flavor enum integrity
 # -----------------------------------------------------------------------------
@@ -196,7 +270,7 @@ def _risklink_ylt_for_orphan_test(event_ids: list[int]) -> pl.LazyFrame:
 
 def _air_events_seed(event_ids: list[int]) -> pl.LazyFrame:
     return pl.DataFrame({
-        AE.EVENT_ID: event_ids,
+        AE.EVENT_ID: [event_id + 1_000_000 for event_id in event_ids],
         AE.MODEL_ID: [41] * len(event_ids),
         AE.EVENT:    event_ids,
         AE.YEAR:     [1] * len(event_ids),
@@ -229,8 +303,8 @@ def test_count_event_id_orphans_counts_unmatched_rows(caplog):
     assert count_event_id_orphans(ylt, ae, vendor_filter=VendorName.VERISK) == 2
     message = caplog.text
     assert "event catalogue validation incomplete" in message
-    assert "data/seeds/validation/air_events.csv" in message
-    assert "ModelEventDay remains 0" in message
+    assert "data/seeds/validation/verisk_events.parquet" in message
+    assert "ModelEventDay cannot be enriched" in message
 
 
 def test_count_risklink_event_id_orphans_counts_unmatched_rows(caplog):
@@ -241,7 +315,7 @@ def test_count_risklink_event_id_orphans_counts_unmatched_rows(caplog):
     message = caplog.text
     assert "event catalogue validation incomplete" in message
     assert "vendor=risklink" in message
-    assert "data/seeds/validation/risklink_events.csv" in message
+    assert "risklink_flood22_model_events.parquet" in message
 
 
 def test_count_risklink_event_id_orphans_zero_when_all_match():

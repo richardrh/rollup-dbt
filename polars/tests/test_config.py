@@ -331,6 +331,7 @@ def test_lob_peril_validation_flags_multiple_analyses_for_lob_peril(tmp_path):
         LB.CDS_CAT_CLASS_NAME: ["HIC UK Household"],
         LB.OFFICE: ["UK"],
         LB.CLASS: ["HH"],
+        LB.CURRENCY: ["GBP"],
     }).write_csv(business / "lobs.csv")
     pl.DataFrame({
         AN.VENDOR: [VendorName.RISKLINK, VendorName.RISKLINK],
@@ -431,8 +432,8 @@ def test_seed_section_reports_dtype_drift(tmp_path):
     # lobs.csv: lob_id is Int64 in REF_LOBS. Write a value that won't coerce.
     bad = cfg.seeds_dir / "business" / "lobs.csv"
     bad.write_text(
-        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class\n"
-        "abc,foo,bar,baz,quux,L,X\n"  # 'abc' isn't an Int64
+        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class,currency\n"
+        "abc,foo,bar,baz,quux,L,X,GBP\n"  # 'abc' isn't an Int64
     )
     plan = config.build_plan(cfg)
     chk = next(c for c in plan.seeds_section.checks if c.label == "lobs")

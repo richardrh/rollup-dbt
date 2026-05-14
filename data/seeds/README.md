@@ -1,11 +1,13 @@
 # data/seeds
 
-Reference / dimension data for the polars rollup pipeline. CSVs follow
-the dbt convention: diff-friendly, one row per natural record, header in
-snake_case to match the schema enums in `polars/rollup/schemas/columns.py`.
+Reference / dimension data for the polars rollup pipeline. Most seeds are CSVs
+that follow the dbt convention: diff-friendly, one row per natural record,
+header in snake_case to match the schema enums in
+`polars/rollup/schemas/columns.py`. Event catalogues are authoritative parquet
+exports projected by the seed loader.
 
 Git-tracked so the pipeline ships with working fixtures, but **user-owned**.
-Refresh the stub files from your source data before a real run. The
+Refresh placeholder files from your source data before a real run. The
 pipeline enforces one-job seeds: `data/seeds/` is where reference data
 lives; `data/ylt/`, `data/ep_summaries/`, `data/output/` are siblings for
 simulation input/output.
@@ -16,11 +18,10 @@ Start at [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md) —
 a simple "collect these files and put them here" checklist. That
 document has the column schemas you need to give your data source.
 
-Each CSV has a corresponding `pl.Schema` in
-`polars/rollup/schemas/frames.py`. `polars/rollup/seeds.py` loads each
-through `pl.scan_csv(..., schema=...)` and validates at the boundary so
-shape drift is caught immediately, not in the middle of a stage ten
-joins later.
+Each seed has a corresponding `pl.Schema` in
+`polars/rollup/schemas/frames.py`. `polars/rollup/seeds.py` loads each CSV or
+parquet and validates at the boundary so shape drift is caught immediately,
+not in the middle of a stage ten joins later.
 
 ## The 11 seeds
 
@@ -34,8 +35,8 @@ forecast_factors.csv  — (class, office, forecast_date) → factor
 fx_rates.csv          — long-format (currency_code, target_currency, rate_date, rate)
 euws_rate_factors.csv — per-event EUWS factors
 euws_rank_overrides.csv — per-LOB rank-threshold overrides for EUWS
-air_events.csv        — Verisk event catalogue (event_id, model_id, year, day)
-risklink_events.csv   — RiskLink event catalogue (event_id, year, day)
+verisk_events.parquet — Verisk event catalogue (EventID, ModelID, Event, Year, Day)
+risklink_flood22_model_events.parquet — RiskLink event catalogue
 ```
 
 | seed                       | rows in this branch | populated by |
@@ -49,8 +50,8 @@ risklink_events.csv   — RiskLink event catalogue (event_id, year, day)
 | `fx_rates.csv`             | 6 (handcrafted)     | replace with real FX snapshot before prod |
 | `euws_rate_factors.csv`    | 69 212              | dbt          |
 | `euws_rank_overrides.csv`  | 1                   | hand-curated |
-| `air_events.csv`           | **stub (0)**        | duckdb export — recommended |
-| `risklink_events.csv`      | **stub (0)**        | duckdb export — optional |
+| `verisk_events.parquet`    | populated           | parquet export from `reference.air_events` |
+| `risklink_flood22_model_events.parquet` | populated | parquet export from RiskLink event catalogue |
 
 The full column schemas for the stub seeds (and what happens when they
 stay empty) live in [`../../polars/RH-TODO-DATA.md`](../../polars/RH-TODO-DATA.md).

@@ -214,10 +214,9 @@ and `pl.lit(VendorName.X)` work as drop-in replacements for raw strings:
 | `EpType`        | `AAL` / `AEP` / `OEP`           | `EP_TYPE` column emitted by `ep_curve_from_ylt` |
 | `EnvVar`        | `ROLLUP_*` env var names        | every `os.getenv` / `monkeypatch.setenv` call |
 
-Plus one non-enum default used when deriving the seed:
+Plus one non-enum peril-family constant:
 
-- `FLOOD_FAMILY: str = "FL"` — `derive-blending` uses this to populate the
-  default `base_model` in `blending_weights.csv`; runtime uplift reads the
-  seed rather than hard-coding the flood rule.
+- `FLOOD_FAMILY: str = "FL"` — used for flood-specific business rules; runtime
+  uplift reads `base_model` from the provided `blending_weights.csv` seed.
 
 See [`factor-chain.md`](factor-chain.md) for how the factor stages compose.

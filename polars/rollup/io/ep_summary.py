@@ -1,9 +1,12 @@
 """Convert wide EP-summary xlsx exports into long-format CSVs that match the
 STG_RISKLINK_EP / STG_VERISK_EP schemas.
 
-Source: 'OEPAEP Curves' sheet. Title decoration in rows 1-6, header at row 7,
-data from row 8 onward. Wide layout has one column per (ep_type, return_period):
-AAL, OEP_2, OEP_5, ..., OEP_10000, AEP_2, ..., AEP_10000.
+RiskLink source: 'OEPAEP Curves' sheet. Title decoration in rows 1-6, header
+at row 7, data from row 8 onward. Wide layout has one column per
+(ep_type, return_period): AAL, OEP_2, OEP_5, ..., AEP_2, ...
+
+Verisk source: 'PML by LOB' sheet. Header at row 7, data from row 8 onward.
+Wide layout has aal_0.0, aep_<rp>.0, and oep_<rp>.0 columns.
 
 Long format: one row per (id, rp, ep_type, lob, region_peril, gl) for risklink.
 - ep_type in {'AAL', 'OEP', 'AEP'}
@@ -31,7 +34,7 @@ _VERISK_PML_SHEET = "PML by LOB"
 # A header like 'OEP_DIFF' or 'AEP_TOTAL' is silently ignored, not parsed
 # as a return period (which would crash int() and skip the whole file).
 _RP_COLUMN = re.compile(r"^(?P<kind>OEP|AEP)_(?P<rp>\d+)$")
-_VERISK_RP_COLUMN = re.compile(r"^(?P<kind>oep|aep)_(?P<rp>\d+(?:\.0)?)$", re.IGNORECASE)
+_VERISK_RP_COLUMN = re.compile(r"^(?P<kind>oep|aep)_(?P<rp>\d+(?:\.0+)?)$", re.IGNORECASE)
 
 
 def _clean(v):
@@ -216,9 +219,9 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
     header = list(rows[_HEADER_ROW - 1])
     data = [list(r) for r in rows[_DATA_START_ROW - 1:]]
     col_idx: dict[str, int] = {
-        name: i
+        str(name).strip(): i
         for i, name in enumerate(header)
-        if isinstance(name, str) and name.strip()
+        if name is not None and str(name).strip()
     }
 
     for required in ("Analysis", "ExposureAttribute", "CatalogTypeCode", "aal_0.0"):
@@ -240,7 +243,11 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
             continue
 
         analysis = _clean(row[col_idx["Analysis"]]) if col_idx["Analysis"] < len(row) else None
-        lob = _clean(row[col_idx["ExposureAttribute"]]) if col_idx["ExposureAttribute"] < len(row) else None
+        lob = (
+            _clean(row[col_idx["ExposureAttribute"]])
+            if col_idx["ExposureAttribute"] < len(row)
+            else None
+        )
         catalog_type = (
             _clean(row[col_idx["CatalogTypeCode"]])
             if col_idx["CatalogTypeCode"] < len(row)
@@ -248,7 +255,7 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
         )
         if analysis is None or lob is None:
             continue
-        if str(catalog_type or "").strip().upper() != "STC":
+        if "STC" not in str(catalog_type or "").strip().upper():
             continue
 
         aal_raw = _clean(row[col_idx["aal_0.0"]]) if col_idx["aal_0.0"] < len(row) else None

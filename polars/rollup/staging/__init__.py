@@ -1,8 +1,4 @@
-"""Compatibility wrapper for staging YLT models.
-
-New code should import from :mod:`rollup.staging` or
-:mod:`rollup.staging.ylt`.
-"""
+"""Staging models: seeds + raw vendor inputs -> typed canonical tables."""
 
 from rollup.staging.ylt import (
     filter_valid_analyses,

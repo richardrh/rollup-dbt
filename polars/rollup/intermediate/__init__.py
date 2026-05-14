@@ -1,12 +1,7 @@
-"""Compatibility wrapper for intermediate factor models.
-
-New code should import from :mod:`rollup.intermediate` or
-:mod:`rollup.intermediate.factors`.
-"""
+"""Intermediate models: factor attachment, blending, and metrics calculations."""
 
 from rollup.intermediate.factors import (
     MissingFxRateError,
-    _blend_weights_by_peril_bucket,
     attach_currency,
     attach_euws,
     attach_forecast_factors,
@@ -14,10 +9,12 @@ from rollup.intermediate.factors import (
     attach_uplift,
     validate_fx_coverage,
 )
+from rollup.intermediate.metrics import add_dialsup, add_main_metrics
 
 __all__ = [
     "MissingFxRateError",
-    "_blend_weights_by_peril_bucket",
+    "add_dialsup",
+    "add_main_metrics",
     "attach_currency",
     "attach_euws",
     "attach_forecast_factors",

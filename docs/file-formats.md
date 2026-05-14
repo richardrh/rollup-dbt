@@ -107,8 +107,8 @@ are still derived through `analyses.csv` and `lobs.csv`.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
-Long format. Generate with `uv run rollup derive-blending`
-once `ep-summary-to-csv` has run.
+Long format. Provide this from the reviewed blending-factor table. The pipeline
+does not derive these weights from EP summaries.
 
 | column        | dtype   | notes |
 |---------------|---------|-------|
@@ -158,26 +158,34 @@ Long format. Adding a forecast date is a data-only change.
 | `max_rank`   | Int64   | apply override when `rank ≤ max_rank`. |
 | `factor`     | Float64 | replacement factor. |
 
-### `air_events` — `data/seeds/validation/air_events.csv`
+### `air_events` — `data/seeds/validation/verisk_events.parquet`
 
-Verisk event catalogue. Optional stub.
+Verisk event catalogue. The seed loader projects the source parquet into the
+canonical columns below.
+
+Source parquet columns: `EventID`, `ModelID`, `Event`, `Year`, `Day`.
 
 | column     | dtype  | notes |
 |------------|--------|-------|
-| `event_id` | Int64  | matches YLT `EventID`. |
-| `model_id` | Int64  | model code. |
-| `event`    | Int64  | event number. |
-| `year`     | Int64  | calendar year. |
+| `event_id` | Int64  | canonical event id output as `ModelEventID`. |
+| `model_id` | Int64  | model code, joined to YLT `ModelCode`. |
+| `event`    | Int64  | matches YLT `EventID`. |
+| `year`     | Int64  | matches YLT `YearID`. |
 | `day`      | Int64  | day of year. |
 
-### `risklink_events` — `data/seeds/validation/risklink_events.csv`
+### `risklink_events` — `data/seeds/validation/risklink_flood22_model_events.parquet`
 
-RiskLink event catalogue. Optional stub.
+RiskLink event catalogue. The seed loader derives `day` from
+`ModelOccurrenceDate` and projects the source parquet into the canonical
+columns below.
+
+Source parquet columns used: `ModelEventID`, `ModelOccurrenceYear`,
+`ModelOccurrenceDate`.
 
 | column     | dtype  | notes |
 |------------|--------|-------|
 | `event_id` | Int64  | matches YLT `eventid`. |
-| `year`     | Int64  | calendar year. |
+| `year`     | Int64  | matches YLT `yearid`. |
 | `day`      | Int64  | day of year. |
 
 ---
@@ -192,16 +200,9 @@ direct pipeline input. Convert to long format with:
 The resulting `<stem>.long.csv` has `(id, rp, ep_type, lob, region_peril, gl)`
 for risklink (`STG_RISKLINK_EP` schema).
 
-Then derive blending weights:
-
-    uv run rollup derive-blending
-
-Normal runs derive blending weights in-memory from these long CSVs and write
-`data/output/debug/derived_blending_weights.csv` for audit. The explicit
-`derive-blending` subcommand rewrites the reviewed fallback seed
-`data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200, 1-in-1000, and
-1-in-10000 OEP totals. Use `uv run rollup --use-blending-seed` to run from
-that reviewed seed instead of EP summaries.
+EP summaries are review inputs only. They do not produce or override
+`data/seeds/vor/blending_weights.csv`; provide that seed from the reviewed
+blending-factor table.
 
 ---
 
