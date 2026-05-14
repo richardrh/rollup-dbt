@@ -280,9 +280,9 @@ One row per (peril, vendor) pair. `sub_peril` is optional regional split label.
 
 ### Optional seeds (improve output quality)
 
-**`air_events.csv`** — Verisk event catalogue. Pipeline runs without it but reports orphan warnings. Populate to silence.
+**`verisk_events.parquet`** — Verisk event catalogue. Used to enrich Verisk `ModelEventID`/`ModelEventDay`; missing rows report orphan warnings.
 
-**`risklink_events.csv`** — RiskLink event catalogue. Optional stub for future event-day enrichment.
+**`risklink_flood22_model_events.parquet`** — RiskLink event catalogue. Used to enrich `ModelEventDay` for the January-style `rl_withdayid` fanout.
 
 **`fx_rates.csv`** — FX snapshot (GBP target). Handcrafted; refresh before production runs.
 

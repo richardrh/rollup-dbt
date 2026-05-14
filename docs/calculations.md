@@ -499,12 +499,11 @@ SQL to re-export from january's duckdb when refreshing.
 | `fx_rates.csv`             | handcrafted (replace before prod)                              |
 | `euws_rate_factors.csv`    | dbt (`vor__euws_rate_factors.csv`)                             |
 | `euws_rank_overrides.csv`  | hand-curated                                                   |
-| `air_events.csv`           | duckdb export from `reference.air_events` (recommended)        |
-| `risklink_events.csv`      | duckdb export from RiskLink event catalogue (optional)         |
+| `verisk_events.parquet`    | parquet export from `reference.air_events`                     |
+| `risklink_flood22_model_events.parquet` | parquet export from RiskLink event catalogue      |
 
-Some non-required event catalogues are stub-empty in git, awaiting user
-export from source data. The pre-flight reporter blocks the run if any of the
-nine `REQUIRED_SEEDS` have zero rows.
+Event catalogues are parquet-backed validation seeds. The pre-flight reporter
+blocks the run if any of the nine `REQUIRED_SEEDS` have zero rows.
 
 ---
 

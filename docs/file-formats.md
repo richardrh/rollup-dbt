@@ -158,26 +158,34 @@ Long format. Adding a forecast date is a data-only change.
 | `max_rank`   | Int64   | apply override when `rank ≤ max_rank`. |
 | `factor`     | Float64 | replacement factor. |
 
-### `air_events` — `data/seeds/validation/air_events.csv`
+### `air_events` — `data/seeds/validation/verisk_events.parquet`
 
-Verisk event catalogue. Optional stub.
+Verisk event catalogue. The seed loader projects the source parquet into the
+canonical columns below.
+
+Source parquet columns: `EventID`, `ModelID`, `Event`, `Year`, `Day`.
 
 | column     | dtype  | notes |
 |------------|--------|-------|
-| `event_id` | Int64  | matches YLT `EventID`. |
-| `model_id` | Int64  | model code. |
-| `event`    | Int64  | event number. |
-| `year`     | Int64  | calendar year. |
+| `event_id` | Int64  | canonical event id output as `ModelEventID`. |
+| `model_id` | Int64  | model code, joined to YLT `ModelCode`. |
+| `event`    | Int64  | matches YLT `EventID`. |
+| `year`     | Int64  | matches YLT `YearID`. |
 | `day`      | Int64  | day of year. |
 
-### `risklink_events` — `data/seeds/validation/risklink_events.csv`
+### `risklink_events` — `data/seeds/validation/risklink_flood22_model_events.parquet`
 
-RiskLink event catalogue. Optional stub.
+RiskLink event catalogue. The seed loader derives `day` from
+`ModelOccurrenceDate` and projects the source parquet into the canonical
+columns below.
+
+Source parquet columns used: `ModelEventID`, `ModelOccurrenceYear`,
+`ModelOccurrenceDate`.
 
 | column     | dtype  | notes |
 |------------|--------|-------|
 | `event_id` | Int64  | matches YLT `eventid`. |
-| `year`     | Int64  | calendar year. |
+| `year`     | Int64  | matches YLT `yearid`. |
 | `day`      | Int64  | day of year. |
 
 ---

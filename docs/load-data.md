@@ -16,7 +16,7 @@ Windows PowerShell:
 New-Item -ItemType Directory -Force data/ylt/verisk, data/ylt/risklink, data/ep_summaries/verisk, data/ep_summaries/risklink, data/output
 ```
 
-All seed CSVs already exist in `data/seeds/` as templates.
+Seed CSVs and validation parquet catalogues already exist in `data/seeds/`.
 
 ## Step 1 — Populate the run-scope seeds
 
@@ -29,7 +29,7 @@ Copy these CSVs into their fixed seed locations:
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
-Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `air_events.csv`, `risklink_events.csv`) are dbt-owned or stubs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
+Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `verisk_events.parquet`, `risklink_flood22_model_events.parquet`) are dbt/reference-owned inputs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
 
 ### Step 1a — Check numeric analysis IDs before running
 
