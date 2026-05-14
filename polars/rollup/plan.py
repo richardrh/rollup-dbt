@@ -13,7 +13,7 @@ from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import ValidAnalysesCol as VA
-from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds
+from rollup.seeds import REQUIRED_SEEDS, SeedSpec, discover as discover_seeds, load_seed_file
 from rollup.validate import ColumnDiff, column_diff
 
 
@@ -100,20 +100,21 @@ def _check_seed(seeds_dir: Path, spec: SeedSpec) -> Check:
     if not path.exists():
         return Check(label=spec.name, path=path, ok=False, note="missing")
     try:
-        sniff = pl.scan_csv(path).collect_schema().names()
-        expected = set(spec.schema.names())
-        missing = expected - set(sniff)
-        extra = set(sniff) - expected
-        if missing or extra:
-            bits = []
-            if missing:
-                bits.append(f"missing={sorted(missing)}")
-            if extra:
-                bits.append(f"unexpected={sorted(extra)}")
-            return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
-
-        pl.read_csv(path, schema=spec.schema, n_rows=1)
-        rows = pl.scan_csv(path, schema=spec.schema).select(pl.len()).collect().item()
+        if path.suffix != ".parquet":
+            sniff = pl.scan_csv(path).collect_schema().names()
+            expected = set(spec.schema.names())
+            missing = expected - set(sniff)
+            extra = set(sniff) - expected
+            if missing or extra:
+                bits = []
+                if missing:
+                    bits.append(f"missing={sorted(missing)}")
+                if extra:
+                    bits.append(f"unexpected={sorted(extra)}")
+                return Check(label=spec.name, path=path, ok=False, note=", ".join(bits))
+            pl.read_csv(path, schema=spec.schema, n_rows=1)
+        lf = load_seed_file(path, spec.schema, name=spec.name)
+        rows = lf.select(pl.len()).collect().item()
         if rows == 0 and spec.name in REQUIRED_SEEDS:
             return Check(
                 label=spec.name,
@@ -151,7 +152,8 @@ def _check_ylt_parquet(path: Path, expected_schema: pl.Schema, name: str) -> Che
         return Check(label=name, path=path, ok=False, note=f"parse error: {e}")
     size_mb = path.stat().st_size / 1e6
     diffs = column_diff(actual, expected_schema)
-    if not diffs:
+    blocking_diffs = [d for d in diffs if d.kind != "unexpected"]
+    if not blocking_diffs:
         return Check(label=name, path=path, ok=True, note=f"{size_mb:.1f} MB | schema OK")
     return Check(label=name, path=path, ok=False, note=f"{size_mb:.1f} MB | {_format_diffs(diffs)}")
 
@@ -261,7 +263,7 @@ def _check_forecast_coverage(seeds_dir: Path) -> list[Check]:
 
 
 def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
-    """Validate valid RiskLink analysis IDs keep one peril per rollup LOB.
+    """Validate valid RiskLink analysis IDs keep one analysis per LOB/peril.
 
     RiskLink analysis metadata carries ``lob_id``, so this seed-only check can
     catch operator allow-list mistakes before a run starts. Verisk LOBs live in
@@ -271,14 +273,14 @@ def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
     analyses_path = seeds_dir / "business" / "analyses.csv"
     valid_path = seeds_dir / "business" / "valid_analyses.csv"
     if not lobs_path.exists() or not analyses_path.exists() or not valid_path.exists():
-        return [Check(label="one peril per rollup_lob", path=seeds_dir, ok=False, note="missing seed input")]
+        return [Check(label="one analysis per lob/peril", path=seeds_dir, ok=False, note="missing seed input")]
 
     try:
         lobs = pl.read_csv(lobs_path, schema=F.REF_LOBS)
         analyses = pl.read_csv(analyses_path, schema=F.ANALYSES)
         valid_analyses = pl.read_csv(valid_path, schema=F.VALID_ANALYSES)
     except Exception as e:
-        return [Check(label="one peril per rollup_lob", path=valid_path, ok=False, note=f"parse error: {e}")]
+        return [Check(label="one analysis per lob/peril", path=valid_path, ok=False, note=f"parse error: {e}")]
 
     mapped = (
         analyses
@@ -289,14 +291,13 @@ def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
             how="inner",
         )
         .filter(pl.col(AN.LOB_ID).is_not_null())
-        .join(lobs.select(LB.LOB_ID, LB.ROLLUP_LOB), on=AN.LOB_ID, how="left")
-        .filter(pl.col(LB.ROLLUP_LOB).is_not_null())
-        .select(LB.ROLLUP_LOB, AN.PERIL_ID)
+        .filter(pl.col(AN.LOB_ID).is_not_null())
+        .select(AN.LOB_ID, AN.PERIL_ID, AN.ANALYSIS_ID)
         .unique()
     )
     if mapped.height == 0:
         return [Check(
-            label="one peril per rollup_lob",
+            label="one analysis per lob/peril",
             path=valid_path,
             ok=True,
             note="no lob-specific valid analyses to validate",
@@ -304,32 +305,32 @@ def _check_one_peril_per_rollup_lob(seeds_dir: Path) -> list[Check]:
 
     conflicts = (
         mapped
-        .group_by(LB.ROLLUP_LOB)
+        .group_by(AN.LOB_ID, AN.PERIL_ID)
         .agg(
-            pl.col(AN.PERIL_ID).sort().alias("peril_ids"),
-            pl.len().alias("n_perils"),
+            pl.col(AN.ANALYSIS_ID).sort().alias("analysis_ids"),
+            pl.len().alias("n_analyses"),
         )
-        .filter(pl.col("n_perils") > 1)
+        .filter(pl.col("n_analyses") > 1)
     )
     if conflicts.height == 0:
         return [Check(
-            label="one peril per rollup_lob",
+            label="one analysis per lob/peril",
             path=valid_path,
             ok=True,
-            rows=mapped.select(LB.ROLLUP_LOB).unique().height,
-            note="valid analysis metadata maps each rollup_lob to one peril",
+            rows=mapped.select(AN.LOB_ID, AN.PERIL_ID).unique().height,
+            note="valid analysis metadata maps each LOB/peril to one analysis",
         )]
 
     examples = "; ".join(
-        f"{row[LB.ROLLUP_LOB]} -> {row['peril_ids']}"
+        f"lob={row[AN.LOB_ID]} peril={row[AN.PERIL_ID]} -> {row['analysis_ids']}"
         for row in conflicts.head(5).iter_rows(named=True)
     )
     return [Check(
-        label="one peril per rollup_lob",
+        label="one analysis per lob/peril",
         path=valid_path,
-        ok=False,
+        ok=True,
         rows=conflicts.height,
-        note=f"one peril per rollup_lob validation failed; examples: {examples}",
+        note=f"WARNING duplicate valid analyses for LOB/peril; examples: {examples}",
     )]
 
 

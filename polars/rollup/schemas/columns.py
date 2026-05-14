@@ -122,6 +122,11 @@ class RefLobsCol(StrEnum):
 
     Keeping office/class on the seed itself skips the runtime `split(rollup_lob,'_')`
     view; the seed owner can keep them in sync with rollup_lob directly.
+
+    `currency` is the local currency of each LOB (ISO-4217). The seed owner sets it
+    once; downstream factor stages read it directly. Earlier versions derived it
+    at runtime by substring-matching `cds_cat_class_name`, which silently broke
+    if a class was renamed for branding reasons.
     """
     LOB_ID             = "lob_id"
     MODELLED_LOB       = "modelled_lob"
@@ -130,6 +135,7 @@ class RefLobsCol(StrEnum):
     CDS_CAT_CLASS_NAME = "cds_cat_class_name"
     OFFICE             = "office"
     CLASS              = "class"
+    CURRENCY           = "currency"
 
 
 class RefForecastFactorsCol(StrEnum):
@@ -233,6 +239,7 @@ class NormalizedYltCol(StrEnum):
     PERIL_NAME            = "peril_name"        # = perils.name (display)
     REGION                = "region"            # = perils.region
     PERIL_FAMILY          = "peril_family"      # = perils.peril_family
+    CURRENCY              = "currency"          # = lobs.currency (ISO-4217)
     MODEL_CODE            = "model_code"
     YEAR_ID               = "year_id"
     EVENT_ID              = "event_id"
@@ -240,7 +247,19 @@ class NormalizedYltCol(StrEnum):
 
 
 class EpCurveCol(StrEnum):
-    """Output of `ep_curve_from_ylt`. AAL rows use rank_num=0, return_period=0."""
+    """Output of `ep_curve_from_ylt`. AAL rows use rank_num=0, return_period=0.
+
+    `loss` carries different meaning per `ep_type`:
+        - AEP rows: aggregate loss exceeded at the given return_period (tail).
+        - OEP rows: max single-event loss exceeded at the given return_period.
+        - AAL rows: mean loss across all simulated years (sentinel scalar).
+
+    The frame intentionally keeps AAL as a `rp=0, rank_num=0` sentinel row so
+    every (vendor, lob, peril) grouping fits in one long table. Consumers that
+    want only tail rows filter `ep_type != "AAL"`; consumers that want only AAL
+    filter on it directly. Earlier versions called this column `annual_loss`,
+    which was honest for AAL rows and misleading for the tail-loss rows.
+    """
     VENDOR              = "vendor"
     LOB_ID              = "lob_id"
     REGION_PERIL_ID     = "region_peril_id"
@@ -252,7 +271,7 @@ class EpCurveCol(StrEnum):
     EP_TYPE             = "ep_type"
     RANK_NUM            = "rank_num"
     RETURN_PERIOD       = "return_period"
-    ANNUAL_LOSS         = "annual_loss"
+    LOSS                = "loss"
 
 
 class EpType(StrEnum):

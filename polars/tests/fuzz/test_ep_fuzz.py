@@ -88,14 +88,14 @@ def test_ep_curve_aal_row_present_per_group(ylt: pl.LazyFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Monotonicity: annual_loss is non-increasing as rank_num decreases
+# Monotonicity: loss is non-increasing as rank_num decreases
 # ---------------------------------------------------------------------------
 
 @pytest.mark.fuzz
 @given(ylt=lazyframe_from_schema(F.NORMALIZED_YLT, min_rows=20, max_rows=100))
 @settings(max_examples=20, suppress_health_check=[HealthCheck.data_too_large, HealthCheck.too_slow])
 def test_ep_curve_rp_is_monotone(ylt: pl.LazyFrame) -> None:
-    """For every (vendor, lob_id, region_peril_id, ep_type) group, ANNUAL_LOSS
+    """For every (vendor, lob_id, region_peril_id, ep_type) group, LOSS
     is monotone non-increasing as RANK_NUM increases (higher rank = more rare
     event = higher loss). RANK_NUM=0 is the AAL row — excluded from the
     monotonicity check.
@@ -115,7 +115,7 @@ def test_ep_curve_rp_is_monotone(ylt: pl.LazyFrame) -> None:
     for group_key, group_df in curve_rows.group_by(group_cols):
         # Sort by RANK_NUM ascending (1, 2, 3 ... = most frequent first).
         sorted_group = group_df.sort(EP.RANK_NUM)
-        losses = sorted_group[EP.ANNUAL_LOSS].to_list()
+        losses = sorted_group[EP.LOSS].to_list()
         # Losses should be non-increasing (lower rank_num → rarer event → higher loss).
         # Since rank 1 is the highest-loss event and rank N is the lowest, losses
         # sorted by rank ascending must be non-increasing.

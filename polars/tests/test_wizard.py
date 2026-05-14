@@ -192,6 +192,9 @@ def test_interactive_review_collects_operator_choices(monkeypatch):
     reviewed = _interactive_review(cfg, plan, args)
 
     assert reviewed is not None
-    assert reviewed.min_loss == 0
-    assert args.derive_blending is False
-    assert args.dump_interim is False
+    assert reviewed.config.min_loss == 0
+    assert reviewed.derive_blending is False
+    assert reviewed.dump_interim is False
+    # caller's args must not be mutated by the wizard
+    assert args.derive_blending is True
+    assert args.dump_interim is True

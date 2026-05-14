@@ -53,9 +53,9 @@ OUTPUT    = DATA_DIR / "output"
 # --------------------------------------------------------------------------- #
 
 LOBS = [
-    # lob_id, modelled_lob, rollup_lob, lob_type, cds, office, class
-    (1, "HIC_HH_UK",     "HIC_HH_UK",     "prop", "HIC UK Household",  "UK", "HH"),
-    (2, "HSA_FA_EU_FR",  "HSA_FA_EU_FR",  "fa",   "HSA EU Fine Art",   "FR", "FA"),
+    # lob_id, modelled_lob, rollup_lob, lob_type, cds, office, class, currency
+    (1, "HIC_HH_UK",     "HIC_HH_UK",     "prop", "HIC UK Household",  "UK", "HH", "GBP"),
+    (2, "HSA_FA_EU_FR",  "HSA_FA_EU_FR",  "fa",   "HSA EU Fine Art",   "FR", "FA", "EUR"),
 ]
 
 PERILS = [
@@ -142,7 +142,7 @@ def _write_seeds() -> None:
     # business/
     pl.DataFrame(LOBS, orient="row", schema=[
         LB.LOB_ID, LB.MODELLED_LOB, LB.ROLLUP_LOB, LB.LOB_TYPE,
-        LB.CDS_CAT_CLASS_NAME, LB.OFFICE, LB.CLASS,
+        LB.CDS_CAT_CLASS_NAME, LB.OFFICE, LB.CLASS, LB.CURRENCY,
     ]).write_csv(SEEDS / "business/lobs.csv")
 
     pl.DataFrame(PERILS, orient="row", schema=[

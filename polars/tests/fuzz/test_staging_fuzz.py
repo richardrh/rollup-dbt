@@ -82,6 +82,7 @@ def _consistent_risklink_input(draw: st.DrawFn) -> tuple[
         LB.CDS_CAT_CLASS_NAME: [f"CDS UK {lid}" for lid in lob_ids],
         LB.OFFICE:             ["UK"] * n,
         LB.CLASS:              [f"class_{lid}" for lid in lob_ids],
+        LB.CURRENCY:           ["GBP"] * n,
     }, schema=F.REF_LOBS)
 
     # One RiskLink analysis per (lob, peril) pair.
@@ -158,6 +159,7 @@ def _consistent_verisk_input(draw: st.DrawFn) -> tuple[
         LB.CDS_CAT_CLASS_NAME: [f"CDS UK {lid}" for lid in lob_ids],
         LB.OFFICE:             ["UK"] * n,
         LB.CLASS:              [f"class_{lid}" for lid in lob_ids],
+        LB.CURRENCY:           ["GBP"] * n,
     }, schema=F.REF_LOBS)
 
     # Verisk analyses: numeric IDs in the allow-list, modelled labels in raw YLTs,

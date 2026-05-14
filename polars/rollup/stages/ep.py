@@ -57,9 +57,9 @@ def ep_curve_from_ylt(
             on=[EpType.AEP, EpType.OEP],
             index=[*_KEY, Y.YEAR_ID, *_DIMS],
             variable_name=EP.EP_TYPE,
-            value_name=EP.ANNUAL_LOSS,
+            value_name=EP.LOSS,
         )
-        .sort([*_KEY, EP.EP_TYPE, EP.ANNUAL_LOSS, Y.YEAR_ID], descending=[False, False, False, False, True, False])
+        .sort([*_KEY, EP.EP_TYPE, EP.LOSS, Y.YEAR_ID], descending=[False, False, False, False, True, False])
         .with_columns(
             pl.int_range(1, pl.len() + 1)
                 .over([*_KEY, EP.EP_TYPE])
@@ -79,7 +79,7 @@ def ep_curve_from_ylt(
         .group_by(_KEY)
         .agg(
             *[pl.first(c).alias(c) for c in _DIMS],
-            (pl.sum(Y.LOSS) / n_simulations).alias(EP.ANNUAL_LOSS),
+            (pl.sum(Y.LOSS) / n_simulations).alias(EP.LOSS),
         )
         .with_columns(
             pl.lit(EpType.AAL).alias(EP.EP_TYPE),
@@ -88,7 +88,7 @@ def ep_curve_from_ylt(
         )
     )
 
-    projection = [pl.col(n) for n in (*_KEY, *_DIMS, EP.EP_TYPE, EP.RANK_NUM, EP.RETURN_PERIOD, EP.ANNUAL_LOSS)]
+    projection = [pl.col(n) for n in (*_KEY, *_DIMS, EP.EP_TYPE, EP.RANK_NUM, EP.RETURN_PERIOD, EP.LOSS)]
     out = pl.concat([aep_oep.select(projection), aal.select(projection)])
 
     validate_schema(out, F.EP_CURVE, name="ep.ep_curve_output")

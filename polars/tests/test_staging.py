@@ -30,15 +30,10 @@ from rollup.stages.staging import (
 
 def _raw_risklink_ylt() -> pl.LazyFrame:
     return pl.DataFrame({
-        RLK.SIMULATION_SET_ID: [1],
         RLK.YEAR_ID:           [2026],
         RLK.EVENT_ID:          [100],
-        RLK.DATE:              ["2026-01-01"],
         RLK.P_VALUE:           [0.5],
         RLK.ANLS_ID:           [501],
-        RLK.NAME:              ["x"],
-        RLK.DESCRIPTION:       ["x"],
-        RLK.RATE:              [0.01],
         RLK.MEAN_LOSS:         [1.0],
         RLK.STD_DEV:           [0.1],
         RLK.EXP_VALUE:         [1.0],
@@ -91,6 +86,7 @@ def _lobs() -> pl.LazyFrame:
         LB.CDS_CAT_CLASS_NAME: ["class_a"],
         LB.OFFICE:             ["UK"],
         LB.CLASS:              ["HH"],
+        LB.CURRENCY:           ["GBP"],
     }, schema=F.REF_LOBS).lazy()
 
 
@@ -225,11 +221,10 @@ def test_validate_one_peril_per_rollup_lob_accepts_single_peril():
     validate_one_peril_per_rollup_lob(ylt)
 
 
-def test_validate_one_peril_per_rollup_lob_rejects_multiple_perils():
+def test_validate_one_peril_per_rollup_lob_allows_multiple_perils():
     ylt = pl.DataFrame({
         Y.ROLLUP_LOB: ["LOB_A", "LOB_A"],
         Y.REGION_PERIL_ID: [1, 2],
     }).lazy()
 
-    with pytest.raises(ValueError, match="one peril per rollup_lob"):
-        validate_one_peril_per_rollup_lob(ylt)
+    validate_one_peril_per_rollup_lob(ylt)

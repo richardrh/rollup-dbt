@@ -11,13 +11,16 @@ from rollup import config
 from rollup.audit import audit_long, audit_wide
 from rollup.config import VendorName
 from rollup.fanout import fanout_hisco
+from rollup.io.report_writer import write_report
 from rollup.metrics.dialsup import add_dialsup
 from rollup.metrics.main_chain import add_main_metrics
 from rollup.schemas import frames as F
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RefAirEventsCol as AE
+from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.seeds import Seeds
+from rollup.stages.report import build_report
 from rollup.stages.factors import (
     attach_currency,
     attach_euws,
@@ -76,12 +79,44 @@ def count_event_id_orphans(
         log.warning(
             f"event catalogue validation incomplete for vendor={vendor_filter}: "
             f"{orphans:,} / {total:,} YLT rows did not match "
-            "data/seeds/validation/air_events.csv. Calculations continue, "
+            "data/seeds/validation/verisk_events.parquet. Calculations continue, "
             "but ModelEventDay remains 0 and AIR event metadata is not validated. "
-            "Provide air_events.csv to validate/enrich event IDs."
+            "Provide verisk_events.parquet to validate/enrich event IDs."
         )
     else:
         log.info(f"event-id check ({vendor_filter}): {total:,}/{total:,} rows matched air_events")
+    return orphans
+
+
+def count_risklink_event_id_orphans(
+    ylt: pl.LazyFrame,
+    risklink_events: pl.LazyFrame,
+) -> int:
+    """Count RiskLink event/year pairs absent from the risklink_events seed."""
+    events = risklink_events.select(
+        pl.col(RLE.YEAR).alias(Y.YEAR_ID),
+        pl.col(RLE.EVENT_ID),
+    ).with_columns(pl.lit(True).alias(_AE_MATCH_TMP))
+
+    joined = (
+        ylt.filter(pl.col(Y.VENDOR) == VendorName.RISKLINK)
+        .join(events, on=[Y.YEAR_ID, Y.EVENT_ID], how="left")
+    )
+    collected = joined.select(
+        pl.len().alias(_TOTAL_COUNT),
+        pl.col(_AE_MATCH_TMP).is_null().sum().alias(_ORPHAN_COUNT),
+    ).collect()
+    total = collected[_TOTAL_COUNT].item()
+    orphans = collected[_ORPHAN_COUNT].item()
+    if orphans:
+        log.warning(
+            "event catalogue validation incomplete for vendor=risklink: "
+            f"{orphans:,} / {total:,} YLT rows did not match "
+            "data/seeds/validation/risklink_flood22_model_events.parquet. "
+            "Calculations continue, but RiskLink event metadata is not validated."
+        )
+    else:
+        log.info(f"event-id check (risklink): {total:,}/{total:,} rows matched risklink_events")
     return orphans
 
 
@@ -109,6 +144,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
     log.info("staging: normalised YLTs concatenated")
     validate_one_peril_per_rollup_lob(ylt)
     count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
+    count_risklink_event_id_orphans(ylt, seeds.risklink_events)
 
     all_factors = (
         ylt
@@ -182,3 +218,11 @@ def run(
         long_df.write_parquet(debug_dir / _AUDIT_LONG_FILE)
         log.info(f"audit: wrote {debug_dir / _AUDIT_WIDE_FILE}")
         log.info(f"audit: wrote {debug_dir / _AUDIT_LONG_FILE}")
+
+    try:
+        report = build_report(all_factors, variants)
+        write_report(report, cfg.output_dir)
+    except Exception as e:
+        # Report generation is downstream of the deliverables — never let it
+        # fail the run. Surface the error loudly; the parquets are already on disk.
+        log.error(f"report: failed to generate end-of-run summary ({type(e).__name__}: {e})")

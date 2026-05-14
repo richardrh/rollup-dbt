@@ -33,14 +33,20 @@ from rollup.schemas.columns import (
 )
 
 
+# Internal column names for the derive_blending_weights flow.
+# Names with a leading underscore in the string never escape this module — they
+# are dropped before the output frame is returned. The naming convention
+# matches the working-column convention in `rollup.stages.factors`; the two
+# modules never share a frame so there is no collision risk, but using the
+# same convention keeps the discipline visible.
 _PERIL_ID_TMP      = "peril_id"
 _RP_TMP            = "rp"
-_VENDOR_AAL_TMP    = "vendor_aal"
-_RL_AAL_TMP        = "rl_aal"
-_VK_AAL_TMP        = "vk_aal"
-_TOTAL_TMP         = "total"
+_VENDOR_AAL_TMP    = "_vendor_aal"
+_RL_AAL_TMP        = "_rl_aal"
+_VK_AAL_TMP        = "_vk_aal"
+_TOTAL_TMP         = "_total"
 _RL_PROP_TMP       = "rl_proportion"
-_VK_PROP_TMP        = "vk_proportion"
+_VK_PROP_TMP       = "vk_proportion"
 _PERIL_NAME_TMP    = "peril_name"
 _VENDOR_TMP        = "vendor"
 _ANALYSIS_ID_TMP   = "analysis_id"

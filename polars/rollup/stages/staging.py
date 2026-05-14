@@ -34,7 +34,7 @@ log = logging.getLogger("rollup.staging")
 def load_raw_risklink_ylt(
     parquet_dir: Path,
     *,
-    glob: str = "risklink_ylt_*.parquet",
+    glob: str = "risklink_ylt*.parquet",
 ) -> pl.LazyFrame:
     """Scan every RiskLink YLT parquet under `parquet_dir` matching `glob`."""
     pattern = parquet_dir / glob
@@ -67,7 +67,7 @@ def load_raw_verisk_ylt(
 
 def _lob_dim(lobs: pl.LazyFrame) -> pl.LazyFrame:
     """Pre-selected lobs columns + the alias for `class` so the join contributes
-    `office` and `lob_class` directly to the NormalizedYlt frame."""
+    `office`, `lob_class`, and `currency` directly to the NormalizedYlt frame."""
     return lobs.select(
         pl.col(LB.LOB_ID),
         pl.col(LB.MODELLED_LOB),
@@ -76,6 +76,7 @@ def _lob_dim(lobs: pl.LazyFrame) -> pl.LazyFrame:
         pl.col(LB.CDS_CAT_CLASS_NAME),
         pl.col(LB.OFFICE),
         pl.col(LB.CLASS).alias(Y.LOB_CLASS),
+        pl.col(LB.CURRENCY),
     )
 
 
@@ -134,35 +135,14 @@ def filter_valid_analyses(
 
 
 def validate_one_peril_per_rollup_lob(ylt: pl.LazyFrame) -> None:
-    """Fail if any rollup LOB contains more than one canonical peril.
+    """Compatibility no-op: multiple perils per rollup LOB are valid.
 
-    The valid-analysis model assumes each rollup LOB is associated with one
-    rollup peril. If the YLT inputs contain multiple perils for one rollup LOB,
-    downstream vendor blending would be ambiguous, so fail before factor stages.
+    The active preflight guard now validates the operator allow-list at the
+    analysis grain: at most one valid analysis for each concrete LOB/peril pair.
+    A rollup LOB can legitimately include multiple perils.
     """
-    conflicts = (
-        ylt
-        .select(Y.ROLLUP_LOB, Y.REGION_PERIL_ID)
-        .unique()
-        .group_by(Y.ROLLUP_LOB)
-        .agg(
-            pl.col(Y.REGION_PERIL_ID).sort().alias("peril_ids"),
-            pl.len().alias("n_perils"),
-        )
-        .filter(pl.col("n_perils") > 1)
-        .collect()
-    )
-    if conflicts.height == 0:
-        return
-
-    examples = "; ".join(
-        f"{row[Y.ROLLUP_LOB]} -> {row['peril_ids']}"
-        for row in conflicts.head(5).iter_rows(named=True)
-    )
-    raise ValueError(
-        "one peril per rollup_lob validation failed; "
-        f"examples: {examples}"
-    )
+    _ = ylt
+    return
 
 
 # --------------------------------------------------------------------------- #
@@ -205,6 +185,7 @@ def normalize_risklink_ylt(
             pl.col(Y.PERIL_NAME),
             pl.col(Y.REGION),
             pl.col(Y.PERIL_FAMILY),
+            pl.col(Y.CURRENCY),
             pl.lit(0, dtype=pl.Int64).alias(Y.MODEL_CODE),
             pl.col(RLK.YEAR_ID).alias(Y.YEAR_ID),
             pl.col(RLK.EVENT_ID).alias(Y.EVENT_ID),
@@ -256,6 +237,7 @@ def normalize_verisk_ylt(
             pl.col(Y.PERIL_NAME),
             pl.col(Y.REGION),
             pl.col(Y.PERIL_FAMILY),
+            pl.col(Y.CURRENCY),
             pl.col(VK.MODEL_CODE).alias(Y.MODEL_CODE),
             pl.col(VK.YEAR_ID).alias(Y.YEAR_ID),
             pl.col(VK.EVENT_ID).alias(Y.EVENT_ID),

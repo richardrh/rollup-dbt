@@ -160,23 +160,20 @@ def validate_fx_coverage(fx_rates: pl.LazyFrame) -> None:
 
 
 def attach_currency(ylt: pl.LazyFrame, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
-    """Derives `required_currency` from `cds_cat_class_name`, then joins
-    fx_rates to attach `rate_to_gbp`.
+    """Surface the LOB's local currency as `required_currency`, then join fx_rates
+    to attach `rate_to_gbp`.
 
-    Currency derivation: `cds_cat_class_name` MUST contain ` UK ` or ` EU `
-    as a space-padded substring. UK → GBP, EU → EUR, anything else → GBP.
-    Add a row to `fx_rates.csv` for every currency code in `CurrencyCode`,
-    otherwise `validate_fx_coverage` (called at pipeline startup) will abort
-    the run before any computation begins.
+    `currency` rides on every NormalizedYlt row from the lobs join in staging —
+    the seed owner is the source of truth (`lobs.csv::currency`). This used to
+    derive currency at runtime from substring matches on `cds_cat_class_name`;
+    renaming a class for branding silently broke FX, so the rule was moved
+    onto the seed.
+
+    Add a row to `fx_rates.csv` for every currency code that appears in
+    `lobs.csv`, otherwise `validate_fx_coverage` (called at pipeline startup)
+    will abort the run before any computation begins.
     """
-    ylt = ylt.with_columns(
-        pl.when(pl.col(Y.CDS_CAT_CLASS_NAME).str.contains(" UK "))
-          .then(pl.lit(CurrencyCode.GBP))
-          .when(pl.col(Y.CDS_CAT_CLASS_NAME).str.contains(" EU "))
-          .then(pl.lit(CurrencyCode.EUR))
-          .otherwise(pl.lit(CurrencyCode.GBP))
-          .alias(AF.REQUIRED_CURRENCY),
-    )
+    ylt = ylt.with_columns(pl.col(Y.CURRENCY).alias(AF.REQUIRED_CURRENCY))
     fx_to_gbp = (
         fx_rates
         .filter(pl.col(FX.TARGET_CURRENCY) == CurrencyCode.GBP)
@@ -186,7 +183,7 @@ def attach_currency(ylt: pl.LazyFrame, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
         )
     )
     out = ylt.join(fx_to_gbp, on=AF.REQUIRED_CURRENCY, how="left")
-    log.info("currency: required_currency derived from CDS class; rate_to_gbp attached")
+    log.info("currency: required_currency taken from lobs.currency; rate_to_gbp attached")
     return out.with_columns(pl.col(AF.RATE_TO_GBP).cast(pl.Float64))
 
 

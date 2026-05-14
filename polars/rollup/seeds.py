@@ -37,8 +37,10 @@ from pathlib import Path
 
 import polars as pl
 
+from rollup.config import VendorName
 from rollup.schemas import frames as F
-from rollup.validate import validate_schema
+from rollup.schemas.columns import BlendingWeightsCol
+from rollup.validate import validate_column_in_enum, validate_schema
 
 
 log = logging.getLogger("rollup.seeds")
@@ -93,7 +95,7 @@ REQUIRED_SEEDS: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Discovery — resolve each logical seed to its explicit CSV path
+# Discovery — resolve each logical seed to its explicit path
 # ---------------------------------------------------------------------------
 
 SEED_FILES: dict[str, str] = {
@@ -108,6 +110,12 @@ SEED_FILES: dict[str, str] = {
     "euws_rank_overrides": "adjustments/euws_rank_overrides.csv",
     "air_events":          "validation/air_events.csv",
     "risklink_events":     "validation/risklink_events.csv",
+}
+
+SEED_FILE_CANDIDATES: dict[str, tuple[str, ...]] = {
+    **{name: (filename,) for name, filename in SEED_FILES.items()},
+    "air_events":      ("validation/verisk_events.parquet", "validation/air_events.csv"),
+    "risklink_events": ("validation/risklink_flood22_model_events.parquet", "validation/risklink_events.csv"),
 }
 
 
@@ -126,10 +134,13 @@ def discover(seeds_dir: Path) -> list[SeedSpec]:
     """
     specs: list[SeedSpec] = []
     for name, schema in SCHEMA_REGISTRY.items():
-        filename = SEED_FILES[name]
+        filename = next(
+            (candidate for candidate in SEED_FILE_CANDIDATES[name] if (seeds_dir / candidate).exists()),
+            "",
+        )
         specs.append(SeedSpec(
             name=name,
-            filename=filename if (seeds_dir / filename).exists() else "",
+            filename=filename,
             schema=schema,
         ))
     return specs
@@ -142,18 +153,37 @@ def discover(seeds_dir: Path) -> list[SeedSpec]:
 # constant exists for tests that want to enumerate the canonical seed set.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SEEDS_DIR: Path = Path(__file__).resolve().parents[2] / "data" / "seeds"
-SEEDS: list[SeedSpec] = discover(_DEFAULT_SEEDS_DIR)
+SEEDS: list[SeedSpec] = [
+    SeedSpec(name=name, filename=filename, schema=SCHEMA_REGISTRY[name])
+    for name, filename in SEED_FILES.items()
+]
 
 
 # ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
 
-def _load(path: Path, schema: pl.Schema, *, name: str) -> pl.LazyFrame:
+def load_seed_file(path: Path, schema: pl.Schema, *, name: str) -> pl.LazyFrame:
     if not path.exists():
         raise FileNotFoundError(f"seed '{name}' missing at {path}")
-    lf = pl.scan_csv(path, schema=schema)
+    if path.suffix == ".parquet" and name == "air_events":
+        lf = pl.scan_parquet(path).select(
+            pl.col("EventID").alias("event_id"),
+            pl.col("ModelID").alias("model_id"),
+            pl.col("Event").alias("event"),
+            pl.col("Year").alias("year"),
+            pl.col("Day").alias("day"),
+        )
+    elif path.suffix == ".parquet" and name == "risklink_events":
+        lf = pl.scan_parquet(path).select(
+            pl.col("ModelEventID").alias("event_id"),
+            pl.col("ModelOccurrenceYear").alias("year"),
+            pl.col("ModelOccurrenceDate").dt.ordinal_day().cast(pl.Int64).alias("day"),
+        )
+    elif path.suffix == ".parquet":
+        lf = pl.scan_parquet(path)
+    else:
+        lf = pl.scan_csv(path, schema=schema)
     validate_schema(lf, schema, name=f"seed.{name}")
     return lf
 
@@ -186,5 +216,12 @@ def load_all(seeds_dir: Path) -> Seeds:
     for spec in specs:
         if not spec.filename:
             raise FileNotFoundError(f"seed '{spec.name}' missing under {seeds_dir}")
-        loaded[spec.name] = _load(seeds_dir / spec.filename, spec.schema, name=spec.name)
+        loaded[spec.name] = load_seed_file(seeds_dir / spec.filename, spec.schema, name=spec.name)
+
+    validate_column_in_enum(
+        loaded["blending_weights"],
+        BlendingWeightsCol.BASE_MODEL,
+        {v.value for v in VendorName},
+        name="seed.blending_weights",
+    )
     return Seeds(**loaded)

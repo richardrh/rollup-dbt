@@ -71,6 +71,7 @@ def _write_minimal_seeds(root: Path) -> None:
         LB.CDS_CAT_CLASS_NAME: ["LOB UK Test"],
         LB.OFFICE: ["UK"],
         LB.CLASS: ["HH"],
+        LB.CURRENCY: ["GBP"],
     }).write_csv(seeds / "business" / "lobs.csv")
 
     pl.DataFrame({
