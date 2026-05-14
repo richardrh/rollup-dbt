@@ -34,7 +34,7 @@ from rollup.schemas.columns import EpCurveCol as EP
 from rollup.schemas.columns import EpType
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RawVeriskYltCol as VK
-from rollup.stages.ep import ep_curve_from_ylt
+from rollup.staging.ep import ep_curve_from_ylt
 from rollup.staging import load_raw_verisk_ylt
 
 

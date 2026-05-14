@@ -13,7 +13,7 @@ data/seeds/business/valid_analyses.csv
 | 1 | Load raw YLTs | `data/ylt/{vendor}/*.parquet` | Vendor event losses |
 | 2 | Load analysis metadata | `analyses.csv` | Vendor analysis ID → peril, plus RiskLink LOB |
 | 3 | Filter to valid IDs | `valid_analyses.csv` | Operator-approved numeric vendor analysis IDs |
-| 4 | Normalize | `stages/staging.py` | Attach rollup LOB/peril metadata |
+| 4 | Normalize | `staging/ylt.py` | Attach rollup LOB/peril metadata |
 | 5 | Validate | `validate_one_peril_per_rollup_lob` | Fail if one rollup LOB maps to multiple perils |
 
 ## `valid_analyses.csv`

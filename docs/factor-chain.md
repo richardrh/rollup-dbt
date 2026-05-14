@@ -38,7 +38,7 @@ left-to-right and verify the arithmetic step by step.
 
 ## Composition
 
-`pipeline.build_all_factors` is the composition. It reads top-down:
+`pipeline.build_intermediate` is the composition. It reads top-down:
 
 ```python
 # 1. staging — filter analyses to valid_analyses, then raw YLTs →
@@ -55,7 +55,7 @@ ylt = pl.concat([rl_norm, vk_norm])
 validate_one_peril_per_rollup_lob(ylt)
 count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
 
-# 3. factors — one function per factor, each ~15 LOC in stages/factors.py
+# 3. factors — one function per factor in intermediate/factors.py
 ylt = attach_currency        (ylt, seeds.fx_rates)
 ylt = attach_forecast_factors(ylt, seeds.forecast_factors, tags)
 ylt = attach_rank            (ylt, n_sim=n_sim)                         # rank + rp_bucket
@@ -67,7 +67,7 @@ ylt = add_main_metrics(ylt, tags)
 ylt = add_dialsup(ylt, tags[0])
 ```
 
-Each `attach_*` is a pure function in `rollup/stages/factors.py`:
+Each `attach_*` is a pure function in `rollup/intermediate/factors.py`:
 
 - Read one or two seed columns.
 - Left-join the YLT on the natural keys.
@@ -120,7 +120,7 @@ factors skip step 5 and edit `add_main_metrics`'s prelude instead.
 
 **3. Write `attach_broker_commission`**
 
-   In `polars/rollup/stages/factors.py`, mirror the simple join/fill pattern
+   In `polars/rollup/intermediate/factors.py`, mirror the simple join/fill pattern
    used by factor attachers such as `attach_euws`:
    ```python
    def attach_broker_commission(ylt, broker_commissions):
@@ -136,7 +136,7 @@ factors skip step 5 and edit `add_main_metrics`'s prelude instead.
        return out
    ```
 
-**4. Call it from `build_all_factors`**
+**4. Call it from `build_intermediate`**
 
    In `pipeline.py`, pick the right chain position. Broker commission feels
    late in the chain (after all technical factors):
@@ -192,7 +192,7 @@ CHAIN: dict[str, ChainStage] = {
 
 ## See also
 
-- [`../polars/rollup/stages/factors.py`](../polars/rollup/stages/factors.py) — the
+- [`../polars/rollup/intermediate/factors.py`](../polars/rollup/intermediate/factors.py) — the
   functions themselves, with the 5-step recipe repeated in the module
   header for code readers.
 - [`../polars/rollup/chain.py`](../polars/rollup/chain.py) — the year-tagged

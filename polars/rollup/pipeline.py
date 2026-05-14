@@ -218,14 +218,6 @@ def build_intermediate(
     return IntermediateModels(all_factors=all_factors)
 
 
-def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
-    """Compatibility wrapper: build staging + intermediate all-factors model."""
-    tags = forecast_tags(forecast_dates_from_seed(seeds))
-    staging = build_staging(cfg, seeds)
-    validate_staging(staging, seeds)
-    return build_intermediate(cfg, seeds, staging, tags).all_factors
-
-
 def build_marts(
     cfg: config.Config,
     seeds: Seeds,

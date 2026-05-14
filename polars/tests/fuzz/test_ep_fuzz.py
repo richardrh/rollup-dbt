@@ -1,4 +1,4 @@
-"""Property-based tests for ``rollup.stages.ep``.
+"""Property-based tests for ``rollup.staging.ep``.
 
 Targets ``ep_curve_from_ylt``.
 
@@ -23,7 +23,7 @@ from rollup.schemas.columns import (
     EpType,
     NormalizedYltCol as Y,
 )
-from rollup.stages.ep import DEFAULT_RETURN_PERIODS, ep_curve_from_ylt
+from rollup.staging.ep import DEFAULT_RETURN_PERIODS, ep_curve_from_ylt
 from rollup.validate import validate_schema
 
 from .strategies import lazyframe_from_schema
