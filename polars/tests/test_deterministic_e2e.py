@@ -182,15 +182,10 @@ def _write_fake_ylts(root: Path) -> None:
 
     risklink_losses = [50_000_000.0]
     pl.DataFrame({
-        RLK.SIMULATION_SET_ID: [1],
         RLK.YEAR_ID: [1],
         RLK.EVENT_ID: [9001],
-        RLK.DATE: ["2026-01-01"],
         RLK.P_VALUE: [1.0],
         RLK.ANLS_ID: [501],
-        RLK.NAME: ["fake"],
-        RLK.DESCRIPTION: ["fake"],
-        RLK.RATE: [1.0],
         RLK.MEAN_LOSS: risklink_losses,
         RLK.STD_DEV: [0.0],
         RLK.EXP_VALUE: risklink_losses,
