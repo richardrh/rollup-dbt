@@ -14,12 +14,14 @@ from rollup.pipeline import (
     _write_lazy_parquet,
     build_variants,
     count_event_id_orphans,
+    count_risklink_event_id_orphans,
     forecast_dates_from_seed,
 )
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import MetricCol as M
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RefAirEventsCol as AE
+from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.seeds import load_all
 
 
@@ -178,6 +180,20 @@ def _ylt_for_orphan_test(event_ids: list[int]) -> pl.LazyFrame:
     }).lazy()
 
 
+def _risklink_ylt_for_orphan_test(event_ids: list[int]) -> pl.LazyFrame:
+    return pl.DataFrame({
+        Y.VENDOR:     [VendorName.RISKLINK] * len(event_ids),
+        Y.EVENT_ID:   event_ids,
+        Y.YEAR_ID:    [1] * len(event_ids),
+        Y.MODEL_CODE: [0] * len(event_ids),
+    }, schema={
+        Y.VENDOR:     pl.String,
+        Y.EVENT_ID:   pl.Int64,
+        Y.YEAR_ID:    pl.Int64,
+        Y.MODEL_CODE: pl.Int64,
+    }).lazy()
+
+
 def _air_events_seed(event_ids: list[int]) -> pl.LazyFrame:
     return pl.DataFrame({
         AE.EVENT_ID: event_ids,
@@ -188,6 +204,16 @@ def _air_events_seed(event_ids: list[int]) -> pl.LazyFrame:
     }, schema={
         AE.EVENT_ID: pl.Int64, AE.MODEL_ID: pl.Int64, AE.EVENT: pl.Int64,
         AE.YEAR: pl.Int64, AE.DAY: pl.Int64,
+    }).lazy()
+
+
+def _risklink_events_seed(event_ids: list[int]) -> pl.LazyFrame:
+    return pl.DataFrame({
+        RLE.EVENT_ID: event_ids,
+        RLE.YEAR:     [1] * len(event_ids),
+        RLE.DAY:      [1] * len(event_ids),
+    }, schema={
+        RLE.EVENT_ID: pl.Int64, RLE.YEAR: pl.Int64, RLE.DAY: pl.Int64,
     }).lazy()
 
 
@@ -205,6 +231,24 @@ def test_count_event_id_orphans_counts_unmatched_rows(caplog):
     assert "event catalogue validation incomplete" in message
     assert "data/seeds/validation/air_events.csv" in message
     assert "ModelEventDay remains 0" in message
+
+
+def test_count_risklink_event_id_orphans_counts_unmatched_rows(caplog):
+    ylt = _risklink_ylt_for_orphan_test([10, 20, 30, 40])
+    events = _risklink_events_seed([10, 20])
+
+    assert count_risklink_event_id_orphans(ylt, events) == 2
+    message = caplog.text
+    assert "event catalogue validation incomplete" in message
+    assert "vendor=risklink" in message
+    assert "data/seeds/validation/risklink_events.csv" in message
+
+
+def test_count_risklink_event_id_orphans_zero_when_all_match():
+    ylt = _risklink_ylt_for_orphan_test([10, 20, 30])
+    events = _risklink_events_seed([10, 20, 30, 40])
+
+    assert count_risklink_event_id_orphans(ylt, events) == 0
 
 
 # -----------------------------------------------------------------------------

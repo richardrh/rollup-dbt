@@ -17,6 +17,7 @@ from rollup.schemas import frames as F
 from rollup.schemas.columns import AllFactorsCol as AF
 from rollup.schemas.columns import NormalizedYltCol as Y
 from rollup.schemas.columns import RefAirEventsCol as AE
+from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.seeds import Seeds
 from rollup.stages.factors import (
     attach_currency,
@@ -84,6 +85,39 @@ def count_event_id_orphans(
     return orphans
 
 
+def count_risklink_event_id_orphans(
+    ylt: pl.LazyFrame,
+    risklink_events: pl.LazyFrame,
+) -> int:
+    """Count RiskLink event/year pairs absent from the risklink_events seed."""
+    events = risklink_events.select(
+        pl.col(RLE.YEAR).alias(Y.YEAR_ID),
+        pl.col(RLE.EVENT_ID),
+    ).with_columns(pl.lit(True).alias(_AE_MATCH_TMP))
+
+    joined = (
+        ylt.filter(pl.col(Y.VENDOR) == VendorName.RISKLINK)
+        .join(events, on=[Y.YEAR_ID, Y.EVENT_ID], how="left")
+    )
+    collected = joined.select(
+        pl.len().alias(_TOTAL_COUNT),
+        pl.col(_AE_MATCH_TMP).is_null().sum().alias(_ORPHAN_COUNT),
+    ).collect()
+    total = collected[_TOTAL_COUNT].item()
+    orphans = collected[_ORPHAN_COUNT].item()
+    if orphans:
+        log.warning(
+            "event catalogue validation incomplete for vendor=risklink: "
+            f"{orphans:,} / {total:,} YLT rows did not match "
+            "data/seeds/validation/risklink_events.csv. Calculations continue, "
+            "but RiskLink event metadata is not validated. Provide risklink_events.csv "
+            "to validate/enrich event IDs."
+        )
+    else:
+        log.info(f"event-id check (risklink): {total:,}/{total:,} rows matched risklink_events")
+    return orphans
+
+
 def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
     """Build the all-factors LazyFrame from staging through metrics."""
     verisk = cfg.vendor(VendorName.VERISK)
@@ -107,6 +141,7 @@ def build_all_factors(cfg: config.Config, seeds: Seeds) -> pl.LazyFrame:
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
     count_event_id_orphans(ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
+    count_risklink_event_id_orphans(ylt, seeds.risklink_events)
 
     all_factors = (
         ylt
