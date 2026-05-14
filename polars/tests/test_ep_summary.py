@@ -1,4 +1,4 @@
-"""Tests for rollup.io.ep_summary — risklink EP-summary xlsx to long-format CSV."""
+"""Tests for rollup.io.ep_summary — vendor EP-summary xlsx to long CSV."""
 
 from __future__ import annotations
 
@@ -7,11 +7,17 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+from openpyxl import Workbook
 
 from rollup.config import VendorName
-from rollup.io.ep_summary import convert_ep_summaries_to_csv, read_risklink_ep_summary
+from rollup.io.ep_summary import (
+    convert_ep_summaries_to_csv,
+    read_risklink_ep_summary,
+    read_verisk_ep_summary,
+)
 from rollup.schemas import frames as F
 from rollup.schemas.columns import StgRisklinkEpCol as RL
+from rollup.schemas.columns import StgVeriskEpCol as VK
 
 
 # ---------------------------------------------------------------------------
@@ -22,11 +28,46 @@ _EP_DIR = (
     Path(__file__).resolve().parent.parent.parent
     / "data" / "ep_summaries" / "risklink" / "rms_ep_summary.xlsx"
 )
+_VERISK_EP = (
+    Path(__file__).resolve().parent.parent.parent
+    / "data" / "ep_summaries" / "verisk" / "Hiscox Rnl26 - Verisk Results.xlsx"
+)
 
 _SKIP_IF_MISSING = pytest.mark.skipif(
     not _EP_DIR.exists(),
     reason=f"real xlsx not found at {_EP_DIR}",
 )
+_SKIP_VERISK_IF_MISSING = pytest.mark.skipif(
+    not _VERISK_EP.exists(),
+    reason=f"real Verisk xlsx not found at {_VERISK_EP}",
+)
+
+
+def _write_verisk_fixture(path: Path) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PML by LOB"
+    ws.append(["meta"])
+    ws.append(["meta"])
+    ws.append(["meta"])
+    ws.append(["meta"])
+    ws.append(["meta"])
+    ws.append(["meta"])
+    ws.append([
+        None,
+        "segment",
+        "Analysis",
+        "ExposureAttribute",
+        "CatalogTypeCode",
+        "aal_0.0",
+        "sd_0.0",
+        "aep_2.0",
+        "oep_2.0",
+        "oep_200.0",
+    ])
+    ws.append([None, "EU_WS_GCAdj|LOB_A|STC", "EU_WS_GCAdj", "LOB_A", "STC", 1.5, 0.0, 2.5, 3.5, 4.5])
+    ws.append([None, "EU_WS|LOB_B|NON", "EU_WS", "LOB_B", "NON", 99.0, 0.0, 99.0, 99.0, 99.0])
+    wb.save(path)
 
 
 # ---------------------------------------------------------------------------
@@ -92,3 +133,45 @@ def test_convert_ep_summaries_writes_csv(tmp_path: Path):
     # Must be readable as a polars DataFrame with the correct schema.
     df = pl.read_csv(csv_path, schema=F.STG_RISKLINK_EP)
     assert df.height >= 1000, f"expected >= 1000 rows, got {df.height}"
+
+
+def test_read_verisk_ep_summary_returns_long_format(tmp_path: Path):
+    xlsx = tmp_path / "verisk.xlsx"
+    _write_verisk_fixture(xlsx)
+
+    df = read_verisk_ep_summary(xlsx)
+
+    assert df.schema == F.STG_VERISK_EP
+    assert df.height == 4
+    assert set(df[VK.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
+    assert set(df[VK.RP].to_list()) == {0, 2, 200}
+    assert set(df[VK.ANALYSIS].to_list()) == {"EU_WS_GCAdj"}
+    assert set(df[VK.LOB].to_list()) == {"LOB_A"}
+
+
+def test_convert_ep_summaries_writes_verisk_csv(tmp_path: Path):
+    xlsx = tmp_path / "verisk.xlsx"
+    _write_verisk_fixture(xlsx)
+
+    written = convert_ep_summaries_to_csv(tmp_path, VendorName.VERISK)
+
+    assert [p.name for p in written] == ["verisk.long.csv"]
+    df = pl.read_csv(written[0], schema=F.STG_VERISK_EP)
+    assert df.height == 4
+
+
+@_SKIP_VERISK_IF_MISSING
+def test_real_verisk_ep_summary_analysis_labels_match_expected():
+    df = read_verisk_ep_summary(_VERISK_EP)
+
+    assert df.schema == F.STG_VERISK_EP
+    assert set(df[VK.ANALYSIS].unique().to_list()) == {
+        "EU_EQ",
+        "EU_FL",
+        "EU_WS",
+        "EU_WS_GCAdj",
+        "UK_FL",
+        "UK_WSSS",
+        "UK_WSSS_GCAdj",
+    }
+    assert df.filter(pl.col(VK.EP_TYPE) == "AAL").select(VK.RP).unique().item() == 0
