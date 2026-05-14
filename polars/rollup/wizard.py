@@ -78,7 +78,7 @@ def run_wizard(args: argparse.Namespace) -> int:
         blending_weights = blending.weights
         print(blending.message)
     else:
-        print("blending: using blending_weights.csv (--no-derive-blending)")
+        print("blending: using blending_weights.csv")
 
     try:
         run(cfg, dump_interim=dump_interim, blending_weights=blending_weights)
@@ -119,7 +119,7 @@ def _interactive_review(
             derive_blending = False
             print("  using reviewed blending_weights.csv for this run")
     else:
-        print("  using reviewed blending_weights.csv for this run")
+        print("  using reviewed blending_weights.csv for this run (default)")
 
     cfg = replace(cfg, min_loss=_prompt_min_loss(cfg.min_loss))
     dump_interim = _ask_yes(

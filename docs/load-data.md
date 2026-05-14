@@ -119,13 +119,13 @@ Copy parquets with filename pattern `risklink_ylt_*.parquet` (lowercase columns)
 
 **Need RiskLink?** Yes if modeling flood perils (`peril_family = 'FL'`); optional for wind/EQ.
 
-## Step 4 — Deriving blending weights from EP summaries
+## Step 4 — Review blending weights and optionally derive from EP summaries
 
-EP summaries (long-format CSVs) are used to derive per-peril blending proportions
-and the base model. A normal `uv run rollup` run requires every vendor to have
-`*.long.csv` EP summaries, derives blending weights in-memory, writes the
-derived CSV to `data/output/debug/derived_blending_weights.csv`, and does
-**not** overwrite the reviewed seed.
+Normal `uv run rollup` runs use the fixed, reviewed
+`data/seeds/vor/blending_weights.csv` seed. EP summaries (long-format CSVs) are
+only needed when you explicitly opt into deriving per-peril blending proportions
+with `--derive-blending` or when refreshing the seed with the `derive-blending`
+subcommand.
 
 **Step 4a — Convert Excel to long CSV (RiskLink only):**
 
@@ -180,9 +180,11 @@ At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to
 `0`, `200`, `1000`, or `10000`, then joined to the matching blending weight.
 
-Use `uv run rollup --use-blending-seed` (or the legacy alias
-`--no-derive-blending`) to explicitly force a run to use the reviewed
-`blending_weights.csv` seed even when EP-summary long CSVs are present.
+Use `uv run rollup --derive-blending` to derive weights in-memory for one run
+from complete EP-summary long CSVs. This writes an audit copy to
+`data/output/debug/derived_blending_weights.csv` and does **not** overwrite the
+reviewed seed. `--use-blending-seed` and `--no-derive-blending` are explicit
+aliases for the default seed-backed behavior.
 
 ## Step 5 — Full verification
 
@@ -213,7 +215,7 @@ uv run duckdb "SELECT * FROM 'data/output/HiscoAIR_202601_main.parquet' LIMIT 5;
 uv run rollup --yes --min-loss 0           # keep all rows
 uv run rollup --yes --log-level INFO       # see factor-chain trace
 uv run rollup --yes --no-audit             # skip debug parquets
-uv run rollup --yes --use-blending-seed    # reviewed seed instead of EP-derived blending
+uv run rollup --yes --derive-blending      # opt into run-time EP-derived blending
 ```
 
 Or set persistent values in `rollup.local.toml`: `[run].min_loss = 500`, `[logging].level = "INFO"`, etc.

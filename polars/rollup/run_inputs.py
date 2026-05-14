@@ -29,10 +29,11 @@ class BlendingInput:
 def derive_blending_for_run(cfg: config.Config) -> BlendingInput:
     """Derive in-memory blending weights when every vendor has long EP CSVs.
 
-    The normal run never overwrites ``blending_weights.csv``. When every
-    configured vendor has at least one ``*.long.csv`` EP-summary file, the
-    weights are derived for this run and copied to ``output/debug`` for audit.
-    Partial EP-summary delivery falls back to the reviewed seed.
+    The normal run uses ``blending_weights.csv`` and never calls this helper.
+    When the operator opts into ``--derive-blending`` and every configured
+    vendor has at least one ``*.long.csv`` EP-summary file, the weights are
+    derived for this run and copied to ``output/debug`` for audit. Partial
+    EP-summary delivery falls back to the reviewed seed.
     """
     csvs_by_vendor = {
         vendor.name: sorted(vendor.ep_summary_dir.glob("*.long.csv"))

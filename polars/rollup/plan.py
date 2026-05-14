@@ -375,7 +375,7 @@ def build_plan(config: Config, *, require_ep_summaries: bool = True) -> Plan:
                 vendor.ep_summary_dir,
                 ep_glob,
                 optional_missing_ok=not require_ep_summaries,
-                missing_note="required for run-time blending derivation; use --use-blending-seed to bypass",
+                missing_note="required only when --derive-blending is selected",
             ),
         ))
 

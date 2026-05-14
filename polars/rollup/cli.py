@@ -87,16 +87,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     blend_group = parser.add_mutually_exclusive_group()
     blend_group.add_argument(
-        "--derive-blending", dest="derive_blending", action="store_true", default=True,
-        help="derive blending weights in-memory for this run when all vendor EP-summary long CSVs are present (default)",
+        "--derive-blending", dest="derive_blending", action="store_true", default=False,
+        help="derive blending weights in-memory from EP-summary long CSVs for this run only",
     )
     blend_group.add_argument(
         "--no-derive-blending", dest="derive_blending", action="store_false",
-        help="always use data/seeds/vor/blending_weights.csv for this run",
+        help="use data/seeds/vor/blending_weights.csv for this run (default)",
     )
     blend_group.add_argument(
         "--use-blending-seed", dest="derive_blending", action="store_false",
-        help="explicitly use reviewed data/seeds/vor/blending_weights.csv instead of run-time EP derivation",
+        help="explicitly use reviewed data/seeds/vor/blending_weights.csv (default)",
     )
 
     sub = parser.add_subparsers(dest="cmd", metavar="<subcommand>")

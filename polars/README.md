@@ -112,7 +112,7 @@ contract between the pipeline and the seeds + YLTs you supply.
     ├── ylt/
     │   ├── verisk/*.parquet    # 10,000 simulation years (AIR)
     │   └── risklink/*.parquet  # 100,000 simulation years (RMS)
-    ├── ep_summaries/           # required by default for EP-derived blending
+    ├── ep_summaries/           # optional unless --derive-blending is selected
     │   ├── verisk/*.long.csv
     │   └── risklink/*.long.csv
     └── output/                 # pipeline writes Hisco{AIR,RMS}_*.parquet

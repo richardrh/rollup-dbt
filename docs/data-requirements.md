@@ -14,7 +14,7 @@ Schema reference. For the step-by-step procedure, see [Loading your data](load-d
     ├── ylt/
     │   ├── verisk/*.parquet
     │   └── risklink/*.parquet
-    ├── ep_summaries/         ← required by default for run-time blend derivation
+    ├── ep_summaries/         ← optional unless --derive-blending is selected
     │   ├── verisk/*.csv
     │   └── risklink/*.csv
     └── output/               ← pipeline writes here
@@ -48,10 +48,11 @@ AAL rows have `rp = 0`; OEP and AEP rows have the return period as `rp`
 
 ### Deriving blending weights from EP summaries
 
-After converting xlsx to long CSV (above), normal runs derive blending weights
-in memory and write an audit copy to
-`data/output/debug/derived_blending_weights.csv`; they do **not** overwrite the
-reviewed seed. To deliberately refresh the reviewed seed, run:
+Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. After
+converting xlsx to long CSV (above), use `uv run rollup --derive-blending` to
+derive blending weights in memory for one run and write an audit copy to
+`data/output/debug/derived_blending_weights.csv`; this does **not** overwrite
+the reviewed seed. To deliberately refresh the reviewed seed, run:
 
     uv run rollup derive-blending
 
@@ -63,8 +64,8 @@ computes per-peril totals for AAL, 1-in-200 OEP, 1-in-1000 OEP, and
     rl_proportion = rl_aal / (rl_aal + vk_aal)
     vk_proportion = 1 - rl_proportion
 
-Use `uv run rollup --use-blending-seed` only when you explicitly want the
-reviewed `blending_weights.csv` instead of run-time EP-summary derivation.
+`uv run rollup --use-blending-seed` and `uv run rollup --no-derive-blending`
+are explicit aliases for the default seed-backed behavior.
 
 ---
 

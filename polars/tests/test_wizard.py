@@ -67,7 +67,30 @@ def test_run_wizard_invokes_pipeline_with_prepared_inputs(monkeypatch):
     assert calls == [{"cfg": cfg, "dump_interim": True, "blending_weights": "weights"}]
 
 
-def test_run_wizard_requires_ep_summaries_for_default_derivation(monkeypatch, capsys):
+def test_run_wizard_uses_seed_by_default_without_requiring_ep_summaries(monkeypatch):
+    from rollup import config
+    from rollup.plan import Plan, Section, Check
+
+    cfg = config.resolve()
+    plan = Plan(config=cfg, sections=[
+        Section("seeds", "seed-dir", [Check("seed", cfg.seeds_dir, True)]),
+        Section("ylt verisk", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ylt risklink", "ylt-dir", [Check("ylt", cfg.output_dir, True)]),
+        Section("ep_summaries verisk", "ep-dir", [Check("*.long.csv", cfg.output_dir, False)]),
+        Section("ep_summaries risklink", "ep-dir", [Check("*.long.csv", cfg.output_dir, True)]),
+    ])
+    calls: list[dict] = []
+
+    monkeypatch.setattr(config, "resolve", lambda: cfg)
+    monkeypatch.setattr(config, "build_plan", lambda _, **_kwargs: plan)
+    monkeypatch.setattr(config, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("rollup.pipeline.run", lambda _cfg, **kwargs: calls.append(kwargs))
+
+    assert run_wizard(Args(derive_blending=False)) == 0
+    assert calls == [{"dump_interim": True, "blending_weights": None}]
+
+
+def test_run_wizard_requires_ep_summaries_for_opt_in_derivation(monkeypatch, capsys):
     from rollup import config
     from rollup.plan import Plan, Section, Check
 

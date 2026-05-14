@@ -41,10 +41,10 @@ them transparently.
 EP summaries are currently delivered as Excel/long CSV inputs
 (`data/ep_summaries/risklink/*.xlsx`, `*.long.csv`, etc.). January derived
 `rl_proportion` / `vk_proportion` for blending from these. The polars default
-run now derives blend proportions in-memory from complete vendor long CSVs and
-writes an audit copy to `data/output/debug/derived_blending_weights.csv`.
-Use `--use-blending-seed` to run from the reviewed
-`data/seeds/vor/blending_weights.csv` fallback instead.
+run uses the fixed reviewed `data/seeds/vor/blending_weights.csv` seed. Use
+`--derive-blending` to derive blend proportions in-memory from complete vendor
+long CSVs for one run and write an audit copy to
+`data/output/debug/derived_blending_weights.csv`.
 
 ---
 
@@ -157,10 +157,10 @@ every YLT row) — see `seeds.REQUIRED_SEEDS`.
 ### 2.1 `vw_ep` — **todo (materialised view not required)**
 
 January unioned RL + VK EP summaries to derive `rl_proportion` /
-`vk_proportion` for blending. The polars default run derives those
-proportions directly from vendor `*.long.csv` EP summaries at run time, or
-from reviewed `blending_weights.csv` when `--use-blending-seed` is selected.
-A materialised `vw_ep` equivalent is therefore not required in the main DAG.
+`vk_proportion` for blending. The polars default run reads reviewed
+`blending_weights.csv`; `--derive-blending` can derive those proportions
+directly from vendor `*.long.csv` EP summaries for one run. A materialised
+`vw_ep` equivalent is therefore not required in the main DAG.
 The unioned `vw_ep` would still be useful for excel-diff QA — see
 `tests/test_integration_ep.py`.
 

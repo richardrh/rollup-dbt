@@ -204,12 +204,11 @@ Then derive blending weights:
 
     uv run rollup derive-blending
 
-Normal runs derive blending weights in-memory from these long CSVs and write
-`data/output/debug/derived_blending_weights.csv` for audit. The explicit
-`derive-blending` subcommand rewrites the reviewed fallback seed
-`data/seeds/vor/blending_weights.csv` from AAL plus 1-in-200, 1-in-1000, and
-1-in-10000 OEP totals. Use `uv run rollup --use-blending-seed` to run from
-that reviewed seed instead of EP summaries.
+Normal runs use the reviewed `data/seeds/vor/blending_weights.csv` seed. Use
+`uv run rollup --derive-blending` to derive weights in-memory from these long
+CSVs for one run and write `data/output/debug/derived_blending_weights.csv` for
+audit. The explicit `derive-blending` subcommand rewrites the reviewed seed from
+AAL plus 1-in-200, 1-in-1000, and 1-in-10000 OEP totals.
 
 ---
 

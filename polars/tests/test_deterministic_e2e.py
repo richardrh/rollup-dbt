@@ -220,7 +220,8 @@ def deterministic_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_cli_pipeline_applies_hand_calculated_50_50_blend(deterministic_root: Path):
     assert cli_main(["--dry-run", "-y"]) == 0
-    assert cli_main(["-y", "--min-loss", "0", "--dump-interim", "--no-derive-blending"]) == 0
+    assert cli_main(["-y", "--min-loss", "0", "--dump-interim"]) == 0
+    assert not (deterministic_root / "output" / "debug" / "derived_blending_weights.csv").exists()
 
     wide = pl.read_parquet(deterministic_root / "output" / "debug" / "audit_wide.parquet")
     verisk = wide.filter(pl.col(AF.VENDOR) == VendorName.VERISK)
@@ -265,7 +266,7 @@ def test_cli_derive_blending_reads_fake_ep_summary_files(deterministic_root: Pat
     assert vk_weight == pytest.approx(1000.0 / 1500.0)
 
 
-def test_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
+def test_opt_in_run_time_blending_derivation_uses_fake_ep_summary_files(deterministic_root: Path, monkeypatch: pytest.MonkeyPatch):
     from rollup.run_inputs import derive_blending_for_run
 
     cfg = config.resolve()
