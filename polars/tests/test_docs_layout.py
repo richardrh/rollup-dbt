@@ -27,3 +27,19 @@ def test_docs_reference_canonical_dbt_style_rollup_layout() -> None:
     assert "rollup.intermediate.factors" in docs
     assert "uv run pytest -q" in docs
     assert not re.search(r"\b\d+ passed, \d+ skipped\b", docs)
+
+
+def test_analyst_demo_carousel_is_static_and_actionable() -> None:
+    demo = _read_doc("polars/analyst-demo.html")
+
+    assert "<button id=\"prev\"" in demo
+    assert "<button id=\"next\"" in demo
+    assert "ArrowRight" in demo
+    assert "uv run rollup plan" in demo
+    assert "uv run rollup run --yes" in demo
+    assert "uv run rollup test-sql --schema dbo" in demo
+    assert "uv run rollup push-to-sql --schema dbo" in demo
+    assert "mts_tbl_ylt_combined_all_factors.parquet" in demo
+    assert "data/ylt/risklink" in demo
+    assert "data/ylt/verisk" in demo
+    assert "[sql].mssql_conn_str" in demo
