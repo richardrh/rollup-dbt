@@ -23,13 +23,14 @@ Each seed has a corresponding `pl.Schema` in
 parquet and validates at the boundary so shape drift is caught immediately,
 not in the middle of a stage ten joins later.
 
-## The 11 seeds
+## The 11 pipeline seeds + analyst selection list
 
 ```
 perils.csv            — one row per rollup peril (peril_id, name, region, peril_family)
 analyses.csv          — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-valid_analyses.csv    — numeric vendor analysis IDs allowed into this run
-blending_weights.csv  — long-format (peril_id, return_period, vendor, base_model, weight)
+selected_analyses.csv — analyst-facing selected IDs that define this run
+valid_analyses.csv    — legacy numeric allow-list used only if selected_analyses is absent
+blending_weights.csv  — wide-format (peril_id, return_period, base_model, verisk_weight, risklink_weight)
 lobs.csv              — LOB dimension + office + class
 forecast_factors.csv  — (class, office, forecast_date) → factor
 fx_rates.csv          — long-format (currency_code, target_currency, rate_date, rate)
@@ -44,8 +45,9 @@ risklink_flood22_model_events.parquet — RiskLink event catalogue
 | `lobs.csv`                 | 62                  | dbt          |
 | `perils.csv`               | **stub (0)**        | duckdb export — required |
 | `analyses.csv`             | **stub (0)**        | duckdb export — required |
-| `valid_analyses.csv`       | 12                  | operator-owned allow-list — required |
-| `blending_weights.csv`     | **stub (0)**        | duckdb export — required |
+| `valid_analyses.csv`       | 12                  | legacy compatibility allow-list |
+| `selected_analyses.csv`    | 6                   | analyst-selected EP-summary IDs |
+| `blending_weights.csv`     | 32                  | reviewed blending factors — required |
 | `forecast_factors.csv`     | 78                  | dbt — bump per forecast cycle |
 | `fx_rates.csv`             | 6 (handcrafted)     | replace with real FX snapshot before prod |
 | `euws_rate_factors.csv`    | 69 212              | dbt          |
@@ -67,15 +69,16 @@ each have one job:
 | ------------------------ | --------------------------------------------------------------------- |
 | `perils.csv`             | the peril dimension itself — `peril_id` is the canonical primary key shared across vendors. `peril_family` ("FL", "WS", …) is available for seed derivation and QA. |
 | `analyses.csv`           | numeric `(vendor, analysis_id) → peril_id` lookup. For RiskLink the `lob_id` is also populated (one analysis = one (lob, peril)); for Verisk it's NULL and raw AIR labels live in `modelled_label`. |
-| `valid_analyses.csv`     | explicit allow-list of numeric vendor analysis IDs included in the rollup. Bundled Verisk IDs are placeholders. Replaces per-LOB `applies_to_{mga,prop,fa}` filtering. |
-| `blending_weights.csv`   | long-format blend weights. Adding a vendor is a new row, not a new column. |
+| `valid_analyses.csv`     | legacy allow-list used only when `selected_analyses.csv` is absent. |
+| `selected_analyses.csv`  | authoritative EP-summary selection list (`vendor,analysis_id,include`). `analysis_id` is the EP-summary identifier: RiskLink `ID`, Verisk `Analysis` label. Dry-run validates selected IDs against converted EP summaries and YLTs, resolves `modelled_lob` to `lobs.csv`, and resolves perils through `analyses.csv` → `perils.csv`. |
+| `blending_weights.csv`   | wide blend weights with one row per peril, return period, and optional `sub_peril`; non-empty `sub_peril` must match `analyses.modelled_label` for the same `peril_id`. |
 
 What this beats:
 
 - **No god-dim doing four unrelated jobs in one table.**
-- `applies_to_{mga, prop, fa}` collapses into `valid_analyses(vendor, analysis_id)` — a direct operator allow-list.
+- `applies_to_{mga, prop, fa}` collapses into `selected_analyses(vendor, analysis_id, include)` for normal operation.
 - No vendor duplication in the peril dim — vendor lives on `analyses` where it belongs.
-- Blending weights long format: new vendor or new sub-peril is a new row, not a schema change.
+- Blending weights stay reviewable: Verisk and RiskLink weights sit side-by-side on one row.
 - Base-model selection lives in `blending_weights.base_model`; generated weights default flood perils to RiskLink but operators can override the seed.
 
 ## Shape decisions on the other seeds
@@ -90,7 +93,7 @@ where the axis is extensible:
 | -------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
 | `fx_rates`           | wide: `CurrencyCode, "Rate to USD", "Rate to GBP"`    | long: `currency_code, target_currency, rate_date, rate`        |
 | `forecast_factors`   | wide: `class, office, f_202601, f_202607, f_202701`   | long: `class, office, office_iso2, forecast_date, factor` |
-| `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | long: `peril_id, return_period, sub_peril, vendor, base_model, weight` |
+| `blending_weights`   | wide across vendors (`AIRBlend`, `RMSBlend`, …)       | wide: `peril_id, return_period, sub_peril, base_model, verisk_weight, risklink_weight` |
 | `euws_rate_factors`  | long already                                          | long (`model_event_id, occ_year, factor`)                      |
 | `lobs`               | one row per lob                                       | one row per lob (+ `office`, `class` from january's `lobs_with_class_office` view) |
 

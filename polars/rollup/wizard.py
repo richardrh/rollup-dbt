@@ -33,18 +33,26 @@ def run_wizard(args: argparse.Namespace) -> int:
     from rollup.pipeline import run
 
     cfg = config.resolve()
+
     if args.min_loss is not None:
         cfg = replace(cfg, min_loss=args.min_loss)
     plan = config.build_plan(cfg)
 
+    # DRY RUN PRINT DO NOTHING
     if args.dry_run:
         _render_plan(plan, stream=sys.stdout)
-        return 2 if plan.has_lob_peril_conflict else 0
+        return 2 if (
+            plan.has_lob_peril_conflict
+            or plan.has_selected_analysis_conflict
+            or plan.has_blending_weights_conflict
+        ) else 0
 
     if (
         not plan.all_seeds_ok
         or not plan.all_ylt_ok
+        or not plan.all_selected_analysis_ok
         or not plan.all_lob_peril_ok
+        or not plan.all_blending_weights_ok
     ):
         _render_plan(plan, stream=sys.stderr)
         print("aborting: fix the failing checks above, then re-run.", file=sys.stderr)

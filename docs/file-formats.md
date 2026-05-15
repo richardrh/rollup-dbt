@@ -35,19 +35,15 @@ as one lazy table. **CamelCase preserved** to match AIR Touchstone export.
 ### `data/ylt/risklink/risklink_ylt*.parquet`
 
 **One row per (yearid, eventid, anlsid)** — *not* a per-period summary.
-Filter to `PERSPCODE='RL'` (ground-up loss) before exporting.
+Filter to `PERSPCODE='RL'` (ground-up loss) before exporting. Extra source
+columns are allowed but ignored; these are the required columns.
 
 | column            | dtype   | notes |
 |-------------------|---------|-------|
-| `SimulationSetId` | Int64   | passthrough. |
 | `yearid`          | Int64   | simulation year. |
 | `eventid`         | Int64   | event identifier. |
-| `date`            | String  | `YYYY-MM-DD`. |
 | `p_value`         | Float64 | passthrough. |
 | `anlsid`          | Int64   | analysis id; cast to String and joined to `analyses.analysis_id` (vendor='risklink'). |
-| `name`            | String  | passthrough (e.g. `GB FL HD`). |
-| `description`     | String  | passthrough. |
-| `rate`            | Float64 | passthrough. |
 | `meanloss`        | Float64 | passthrough. |
 | `stddev`          | Float64 | passthrough. |
 | `expvalue`        | Float64 | passthrough. |
@@ -102,12 +98,31 @@ schemas below are the contract; headers and dtypes are validated before run.
 | `vendor`      | String | `'verisk'` \| `'risklink'`. |
 | `analysis_id` | String | numeric vendor analysis id, stored as text. Replace bundled Verisk placeholders with real IDs before production. |
 
-Only listed analysis IDs contribute YLT rows or EP-summary rows. Peril and LOB
-are still derived through `analyses.csv` and `lobs.csv`.
+Legacy compatibility allow-list. It is used only when
+`selected_analyses.csv` is absent. Normal analyst runs should not edit this
+file for scope; selected analyses are authoritative.
+
+### `selected_analyses` — `data/seeds/business/selected_analyses.csv`
+
+Analyst-facing EP-summary selection list. When present, this is the runtime run
+scope for plan, dry-run, YLT staging, and output generation.
+
+| column        | dtype   | notes |
+|---------------|---------|-------|
+| `vendor`      | String  | `'verisk'` \| `'risklink'`. |
+| `analysis_id` | String  | EP-summary analysis identifier selected by the analyst: RiskLink/RMS `ID` as text; Verisk/AIR `Analysis` label such as `EU_WS_GCAdj`. |
+| `include`     | Boolean | `true` to include the analysis in validation/scope resolution. |
+
+Dry-run checks every included EP-summary analysis identifier exists in the
+converted EP summaries, every selected EP row's `modelled_lob` maps to
+`lobs.csv`, every selected analysis exists in the vendor YLT, and each selected
+analysis resolves to canonical `peril_id` / peril name / `peril_family` via
+`analyses.csv` and `perils.csv`. For RiskLink, resolution uses
+`analyses.analysis_id`; for Verisk, resolution uses `analyses.modelled_label`.
 
 ### `blending_weights` — `data/seeds/vor/blending_weights.csv`
 
-Long format. Provide this from the reviewed blending-factor table. The pipeline
+Wide format. Provide this from the reviewed blending-factor table. The pipeline
 does not derive these weights from EP summaries.
 
 | column        | dtype   | notes |
@@ -116,10 +131,10 @@ does not derive these weights from EP summaries.
 | `return_period` | Int64 | Weight bucket: `0`=AAL, `200`=1-in-200 OEP, `1000`=1-in-1000 OEP, `10000`=1-in-10000 OEP. |
 | `peril_name`  | String  | denormalised display only. |
 | `description` | String  | free-text reason. |
-| `sub_peril`   | String  | nullable (sub-region splits). |
-| `vendor`      | String  | `'verisk'` \| `'risklink'`. |
+| `sub_peril`   | String  | nullable. When populated it must exactly match `analyses.modelled_label` for the same `peril_id` (for example `BE FL`, not legacy codes such as `216c`). |
 | `base_model`  | String  | `'verisk'` \| `'risklink'`; runtime lookup for fanout denominator/vendor. |
-| `weight`      | Float64 | proportion; rl_weight + vk_weight should = 1.0 per peril + return_period. |
+| `verisk_weight` | Float64 | Verisk/AIR blend proportion. |
+| `risklink_weight` | Float64 | RiskLink/RMS blend proportion; `verisk_weight + risklink_weight` should = 1.0 per peril + return period when both models are supported. |
 
 ### `forecast_factors` — `data/seeds/vor/forecast_factors.csv`
 
@@ -197,8 +212,22 @@ direct pipeline input. Convert to long format with:
 
     uv run rollup ep-summary-to-csv
 
-The resulting `<stem>.long.csv` has `(id, rp, ep_type, lob, region_peril, gl)`
-for risklink (`STG_RISKLINK_EP` schema).
+The resulting `<stem>.long.csv` is the canonical analyst review file and must
+include `modelled_lob`:
+
+| column            | dtype   | notes |
+|-------------------|---------|-------|
+| `vendor`          | String  | `'verisk'` or `'risklink'`. |
+| `analysis_id`     | String  | EP-summary analysis identifier: RiskLink numeric `ID` as text; Verisk `Analysis` label. |
+| `modelled_lob`    | String  | Required. Joins to `lobs.modelled_lob` for `lob_id` / `rollup_lob`. |
+| `modelled_peril`  | String  | Vendor EP-summary peril/analysis label, resolved through `analyses.csv`. |
+| `ep_type`         | String  | `AAL`, `OEP`, or `AEP`. |
+| `return_period`   | Int64   | `0` for AAL, otherwise return period. |
+| `loss`            | Float64 | Ground-up EP summary loss. |
+
+Use `data/seeds/business/selected_analyses.csv` to list the selected analysis
+IDs. Dry-run links selected EP rows by `modelled_lob` to `lobs.csv` and by
+analysis/peril metadata to canonical `perils.csv`.
 
 EP summaries are review inputs only. They do not produce or override
 `data/seeds/vor/blending_weights.csv`; provide that seed from the reviewed

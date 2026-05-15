@@ -2,6 +2,7 @@
 
 from rollup.staging.ep import DEFAULT_RETURN_PERIODS, ep_curve_from_ylt
 from rollup.staging.ylt import (
+    effective_analyses_for_run,
     filter_valid_analyses,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,
@@ -13,6 +14,7 @@ from rollup.staging.ylt import (
 __all__ = [
     "DEFAULT_RETURN_PERIODS",
     "ep_curve_from_ylt",
+    "effective_analyses_for_run",
     "filter_valid_analyses",
     "load_raw_risklink_ylt",
     "load_raw_verisk_ylt",

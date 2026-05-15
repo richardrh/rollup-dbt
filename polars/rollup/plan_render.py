@@ -31,7 +31,9 @@ _SECTION_ICONS: dict[str, str] = {
     "seeds": "▣",
     "ylt": "▶",
     "ep_summaries": "◆",
+    "selected_analysis_validation": "◇",
     "lob_peril_validation": "◇",
+    "blending_weights_validation": "◇",
     "forecast_factors": "◇",
     "output": "◯",
 }
@@ -60,7 +62,7 @@ def format_plan(plan: Plan) -> str:
     )
     ep_ready = sum(
         1 for v in plan.config.vendors
-        if any(c.ok for s in plan.sections if s.title == f"ep_summaries {v.name}" for c in s.checks)
+        if plan.ep_vendor_ready(v.name)
     )
     lines.append(f"Seeds: {seed_ok}/{seed_total} valid.")
     lines.append(f"YLTs:  {ylt_ready}/{len(plan.config.vendors)} vendors have data.")
@@ -149,7 +151,7 @@ def _final_summary_line(plan: Plan) -> Text:
     )
     ep_ready = sum(
         1 for v in plan.config.vendors
-        if any(c.ok for s in plan.sections if s.title == f"ep_summaries {v.name}" for c in s.checks)
+        if plan.ep_vendor_ready(v.name)
     )
 
     parts: list[Text] = []

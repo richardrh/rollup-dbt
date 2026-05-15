@@ -221,21 +221,17 @@ Pipeline uses `NetOfPreCatLoss` as the loss column. Filters to `CatalogTypeCode 
 
 | column | type |
 |--------|------|
-| `SimulationSetId` | integer |
 | `yearid` | integer |
 | `eventid` | integer |
-| `date` | string |
 | `p_value` | float |
 | `anlsid` | integer |
-| `name` | string |
-| `description` | string |
-| `rate` | float |
 | `meanloss` | float |
 | `stddev` | float |
 | `expvalue` | float |
 | `loss` | float |
 
 Pipeline uses `loss`. `anlsid` is cast to string and joined to `analyses.analysis_id`.
+Extra source columns are allowed but ignored.
 
 ---
 

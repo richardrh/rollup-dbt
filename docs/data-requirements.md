@@ -81,19 +81,15 @@ Wire schema (matches AIR Touchstone export — CamelCase preserved):
 
 ### `data/ylt/risklink/risklink_ylt*.parquet` (≈ 100 000 simulation years)
 
-Wire schema (matches RiskLink export — lowercase):
+Required wire schema (matches the current RiskLink export — lowercase). Extra
+source columns are allowed but ignored.
 
 | column            | type     | notes |
 | ----------------- | -------- | ----- |
-| `SimulationSetId` | Int64    | passthrough. |
 | `yearid`          | Int64    | simulation year. |
 | `eventid`         | Int64    | event identifier. |
-| `date`            | String   | passthrough. |
 | `p_value`         | Float64  | passthrough. |
 | `anlsid`          | Int64    | analysis id; cast to String and joined to `analyses.analysis_id` (vendor='risklink' rows). |
-| `name`            | String   | passthrough. |
-| `description`     | String   | passthrough. |
-| `rate`            | Float64  | passthrough. |
 | `meanloss`        | Float64  | passthrough. |
 | `stddev`          | Float64  | passthrough. |
 | `expvalue`        | Float64  | passthrough. |
@@ -136,11 +132,11 @@ blended_AAL = vk_proportion × vk_AAL + rl_proportion × rl_AAL
 uplift_factor = blended_AAL / base_model_AAL
 ```
 
-So even for non-flood perils, **if `blending_weights.weight > 0` for
-`vendor='risklink'`**, the pipeline still needs an `rl_AAL` for that peril
+So even for non-flood perils, **if `blending_weights.risklink_weight > 0`**,
+the pipeline still needs an `rl_AAL` for that peril
 — and computing that today requires per-event RiskLink YLT data.
 
-If `blending_weights` for a non-flood peril sets `risklink.weight = 0`,
+If `blending_weights` for a non-flood peril sets `risklink_weight = 0`,
 `rl_AAL` contributes nothing and the RiskLink YLT for that peril is
 optional.
 
@@ -152,9 +148,9 @@ Send the exporter **two lists**, both derived from the seeds:
    has `base_model = 'risklink'` in `blending_weights.csv`. These drive the
    RMS event-by-event output.
 2. **Optional (per-event YLT or summary AAL):** every analysis_id whose
-   peril has `blending_weights.weight > 0` for risklink AND
+   peril has `blending_weights.risklink_weight > 0` AND
    `peril_family != 'FL'`. The pipeline today needs per-event data; if
-   you set `risklink.weight = 0` for those perils in `blending_weights`,
+   you set `risklink_weight = 0` for those perils in `blending_weights`,
    you can skip them entirely.
 
 Use this query to enumerate the lists:
@@ -169,13 +165,13 @@ JOIN (SELECT DISTINCT peril_id, base_model FROM blending_weights) bm
 WHERE a.vendor = 'risklink' AND bm.base_model = 'risklink'
 ORDER BY p.peril_id, a.analysis_id;
 
--- Optional (non-flood, only if blending_weights.risklink > 0)
-SELECT DISTINCT a.analysis_id, a.modelled_label, p.peril_id, p.name, bw.weight AS rl_weight
+-- Optional (non-flood, only if blending_weights.risklink_weight > 0)
+SELECT DISTINCT a.analysis_id, a.modelled_label, p.peril_id, p.name, bw.risklink_weight AS rl_weight
 FROM analyses a
 JOIN perils  p  ON a.peril_id = p.peril_id
 JOIN blending_weights bw
-  ON bw.peril_id = p.peril_id AND bw.vendor = 'risklink'
-WHERE a.vendor = 'risklink' AND bw.base_model != 'risklink' AND bw.weight > 0
+  ON bw.peril_id = p.peril_id
+WHERE a.vendor = 'risklink' AND bw.base_model != 'risklink' AND bw.risklink_weight > 0
 ORDER BY p.peril_id, a.analysis_id;
 ```
 
@@ -187,9 +183,9 @@ ORDER BY p.peril_id, a.analysis_id;
 - **Filter to `PERSPCODE = 'RL'`** (ground-up loss) before exporting; the
   pipeline assumes a single perspective.
 - **Parquet preferred**, CSV acceptable.
-- All 13 columns in the wire schema must be present; passthrough columns
-  (`p_value`, `meanloss`, `stddev`, `expvalue`, `rate`, `name`, `description`)
-  may be null/zero if the export tool can't supply them.
+- The 8 required columns in the schema above must be present. Extra source
+  columns such as `SimulationSetId`, `date`, `rate`, `name`, or `description`
+  are ignored if supplied.
 
 ---
 
@@ -241,28 +237,44 @@ Maps each vendor's analysis to peril. For Verisk, `lob_id` is NULL (lob comes fr
 
 One row per vendor × analysis pair. Concatenate Verisk and RiskLink CSVs (header from one, body of both).
 
-#### 3. `valid_analyses.csv` — numeric vendor analysis allow-list (REQUIRED)
+#### 3. `selected_analyses.csv` — analyst-selected runtime scope (REQUIRED for normal runs)
 
-Pipeline filters YLT and EP summaries to listed `(vendor, analysis_id)` rows.
-Empty file → zero rows output.
+Normal analyst workflow uses `data/seeds/business/selected_analyses.csv` as the
+authoritative runtime scope when the file is present. Dry-run validates included
+IDs against `analyses.csv` / `perils.csv`, converted EP summaries, and YLT
+coverage. Runtime uses the same effective selection through the analysis-scope
+flow, so dry-run and output scope stay aligned.
+
+| column        | type    | notes |
+| ------------- | ------- | ----- |
+| `vendor`      | String  | `'verisk'` or `'risklink'`. |
+| `analysis_id` | String  | EP-summary analysis identifier: RiskLink/RMS `ID`; Verisk/AIR `Analysis` label. |
+| `include`     | Boolean | `true` to include the analysis in validation and runtime scope. |
+
+#### 3a. `valid_analyses.csv` — legacy numeric vendor allow-list (fallback only)
+
+Used only for compatibility when `selected_analyses.csv` is absent. Do not treat
+an empty or malformed `valid_analyses.csv` as blocking selected-analysis mode.
 
 | column        | type   | notes |
 | ------------- | ------ | ----- |
 | `vendor`      | String | `'verisk'` or `'risklink'`. |
-| `analysis_id` | String | numeric vendor analysis id, stored as text for both vendors. Replace bundled Verisk placeholders with real IDs before production. |
+| `analysis_id` | String | legacy numeric vendor analysis id, stored as text for both vendors. |
 
-#### 4. `blending_weights.csv` — long-format blend weights (REQUIRED)
+#### 4. `blending_weights.csv` — wide blend weights (REQUIRED)
 
-One row per (peril, vendor) pair. `sub_peril` is optional regional split label.
+One row per (peril, return period, optional sub-peril). `sub_peril` is optional regional split label.
 
 | column        | type    | notes |
 | ------------- | ------- | ----- |
 | `peril_id`    | Int64   | FK into `perils.csv`. |
+| `return_period` | Int64 | Weight bucket: `0`, `200`, `1000`, or `10000`. |
 | `peril_name`  | String  | display-only; not used in joins. |
 | `description` | String  | free-text (e.g. `"default 50/50"`). Empty string fine. |
 | `sub_peril`   | String  | regional split label (e.g. `216a`); NULL for unconditional weight. |
-| `vendor`      | String  | `'verisk'` or `'risklink'`. |
-| `weight`      | Float64 | blend weight, 0..1. |
+| `base_model`  | String  | `'verisk'` or `'risklink'`; controls uplift denominator and fanout vendor. |
+| `verisk_weight` | Float64 | Verisk/AIR blend weight, 0..1. |
+| `risklink_weight` | Float64 | RiskLink/RMS blend weight, 0..1. |
 
 ### Optional seeds (improve output quality)
 

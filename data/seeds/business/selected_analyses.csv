@@ -1,0 +1,7 @@
+vendor,analysis_id,include
+risklink,101,true
+risklink,103,true
+risklink,106,true
+verisk,EU_EQ,true
+verisk,EU_FL,true
+verisk,EU_WS_GCAdj,true

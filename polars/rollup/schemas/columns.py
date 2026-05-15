@@ -11,16 +11,11 @@ from enum import StrEnum
 # ----- raw vendor YLTs (wire column names preserved) -----
 
 class RawRisklinkYltCol(StrEnum):
-    """Raw RiskLink (RMS) YLT parquet — wire column names preserved."""
-    SIMULATION_SET_ID = "SimulationSetId"
+    """Raw RiskLink (RMS) YLT parquet — required wire column names."""
     YEAR_ID           = "yearid"
     EVENT_ID          = "eventid"
-    DATE              = "date"
     P_VALUE           = "p_value"
     ANLS_ID           = "anlsid"
-    NAME              = "name"
-    DESCRIPTION       = "description"
-    RATE              = "rate"
     MEAN_LOSS         = "meanloss"
     STD_DEV           = "stddev"
     EXP_VALUE         = "expvalue"
@@ -94,8 +89,22 @@ class ValidAnalysesCol(StrEnum):
     ANALYSIS_ID = "analysis_id"  # str — numeric vendor analysis id
 
 
+class SelectedAnalysesCol(StrEnum):
+    """Analyst-facing selected analysis list validated against EP summaries.
+
+    This is the EP-summary-driven front door for operators: pick converted EP
+    summary analysis keys and set ``include``. RiskLink selections use the
+    numeric vendor analysis ID; Verisk selections use the EP/YLT modelled label.
+    When present, this seed is the runtime authority and ``valid_analyses.csv``
+    is ignored as a legacy compatibility seed.
+    """
+    VENDOR      = "vendor"       # "verisk" | "risklink"
+    ANALYSIS_ID = "analysis_id"  # str — numeric vendor analysis id
+    INCLUDE     = "include"      # bool — include this analysis in the run
+
+
 class BlendingWeightsCol(StrEnum):
-    """Per (peril_id, return_period, vendor) blend weight — long format.
+    """Per (peril_id, return_period) blend weights — wide format.
 
     `return_period` is the EP return period used to derive the weight.
     Common values: 0 (AAL), 200 (1-in-200 OEP), 1000 (1-in-1000 OEP),
@@ -104,17 +113,17 @@ class BlendingWeightsCol(StrEnum):
     `sub_peril` is nullable — most perils don't need regional sub-splits.
 
     `peril_name` + `description` are denormalised display columns: the
-    pipeline NEVER joins on them — the join is on (peril_id, return_period)
-    only — but the CSV stays human-readable.
+    pipeline NEVER joins on them. Common rows join on (peril_id, return_period);
+    sub-peril rows also join on the modelled label via `sub_peril`.
     """
     PERIL_ID      = "peril_id"
     RETURN_PERIOD = "return_period"   # 0=AAL, 200, 1000, 10000, ...
     PERIL_NAME    = "peril_name"
     DESCRIPTION   = "description"
     SUB_PERIL     = "sub_peril"
-    VENDOR        = "vendor"
     BASE_MODEL    = "base_model"      # "verisk" | "risklink"
-    WEIGHT        = "weight"
+    VERISK_WEIGHT   = "verisk_weight"
+    RISKLINK_WEIGHT = "risklink_weight"
 
 
 class RefLobsCol(StrEnum):
@@ -214,6 +223,17 @@ class StgVeriskEpCol(StrEnum):
     ANALYSIS = "analysis"
     LOB      = "lob"
     GL       = "gl"
+
+
+class CanonicalEpSummaryCol(StrEnum):
+    """Canonical converted EP-summary CSV reviewed by analysts."""
+    VENDOR          = "vendor"
+    ANALYSIS_ID     = "analysis_id"
+    MODELLED_LOB    = "modelled_lob"
+    MODELLED_PERIL  = "modelled_peril"
+    EP_TYPE         = "ep_type"
+    RETURN_PERIOD   = "return_period"
+    LOSS            = "loss"
 
 
 # ----- internal canonical frames -----

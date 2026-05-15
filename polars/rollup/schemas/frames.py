@@ -22,6 +22,8 @@ from .columns import (
     RefFxRatesCol,
     RefLobsCol,
     RefRisklinkEventsCol,
+    CanonicalEpSummaryCol,
+    SelectedAnalysesCol,
     StgRisklinkEpCol,
     StgVeriskEpCol,
     ValidAnalysesCol,
@@ -78,15 +80,21 @@ VALID_ANALYSES: pl.Schema = pl.Schema({
     ValidAnalysesCol.ANALYSIS_ID: pl.String,
 })
 
+SELECTED_ANALYSES: pl.Schema = pl.Schema({
+    SelectedAnalysesCol.VENDOR:      pl.String,
+    SelectedAnalysesCol.ANALYSIS_ID: pl.String,
+    SelectedAnalysesCol.INCLUDE:     pl.Boolean,
+})
+
 BLENDING_WEIGHTS: pl.Schema = pl.Schema({
     BlendingWeightsCol.PERIL_ID:       pl.Int64,
     BlendingWeightsCol.RETURN_PERIOD:  pl.Int64,
     BlendingWeightsCol.PERIL_NAME:     pl.String,
     BlendingWeightsCol.DESCRIPTION:    pl.String,
     BlendingWeightsCol.SUB_PERIL:      pl.String,
-    BlendingWeightsCol.VENDOR:         pl.String,
     BlendingWeightsCol.BASE_MODEL:     pl.String,
-    BlendingWeightsCol.WEIGHT:         pl.Float64,
+    BlendingWeightsCol.VERISK_WEIGHT:  pl.Float64,
+    BlendingWeightsCol.RISKLINK_WEIGHT: pl.Float64,
 })
 
 REF_LOBS: pl.Schema = pl.Schema({
@@ -158,6 +166,16 @@ STG_VERISK_EP: pl.Schema = pl.Schema({
     StgVeriskEpCol.ANALYSIS: pl.String,
     StgVeriskEpCol.LOB:      pl.String,
     StgVeriskEpCol.GL:       pl.Float64,
+})
+
+CANONICAL_EP_SUMMARY: pl.Schema = pl.Schema({
+    CanonicalEpSummaryCol.VENDOR:         pl.String,
+    CanonicalEpSummaryCol.ANALYSIS_ID:    pl.String,
+    CanonicalEpSummaryCol.MODELLED_LOB:   pl.String,
+    CanonicalEpSummaryCol.MODELLED_PERIL: pl.String,
+    CanonicalEpSummaryCol.EP_TYPE:        pl.String,
+    CanonicalEpSummaryCol.RETURN_PERIOD:  pl.Int64,
+    CanonicalEpSummaryCol.LOSS:           pl.Float64,
 })
 
 

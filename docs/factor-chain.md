@@ -41,10 +41,11 @@ left-to-right and verify the arithmetic step by step.
 `pipeline.build_intermediate` is the composition. It reads top-down:
 
 ```python
-# 1. staging — filter analyses to valid_analyses, then raw YLTs →
-#    NormalizedYlt union (carries office, lob_class, peril_name, region,
-#    peril_family)
-analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
+# 1. staging — resolve effective analysis scope, then raw YLTs →
+#    selected_analyses.csv is authoritative when present; valid_analyses.csv
+#    is the legacy fallback. NormalizedYlt union carries office, lob_class,
+#    peril_name, region, peril_family.
+analyses = effective_analyses_for_run(cfg.seeds_dir, seeds.analyses, seeds.valid_analyses)
 rl_norm = normalize_risklink_ylt(load_raw_risklink_ylt(...),
                                   analyses, seeds.perils, seeds.lobs)
 vk_norm = normalize_verisk_ylt  (load_raw_verisk_ylt(...),

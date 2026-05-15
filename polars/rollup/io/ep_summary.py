@@ -1,5 +1,4 @@
-"""Convert wide EP-summary xlsx exports into long-format CSVs that match the
-STG_RISKLINK_EP / STG_VERISK_EP schemas.
+"""Convert wide EP-summary xlsx exports into canonical long-format CSVs.
 
 RiskLink source: 'OEPAEP Curves' sheet. Title decoration in rows 1-6, header
 at row 7, data from row 8 onward. Wide layout has one column per
@@ -8,9 +7,10 @@ at row 7, data from row 8 onward. Wide layout has one column per
 Verisk source: 'PML by LOB' sheet. Header at row 7, data from row 8 onward.
 Wide layout has aal_0.0, aep_<rp>.0, and oep_<rp>.0 columns.
 
-Long format: one row per (id, rp, ep_type, lob, region_peril, gl) for risklink.
+Long format: one row per
+``(vendor, analysis_id, modelled_lob, modelled_peril, ep_type, return_period, loss)``.
 - ep_type in {'AAL', 'OEP', 'AEP'}
-- rp = 0 for AAL rows, otherwise the return-period integer (2, 5, 10, ...)
+- return_period = 0 for AAL rows, otherwise the return-period integer (2, 5, 10, ...)
 """
 from __future__ import annotations
 
@@ -21,8 +21,7 @@ import openpyxl
 import polars as pl
 
 from rollup.config import VendorName
-from rollup.schemas.columns import StgRisklinkEpCol as RL
-from rollup.schemas.columns import StgVeriskEpCol as VK
+from rollup.schemas.columns import CanonicalEpSummaryCol as EP
 
 
 _HEADER_ROW = 7   # 1-indexed default for GC exports with prefixed RP columns
@@ -66,10 +65,11 @@ def _find_header_row(rows: list[tuple], required: tuple[str, ...], path: Path, s
 
 
 def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
-    """Read a RiskLink EP-summary xlsx, return long-format DataFrame matching STG_RISKLINK_EP.
+    """Read a RiskLink EP-summary xlsx into canonical EP-summary long format.
 
     Reads the 'OEPAEP Curves' sheet. Header row is row 7 (1-indexed); data
-    begins at row 8. Returns one row per (id, ep_type, rp, lob, region_peril).
+    begins at row 8. The source ``LOB`` is emitted as analyst-facing
+    ``modelled_lob`` so dry-run can resolve it to ``lobs.csv``.
 
     Raises KeyError if the sheet is absent, ValueError if required columns are
     missing or there are fewer rows than expected.
@@ -151,12 +151,13 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
             try:
                 out_rows.append(
                     {
-                        RL.ID:           id_int,
-                        RL.RP:           0,
-                        RL.EP_TYPE:      "AAL",
-                        RL.LOB:          lob,
-                        RL.REGION_PERIL: region_peril,
-                        RL.GL:           float(aal_raw),
+                        EP.VENDOR:         VendorName.RISKLINK.value,
+                        EP.ANALYSIS_ID:    str(id_int),
+                        EP.MODELLED_LOB:   str(lob) if lob is not None else None,
+                        EP.MODELLED_PERIL: str(region_peril) if region_peril is not None else None,
+                        EP.EP_TYPE:        "AAL",
+                        EP.RETURN_PERIOD:  0,
+                        EP.LOSS:           float(aal_raw),
                     }
                 )
             except (TypeError, ValueError):
@@ -170,12 +171,13 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
             try:
                 out_rows.append(
                     {
-                        RL.ID:           id_int,
-                        RL.RP:           rp,
-                        RL.EP_TYPE:      kind,
-                        RL.LOB:          lob,
-                        RL.REGION_PERIL: region_peril,
-                        RL.GL:           float(v),
+                        EP.VENDOR:         VendorName.RISKLINK.value,
+                        EP.ANALYSIS_ID:    str(id_int),
+                        EP.MODELLED_LOB:   str(lob) if lob is not None else None,
+                        EP.MODELLED_PERIL: str(region_peril) if region_peril is not None else None,
+                        EP.EP_TYPE:        kind,
+                        EP.RETURN_PERIOD:  rp,
+                        EP.LOSS:           float(v),
                     }
                 )
             except (TypeError, ValueError):
@@ -184,25 +186,29 @@ def read_risklink_ep_summary(path: Path) -> pl.DataFrame:
     return pl.DataFrame(
         out_rows,
         schema={
-            RL.ID:           pl.Int64,
-            RL.RP:           pl.Int64,
-            RL.EP_TYPE:      pl.String,
-            RL.LOB:          pl.String,
-            RL.REGION_PERIL: pl.String,
-            RL.GL:           pl.Float64,
+            EP.VENDOR:         pl.String,
+            EP.ANALYSIS_ID:    pl.String,
+            EP.MODELLED_LOB:   pl.String,
+            EP.MODELLED_PERIL: pl.String,
+            EP.EP_TYPE:        pl.String,
+            EP.RETURN_PERIOD:  pl.Int64,
+            EP.LOSS:           pl.Float64,
         },
     )
 
 
 def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
-    """Read a Verisk EP-summary xlsx into STG_VERISK_EP long format.
+    """Read a Verisk EP-summary xlsx into canonical EP-summary long format.
 
     Reads the ``PML by LOB`` sheet. Header row is row 7 (1-indexed); data
     begins at row 8. The source layout is one row per
     ``(Analysis, ExposureAttribute, CatalogTypeCode)`` with wide columns such as
     ``aal_0.0``, ``aep_200.0`` and ``oep_200.0``. The output is one row per
-    ``(analysis, lob, ep_type, rp)``. Only STC catalogue rows are included so
-    EP summaries align with Verisk YLT staging.
+    ``(analysis, modelled_lob, ep_type, return_period)``. Only STC catalogue
+    rows are included so EP summaries align with Verisk YLT staging. Verisk
+    workbooks do not carry numeric analysis IDs, so the raw ``Analysis`` label
+    is emitted in both ``analysis_id`` and ``modelled_peril``; dry-run resolves
+    analyst-selected numeric IDs through ``analyses.csv``.
     """
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
@@ -262,11 +268,13 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
         if aal_raw is not None:
             try:
                 out_rows.append({
-                    VK.RP:       0,
-                    VK.EP_TYPE:  "AAL",
-                    VK.ANALYSIS: str(analysis),
-                    VK.LOB:      str(lob),
-                    VK.GL:       float(aal_raw),
+                    EP.VENDOR:         VendorName.VERISK.value,
+                    EP.ANALYSIS_ID:    str(analysis),
+                    EP.MODELLED_LOB:   str(lob),
+                    EP.MODELLED_PERIL: str(analysis),
+                    EP.EP_TYPE:        "AAL",
+                    EP.RETURN_PERIOD:  0,
+                    EP.LOSS:           float(aal_raw),
                 })
             except (TypeError, ValueError):
                 pass
@@ -277,11 +285,13 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
                 continue
             try:
                 out_rows.append({
-                    VK.RP:       rp,
-                    VK.EP_TYPE:  kind,
-                    VK.ANALYSIS: str(analysis),
-                    VK.LOB:      str(lob),
-                    VK.GL:       float(v),
+                    EP.VENDOR:         VendorName.VERISK.value,
+                    EP.ANALYSIS_ID:    str(analysis),
+                    EP.MODELLED_LOB:   str(lob),
+                    EP.MODELLED_PERIL: str(analysis),
+                    EP.EP_TYPE:        kind,
+                    EP.RETURN_PERIOD:  rp,
+                    EP.LOSS:           float(v),
                 })
             except (TypeError, ValueError):
                 continue
@@ -289,11 +299,13 @@ def read_verisk_ep_summary(path: Path) -> pl.DataFrame:
     return pl.DataFrame(
         out_rows,
         schema={
-            VK.RP:       pl.Int64,
-            VK.EP_TYPE:  pl.String,
-            VK.ANALYSIS: pl.String,
-            VK.LOB:      pl.String,
-            VK.GL:       pl.Float64,
+            EP.VENDOR:         pl.String,
+            EP.ANALYSIS_ID:    pl.String,
+            EP.MODELLED_LOB:   pl.String,
+            EP.MODELLED_PERIL: pl.String,
+            EP.EP_TYPE:        pl.String,
+            EP.RETURN_PERIOD:  pl.Int64,
+            EP.LOSS:           pl.Float64,
         },
     )
 

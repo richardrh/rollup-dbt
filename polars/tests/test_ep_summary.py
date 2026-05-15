@@ -16,8 +16,7 @@ from rollup.io.ep_summary import (
     read_verisk_ep_summary,
 )
 from rollup.schemas import frames as F
-from rollup.schemas.columns import StgRisklinkEpCol as RL
-from rollup.schemas.columns import StgVeriskEpCol as VK
+from rollup.schemas.columns import CanonicalEpSummaryCol as EP
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +89,12 @@ def _write_risklink_numeric_header_fixture(path: Path) -> None:
 
 @_SKIP_IF_MISSING
 def test_read_risklink_ep_summary_returns_long_format():
-    """Result has STG_RISKLINK_EP schema and at least 1 000 rows."""
+    """Result has canonical EP-summary schema and at least 1 000 rows."""
     df = read_risklink_ep_summary(_EP_DIR)
 
-    # Schema must match STG_RISKLINK_EP exactly.
-    assert df.schema == F.STG_RISKLINK_EP, (
-        f"schema mismatch.\nExpected: {F.STG_RISKLINK_EP}\nGot:      {df.schema}"
+    # Schema must match the canonical analyst EP-summary CSV exactly.
+    assert df.schema == F.CANONICAL_EP_SUMMARY, (
+        f"schema mismatch.\nExpected: {F.CANONICAL_EP_SUMMARY}\nGot:      {df.schema}"
     )
 
     # 417 data rows × ~25 ep columns (1 AAL + 12 OEP + 12 AEP) > 1000.
@@ -106,10 +105,10 @@ def test_read_risklink_ep_summary_returns_long_format():
 def test_read_risklink_ep_summary_aal_rows_have_rp_zero():
     """All rows with ep_type == 'AAL' must have rp == 0."""
     df = read_risklink_ep_summary(_EP_DIR)
-    aal = df.filter(pl.col(RL.EP_TYPE) == "AAL")
+    aal = df.filter(pl.col(EP.EP_TYPE) == "AAL")
 
     assert aal.height > 0, "no AAL rows found"
-    bad = aal.filter(pl.col(RL.RP) != 0)
+    bad = aal.filter(pl.col(EP.RETURN_PERIOD) != 0)
     assert bad.height == 0, (
         f"{bad.height} AAL rows have rp != 0:\n{bad.head(5)}"
     )
@@ -121,7 +120,7 @@ def test_read_risklink_ep_summary_oep_rps_are_correct():
     expected_rps = {2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000}
     df = read_risklink_ep_summary(_EP_DIR)
     oep_rps = set(
-        df.filter(pl.col(RL.EP_TYPE) == "OEP")[RL.RP].unique().to_list()
+        df.filter(pl.col(EP.EP_TYPE) == "OEP")[EP.RETURN_PERIOD].unique().to_list()
     )
     missing = expected_rps - oep_rps
     assert not missing, (
@@ -135,11 +134,12 @@ def test_read_risklink_ep_summary_supports_numeric_rp_headers(tmp_path: Path):
 
     df = read_risklink_ep_summary(xlsx)
 
-    assert df.schema == F.STG_RISKLINK_EP
+    assert df.schema == F.CANONICAL_EP_SUMMARY
     assert df.height == 4
-    assert set(df[RL.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
-    assert set(df[RL.RP].to_list()) == {0, 2, 200}
-    assert set(df[RL.ID].to_list()) == {101}
+    assert set(df[EP.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
+    assert set(df[EP.RETURN_PERIOD].to_list()) == {0, 2, 200}
+    assert set(df[EP.ANALYSIS_ID].to_list()) == {"101"}
+    assert set(df[EP.MODELLED_LOB].to_list()) == {"LOB_A"}
 
 
 @_SKIP_IF_MISSING
@@ -158,7 +158,7 @@ def test_convert_ep_summaries_writes_csv(tmp_path: Path):
     assert csv_path.name == "rms_ep_summary.long.csv"
 
     # Must be readable as a polars DataFrame with the correct schema.
-    df = pl.read_csv(csv_path, schema=F.STG_RISKLINK_EP)
+    df = pl.read_csv(csv_path, schema=F.CANONICAL_EP_SUMMARY)
     assert df.height >= 1000, f"expected >= 1000 rows, got {df.height}"
 
 
@@ -168,12 +168,12 @@ def test_read_verisk_ep_summary_filters_to_stc_rows(tmp_path: Path):
 
     df = read_verisk_ep_summary(xlsx)
 
-    assert df.schema == F.STG_VERISK_EP
+    assert df.schema == F.CANONICAL_EP_SUMMARY
     assert df.height == 4
-    assert set(df[VK.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
-    assert set(df[VK.RP].to_list()) == {0, 2, 200}
-    assert set(df[VK.ANALYSIS].to_list()) == {"EU_WS_GCAdj"}
-    assert set(df[VK.LOB].to_list()) == {"LOB_A"}
+    assert set(df[EP.EP_TYPE].to_list()) == {"AAL", "AEP", "OEP"}
+    assert set(df[EP.RETURN_PERIOD].to_list()) == {0, 2, 200}
+    assert set(df[EP.MODELLED_PERIL].to_list()) == {"EU_WS_GCAdj"}
+    assert set(df[EP.MODELLED_LOB].to_list()) == {"LOB_A"}
 
 
 def test_convert_ep_summaries_writes_verisk_fixture_csv(tmp_path: Path):
@@ -183,7 +183,7 @@ def test_convert_ep_summaries_writes_verisk_fixture_csv(tmp_path: Path):
     written = convert_ep_summaries_to_csv(tmp_path, VendorName.VERISK)
 
     assert [p.name for p in written] == ["verisk.long.csv"]
-    df = pl.read_csv(written[0], schema=F.STG_VERISK_EP)
+    df = pl.read_csv(written[0], schema=F.CANONICAL_EP_SUMMARY)
     assert df.height == 4
 
 
@@ -191,8 +191,8 @@ def test_convert_ep_summaries_writes_verisk_fixture_csv(tmp_path: Path):
 def test_real_verisk_ep_summary_analysis_labels_match_expected():
     df = read_verisk_ep_summary(_VERISK_EP)
 
-    assert df.schema == F.STG_VERISK_EP
-    assert set(df[VK.ANALYSIS].unique().to_list()) == {
+    assert df.schema == F.CANONICAL_EP_SUMMARY
+    assert set(df[EP.MODELLED_PERIL].unique().to_list()) == {
         "EU_EQ",
         "EU_FL",
         "EU_WS",
@@ -201,31 +201,31 @@ def test_real_verisk_ep_summary_analysis_labels_match_expected():
         "UK_WSSS",
         "UK_WSSS_GCAdj",
     }
-    assert df.filter(pl.col(VK.EP_TYPE) == "AAL").select(VK.RP).unique().item() == 0
+    assert df.filter(pl.col(EP.EP_TYPE) == "AAL").select(EP.RETURN_PERIOD).unique().item() == 0
 
 
 @_SKIP_VERISK_IF_MISSING
 def test_read_real_verisk_ep_summary_returns_long_format():
     df = read_verisk_ep_summary(_VERISK_EP)
 
-    assert df.schema == F.STG_VERISK_EP
+    assert df.schema == F.CANONICAL_EP_SUMMARY
     assert df.height > 1000
 
 
 @_SKIP_VERISK_IF_MISSING
 def test_read_verisk_ep_summary_aal_rows_have_rp_zero():
     df = read_verisk_ep_summary(_VERISK_EP)
-    aal = df.filter(pl.col(VK.EP_TYPE) == "AAL")
+    aal = df.filter(pl.col(EP.EP_TYPE) == "AAL")
 
     assert aal.height > 0
-    assert aal.filter(pl.col(VK.RP) != 0).height == 0
+    assert aal.filter(pl.col(EP.RETURN_PERIOD) != 0).height == 0
 
 
 @_SKIP_VERISK_IF_MISSING
 def test_read_verisk_ep_summary_oep_rps_are_correct():
     df = read_verisk_ep_summary(_VERISK_EP)
     expected_rps = {2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000}
-    oep_rps = set(df.filter(pl.col(VK.EP_TYPE) == "OEP")[VK.RP].unique().to_list())
+    oep_rps = set(df.filter(pl.col(EP.EP_TYPE) == "OEP")[EP.RETURN_PERIOD].unique().to_list())
 
     assert expected_rps <= oep_rps
 
@@ -240,5 +240,5 @@ def test_convert_ep_summaries_writes_verisk_csv(tmp_path: Path):
     assert len(written) == 1
     csv_path = written[0]
     assert csv_path.name == "verisk.long.csv"
-    df = pl.read_csv(csv_path, schema=F.STG_VERISK_EP)
+    df = pl.read_csv(csv_path, schema=F.CANONICAL_EP_SUMMARY)
     assert df.height > 1000

@@ -10,7 +10,11 @@ import polars as pl
 
 from rollup import config
 from rollup.config import EnvVar, VendorName
+from rollup.schemas import frames as F
 from rollup.schemas.columns import AnalysesCol as AN
+from rollup.schemas.columns import BlendingWeightsCol as BW
+from rollup.schemas.columns import RawRisklinkYltCol as RLK
+from rollup.schemas.columns import RawVeriskYltCol as VK
 from rollup.schemas.columns import RefForecastFactorsCol as FF
 from rollup.schemas.columns import RefLobsCol as LB
 from rollup.schemas.columns import ValidAnalysesCol as VA
@@ -214,12 +218,14 @@ def test_build_plan_blocks_when_required_seed_is_empty(tmp_path):
     """A required seed that is schema-valid but empty is flagged not-ok.
 
     Without this guard the pipeline would silently produce zero-row Hisco
-    parquets. We blank out valid_analyses after copying to simulate the state
+    parquets. We blank out lobs after copying to simulate the state
     where the user hasn't yet populated that seed.
     """
     cfg = _cfg_with_seeds(tmp_path)
-    # Blank valid_analyses to header-only — still schema-valid, but empty
-    (cfg.seeds_dir / "business/valid_analyses.csv").write_text("vendor,analysis_id\n")
+    # Blank lobs to header-only — still schema-valid, but empty
+    (cfg.seeds_dir / "business/lobs.csv").write_text(
+        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class,currency\n"
+    )
     plan = config.build_plan(cfg)
     empty_required = {
         c.label for c in plan.seeds_section.checks
@@ -271,6 +277,54 @@ def test_ylt_section_lists_globbed_files(tmp_path):
     assert "n_simulations=10,000" in sec.header
 
 
+def test_ylt_section_reports_rows_and_loss_sum(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+
+    verisk = cfg.vendor(VendorName.VERISK)
+    verisk.ylt_dir.mkdir(parents=True)
+    pl.DataFrame({
+        VK.ANALYSIS: ["EU_WS", "EU_WS"],
+        VK.EXPOSURE_ATTRIBUTE: ["LOB_A", "LOB_A"],
+        VK.CATALOG_TYPE_CODE: ["STC", "STC"],
+        VK.EVENT_ID: [1, 2],
+        VK.MODEL_CODE: [41, 41],
+        VK.YEAR_ID: [1, 1],
+        VK.PERILSET_CODE: [9, 9],
+        VK.GROUND_UP_LOSS: [110.0, 220.0],
+        VK.GROSS_LOSS: [100.0, 200.0],
+        VK.NET_PRE_CAT_LOSS: [10.0, 20.0],
+        VK.FILENAME: ["a", "a"],
+    }, schema=F.RAW_VERISK_YLT).write_parquet(verisk.ylt_dir / "air_ylt_c1.parquet")
+
+    risklink = cfg.vendor(VendorName.RISKLINK)
+    risklink.ylt_dir.mkdir(parents=True)
+    pl.DataFrame({
+        RLK.YEAR_ID: [1, 1],
+        RLK.EVENT_ID: [10, 20],
+        RLK.P_VALUE: [0.1, 0.2],
+        RLK.ANLS_ID: [101, 101],
+        RLK.MEAN_LOSS: [1.0, 2.0],
+        RLK.STD_DEV: [0.1, 0.2],
+        RLK.EXP_VALUE: [1.0, 2.0],
+        RLK.LOSS: [30.0, 40.0],
+    }, schema=F.RAW_RISKLINK_YLT).write_parquet(risklink.ylt_dir / "risklink_ylt_test.parquet")
+
+    plan = config.build_plan(cfg)
+    verisk_check = next(
+        c for s in plan.sections if s.title == f"ylt {VendorName.VERISK}"
+        for c in s.checks if c.label == "air_ylt_c1.parquet"
+    )
+    risklink_check = next(
+        c for s in plan.sections if s.title == f"ylt {VendorName.RISKLINK}"
+        for c in s.checks if c.label == "risklink_ylt_test.parquet"
+    )
+
+    assert verisk_check.rows == 2
+    assert f"{VK.NET_PRE_CAT_LOSS} sum=30.00" in verisk_check.note
+    assert risklink_check.rows == 2
+    assert f"{RLK.LOSS} sum=70.00" in risklink_check.note
+
+
 def test_missing_ylt_directory_flagged(tmp_path):
     plan = config.build_plan(_cfg_with_seeds(tmp_path))
     sec = next(s for s in plan.sections if s.title == f"ylt {VendorName.VERISK}")
@@ -283,7 +337,9 @@ def test_format_plan_contains_every_section(tmp_path):
     for title in ("seeds",
                   f"ylt {VendorName.VERISK}",          f"ylt {VendorName.RISKLINK}",
                   f"ep_summaries {VendorName.VERISK}", f"ep_summaries {VendorName.RISKLINK}",
+                  "selected_analysis_validation",
                   "lob_peril_validation",
+                  "blending_weights_validation",
                   "forecast_factors",
                   "output"):
         assert f"[{title}]" in text
@@ -359,6 +415,48 @@ def test_lob_peril_validation_flags_multiple_analyses_for_lob_peril(tmp_path):
     assert not plan.all_lob_peril_ok
     assert "one analysis per lob/peril validation failed" in check.note
     assert "LOB_A_SRC_1" in check.note
+
+
+def test_blending_weight_validation_flags_legacy_sub_peril_codes(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    pl.DataFrame({
+        BW.PERIL_ID: [2],
+        BW.RETURN_PERIOD: [10000],
+        BW.PERIL_NAME: ["Europe Flood"],
+        BW.DESCRIPTION: ["legacy code"],
+        BW.SUB_PERIL: ["216c"],
+        BW.BASE_MODEL: [VendorName.RISKLINK],
+        BW.VERISK_WEIGHT: [0.0],
+        BW.RISKLINK_WEIGHT: [1.0],
+    }, schema=F.BLENDING_WEIGHTS).write_csv(cfg.seeds_dir / "vor" / "blending_weights.csv")
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "blending_weights_validation")
+    check = next(c for c in section.checks if c.label == "blending sub_peril keys")
+
+    assert not check.ok
+    assert plan.has_blending_weights_conflict
+    assert "216c" in check.note
+
+
+def test_blending_weight_validation_accepts_modelled_label_sub_perils(tmp_path):
+    cfg = _cfg_with_seeds(tmp_path)
+    pl.DataFrame({
+        BW.PERIL_ID: [2],
+        BW.RETURN_PERIOD: [10000],
+        BW.PERIL_NAME: ["Europe Flood"],
+        BW.DESCRIPTION: ["Belgium Flood"],
+        BW.SUB_PERIL: ["BE FL"],
+        BW.BASE_MODEL: [VendorName.RISKLINK],
+        BW.VERISK_WEIGHT: [0.0],
+        BW.RISKLINK_WEIGHT: [1.0],
+    }, schema=F.BLENDING_WEIGHTS).write_csv(cfg.seeds_dir / "vor" / "blending_weights.csv")
+
+    plan = config.build_plan(cfg)
+    section = next(s for s in plan.sections if s.title == "blending_weights_validation")
+
+    assert all(c.ok for c in section.checks)
+    assert not plan.has_blending_weights_conflict
 
 
 # -----------------------------------------------------------------------------

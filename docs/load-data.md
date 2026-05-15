@@ -23,21 +23,20 @@ Seed CSVs and validation parquet catalogues already exist in `data/seeds/`.
 Copy these CSVs into their fixed seed locations:
 
 1. **`data/seeds/business/perils.csv`** — peril dimension (`peril_id`, `name`, `region`, `peril_family`)
-2. **`data/seeds/business/analyses.csv`** — numeric vendor analysis ID → peril, plus RiskLink LOB
-3. **`data/seeds/business/valid_analyses.csv`** — numeric vendor analysis IDs allowed into the run
+2. **`data/seeds/business/analyses.csv`** — vendor analysis metadata → peril, plus RiskLink LOB
+3. **`data/seeds/business/selected_analyses.csv`** — analyst-selected EP analysis IDs for this run
 4. **`data/seeds/vor/blending_weights.csv`** — reviewed RiskLink / Verisk proportions
 
 If you don't have these, see [`polars/RH-TODO-DATA.md`](../polars/RH-TODO-DATA.md).
 
 Other seeds (`lobs.csv`, `forecast_factors.csv`, `euws_*`, `fx_rates.csv`, `verisk_events.parquet`, `risklink_flood22_model_events.parquet`) are dbt/reference-owned inputs. For details, see [`data/seeds/README.md`](../data/seeds/README.md).
 
-### Step 1a — Check numeric analysis IDs before running
+### Step 1a — Select analysis IDs from EP summaries
 
-`analysis_id` is numeric for **both** vendors, stored as text in CSVs.
-RiskLink uses the raw `anlsid` / EP-summary `ID`. Verisk raw YLT and EP files
-still contain labels such as `EU_WS`; those labels must be stored in
-`analyses.modelled_label` and are joined only after the numeric allow-list has
-filtered `analyses.csv`.
+`selected_analyses.csv` is authoritative when present. RiskLink selections use
+the numeric `anlsid` / EP-summary `ID` as text. Verisk selections use the EP
+`Analysis` label, for example `EU_WS_GCAdj`; numeric Verisk placeholders in
+`analyses.csv` are metadata only and are not valid selected IDs.
 
 Example `analyses.csv` rows:
 
@@ -47,17 +46,16 @@ verisk,900003,EU_WS,3,
 risklink,13,EUxGB WS,3,16
 ```
 
-Example `valid_analyses.csv` rows:
+Example `selected_analyses.csv` rows:
 
 ```csv
-vendor,analysis_id
-verisk,900003
-risklink,13
+vendor,analysis_id,include
+verisk,EU_WS_GCAdj,true
+risklink,13,true
 ```
 
-The bundled Verisk IDs (`900001`–`900007`) are placeholders. Replace them with
-real Verisk numeric analysis IDs before production, keeping the Verisk labels
-in `modelled_label`.
+`valid_analyses.csv` remains a legacy compatibility allow-list only when
+`selected_analyses.csv` is absent.
 
 **Verify:**
 ```bash
@@ -98,20 +96,16 @@ uv run rollup --dry-run
 ## Step 3 — Drop RiskLink YLTs into `data/ylt/risklink/`
 
 Copy parquets with filename pattern `risklink_ylt*.parquet` (lowercase columns).
+Extra source columns are allowed but ignored; these are the required columns.
 
 **Required schema:**
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `SimulationSetId` | Int64 | |
 | `yearid` | Int64 | simulation year (lowercase) |
 | `eventid` | Int64 | event id (lowercase) |
-| `date` | String | event date |
 | `p_value` | Float64 | |
 | `anlsid` | Int64 | analysis id — joined to `analyses.csv` |
-| `name` | String | |
-| `description` | String | |
-| `rate` | Float64 | |
 | `meanloss` | Float64 | |
 | `stddev` | Float64 | |
 | `expvalue` | Float64 | |
@@ -155,9 +149,9 @@ The `analysis` values are Verisk labels (for example `EU_WS`) and must match
 |---|---|
 | `peril_id` | FK into `perils.csv` |
 | `return_period` | Weight bucket: `0`=AAL, `200`=1-in-200, `1000`=1-in-1000, `10000`=1-in-10000 |
-| `vendor` | `"verisk"` or `"risklink"` |
 | `base_model` | The model to use as denominator: `"risklink"` for FL perils, `"verisk"` otherwise |
-| `weight` | Blending proportion for this vendor |
+| `verisk_weight` | Verisk/AIR blending proportion |
+| `risklink_weight` | RiskLink/RMS blending proportion |
 
 At runtime each YLT event is ranked largest-to-smallest within
 `(vendor, lob_id, peril_id)`, converted to `rp = n_sim / rank`, bucketed to

@@ -50,7 +50,13 @@ def build_variants(
     forecast_dates: Sequence[date],
     vendors: Sequence[Vendor],
 ) -> list[VariantSpec]:
-    """Build the set of Hisco fan-out outputs."""
+    """Build the set of Hisco fan-out outputs.
+
+    MAIN fans out once per vendor/month because the selected loss metric is
+    forecast-tagged. DIALSUP is intentionally one output per vendor; it uses the
+    first forecast date only as the naming/metric anchor for the untagged
+    sensitivity column.
+    """
     unique_tags: list[str] = []
     seen_tags: set[str] = set()
     for d in forecast_dates:

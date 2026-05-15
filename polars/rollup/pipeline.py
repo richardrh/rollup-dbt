@@ -11,7 +11,7 @@ collect for validation, final parquet writes, audit outputs, and report files.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import polars as pl
@@ -38,7 +38,7 @@ from rollup.schemas.columns import RefAirEventsCol as AE
 from rollup.schemas.columns import RefRisklinkEventsCol as RLE
 from rollup.seeds import Seeds
 from rollup.staging import (
-    filter_valid_analyses,
+    effective_analyses_for_run,
     load_raw_risklink_ylt,
     load_raw_verisk_ylt,
     normalize_risklink_ylt,
@@ -59,18 +59,29 @@ _ORPHAN_COUNT = "orphans"
 _TOTAL_COUNT = "total"
 
 
-@dataclass(frozen=True)
+@dataclass
+class RawModels:
+    """Raw vendor scans attached before any staging joins are applied."""
+
+    risklink_ylt: pl.LazyFrame | None = None
+    verisk_ylt: pl.LazyFrame | None = None
+
+
+@dataclass
 class StagingModels:
     """Typed staging LazyFrames produced from seeds and raw vendor YLT scans."""
 
-    ylt: pl.LazyFrame
+    valid_analyses: pl.LazyFrame | None = None
+    risklink_ylt: pl.LazyFrame | None = None
+    verisk_ylt: pl.LazyFrame | None = None
+    ylt: pl.LazyFrame | None = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class IntermediateModels:
     """Business-calculation LazyFrames built from staging models."""
 
-    all_factors: pl.LazyFrame
+    all_factors: pl.LazyFrame | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +101,22 @@ class CollectedMarts:
     fanouts: list[pl.DataFrame]
     audit_long: pl.DataFrame
     audit_wide: pl.DataFrame | None
+
+
+@dataclass
+class PipelineContext:
+    """Mutable dataflow state for the dbt-style pipeline orchestration.
+
+    The context is intentionally only a set of typed namespaces. It has no
+    build/run methods; ``run()`` wires each LazyFrame transformation explicitly.
+    """
+
+    cfg: config.Config
+    seeds: Seeds | None = None
+    raw: RawModels = field(default_factory=RawModels)
+    staging: StagingModels = field(default_factory=StagingModels)
+    intermediate: IntermediateModels = field(default_factory=IntermediateModels)
+    marts: MartModels | None = None
 
 
 def count_event_id_orphans(
@@ -164,27 +191,36 @@ def build_staging(cfg: config.Config, seeds: Seeds) -> StagingModels:
     """Build staging models from raw vendor inputs and seed dimensions."""
     verisk = cfg.vendor(VendorName.VERISK)
     risklink = cfg.vendor(VendorName.RISKLINK)
-    analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
+    analyses = effective_analyses_for_run(cfg.seeds_dir, seeds.analyses, seeds.valid_analyses)
+    raw_risklink_ylt = load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob)
+    raw_verisk_ylt = load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob)
 
     rl_norm = normalize_risklink_ylt(
-        load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob),
+        raw_risklink_ylt,
         analyses,
         seeds.perils,
         seeds.lobs,
     )
     vk_norm = normalize_verisk_ylt(
-        load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob),
+        raw_verisk_ylt,
         analyses,
         seeds.perils,
         seeds.lobs,
     )
     ylt = pl.concat([rl_norm, vk_norm], how="vertical")
     log.info("staging: normalised YLTs concatenated")
-    return StagingModels(ylt=ylt)
+    return StagingModels(
+        valid_analyses=analyses,
+        risklink_ylt=rl_norm,
+        verisk_ylt=vk_norm,
+        ylt=ylt,
+    )
 
 
 def validate_staging(staging: StagingModels, seeds: Seeds) -> None:
     """Collect only the explicit staging validation checks."""
+    if staging.ylt is None:
+        raise ValueError("staging.ylt must be attached before staging validation")
     validate_one_peril_per_rollup_lob(staging.ylt)
     count_event_id_orphans(staging.ylt, seeds.air_events, vendor_filter=VendorName.VERISK)
     count_risklink_event_id_orphans(staging.ylt, seeds.risklink_events)
@@ -197,6 +233,8 @@ def build_intermediate(
     tags: list[str],
 ) -> IntermediateModels:
     """Build intermediate factor and metric models from staging models."""
+    if staging.ylt is None:
+        raise ValueError("staging.ylt must be attached before building intermediate models")
     n_sim: dict[VendorName, int] = {
         VendorName.VERISK: cfg.vendor(VendorName.VERISK).n_simulations,
         VendorName.RISKLINK: cfg.vendor(VendorName.RISKLINK).n_simulations,
@@ -228,6 +266,8 @@ def build_marts(
     dump_interim: bool,
 ) -> MartModels:
     """Build mart LazyFrames for Hisco fanout and audit outputs."""
+    if intermediate.all_factors is None:
+        raise ValueError("intermediate.all_factors must be attached before building marts")
     all_factors = intermediate.all_factors.cache()
 
     fanouts = [
@@ -302,6 +342,8 @@ def write_reports(
     variants: list[VariantSpec],
 ) -> None:
     """Collect and write presentation report artifacts after mart outputs."""
+    if intermediate.all_factors is None:
+        raise ValueError("intermediate.all_factors must be attached before writing reports")
     try:
         report = build_report(intermediate.all_factors, variants)
         write_report(report, cfg.output_dir)
@@ -310,11 +352,14 @@ def write_reports(
 
 
 def _load_seeds(cfg: config.Config, blending_weights: pl.LazyFrame | None) -> Seeds:
-    """Load seeds/raw references and apply optional run-time seed overrides."""
+    """Load seed references and apply optional scenario seed overrides."""
     from rollup.seeds import load_all
 
     seeds = load_all(cfg.seeds_dir)
     if blending_weights is not None:
+        # Runtime/scenario runs may inject reviewed blending weights without
+        # writing a CSV. Only the blending_weights seed frame is replaced; every
+        # other seed remains the validated frame loaded from cfg.seeds_dir.
         seeds = replace(seeds, blending_weights=blending_weights)
     validate_fx_coverage(seeds.fx_rates)
     return seeds
@@ -329,20 +374,53 @@ def run(
     """Run the pipeline end-to-end. One parquet per fan-out variant."""
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-    seeds = _load_seeds(cfg, blending_weights)
-    fc_dates = forecast_dates_from_seed(seeds)
+    ctx = PipelineContext(cfg=cfg)
+
+    ctx.seeds = _load_seeds(cfg, blending_weights)
+
+    # Forecast dates are the explicit planning collection boundary: variants and
+    # metric column names must be known before the final lazy mart plans are built.
+    fc_dates = forecast_dates_from_seed(ctx.seeds)
     tags = forecast_tags(fc_dates)
     variants = build_variants(fc_dates, cfg.vendors)
     log.info(f"plan: {len(variants)} Hisco variants across {len(cfg.vendors)} vendors")
 
-    staging = build_staging(cfg, seeds)
-    validate_staging(staging, seeds)
-    intermediate = build_intermediate(cfg, seeds, staging, tags)
-    marts = build_marts(cfg, seeds, intermediate, variants, tags, dump_interim=dump_interim)
-    collected = collect_marts(marts)
-    write_marts(cfg, marts, collected)
+    ctx.staging.valid_analyses = effective_analyses_for_run(
+        cfg.seeds_dir,
+        ctx.seeds.analyses,
+        ctx.seeds.valid_analyses,
+    )
+
+    risklink = cfg.vendor(VendorName.RISKLINK)
+    verisk = cfg.vendor(VendorName.VERISK)
+
+    ctx.raw.risklink_ylt = load_raw_risklink_ylt(risklink.ylt_dir, glob=risklink.ylt_glob)
+    ctx.raw.verisk_ylt = load_raw_verisk_ylt(verisk.ylt_dir, glob=verisk.ylt_glob)
+
+    ctx.staging.risklink_ylt = normalize_risklink_ylt(
+        ctx.raw.risklink_ylt,
+        ctx.staging.valid_analyses,
+        ctx.seeds.perils,
+        ctx.seeds.lobs,
+    )
+    ctx.staging.verisk_ylt = normalize_verisk_ylt(
+        ctx.raw.verisk_ylt,
+        ctx.staging.valid_analyses,
+        ctx.seeds.perils,
+        ctx.seeds.lobs,
+    )
+    ctx.staging.ylt = pl.concat([ctx.staging.risklink_ylt, ctx.staging.verisk_ylt], how="vertical")
+    log.info("staging: normalised YLTs concatenated")
+
+    validate_staging(ctx.staging, ctx.seeds)
+
+    ctx.intermediate = build_intermediate(cfg, ctx.seeds, ctx.staging, tags)
+    ctx.marts = build_marts(cfg, ctx.seeds, ctx.intermediate, variants, tags, dump_interim=dump_interim)
+
+    collected = collect_marts(ctx.marts)
+    write_marts(cfg, ctx.marts, collected)
     write_debug_outputs(cfg, collected)
-    write_reports(cfg, intermediate, variants)
+    write_reports(cfg, ctx.intermediate, variants)
 
 
 def _write_lazy_parquet(lf: pl.LazyFrame, path: Path) -> int:

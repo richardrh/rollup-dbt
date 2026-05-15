@@ -13,6 +13,7 @@ from pathlib import Path
 import polars as pl
 
 from rollup.config import VendorName
+from rollup.analysis_scope import analyses_for_run
 from rollup.schemas import frames as F
 from rollup.schemas.columns import AnalysesCol as AN
 from rollup.schemas.columns import NormalizedYltCol as Y
@@ -92,12 +93,12 @@ def _peril_dim(perils: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _analyses_for(vendor: VendorName, analyses: pl.LazyFrame) -> pl.LazyFrame:
-    """Vendor-filtered analyses with both numeric ID and modelled label.
+    """Vendor-filtered effective analyses with both ID and modelled label.
 
-    ``analysis_id`` is the operator-facing numeric allow-list key. Verisk raw
-    YLTs still carry the modelled analysis label, so Verisk staging joins on
-    ``modelled_label`` after ``filter_valid_analyses`` has applied the numeric
-    ID gate.
+    Runtime passes the selected-analysis scope when ``selected_analyses.csv`` is
+    present, or the legacy ``valid_analyses.csv`` scope otherwise. RiskLink raw
+    YLTs join on numeric ``analysis_id``; Verisk raw YLTs join on
+    ``modelled_label``.
     """
     return (
         analyses
@@ -116,11 +117,10 @@ def filter_valid_analyses(
     analyses: pl.LazyFrame,
     valid_analyses: pl.LazyFrame,
 ) -> pl.LazyFrame:
-    """Keep only analysis metadata explicitly listed in valid_analyses.
+    """Legacy compatibility filter for ``valid_analyses.csv``.
 
-    The allow-list is keyed by vendor-native numeric ``analysis_id`` for both
-    RiskLink and Verisk. Downstream staging and EP blending then use only these
-    valid analysis rows; Verisk raw rows still join by ``modelled_label``.
+    New runtime code should call :func:`rollup.analysis_scope.analyses_for_run`
+    so ``selected_analyses.csv`` can override this legacy allow-list.
     """
     valid = valid_analyses.select(
         pl.col(VA.VENDOR),
@@ -132,6 +132,15 @@ def filter_valid_analyses(
         right_on=[VA.VENDOR, VA.ANALYSIS_ID],
         how="inner",
     )
+
+
+def effective_analyses_for_run(
+    seeds_dir: Path,
+    analyses: pl.LazyFrame,
+    valid_analyses: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Effective runtime analysis scope using selected_analyses when present."""
+    return analyses_for_run(seeds_dir, analyses, valid_analyses)
 
 
 def validate_one_peril_per_rollup_lob(ylt: pl.LazyFrame) -> None:

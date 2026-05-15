@@ -98,13 +98,12 @@ def _write_minimal_seeds(root: Path) -> None:
     }).write_csv(seeds / "business" / "valid_analyses.csv")
 
     blend_rows = [
-        (1, rp, "Europe Wind", "deterministic 50/50", None, vendor, VendorName.VERISK, 0.5)
+        (1, rp, "Europe Wind", "deterministic 50/50", None, VendorName.VERISK, 0.5, 0.5)
         for rp in (0, 200, 1000, 10000)
-        for vendor in (VendorName.VERISK, VendorName.RISKLINK)
     ]
     pl.DataFrame(blend_rows, orient="row", schema=[
         BW.PERIL_ID, BW.RETURN_PERIOD, BW.PERIL_NAME, BW.DESCRIPTION,
-        BW.SUB_PERIL, BW.VENDOR, BW.BASE_MODEL, BW.WEIGHT,
+        BW.SUB_PERIL, BW.BASE_MODEL, BW.VERISK_WEIGHT, BW.RISKLINK_WEIGHT,
     ]).write_csv(seeds / "vor" / "blending_weights.csv")
 
     pl.DataFrame({

@@ -1,41 +1,33 @@
-peril_id,return_period,peril_name,description,sub_peril,vendor,base_model,weight
-1,0,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
-1,0,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
-1,200,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
-1,200,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
-1,1000,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
-1,1000,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
-1,10000,Europe Earthquake,placeholder — replace with real weights,,verisk,verisk,0.5
-1,10000,Europe Earthquake,placeholder — replace with real weights,,risklink,verisk,0.5
-2,0,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-2,0,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-2,200,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-2,200,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-2,1000,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-2,1000,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-2,10000,Europe Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-2,10000,Europe Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-3,0,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-3,0,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-3,200,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-3,200,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-3,1000,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-3,1000,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-3,10000,Europe Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-3,10000,Europe Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-4,0,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-4,0,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-4,200,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-4,200,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-4,1000,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-4,1000,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-4,10000,UK Flood,placeholder — replace with real weights,,verisk,risklink,0.5
-4,10000,UK Flood,placeholder — replace with real weights,,risklink,risklink,0.5
-5,0,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-5,0,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-5,200,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-5,200,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-5,1000,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-5,1000,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
-5,10000,UK Winter Storm,placeholder — replace with real weights,,verisk,verisk,0.5
-5,10000,UK Winter Storm,placeholder — replace with real weights,,risklink,verisk,0.5
+peril_id,return_period,peril_name,description,sub_peril,base_model,verisk_weight,risklink_weight
+1,0,Europe Earthquake,reviewed default,,verisk,0.5,0.5
+1,200,Europe Earthquake,reviewed default,,verisk,0.5,0.5
+1,1000,Europe Earthquake,reviewed default,,verisk,0.5,0.5
+1,10000,Europe Earthquake,reviewed default,,verisk,0.5,0.5
+2,0,Europe Flood,all other Europe flood modelled labels,EU_FL,risklink,1.0,0.0
+2,200,Europe Flood,all other Europe flood modelled labels,EU_FL,risklink,1.0,0.0
+2,1000,Europe Flood,all other Europe flood modelled labels,EU_FL,risklink,1.0,0.0
+2,10000,Europe Flood,all other Europe flood modelled labels,EU_FL,risklink,1.0,0.0
+2,0,Europe Flood,all other Europe flood modelled labels,EU FL HD,risklink,1.0,0.0
+2,200,Europe Flood,all other Europe flood modelled labels,EU FL HD,risklink,1.0,0.0
+2,1000,Europe Flood,all other Europe flood modelled labels,EU FL HD,risklink,1.0,0.0
+2,10000,Europe Flood,all other Europe flood modelled labels,EU FL HD,risklink,1.0,0.0
+2,0,Europe Flood,Germany Flood,DE FL,risklink,0.5,0.5
+2,200,Europe Flood,Germany Flood,DE FL,risklink,0.5,0.5
+2,1000,Europe Flood,Germany Flood,DE FL,risklink,0.5,0.5
+2,10000,Europe Flood,Germany Flood,DE FL,risklink,0.5,0.5
+2,0,Europe Flood,Belgium Flood,BE FL,risklink,0.0,1.0
+2,200,Europe Flood,Belgium Flood,BE FL,risklink,0.0,1.0
+2,1000,Europe Flood,Belgium Flood,BE FL,risklink,0.0,1.0
+2,10000,Europe Flood,Belgium Flood,BE FL,risklink,0.0,1.0
+3,0,Europe Winter Storm,EU WS scaled to RiskLink AAL,,verisk,0.0,1.0
+3,200,Europe Winter Storm,EU WS scaled to RiskLink AAL,,verisk,0.0,1.0
+3,1000,Europe Winter Storm,EU WS scaled to RiskLink AAL,,verisk,0.0,1.0
+3,10000,Europe Winter Storm,EU WS scaled to RiskLink AAL,,verisk,0.0,1.0
+4,0,UK Flood,reviewed RiskLink base,,risklink,0.0,1.0
+4,200,UK Flood,reviewed RiskLink base,,risklink,0.0,1.0
+4,1000,UK Flood,reviewed RiskLink base,,risklink,0.0,1.0
+4,10000,UK Flood,reviewed RiskLink base,,risklink,0.0,1.0
+5,0,UK Winter Storm,reviewed default,,verisk,0.5,0.5
+5,200,UK Winter Storm,reviewed default,,verisk,0.5,0.5
+5,1000,UK Winter Storm,reviewed default,,verisk,0.5,0.5
+5,10000,UK Winter Storm,reviewed default,,verisk,0.5,0.5

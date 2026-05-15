@@ -10,6 +10,8 @@ import polars as pl
 from rollup import config
 from rollup.config import CurrencyCode, Flavor, Vendor, VendorName
 from rollup.pipeline import (
+    MartModels,
+    PipelineContext,
     StagingModels,
     VariantSpec,
     _write_lazy_parquet,
@@ -184,10 +186,10 @@ def _minimal_intermediate_seeds() -> Seeds:
     return Seeds(
         lobs=empty, perils=empty, analyses=empty, valid_analyses=empty,
         blending_weights=pl.DataFrame({
-            BW.PERIL_ID: [1, 1], BW.RETURN_PERIOD: [10000, 10000],
-            BW.PERIL_NAME: ["Europe Wind", "Europe Wind"], BW.DESCRIPTION: ["test", "test"],
-            BW.SUB_PERIL: [None, None], BW.VENDOR: [VendorName.VERISK, VendorName.RISKLINK],
-            BW.BASE_MODEL: [VendorName.VERISK, VendorName.VERISK], BW.WEIGHT: [0.5, 0.5],
+            BW.PERIL_ID: [1], BW.RETURN_PERIOD: [10000],
+            BW.PERIL_NAME: ["Europe Wind"], BW.DESCRIPTION: ["test"],
+            BW.SUB_PERIL: [None], BW.BASE_MODEL: [VendorName.VERISK],
+            BW.VERISK_WEIGHT: [0.5], BW.RISKLINK_WEIGHT: [0.5],
         }, schema=F.BLENDING_WEIGHTS).lazy(),
         forecast_factors=pl.DataFrame({
             FF.CLASS: ["HH"], FF.OFFICE: ["UK"], FF.OFFICE_ISO2: ["UK"],
@@ -205,6 +207,38 @@ def _minimal_intermediate_seeds() -> Seeds:
         }, schema=F.REF_EUWS_RANK_OVERRIDES).lazy(),
         air_events=empty, risklink_events=empty,
     )
+
+
+def test_pipeline_context_namespaces_are_typed_lazyframe_containers():
+    """PipelineContext is dataflow state only: stage namespaces hold LazyFrames."""
+    cfg = config.Config(
+        seeds_dir=Path("/tmp/seeds"), output_dir=Path("/tmp/out"),
+        vendors=(_fake_vendor(VendorName.VERISK, "AIR"), _fake_vendor(VendorName.RISKLINK, "RMS")),
+    )
+    lf = pl.DataFrame({"x": [1]}).lazy()
+
+    ctx = PipelineContext(cfg=cfg)
+    ctx.seeds = _minimal_intermediate_seeds()
+    ctx.raw.risklink_ylt = lf
+    ctx.raw.verisk_ylt = lf
+    ctx.staging.valid_analyses = lf
+    ctx.staging.risklink_ylt = lf
+    ctx.staging.verisk_ylt = lf
+    ctx.staging.ylt = lf
+    ctx.intermediate.all_factors = lf
+    ctx.marts = MartModels(variants=[], fanouts=[], audit_long=lf)
+
+    assert ctx.cfg is cfg
+    assert isinstance(ctx.seeds.lobs, pl.LazyFrame)
+    assert isinstance(ctx.raw.risklink_ylt, pl.LazyFrame)
+    assert isinstance(ctx.raw.verisk_ylt, pl.LazyFrame)
+    assert isinstance(ctx.staging.valid_analyses, pl.LazyFrame)
+    assert isinstance(ctx.staging.risklink_ylt, pl.LazyFrame)
+    assert isinstance(ctx.staging.verisk_ylt, pl.LazyFrame)
+    assert isinstance(ctx.staging.ylt, pl.LazyFrame)
+    assert isinstance(ctx.intermediate.all_factors, pl.LazyFrame)
+    assert isinstance(ctx.marts.audit_long, pl.LazyFrame)
+    assert not hasattr(ctx, "build_all")
 
 
 def test_intermediate_layer_builds_lazy_without_collecting(monkeypatch):

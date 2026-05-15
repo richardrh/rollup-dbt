@@ -191,12 +191,14 @@ Each model is a pure function: `(LazyFrame, seed(s)) → LazyFrame`. No side
 effects. Composed by the linear DAG in `pipeline.py`. Full list:
 
 - `rollup/staging/ylt.py` — `load_raw_{verisk,risklink}_ylt`,
-  `filter_valid_analyses`, `normalize_{verisk,risklink}_ylt`,
+  `effective_analyses_for_run`, `normalize_{verisk,risklink}_ylt`,
   `validate_one_peril_per_rollup_lob`. The normalised
   YLT carries `office` + `lob_class` (from lobs) and
   `peril_name` + `region` + `peril_family` (from perils) so factor stages
-  downstream have semantic dims without re-joining. `valid_analyses.csv`
-  is the gate: only listed numeric vendor analysis IDs contribute rows.
+  downstream have semantic dims without re-joining. `analysis_scope` makes
+  `selected_analyses.csv` authoritative when present; `valid_analyses.csv`
+  is only the legacy fallback. RiskLink selections use numeric analysis IDs;
+  Verisk selections use `Analysis` / `modelled_label` labels.
 - `rollup/intermediate/factors.py` — `attach_currency`,
   `attach_forecast_factors`, `attach_rank`, `attach_euws`,
   `attach_uplift`.
@@ -214,7 +216,7 @@ and `pl.lit(VendorName.X)` work as drop-in replacements for raw strings:
 
 | enum            | values                          | where it appears             |
 | --------------- | ------------------------------- | ---------------------------- |
-| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `valid_analyses.vendor`, `blending_weights.vendor` |
+| `VendorName`    | `verisk` / `risklink`           | YLT `vendor` column, `base_model`, `analyses.vendor`, `valid_analyses.vendor` |
 | `CurrencyCode`  | `GBP` / `EUR`                   | `attach_currency` derivation; values land in `required_currency` |
 | `EpType`        | `AAL` / `AEP` / `OEP`           | `EP_TYPE` column emitted by `ep_curve_from_ylt` |
 | `EnvVar`        | `ROLLUP_*` env var names        | every `os.getenv` / `monkeypatch.setenv` call |

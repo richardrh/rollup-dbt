@@ -69,7 +69,6 @@ _GENERIC_VK_PROP     = "_generic_vk_proportion"
 _GENERIC_RL_PROP     = "_generic_rl_proportion"
 _SPECIFIC_BASE_MODEL = "_specific_base_model"
 _GENERIC_BASE_MODEL  = "_generic_base_model"
-_SUB_PERIL_KEY       = "_sub_peril_key"
 
 # Return-period bucket thresholds — adapted from jan-rollup's
 # int_vw_funnel_ylt_combined_ranked_bucketed.
@@ -301,36 +300,17 @@ def attach_euws(
     return out
 
 
-def _vendor_blend_weights(
-    blending_weights: pl.LazyFrame,
-    vendor: VendorName,
-    proportion_col: str,
-) -> pl.LazyFrame:
+def _blend_weights_by_peril_bucket(blending_weights: pl.LazyFrame) -> pl.LazyFrame:
+    """Read wide blend weights into the runtime peril/RP bucket shape."""
     return (
         blending_weights
-        .filter(pl.col(BW.VENDOR) == vendor)
         .select(
             pl.col(BW.PERIL_ID).alias(Y.REGION_PERIL_ID),
             pl.col(BW.RETURN_PERIOD).alias(AF.RP_BUCKET),
             pl.col(BW.SUB_PERIL),
-            pl.col(BW.SUB_PERIL).fill_null("").alias(_SUB_PERIL_KEY),
-            pl.col(BW.WEIGHT).alias(proportion_col),
+            pl.col(BW.VERISK_WEIGHT).alias(AF.VK_PROPORTION),
+            pl.col(BW.RISKLINK_WEIGHT).alias(AF.RL_PROPORTION),
         )
-    )
-
-
-def _blend_weights_by_peril_bucket(blending_weights: pl.LazyFrame) -> pl.LazyFrame:
-    """Pivot long vendor blend weights into one row per peril/RP bucket."""
-    return (
-        _vendor_blend_weights(blending_weights, VendorName.VERISK, AF.VK_PROPORTION)
-        .join(
-            _vendor_blend_weights(blending_weights, VendorName.RISKLINK, AF.RL_PROPORTION),
-            on=[Y.REGION_PERIL_ID, AF.RP_BUCKET, _SUB_PERIL_KEY], how="full", coalesce=True,
-        )
-        .with_columns(
-            pl.coalesce(pl.col(BW.SUB_PERIL), pl.col(f"{BW.SUB_PERIL}_right")).alias(BW.SUB_PERIL),
-        )
-        .drop(f"{BW.SUB_PERIL}_right", _SUB_PERIL_KEY)
     )
 
 
@@ -470,10 +450,10 @@ def attach_uplift(
     the aggregate is broadcast to every event row in one pass.
 
     Blend-weights resolution:
-        blending_weights is long-format (peril_id, return_period, sub_peril,
-        vendor, base_model, weight). The join uses both peril_id and the
-        event's rank-derived rp_bucket. `sub_peril=None` rows match any event
-        (the YLT has no sub-peril dim today).
+        blending_weights is wide-format (peril_id, return_period, sub_peril,
+        base_model, verisk_weight, risklink_weight). The join uses both peril_id
+        and the event's rank-derived rp_bucket. `sub_peril=None` rows match any
+        event (the YLT has no sub-peril dim today).
 
     Falls back to 0.5/0.5 blend and 1.0 uplift when blending_weights is empty.
     """

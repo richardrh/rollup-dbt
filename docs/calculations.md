@@ -126,7 +126,7 @@ applies rank-threshold overrides from `euws_rank_overrides.csv`.
 Sim counts (10 000 / 100 000) live on `Vendor.n_simulations` in
 `rollup/config.py`.
 
-### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) → `filter_valid_analyses` — **done**
+### 1.4 Validity filter (`int_vw_analysis_is_valid` + `..._valid`) → analysis scope — **done**
 
 duckdb keeps only (lob_id, region_peril_id) pairs that have an AAL row
 in `vw_ep` AND `official_rollup = 1`:
@@ -137,15 +137,15 @@ FROM vw_ep
 WHERE ep_type='AAL' AND official_rollup=1;
 ```
 
-polars: `staging/ylt.py::filter_valid_analyses`. The metadata catalogue
-is filtered to `valid_analyses.csv` on numeric vendor-native
-`(vendor, analysis_id)` before YLT normalisation. Verisk YLT/EP rows then join
-through `analyses.modelled_label`, while RiskLink rows join through `anlsid`.
-EP-summary blending uses the same filtered analysis metadata.
+polars: dry-run resolves an effective analysis scope from
+`selected_analyses.csv` when present, falling back to legacy
+`valid_analyses.csv` only when selected analyses are absent. The selected scope
+is validated against analysis/peril metadata, converted EP summaries, and YLT
+coverage before runtime.
 
-The pre-flight `build_plan` reporter blocks the run when
-`valid_analyses.csv` is empty (otherwise the inner join would silently drop
-every YLT row) — see `seeds.REQUIRED_SEEDS`.
+Runtime reuses that same effective selection through `effective_analyses_for_run`
+and `analysis_scope`. Verisk rows join through `analyses.modelled_label`; RiskLink
+rows join through the selected numeric EP `ID` / `anlsid`.
 
 ---
 
@@ -177,12 +177,12 @@ functions instead of group-by-then-rejoin.
 
 january keyed blending off `dim_region_perils.blending_factor_*_id` →
 `reference.blending_factors.{air_blend, rms_blend}`. polars sources blend
-weights directly from `blending_weights.csv` — long-format
-`(peril_id, return_period, sub_peril, vendor, base_model, weight)`. The YLT
+weights directly from `blending_weights.csv` — wide-format
+`(peril_id, return_period, sub_peril, base_model, verisk_weight, risklink_weight)`. The YLT
 gets `rp = n_sim / rnk` and `rp_bucket` (`0`, `200`, `1000`, or `10000`) from
 `attach_rank`, then `attach_uplift` joins on
-`(region_peril_id, rp_bucket) → (peril_id, return_period)` filtered per vendor
-(`verisk` / `risklink`), pivoted to `(vk_proportion, rl_proportion)`.
+`(region_peril_id, rp_bucket) → (peril_id, return_period)` and maps
+`verisk_weight` / `risklink_weight` to `(vk_proportion, rl_proportion)`.
 
 ### 3.2 Uplift formula — **done**
 
@@ -415,7 +415,7 @@ fixtures rather than views:
 | `lobs_with_forecast_factors_not_in_reference_lobs` | inverse direction                                                   |
 | `rl_staging_aal_equals_rl_intermediate_aal`        | sum(stg_rl_ylt.loss)/100000 == sum(int_vw_rl_ylt.loss)/100000       |
 | `verisk_ylt_analysis_not_in_perils`                | every `stg_vk_ylt.analysis` is a known modelled_label in `analyses` |
-| `vw_ep_blending_weight_present`                    | every (peril_id, return_period, vendor) target bucket has a blending_weights row |
+| `vw_ep_blending_weight_present`                    | every (peril_id, return_period) target bucket has a blending_weights row |
 
 polars: `tests/test_invariants.py` — **todo**. One started:
 `count_event_id_orphans` in `rollup/pipeline.py` counts YLT rows whose
@@ -425,7 +425,7 @@ math doesn't depend on `air_events`).
 
 ---
 
-## 9. Official rollup selection — `valid_analyses.csv` — **done**
+## 9. Official rollup selection — selected analyses — **done**
 
 ### 9.1 How january computed `official_rollup`
 
@@ -448,37 +448,40 @@ analyses can share a `peril_id`.
 
 ### 9.2 polars schema
 
-`valid_analyses.csv` has grain `(vendor, analysis_id)` where `analysis_id`
-is the vendor-native numeric ID stored as text for both vendors. Verisk raw
-`Analysis` labels live in `analyses.modelled_label`; after numeric filtering,
-staging joins Verisk YLT/EP rows on that label. It is only an allow-list;
-`analyses.csv` still maps IDs to perils, and `lobs.csv` maps LOBs.
+Normal runs use `selected_analyses.csv` at grain `(vendor, analysis_id)` plus
+`include`. Here `analysis_id` is the EP-summary identifier selected by the
+analyst: RiskLink uses the numeric EP `ID` as text; Verisk uses the AIR
+`Analysis` label. `analyses.csv` still resolves selections to canonical perils,
+and `lobs.csv` resolves EP `modelled_lob` values.
+
+`valid_analyses.csv` is legacy compatibility only. It is consulted only when
+`selected_analyses.csv` is absent, so an empty or malformed legacy allow-list
+does not block selected-analysis mode.
 
 ### 9.3 Population SQL
 
-Export or maintain the numeric vendor analysis IDs selected for the run — see
-the `valid_analyses.csv` section in
+Maintain the analyst-selected EP-summary IDs for the run — see the
+`selected_analyses.csv` section in
 [`data-requirements.md`](data-requirements.md) for the
 copy-pasteable contract.
 
 ### 9.4 Where it's applied
 
-`staging/ylt.py::filter_valid_analyses`, called in
-`rollup/pipeline.py::build_staging` before normalising YLTs:
-```python
-analyses = filter_valid_analyses(seeds.analyses, seeds.valid_analyses)
-```
+Dry-run builds an effective selection from `selected_analyses.csv` when present,
+or from legacy `valid_analyses.csv` only when selected analyses are absent. It
+validates the selected IDs against `analyses.csv` / `perils.csv`, converted EP
+summaries, and YLT coverage.
 
-The filtered analysis metadata becomes the only join target for YLTs and EP
-summaries. The pre-flight `build_plan` blocks runs when `valid_analyses` is
-empty (would silently drop every row).
+Runtime uses the same effective selection through the `effective_analyses_for_run`
+/ `analysis_scope` flow, so YLT staging and outputs use the dry-run-approved
+scope.
 
 ---
 
 ## 10. Reference data — current source-of-truth
 
 The seeds folder (`data/seeds/`) is the canonical store for
-reference data the polars pipeline reads. Eleven seeds total; see
+reference data the polars pipeline reads. See
 [`data-requirements.md`](data-requirements.md) for shape, source, and
 SQL to re-export from january's duckdb when refreshing.
 
@@ -487,8 +490,9 @@ SQL to re-export from january's duckdb when refreshing.
 | `lobs.csv`                 | dbt (`hisco_org__lobs.csv`)                                    |
 | `perils.csv`               | duckdb export from `loader.main.dim_region_perils` (DISTINCT)  |
 | `analyses.csv`             | duckdb export — verisk + risklink rows                         |
-| `valid_analyses.csv`       | operator-owned numeric vendor analysis allow-list              |
-| `blending_weights.csv`     | duckdb export — long-pivot of `blending_factors`               |
+| `selected_analyses.csv`    | analyst-owned EP-summary selection; authoritative when present |
+| `valid_analyses.csv`       | legacy numeric allow-list fallback when selected analyses are absent |
+| `blending_weights.csv`     | duckdb export — wide blend weights from `blending_factors`     |
 | `forecast_factors.csv`     | dbt (`hisco_org__forecast_factors.csv`)                        |
 | `fx_rates.csv`             | handcrafted (replace before prod)                              |
 | `euws_rate_factors.csv`    | dbt (`vor__euws_rate_factors.csv`)                             |
@@ -496,8 +500,9 @@ SQL to re-export from january's duckdb when refreshing.
 | `verisk_events.parquet`    | parquet export from `reference.air_events`                     |
 | `risklink_flood22_model_events.parquet` | parquet export from RiskLink event catalogue      |
 
-Event catalogues are parquet-backed validation seeds. The pre-flight reporter
-blocks the run if any of the nine `REQUIRED_SEEDS` have zero rows.
+Event catalogues are parquet-backed validation seeds. In normal analyst runs,
+pre-flight validates `selected_analyses.csv` and does not block on legacy
+`valid_analyses.csv` contents.
 
 ---
 
@@ -506,7 +511,7 @@ blocks the run if any of the nine `REQUIRED_SEEDS` have zero rows.
 | # | polars location                                           | calcs replaced                                                                        | status |
 | - | --------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------ |
 | 1 | `staging/ylt.py::normalize_{risklink,verisk}_ylt`         | `int_vw_rl_ylt`, `int_vw_vk_ylt`                                                      | done   |
-| 2 | `staging/ylt.py::filter_valid_analyses`                   | `int_vw_analysis_is_valid` + `vw_ep`'s `official_rollup` CASE                         | done   |
+| 2 | `effective_analyses_for_run` / `analysis_scope`           | `int_vw_analysis_is_valid` + `vw_ep`'s `official_rollup` CASE                         | done   |
 | 3 | `intermediate/factors.py::attach_rank`                    | ranking part of `int_vw_funnel_ylt_combined_ranked*`                                  | done   |
 | 4 | `intermediate/factors.py::attach_currency`                | `int_vw_blending_factors_with_forecast_ccy` (CCY derivation + FX join)                | done   |
 | 5 | `intermediate/factors.py::attach_forecast_factors`        | `int_vw_blending_factors_with_forecast`                                               | done   |

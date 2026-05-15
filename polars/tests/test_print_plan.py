@@ -9,7 +9,6 @@ Plain-text `format_plan` is covered separately by tests in `test_config.py`.
 from __future__ import annotations
 
 import io
-import shutil
 from pathlib import Path
 
 import pytest
@@ -56,7 +55,7 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
     for spec in SEEDS:
         dest = seeds_dir / spec.filename
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(real_seeds / spec.filename, dest)
+        dest.symlink_to(real_seeds / spec.filename)
     return Config(
         seeds_dir=seeds_dir,
         output_dir=tmp_path / "out",
@@ -83,7 +82,9 @@ def _cfg_with_seeds(tmp_path: Path) -> Config:
     ("ylt risklink",         "▶"),
     ("ep_summaries verisk",  "◆"),
     ("ep_summaries risklink","◆"),
+    ("selected_analysis_validation", "◇"),
     ("lob_peril_validation", "◇"),
+    ("blending_weights_validation", "◇"),
     ("forecast_factors",     "◇"),
     ("output",               "◯"),
     ("totally unknown",      "·"),
@@ -147,7 +148,9 @@ def test_print_plan_renders_all_six_sections(tmp_path: Path):
     for title in ("seeds",
                   "ylt verisk",          "ylt risklink",
                   "ep_summaries verisk", "ep_summaries risklink",
+                  "selected_analysis_validation",
                   "lob_peril_validation",
+                  "blending_weights_validation",
                   "forecast_factors",
                   "output"):
         assert title in out, f"section {title!r} missing from rendered output"

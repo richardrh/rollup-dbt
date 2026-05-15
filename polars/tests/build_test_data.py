@@ -79,15 +79,13 @@ VALID_ANALYSES = [
 ]
 
 # Simple 50/50 blend on both perils. sub_peril=None → applies to all sub-perils.
-# (peril_id, return_period, peril_name, description, sub_peril, vendor, base_model, weight)
+# (peril_id, return_period, peril_name, description, sub_peril, base_model, verisk_weight, risklink_weight)
 BLENDING_WEIGHTS = [
-    (206, rp, "Europe Winter Storm", "default 50/50 blend", None, vendor, VendorName.VERISK, 0.5)
+    (206, rp, "Europe Winter Storm", "default 50/50 blend", None, VendorName.VERISK, 0.5, 0.5)
     for rp in (0, 200, 1000, 10000)
-    for vendor in (VendorName.VERISK, VendorName.RISKLINK)
 ] + [
-    (216, rp, "Europe Flood", "default 50/50 blend", None, vendor, VendorName.RISKLINK, 0.5)
+    (216, rp, "Europe Flood", "default 50/50 blend", None, VendorName.RISKLINK, 0.5, 0.5)
     for rp in (0, 200, 1000, 10000)
-    for vendor in (VendorName.VERISK, VendorName.RISKLINK)
 ]
 
 # Three arbitrary forecast dates — the pipeline picks them up from the seed.
@@ -158,7 +156,7 @@ def _write_seeds() -> None:
     # vor/
     pl.DataFrame(BLENDING_WEIGHTS, orient="row", schema=[
         BW.PERIL_ID, BW.RETURN_PERIOD, BW.PERIL_NAME, BW.DESCRIPTION,
-        BW.SUB_PERIL, BW.VENDOR, BW.BASE_MODEL, BW.WEIGHT,
+        BW.SUB_PERIL, BW.BASE_MODEL, BW.VERISK_WEIGHT, BW.RISKLINK_WEIGHT,
     ]).write_csv(SEEDS / "vor/blending_weights.csv")
 
     pl.DataFrame(FORECAST_FACTORS, orient="row", schema=[
@@ -230,15 +228,10 @@ def _write_risklink_ylt() -> None:
                 eid += 1
                 loss = 150.0 * year_id + (eid % 5) * 17.0
                 rows.append({
-                    RLK.SIMULATION_SET_ID: 1,
                     RLK.YEAR_ID:           year_id,
                     RLK.EVENT_ID:          eid,
-                    RLK.DATE:              f"2026-{(year_id % 12) + 1:02d}-15",
                     RLK.P_VALUE:           0.5,
                     RLK.ANLS_ID:           anls_id,
-                    RLK.NAME:              "synthetic",
-                    RLK.DESCRIPTION:       "synthetic",
-                    RLK.RATE:              0.01,
                     RLK.MEAN_LOSS:         loss,
                     RLK.STD_DEV:           loss * 0.1,
                     RLK.EXP_VALUE:         loss,

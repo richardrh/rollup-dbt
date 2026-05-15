@@ -2,18 +2,22 @@
 
 Each loader:
   1. scans the CSV/parquet lazily with its `pl.Schema` applied or projected;
-  2. validates the resulting LazyFrame against that schema;
+  2. validates the resulting LazyFrame against that schema using
+     ``collect_schema()`` rather than collecting seed rows;
   3. returns the LazyFrame so the caller can continue composing queries.
 
 Strict schema validation at the edge means a malformed / out-of-date CSV
 fails with a concrete diff instead of a cryptic downstream join error.
+Domain validations that require row values, such as enum membership and
+blending-weight key checks, are explicit checks in ``load_all()``.
 
 The peril dimension is split into four single-purpose tables:
 
     perils.csv           — one row per rollup peril (peril_id, name, region, peril_family)
     analyses.csv         — numeric (vendor, analysis_id) → peril_id [+ lob_id for RiskLink]
-    valid_analyses.csv   — which numeric vendor analysis IDs are official inputs
-    blending_weights.csv — long-format (peril_id, sub_peril, vendor, weight)
+    selected_analyses.csv — optional analyst-facing runtime scope override
+    valid_analyses.csv   — legacy compatibility allow-list when no selection exists
+    blending_weights.csv — wide-format (peril_id, sub_peril, verisk_weight, risklink_weight)
 
 These replace january's god-table `dim_region_perils` (which mixed peril
 display labels, vendor mapping, blending FKs, and per-LOB applies-to flags
@@ -38,7 +42,7 @@ from pathlib import Path
 import polars as pl
 
 from rollup.schemas import frames as F
-from rollup.schemas.columns import BlendingWeightsCol
+from rollup.schemas.columns import AnalysesCol, BlendingWeightsCol, PerilsCol
 from rollup.validate import validate_column_in_enum, validate_schema
 
 
@@ -76,15 +80,17 @@ SCHEMA_REGISTRY: dict[str, pl.Schema] = {
 }
 
 
-# Seeds that MUST have rows for a real run — empty data here means the
-# pipeline will silently produce zero-row Hisco parquets. The plan reporter
-# treats an empty REQUIRED seed as a blocker (`Check.ok = False`); other
-# seeds may legitimately be optional/empty reference catalogues.
+# Seeds that MUST have rows for a real run when active — empty data here means
+# the pipeline will silently produce zero-row Hisco parquets. In selected-analysis
+# mode, valid_analyses is deliberately ignored and may be empty in the runtime
+# bundle. The plan reporter treats an empty active REQUIRED seed as a blocker
+# (`Check.ok = False`); other seeds may legitimately be optional/empty reference
+# catalogues.
 REQUIRED_SEEDS: frozenset[str] = frozenset({
     "lobs",
     "perils",
     "analyses",
-    "valid_analyses",      # empty valid_analyses drops every YLT/EP row
+    "valid_analyses",      # legacy-only gate when selected_analyses is absent
     "blending_weights",
     "forecast_factors",    # empty → no forecast tags → no variants → no outputs
     "fx_rates",
@@ -185,6 +191,48 @@ def load_seed_file(path: Path, schema: pl.Schema, *, name: str) -> pl.LazyFrame:
     return lf
 
 
+def validate_blending_weight_keys(
+    blending_weights: pl.LazyFrame,
+    analyses: pl.LazyFrame,
+    perils: pl.LazyFrame,
+) -> None:
+    """Fail when blending rows cannot match runtime peril/sub-peril join keys."""
+    unknown_perils = (
+        blending_weights.select(BlendingWeightsCol.PERIL_ID).unique()
+        .join(
+            perils.select(PerilsCol.PERIL_ID).unique(),
+            left_on=BlendingWeightsCol.PERIL_ID,
+            right_on=PerilsCol.PERIL_ID,
+            how="anti",
+        )
+        .collect()
+    )
+    sub_rows = blending_weights.filter(
+        pl.col(BlendingWeightsCol.SUB_PERIL).is_not_null()
+        & (pl.col(BlendingWeightsCol.SUB_PERIL).str.strip_chars() != "")
+    )
+    unmatched_sub = (
+        sub_rows.select(BlendingWeightsCol.PERIL_ID, BlendingWeightsCol.SUB_PERIL).unique()
+        .join(
+            analyses.select(AnalysesCol.PERIL_ID, AnalysesCol.MODELLED_LABEL).unique(),
+            left_on=[BlendingWeightsCol.PERIL_ID, BlendingWeightsCol.SUB_PERIL],
+            right_on=[AnalysesCol.PERIL_ID, AnalysesCol.MODELLED_LABEL],
+            how="anti",
+        )
+        .collect()
+    )
+    errors: list[str] = []
+    if unknown_perils.height:
+        errors.append(f"unknown peril_id values: {unknown_perils[BlendingWeightsCol.PERIL_ID].head(10).to_list()}")
+    if unmatched_sub.height:
+        errors.append(f"unmatched sub_peril keys: {unmatched_sub.head(10).rows()}")
+    if errors:
+        raise ValueError(
+            "blending_weights.csv keys must match runtime peril_id and analyses.modelled_label; "
+            + "; ".join(errors)
+        )
+
+
 @dataclass(frozen=True)
 class Seeds:
     """All seeds as validated LazyFrames, loaded once at pipeline entry."""
@@ -202,17 +250,26 @@ class Seeds:
 
 
 def load_all(seeds_dir: Path) -> Seeds:
-    """Discover every seed under `seeds_dir`, load it, validate, return.
+    """Discover every registered seed under `seeds_dir`, validate, return.
+
+    ``load_all`` loops the explicit registry, delegates each file to
+    ``load_seed_file`` for lazy scan/schema validation, then runs the named
+    domain validations that intentionally inspect seed values.
 
     A seed missing from disk raises `FileNotFoundError` with the seed name —
     the same behaviour as before discovery was introduced.
     """
+    from rollup.analysis_scope import has_selected_analyses_seed
     from rollup.config import VendorName
 
     specs = discover(seeds_dir)
     log.info(f"loading {len(specs)} seeds from {seeds_dir}")
     loaded: dict[str, pl.LazyFrame] = {}
+    selected_exists = has_selected_analyses_seed(seeds_dir)
     for spec in specs:
+        if spec.name == "valid_analyses" and selected_exists:
+            loaded[spec.name] = pl.DataFrame(schema=F.VALID_ANALYSES).lazy()
+            continue
         if not spec.filename:
             raise FileNotFoundError(f"seed '{spec.name}' missing under {seeds_dir}")
         loaded[spec.name] = load_seed_file(seeds_dir / spec.filename, spec.schema, name=spec.name)
@@ -222,5 +279,10 @@ def load_all(seeds_dir: Path) -> Seeds:
         BlendingWeightsCol.BASE_MODEL,
         {v.value for v in VendorName},
         name="seed.blending_weights",
+    )
+    validate_blending_weight_keys(
+        loaded["blending_weights"],
+        loaded["analyses"],
+        loaded["perils"],
     )
     return Seeds(**loaded)

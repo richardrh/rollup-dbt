@@ -153,9 +153,16 @@ def test_lobs_has_office_and_class():
 
 
 def test_valid_analyses_uses_verisk_gcadj_wind_labels():
-    bundle = seeds.load_all(SEEDS_DIR)
-    valid = bundle.valid_analyses.collect()
-    analyses = bundle.analyses.collect()
+    valid = seeds.load_seed_file(
+        SEEDS_DIR / "business" / "valid_analyses.csv",
+        F.VALID_ANALYSES,
+        name="valid_analyses",
+    ).collect()
+    analyses = seeds.load_seed_file(
+        SEEDS_DIR / "business" / "analyses.csv",
+        F.ANALYSES,
+        name="analyses",
+    ).collect()
 
     labels = set(
         analyses
@@ -176,9 +183,16 @@ def test_valid_analyses_uses_verisk_gcadj_wind_labels():
 
 
 def test_valid_risklink_has_one_analysis_per_lob_peril():
-    bundle = seeds.load_all(SEEDS_DIR)
-    valid = bundle.valid_analyses.collect()
-    analyses = bundle.analyses.collect()
+    valid = seeds.load_seed_file(
+        SEEDS_DIR / "business" / "valid_analyses.csv",
+        F.VALID_ANALYSES,
+        name="valid_analyses",
+    ).collect()
+    analyses = seeds.load_seed_file(
+        SEEDS_DIR / "business" / "analyses.csv",
+        F.ANALYSES,
+        name="analyses",
+    ).collect()
 
     risklink_valid = (
         analyses
