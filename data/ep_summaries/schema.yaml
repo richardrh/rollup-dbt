@@ -1,5 +1,5 @@
 version: 1
-description: Pipeline2 EP summary dataset contract colocated with EP summary inputs.
+description: Pipeline EP summary dataset contract colocated with EP summary inputs.
 
 datasets:
   canonical_ep_summary:

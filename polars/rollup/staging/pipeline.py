@@ -1,4 +1,4 @@
-"""Pipeline2 staging model query functions."""
+"""Pipeline staging model query functions."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def stage_selected_analyses(selected_analyses: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def stage_risklink_ylt(raw_risklink_ylt: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw RiskLink YLT rows into the canonical pipeline2 YLT shape."""
+    """Project raw RiskLink YLT rows into the canonical pipeline YLT shape."""
 
     return raw_risklink_ylt.select(
         pl.lit("risklink").alias("vendor"),
@@ -27,7 +27,7 @@ def stage_risklink_ylt(raw_risklink_ylt: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def stage_verisk_ylt(raw_verisk_ylt: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw Verisk YLT rows into the canonical pipeline2 YLT shape."""
+    """Project raw Verisk YLT rows into the canonical pipeline YLT shape."""
 
     return raw_verisk_ylt.select(
         pl.lit("verisk").alias("vendor"),

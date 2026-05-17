@@ -1,4 +1,4 @@
-"""Minimal YAML-backed schema helpers for the isolated pipeline2 path."""
+"""Minimal YAML-backed schema helpers for the isolated pipeline path."""
 
 from __future__ import annotations
 
@@ -35,13 +35,13 @@ _DTYPES: dict[str, pl.DataType] = {
 }
 
 
-class Pipeline2SchemaError(ValueError):
-    """Raised when pipeline2 YAML contracts or frames are invalid."""
+class PipelineSchemaError(ValueError):
+    """Raised when pipeline YAML contracts or frames are invalid."""
 
 
 @dataclass(frozen=True)
 class ColumnSpec:
-    """One declarative column contract from ``pipeline2_schema.yaml``."""
+    """One declarative column contract from ``pipeline_schema.yaml``."""
 
     name: str
     dtype_name: str
@@ -52,7 +52,7 @@ class ColumnSpec:
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    """One dataset contract from ``pipeline2_schema.yaml``."""
+    """One dataset contract from ``pipeline_schema.yaml``."""
 
     name: str
     role: str
@@ -78,8 +78,8 @@ class DatasetSpec:
 
 
 @dataclass(frozen=True)
-class Pipeline2Schema:
-    """Loaded pipeline2 YAML schema."""
+class PipelineSchema:
+    """Loaded pipeline YAML schema."""
 
     version: int
     description: str
@@ -91,7 +91,7 @@ class Pipeline2Schema:
         try:
             return self.datasets[name]
         except KeyError as exc:
-            raise Pipeline2SchemaError(f"unknown pipeline2 dataset: {name}") from exc
+            raise PipelineSchemaError(f"unknown pipeline dataset: {name}") from exc
 
 
 def polars_dtype(dtype_name: str) -> pl.DataType:
@@ -100,11 +100,11 @@ def polars_dtype(dtype_name: str) -> pl.DataType:
     try:
         return _DTYPES[dtype_name.lower()]
     except KeyError as exc:
-        raise Pipeline2SchemaError(f"unsupported pipeline2 dtype: {dtype_name}") from exc
+        raise PipelineSchemaError(f"unsupported pipeline dtype: {dtype_name}") from exc
 
 
-def load_pipeline2_schema(paths: Path | str | Sequence[Path | str] = DEFAULT_SCHEMA_PATHS) -> Pipeline2Schema:
-    """Load and merge the colocated pipeline2 YAML schema manifests."""
+def load_pipeline_schema(paths: Path | str | Sequence[Path | str] = DEFAULT_SCHEMA_PATHS) -> PipelineSchema:
+    """Load and merge the colocated pipeline YAML schema manifests."""
 
     schema_paths = _schema_paths(paths)
     raw_manifests = [_load_raw_manifest(path) for path in schema_paths]
@@ -114,18 +114,18 @@ def load_pipeline2_schema(paths: Path | str | Sequence[Path | str] = DEFAULT_SCH
     merged_datasets: dict[str, Any] = {}
     for schema_path, raw in zip(schema_paths, raw_manifests, strict=True):
         if raw["version"] != version:
-            raise Pipeline2SchemaError(f"{schema_path}: schema version does not match {version}")
+            raise PipelineSchemaError(f"{schema_path}: schema version does not match {version}")
         descriptions.append(raw["description"])
         for name, raw_spec in raw["datasets"].items():
             if name in merged_datasets:
-                raise Pipeline2SchemaError(f"duplicate pipeline2 dataset: {name}")
+                raise PipelineSchemaError(f"duplicate pipeline dataset: {name}")
             merged_datasets[name] = raw_spec
 
     datasets = {
         name: _parse_dataset(name, raw_spec)
         for name, raw_spec in merged_datasets.items()
     }
-    return Pipeline2Schema(
+    return PipelineSchema(
         version=version,
         description=" ".join(descriptions),
         datasets=datasets,
@@ -137,24 +137,24 @@ def _schema_paths(paths: Path | str | Sequence[Path | str]) -> tuple[Path, ...]:
         return (Path(paths),)
     schema_paths = tuple(Path(path) for path in paths)
     if not schema_paths:
-        raise Pipeline2SchemaError("at least one pipeline2 schema manifest is required")
+        raise PipelineSchemaError("at least one pipeline schema manifest is required")
     return schema_paths
 
 
 def _load_raw_manifest(schema_path: Path) -> dict[str, Any]:
     raw = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema root must be a mapping")
+        raise PipelineSchemaError(f"{schema_path}: pipeline schema root must be a mapping")
 
     version = raw.get("version")
     description = raw.get("description")
     raw_datasets = raw.get("datasets")
     if not isinstance(version, int):
-        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema version must be an integer")
+        raise PipelineSchemaError(f"{schema_path}: pipeline schema version must be an integer")
     if not isinstance(description, str) or not description.strip():
-        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema description is required")
+        raise PipelineSchemaError(f"{schema_path}: pipeline schema description is required")
     if not isinstance(raw_datasets, dict) or not raw_datasets:
-        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema datasets must be a non-empty mapping")
+        raise PipelineSchemaError(f"{schema_path}: pipeline schema datasets must be a non-empty mapping")
     return raw
 
 
@@ -164,7 +164,7 @@ def validate_columns(
     *,
     strict: bool = True,
 ) -> None:
-    """Validate dataframe columns against a pipeline2 dataset spec."""
+    """Validate dataframe columns against a pipeline dataset spec."""
 
     schema = frame.collect_schema() if isinstance(frame, pl.LazyFrame) else frame.schema
     actual_columns = set(schema)
@@ -173,30 +173,30 @@ def validate_columns(
 
     missing = sorted(required_columns - actual_columns)
     if missing:
-        raise Pipeline2SchemaError(f"{spec.name}: missing columns: {missing}")
+        raise PipelineSchemaError(f"{spec.name}: missing columns: {missing}")
 
     if strict:
         extra = sorted(actual_columns - declared_columns)
         if extra:
-            raise Pipeline2SchemaError(f"{spec.name}: unexpected columns: {extra}")
+            raise PipelineSchemaError(f"{spec.name}: unexpected columns: {extra}")
 
     mismatches = []
     for column in spec.columns:
         if column.name in schema and schema[column.name] != column.dtype:
             mismatches.append(f"{column.name}: expected {column.dtype}, got {schema[column.name]}")
     if mismatches:
-        raise Pipeline2SchemaError(f"{spec.name}: dtype mismatches: {mismatches}")
+        raise PipelineSchemaError(f"{spec.name}: dtype mismatches: {mismatches}")
 
 
 def _parse_dataset(name: str, raw_spec: Any) -> DatasetSpec:
     if not isinstance(name, str) or not name:
-        raise Pipeline2SchemaError("dataset names must be non-empty strings")
+        raise PipelineSchemaError("dataset names must be non-empty strings")
     if not isinstance(raw_spec, dict):
-        raise Pipeline2SchemaError(f"{name}: dataset spec must be a mapping")
+        raise PipelineSchemaError(f"{name}: dataset spec must be a mapping")
 
     columns = raw_spec.get("columns")
     if not isinstance(columns, list) or not columns:
-        raise Pipeline2SchemaError(f"{name}: columns must be a non-empty list")
+        raise PipelineSchemaError(f"{name}: columns must be a non-empty list")
 
     role = _required_string(raw_spec, "role", name)
     data_format = _required_string(raw_spec, "format", name)
@@ -217,14 +217,14 @@ def _parse_dataset(name: str, raw_spec: Any) -> DatasetSpec:
 
 def _parse_column(dataset_name: str, raw_column: Any) -> ColumnSpec:
     if not isinstance(raw_column, dict):
-        raise Pipeline2SchemaError(f"{dataset_name}: column specs must be mappings")
+        raise PipelineSchemaError(f"{dataset_name}: column specs must be mappings")
 
     name = _required_string(raw_column, "name", dataset_name)
     dtype_name = _required_string(raw_column, "dtype", dataset_name)
     description = _required_string(raw_column, "description", dataset_name)
 
     if "required" not in raw_column or not isinstance(raw_column["required"], bool):
-        raise Pipeline2SchemaError(f"{dataset_name}.{name}: required must be a boolean")
+        raise PipelineSchemaError(f"{dataset_name}.{name}: required must be a boolean")
 
     return ColumnSpec(
         name=name,
@@ -238,7 +238,7 @@ def _parse_column(dataset_name: str, raw_column: Any) -> ColumnSpec:
 def _required_string(raw: dict[str, Any], key: str, context: str) -> str:
     value = raw.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise Pipeline2SchemaError(f"{context}: {key} is required")
+        raise PipelineSchemaError(f"{context}: {key} is required")
     return value
 
 
@@ -247,5 +247,5 @@ def _optional_string(raw: dict[str, Any], key: str, context: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise Pipeline2SchemaError(f"{context}: {key} must be a string when provided")
+        raise PipelineSchemaError(f"{context}: {key} must be a string when provided")
     return value

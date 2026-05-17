@@ -1,4 +1,4 @@
-"""Pipeline2 mart model query functions."""
+"""Pipeline mart model query functions."""
 
 from __future__ import annotations
 

@@ -1,1 +1,1 @@
-"""Pipeline2 intermediate models live in ``rollup.intermediate.pipeline2``."""
+"""Pipeline intermediate models live in ``rollup.intermediate.pipeline``."""

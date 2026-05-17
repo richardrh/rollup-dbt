@@ -1,5 +1,5 @@
 version: 1
-description: Pipeline2 YLT dataset contracts colocated with YLT inputs.
+description: Pipeline YLT dataset contracts colocated with YLT inputs.
 
 datasets:
   raw_verisk_ylt:
@@ -41,7 +41,7 @@ datasets:
     role: staging
     format: lazyframe
     required: true
-    description: Minimal canonical YLT shape used by initial pipeline2 flow.
+    description: Minimal canonical YLT shape used by initial pipeline flow.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}

@@ -1,13 +1,13 @@
 version: 1
-description: Pipeline2 output dataset contracts colocated with output files.
+description: Pipeline output dataset contracts colocated with output files.
 
 datasets:
   mart_loss_summary:
     role: mart
-    path: data/output/pipeline2_loss_summary.parquet
+    path: data/output/pipeline_loss_summary.parquet
     format: parquet
     required: true
-    description: Demonstrable pipeline2 mart; total loss by vendor and analysis.
+    description: Demonstrable pipeline mart; total loss by vendor and analysis.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
