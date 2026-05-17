@@ -7,14 +7,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_pipeline_dbt_model_folders_are_clean() -> None:
-    expected_files = {"__init__.py", "pipeline.py"}
+    expected_files_by_layer = {
+        "polars/rollup/staging": {"__init__.py", "pipeline.py"},
+        "polars/rollup/intermediate": {"pipeline.py"},
+        "polars/rollup/marts": {"pipeline.py"},
+        "polars/rollup/reports": {"__init__.py", "pipeline.py"},
+    }
 
-    for relative in (
-        "polars/rollup/staging",
-        "polars/rollup/intermediate",
-        "polars/rollup/marts",
-        "polars/rollup/reports",
-    ):
+    for relative, expected_files in expected_files_by_layer.items():
         layer = REPO_ROOT / relative
         assert layer.is_dir(), relative
         assert {path.name for path in layer.iterdir() if path.name != "__pycache__"} == expected_files
