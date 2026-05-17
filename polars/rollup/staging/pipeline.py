@@ -37,7 +37,12 @@ def selected_analyses_spec(schema: PipelineSchema, *, root: Path | str = Path.cw
     raise PipelineSchemaError("selected_analyses is required")
 
 
-def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.LazyFrame:
+def load_dataset(
+    spec: DatasetSpec,
+    *,
+    root: Path | str = Path.cwd(),
+    validate: bool = True,
+) -> pl.LazyFrame:
     """Scan a YAML-declared dataset lazily without applying transformations."""
 
     root_path = Path(root)
@@ -48,7 +53,8 @@ def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.Lazy
     else:
         raise PipelineSchemaError(f"{spec.name}: expected path or glob")
 
-    validate_columns(frame, spec, strict=True)
+    if validate:
+        validate_columns(frame, spec, strict=True)
     return frame
 
 
@@ -67,7 +73,7 @@ def load_configured_sources(
             if spec.required:
                 raise PipelineSchemaError(f"{spec.name}: required source is missing")
             continue
-        datasets[spec.name] = load_dataset(spec, root=root)
+        datasets[spec.name] = load_dataset(spec, root=root, validate=False)
     return StagedSources(datasets=datasets)
 
 
