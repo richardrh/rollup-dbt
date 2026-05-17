@@ -8,7 +8,7 @@ datasets:
     role: staging
     format: dataframe
     required: true
-    description: Validated selected analyses after first-class/fallback resolution.
+    description: Validated first-class selected analyses source.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Selected analysis id.}

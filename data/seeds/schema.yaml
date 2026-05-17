@@ -56,17 +56,6 @@ datasets:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Selected vendor-native analysis identifier.}
 
-  valid_analyses:
-    role: source
-    path: data/seeds/valid_analyses.csv
-    format: csv
-    required: false
-    status: legacy_fallback
-    description: Legacy fallback allow-list used only when selected_analyses is absent.
-    columns:
-      - {name: vendor, dtype: string, required: true, description: Vendor name.}
-      - {name: analysis_id, dtype: string, required: true, description: Legacy allowed vendor-native analysis identifier.}
-
   blending_weights:
     role: source
     path: data/seeds/blending_weights.csv

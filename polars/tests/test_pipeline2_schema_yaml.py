@@ -46,7 +46,6 @@ def test_pipeline2_yaml_schema_declares_required_sources() -> None:
         "perils",
         "analyses",
         "selected_analyses",
-        "valid_analyses",
         "blending_weights",
         "forecast_factors",
         "fx_rates",
@@ -62,13 +61,11 @@ def test_pipeline2_yaml_schema_declares_required_sources() -> None:
     assert expected <= set(datasets)
 
 
-def test_selected_analyses_is_first_class_and_valid_analyses_is_legacy_fallback() -> None:
+def test_selected_analyses_is_required_first_class_source() -> None:
     datasets = _load_raw_schema()["datasets"]
 
     assert datasets["selected_analyses"]["status"] == "first_class"
     assert datasets["selected_analyses"]["required"] is True
-    assert datasets["valid_analyses"]["status"] == "legacy_fallback"
-    assert datasets["valid_analyses"]["required"] is False
 
 
 def test_pipeline2_yaml_columns_are_explicit_and_described() -> None:

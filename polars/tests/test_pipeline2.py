@@ -182,12 +182,8 @@ def test_build_staging_output_matches_yaml_contract(tmp_path: Path) -> None:
     assert staging.normalized_ylt.collect_schema() == schema.dataset("stg_normalized_ylt").pl_schema
 
 
-def test_pipeline2_prefers_selected_analyses_over_legacy_fallback(tmp_path: Path) -> None:
+def test_pipeline2_uses_required_selected_analyses_source(tmp_path: Path) -> None:
     _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
-    (tmp_path / "data" / "seeds" / "valid_analyses.csv").write_text(
-        "vendor,analysis_id\nrisklink,999\n",
-        encoding="utf-8",
-    )
 
     spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
 
@@ -195,15 +191,12 @@ def test_pipeline2_prefers_selected_analyses_over_legacy_fallback(tmp_path: Path
     assert spec.status == "first_class"
 
 
-def test_pipeline2_uses_valid_analyses_only_as_legacy_fallback(tmp_path: Path) -> None:
-    _write_pipeline2_fixture(tmp_path, selected_name="valid_analyses.csv")
+def test_pipeline2_requires_selected_analyses_at_boundary(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
+    (tmp_path / "data" / "seeds" / "selected_analyses.csv").unlink()
 
-    spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
-    summary = collect_loss_summary(root=tmp_path)
-
-    assert spec.name == "valid_analyses"
-    assert spec.status == "legacy_fallback"
-    assert summary["analysis_id"].to_list() == ["200", "100"]
+    with pytest.raises(Pipeline2SchemaError, match="selected_analyses is required"):
+        preflight_pipeline2_inputs(root=tmp_path)
 
 
 def _write_pipeline2_fixture(tmp_path: Path, *, selected_name: str) -> None:

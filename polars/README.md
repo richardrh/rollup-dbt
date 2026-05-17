@@ -14,11 +14,11 @@ parallel path to confuse with pipeline2.
 ## Current flow
 
 On first application load, `preflight_pipeline2_inputs()` reads the data-side
-YAML manifests, resolves `selected_analyses`/`valid_analyses`, and validates the
-schema for every required source dataset before the DAG is built. Parquet dtypes
-are checked from file metadata; CSV inputs have their headers checked strictly
-and the YAML-declared dtypes applied as the planned read schema because CSV has
-no physical dtype metadata.
+YAML manifests, requires `selected_analyses`, and validates the schema for every
+required source dataset before the DAG is built. Parquet dtypes are checked from
+file metadata; CSV inputs have their headers checked strictly and the
+YAML-declared dtypes applied as the planned read schema because CSV has no
+physical dtype metadata.
 
 After that boundary preflight, pipeline2 loads YAML-declared sources, stages
 RiskLink and Verisk YLT rows into a minimal canonical shape, filters to selected

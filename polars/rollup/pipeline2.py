@@ -98,20 +98,14 @@ def preflight_pipeline2_inputs(
 
 
 def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
-    """Prefer first-class selected_analyses, with valid_analyses as legacy fallback."""
+    """Return the required first-class selected_analyses source spec."""
 
     root_path = Path(root)
     selected = schema.dataset("selected_analyses")
     if selected.path is not None and (root_path / selected.path).exists():
         return selected
 
-    fallback = schema.dataset("valid_analyses")
-    if fallback.path is not None and (root_path / fallback.path).exists():
-        return fallback
-
-    raise Pipeline2SchemaError(
-        "selected_analyses is required; valid_analyses may be used only as a legacy fallback"
-    )
+    raise Pipeline2SchemaError(f"selected_analyses is required: {root_path / selected.path}")
 
 
 def build_sources(
@@ -251,7 +245,7 @@ def _source_specs_for_preflight(
 ) -> tuple[DatasetSpec, ...]:
     specs = [selected_spec]
     for spec in schema.datasets.values():
-        if spec.role != "source" or spec.name in {"selected_analyses", "valid_analyses"}:
+        if spec.role != "source" or spec.name == "selected_analyses":
             continue
         if spec.required or _dataset_has_files(root, spec):
             specs.append(spec)
