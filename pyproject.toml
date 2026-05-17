@@ -1,7 +1,7 @@
 [project]
 name = "retail-rollup-dbt"
 version = "0.1.0"
-description = "Polars pipeline: vendor YLTs → Hisco loss parquets."
+description = "Clean pipeline2 Polars DAG with dbt-style model folders."
 requires-python = "==3.13.*"
 dependencies = [
     "argcomplete>=3.0",
@@ -40,9 +40,6 @@ dev = [
 
 [tool.uv]
 default-groups = ["dev"]
-
-[project.scripts]
-rollup = "rollup.cli:main"
 
 [build-system]
 requires = ["hatchling"]

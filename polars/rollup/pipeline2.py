@@ -1,8 +1,4 @@
-"""Experimental, isolated, schema-driven Polars pipeline2 flow.
-
-This module deliberately does not import the legacy runtime. The flow is a small
-linear DAG: source loading and validation -> staging -> intermediate -> mart.
-"""
+"""Orchestration for the isolated, schema-driven pipeline2 Polars flow."""
 
 from __future__ import annotations
 
@@ -12,6 +8,8 @@ from pathlib import Path
 
 import polars as pl
 
+from rollup.intermediate.pipeline2 import select_losses
+from rollup.marts.pipeline2 import summarize_losses
 from rollup.pipeline2_schema import (
     DatasetSpec,
     Pipeline2Schema,
@@ -19,6 +17,7 @@ from rollup.pipeline2_schema import (
     load_pipeline2_schema,
     validate_columns,
 )
+from rollup.staging.pipeline2 import build_normalized_ylt, stage_selected_analyses
 
 
 @dataclass(frozen=True)
@@ -33,6 +32,7 @@ class Pipeline2Sources:
 class Pipeline2Staging:
     """Staging models for the initial pipeline2 flow."""
 
+    selected_analyses: pl.LazyFrame
     normalized_ylt: pl.LazyFrame
 
 
@@ -76,20 +76,14 @@ def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.Lazy
 
 
 def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
-    """Prefer first-class selected_analyses, with valid_analyses as legacy fallback."""
+    """Return the required selected analysis allow-list spec."""
 
     root_path = Path(root)
     selected = schema.dataset("selected_analyses")
     if selected.path is not None and (root_path / selected.path).exists():
         return selected
 
-    fallback = schema.dataset("valid_analyses")
-    if fallback.path is not None and (root_path / fallback.path).exists():
-        return fallback
-
-    raise Pipeline2SchemaError(
-        "selected_analyses is required; valid_analyses may be used only as a legacy fallback"
-    )
+    raise Pipeline2SchemaError("selected_analyses is required")
 
 
 def build_sources(
@@ -111,40 +105,23 @@ def build_sources(
     return Pipeline2Sources(selected_analyses=selected, raw_ylt=raw_ylt)
 
 
-def stage_risklink_ylt(raw: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw RiskLink YLT rows into the minimal canonical YLT shape."""
+def preflight_pipeline2_boundary(sources: Pipeline2Sources, schema: Pipeline2Schema) -> None:
+    """Validate source contracts before any pipeline2 transformations run."""
 
-    return raw.select(
-        pl.lit("risklink").alias("vendor"),
-        pl.col("anlsid").cast(pl.String).alias("analysis_id"),
-        pl.col("yearid").alias("year_id"),
-        pl.col("eventid").alias("event_id"),
-        pl.col("loss").cast(pl.Float64).alias("loss"),
-    )
-
-
-def stage_verisk_ylt(raw: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw Verisk YLT rows into the minimal canonical YLT shape."""
-
-    return raw.select(
-        pl.lit("verisk").alias("vendor"),
-        pl.col("Analysis").cast(pl.String).alias("analysis_id"),
-        pl.col("YearID").alias("year_id"),
-        pl.col("EventID").alias("event_id"),
-        pl.col("GroundUpLoss").cast(pl.Float64).alias("loss"),
-    )
+    validate_columns(sources.selected_analyses, schema.dataset("stg_selected_analyses"), strict=True)
+    validate_columns(sources.raw_ylt[0], schema.dataset("raw_risklink_ylt"), strict=True)
+    validate_columns(sources.raw_ylt[1], schema.dataset("raw_verisk_ylt"), strict=True)
 
 
 def build_staging(sources: Pipeline2Sources, schema: Pipeline2Schema) -> Pipeline2Staging:
     """Build staging models from already-validated source frames."""
 
     risklink, verisk = sources.raw_ylt
-    normalized_ylt = pl.concat(
-        [stage_risklink_ylt(risklink), stage_verisk_ylt(verisk)],
-        how="vertical",
-    )
+    selected_analyses = stage_selected_analyses(sources.selected_analyses)
+    normalized_ylt = build_normalized_ylt(risklink, verisk)
+    validate_columns(selected_analyses, schema.dataset("stg_selected_analyses"), strict=True)
     validate_columns(normalized_ylt, schema.dataset("stg_normalized_ylt"), strict=True)
-    return Pipeline2Staging(normalized_ylt=normalized_ylt)
+    return Pipeline2Staging(selected_analyses=selected_analyses, normalized_ylt=normalized_ylt)
 
 
 def build_intermediate(
@@ -154,11 +131,7 @@ def build_intermediate(
 ) -> Pipeline2Intermediate:
     """Filter staged losses to the selected analysis allow-list."""
 
-    selected_losses = staging.normalized_ylt.join(
-        sources.selected_analyses,
-        on=["vendor", "analysis_id"],
-        how="inner",
-    )
+    selected_losses = select_losses(staging.normalized_ylt, staging.selected_analyses)
     validate_columns(selected_losses, schema.dataset("int_selected_losses"), strict=True)
     return Pipeline2Intermediate(selected_losses=selected_losses)
 
@@ -166,14 +139,7 @@ def build_intermediate(
 def build_marts(intermediate: Pipeline2Intermediate, schema: Pipeline2Schema) -> Pipeline2Marts:
     """Build the initial pipeline2 mart output."""
 
-    loss_summary = (
-        intermediate.selected_losses.group_by("vendor", "analysis_id")
-        .agg(
-            pl.col("loss").sum().alias("total_loss"),
-            pl.len().cast(pl.UInt32).alias("event_count"),
-        )
-        .sort("vendor", "analysis_id")
-    )
+    loss_summary = summarize_losses(intermediate.selected_losses)
     validate_columns(loss_summary, schema.dataset("mart_loss_summary"), strict=True)
     return Pipeline2Marts(loss_summary=loss_summary)
 
@@ -187,6 +153,7 @@ def build_pipeline2(
 
     loaded_schema = schema or load_pipeline2_schema()
     sources = build_sources(root=root, schema=loaded_schema)
+    preflight_pipeline2_boundary(sources, loaded_schema)
     staging = build_staging(sources, loaded_schema)
     intermediate = build_intermediate(sources, staging, loaded_schema)
     marts = build_marts(intermediate, loaded_schema)

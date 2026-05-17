@@ -1,0 +1,116 @@
+version: 1
+description: Pipeline2 seed dataset contracts colocated with seed inputs.
+
+datasets:
+  lobs:
+    role: source
+    path: data/seeds/business/lobs.csv
+    format: csv
+    required: true
+    description: Business line of business dimension with derived office/class metadata.
+    columns:
+      - {name: lob_id, dtype: int64, required: true, description: Canonical LOB key.}
+      - {name: modelled_lob, dtype: string, required: true, description: Vendor/modelled LOB label.}
+      - {name: rollup_lob, dtype: string, required: true, description: Rollup reporting LOB.}
+      - {name: lob_type, dtype: string, required: true, description: Business LOB type.}
+      - {name: cds_cat_class_name, dtype: string, required: true, description: Hiscox class name.}
+      - {name: office, dtype: string, required: true, description: Hiscox office.}
+      - {name: class, dtype: string, required: true, description: Hiscox class code.}
+      - {name: currency, dtype: string, required: true, description: Local ISO-4217 currency.}
+
+  perils:
+    role: source
+    path: data/seeds/business/perils.csv
+    format: csv
+    required: true
+    description: Canonical peril dimension shared across vendors.
+    columns:
+      - {name: peril_id, dtype: int64, required: true, description: Canonical peril key.}
+      - {name: name, dtype: string, required: true, description: Human-readable peril name.}
+      - {name: region, dtype: string, required: true, description: Region code.}
+      - {name: peril_family, dtype: string, required: true, description: Peril family such as EQ, FL, WS.}
+
+  analyses:
+    role: source
+    path: data/seeds/business/analyses.csv
+    format: csv
+    required: true
+    description: Vendor analysis identifiers mapped to canonical peril and optional LOB.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: modelled_label, dtype: string, required: true, description: Vendor display/modelled label.}
+      - {name: peril_id, dtype: int64, required: true, description: Foreign key to perils.}
+      - {name: lob_id, dtype: int64, required: false, description: RiskLink LOB key; nullable for Verisk.}
+
+  selected_analyses:
+    role: source
+    path: data/seeds/business/selected_analyses.csv
+    format: csv
+    required: true
+    status: first_class
+    description: First-class pipeline2 allow-list of vendor analysis IDs selected for a run.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Selected vendor-native analysis identifier.}
+
+  blending_weights:
+    role: source
+    path: data/seeds/vor/blending_weights.csv
+    format: csv
+    required: true
+    description: Long-format vendor blending weights by peril and return period.
+    columns:
+      - {name: peril_id, dtype: int64, required: true, description: Canonical peril key.}
+      - {name: return_period, dtype: int64, required: true, description: EP return period.}
+      - {name: peril_name, dtype: string, required: true, description: Display peril name.}
+      - {name: description, dtype: string, required: true, description: Display description.}
+      - {name: sub_peril, dtype: string, required: false, description: Optional sub-peril split.}
+      - {name: vendor, dtype: string, required: true, description: Vendor receiving the weight.}
+      - {name: base_model, dtype: string, required: true, description: Vendor base model selection.}
+      - {name: weight, dtype: float64, required: true, description: Blend weight.}
+
+  forecast_factors:
+    role: source
+    path: data/seeds/vor/forecast_factors.csv
+    format: csv
+    required: true
+    description: Long-format forecast factors by class, office, and date.
+    columns:
+      - {name: class, dtype: string, required: true, description: Hiscox class code.}
+      - {name: office, dtype: string, required: true, description: Hiscox office.}
+      - {name: office_iso2, dtype: string, required: true, description: Office country ISO-2 code.}
+      - {name: forecast_date, dtype: date, required: true, description: Forecast date.}
+      - {name: factor, dtype: float64, required: true, description: Forecast scalar.}
+
+  fx_rates:
+    role: source
+    path: data/seeds/vor/fx_rates.csv
+    format: csv
+    required: true
+    description: Long-format FX rates from source currency to target currency.
+    columns:
+      - {name: currency_code, dtype: string, required: true, description: Source currency.}
+      - {name: target_currency, dtype: string, required: true, description: Target currency.}
+      - {name: rate_date, dtype: date, required: true, description: FX snapshot date.}
+      - {name: rate, dtype: float64, required: true, description: FX conversion rate.}
+
+  euws_rate_factors:
+    role: source
+    path: data/seeds/vor/euws_rate_factors.csv
+    format: csv
+    required: true
+    description: EU windstorm event factors by model event and occurrence year.
+    columns:
+      - {name: model_event_id, dtype: int64, required: true, description: Model event key.}
+      - {name: occ_year, dtype: int64, required: true, description: Occurrence year.}
+      - {name: factor, dtype: float64, required: true, description: EUWS scalar.}
+
+  stg_selected_analyses:
+    role: staging
+    format: dataframe
+    required: true
+    description: Validated selected analyses after source resolution.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Selected analysis id.}
