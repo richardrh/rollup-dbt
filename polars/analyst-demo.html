@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analyst Demo Carousel — Polars Rollup Pipeline</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --brand: #B22234;
+      --brand-dark: #8A1A28;
+      --brand-soft: #FDF3F5;
+      --brand-line: #EED4D8;
+      --ink: #0E1116;
+      --body: #3E4651;
+      --muted: #8A93A0;
+      --line: #E6E9EE;
+      --card: #FBFBFC;
+      --bg: #FFFFFF;
+      --term-bg: #12161F;
+      --term-bg-2: #1A1F2B;
+      --term-line: #2A2F3D;
+      --term-text: #D8E0F0;
+      --term-dim: #6C7896;
+      --term-green: #A6D989;
+      --term-cyan: #7AC3E2;
+      --term-orange: #E5B36B;
+      --term-path: #E8C98F;
+      --shadow: 0 30px 80px -20px rgba(10, 15, 30, 0.26);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-feature-settings: 'ss01', 'cv05', 'cv11';
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .deck {
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slides {
+      height: 100%;
+      display: flex;
+      transition: transform 360ms ease;
+      will-change: transform;
+    }
+
+    .slide {
+      min-width: 100%;
+      height: 100vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: clamp(2.5rem, 5vw, 5rem) clamp(2.5rem, 7vw, 7rem) clamp(6.5rem, 10vw, 8rem);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      border-right: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 92% 14%, rgba(178, 34, 52, 0.08), transparent 24rem),
+        linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 68%, #FCFCFD 100%);
+    }
+
+    .slide::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 3px;
+      width: 88px;
+      background: var(--brand);
+    }
+
+    .slide-number {
+      position: absolute;
+      top: clamp(1.5rem, 3vw, 2.5rem);
+      right: clamp(2.5rem, 7vw, 7rem);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.08em;
+    }
+
+    .eyebrow {
+      color: var(--brand);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 1.1rem;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1, h2 {
+      font-size: clamp(2.35rem, 5vw, 4.8rem);
+      font-weight: 800;
+      letter-spacing: -0.036em;
+      line-height: 1.02;
+      margin-bottom: 1.25rem;
+      max-width: 24ch;
+    }
+    h2 { font-size: clamp(2.2rem, 4.5vw, 3.75rem); }
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0 0 0.45rem;
+      color: var(--ink);
+    }
+    .accent { color: var(--brand); }
+    .subtitle {
+      font-size: clamp(1.05rem, 1.5vw, 1.25rem);
+      color: var(--body);
+      margin-bottom: clamp(1.8rem, 3.4vw, 2.75rem);
+      max-width: 68ch;
+    }
+
+    .hero-grid, .two-col, .three-col, .output-grid, .check-grid {
+      display: grid;
+      gap: 1.25rem;
+      width: min(1120px, 100%);
+    }
+    .hero-grid { grid-template-columns: 1.05fr 0.95fr; align-items: stretch; }
+    .two-col { grid-template-columns: 1fr 1fr; }
+    .three-col { grid-template-columns: repeat(3, 1fr); }
+    .output-grid { grid-template-columns: repeat(2, 1fr); }
+    .check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card, .step, .path-card, .note-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1.25rem 1.35rem;
+      min-width: 0;
+    }
+    .card.strong {
+      background: var(--brand-soft);
+      border-color: var(--brand-line);
+      box-shadow: 0 20px 60px -30px rgba(178, 34, 52, 0.35);
+    }
+    .n {
+      color: var(--brand);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.45rem;
+    }
+    .card p, .step p, .path-card p, .note-card p {
+      color: var(--body);
+      margin-bottom: 0;
+      font-size: 0.94rem;
+    }
+    .tiny { color: var(--muted); font-size: 0.82rem; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.8rem;
+      align-items: stretch;
+      width: min(1120px, 100%);
+      margin-top: 0.4rem;
+    }
+    .flow-item {
+      position: relative;
+      padding: 1.1rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      min-height: 135px;
+    }
+    .flow-item:not(:last-child)::after {
+      content: '→';
+      position: absolute;
+      right: -0.66rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--brand);
+      font-weight: 800;
+      z-index: 2;
+    }
+    .flow-item h3 { font-size: 0.94rem; }
+
+    .terminal-wrap { max-width: 1030px; width: 100%; margin-top: 0.5rem; }
+    .terminal {
+      background: var(--term-bg);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow), 0 10px 30px -12px rgba(178, 34, 52, 0.15);
+      border: 1px solid #0A0D14;
+    }
+    .terminal-chrome {
+      background: var(--term-bg-2);
+      padding: 0.45rem 0.85rem;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--term-line);
+    }
+    .tl-dots { display: flex; gap: 0.42rem; }
+    .tl-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .tl-dot.r { background: #FF5F57; }
+    .tl-dot.y { background: #FEBC2E; }
+    .tl-dot.g { background: #28C840; }
+    .tl-title {
+      flex: 1;
+      text-align: center;
+      color: #8A93A8;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+    }
+    .terminal-body {
+      padding: 1rem 1.4rem 1.2rem;
+      color: var(--term-text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(0.72rem, 1vw, 0.86rem);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .t-prompt { color: var(--term-green); }
+    .t-cmd { color: #FFFFFF; }
+    .t-hdr { color: var(--term-cyan); font-weight: 600; }
+    .t-ok { color: var(--term-green); font-weight: 600; }
+    .t-dim { color: var(--term-dim); }
+    .t-num { color: var(--term-orange); font-weight: 500; }
+    .t-path { color: var(--term-path); }
+    code, .mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: #F1F3F6;
+      border-radius: 4px;
+      padding: 0.08rem 0.35rem;
+      color: var(--ink);
+    }
+    .terminal code { background: transparent; color: inherit; padding: 0; }
+
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 0.72rem;
+      max-width: 84ch;
+    }
+    ul.clean li {
+      color: var(--body);
+      padding-left: 1.55rem;
+      position: relative;
+    }
+    ul.clean li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--brand);
+      font-weight: 800;
+    }
+
+    .script {
+      margin-top: 1.5rem;
+      padding-left: 1.25rem;
+      border-left: 3px solid var(--brand);
+      font-size: clamp(0.98rem, 1.25vw, 1.12rem);
+      color: var(--ink);
+      font-style: italic;
+      font-weight: 600;
+      max-width: 78ch;
+    }
+    .script::before {
+      content: 'Say: ';
+      color: var(--brand);
+      font-style: normal;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      margin-right: 0.25rem;
+    }
+
+    .controls {
+      position: fixed;
+      right: 1.75rem;
+      bottom: 1.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      z-index: 100;
+      padding: 0.5rem 0.65rem;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      box-shadow: 0 12px 35px -24px rgba(10, 15, 30, 0.4);
+    }
+    .controls button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      width: 2.1rem;
+      height: 2.1rem;
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
+    .controls button:hover { border-color: var(--brand); color: var(--brand); }
+    .counter {
+      min-width: 4.4rem;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .progress-track {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 4px;
+      background: #F0F1F4;
+      z-index: 90;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--brand);
+      transition: width 260ms ease;
+    }
+    .hint {
+      position: fixed;
+      bottom: 1.75rem;
+      left: 1.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      z-index: 100;
+    }
+    .hint kbd {
+      background: #F1F3F6;
+      border: 1px solid var(--line);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 0.68rem;
+      color: var(--ink);
+    }
+
+    @media (max-width: 1040px) {
+      .hero-grid, .two-col, .three-col, .output-grid, .check-grid, .flow {
+        grid-template-columns: 1fr;
+      }
+      .flow-item { min-height: auto; }
+      .flow-item:not(:last-child)::after { display: none; }
+    }
+    @media (max-width: 720px) {
+      body { overflow: auto; }
+      .deck { height: auto; overflow: visible; }
+      .slides { display: block; transform: none !important; }
+      .slide { min-height: 100vh; height: auto; padding: 5rem 1.5rem 6rem; }
+      .slide-number { right: 1.5rem; }
+      .controls, .hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="Analyst demo carousel">
+    <div class="slides" id="slides">
+      <section class="slide" aria-label="Title">
+        <div class="slide-number">01 / 11</div>
+        <div class="eyebrow">Analyst runbook</div>
+        <h1>Run the Hisco rollup <span class="accent">end to end.</span></h1>
+        <p class="subtitle">A browser-openable carousel for this morning's analyst demo: inputs, local config, preflight, run, inspect, SQL check, optional push, and troubleshooting.</p>
+        <div class="hero-grid">
+          <div class="card strong">
+            <div class="n">Outcome</div>
+            <h3>RiskLink + Verisk YLTs + seeds → Hisco-ready outputs</h3>
+            <p>The pipeline reads analyst-owned data, applies the factor chain in Polars, writes parquets and reports, and can optionally push the Hisco tables into SQL Server.</p>
+          </div>
+          <div class="terminal-wrap">
+            <div class="terminal">
+              <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">demo command path</span></div>
+              <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">cp rollup.example.toml rollup.local.toml</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup plan</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup run --yes</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup test-sql --schema dbo</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="script">This is not a code tour — it is the exact path an analyst follows to prove the inputs, run the rollup, and hand off outputs.</p>
+      </section>
+
+      <section class="slide" aria-label="What the tool does">
+        <div class="slide-number">02 / 11</div>
+        <div class="eyebrow">Mental model</div>
+        <h2>One local process, <span class="accent">typed boundaries.</span></h2>
+        <p class="subtitle">The tool turns vendor event loss data and run-scope seeds into Hisco parquets, summary reports, debug files when enabled, and an optional SQL Server push.</p>
+        <div class="flow">
+          <div class="flow-item"><div class="n">01</div><h3>Seeds</h3><p>Run scope, LOB/peril mappings, analyses, forecast factors, FX, EUWS, and overrides.</p></div>
+          <div class="flow-item"><div class="n">02</div><h3>YLTs</h3><p>Verisk/AIR and RiskLink/RMS parquet extracts under vendor folders.</p></div>
+          <div class="flow-item"><div class="n">03</div><h3>Polars DAG</h3><p>Staging, factor attachment, metrics, fanout, and reports in one optimized graph.</p></div>
+          <div class="flow-item"><div class="n">04</div><h3>Files</h3><p>Hisco parquets plus combined factors, reports, and optional audit parquets.</p></div>
+          <div class="flow-item"><div class="n">05</div><h3>SQL</h3><p>Probe connection first; push after review only when the analyst confirms.</p></div>
+        </div>
+        <p class="script">The important point is control: every source file is accounted for before the expensive run starts.</p>
+      </section>
+
+      <section class="slide" aria-label="Folder layout">
+        <div class="slide-number">03 / 11</div>
+        <div class="eyebrow">Data layout</div>
+        <h2>Put the files where <span class="accent">the plan expects them.</span></h2>
+        <p class="subtitle">These folders are analyst-owned. The code stays in <code>polars/</code>; real run data belongs under <code>data/</code>.</p>
+        <div class="terminal-wrap">
+          <div class="terminal">
+            <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">repo layout</span></div>
+            <div class="terminal-body"><span class="t-path">data/</span>
+  <span class="t-path">seeds/</span>                 <span class="t-dim">CSV reference inputs: lobs, perils, analyses, factors, fx, EUWS</span>
+  <span class="t-path">ylt/verisk/</span>            <span class="t-dim">AIR / Verisk YLT parquet extracts</span>
+  <span class="t-path">ylt/risklink/</span>          <span class="t-dim">RMS / RiskLink YLT parquet extracts</span>
+  <span class="t-path">ep_summaries/verisk/</span>   <span class="t-dim">optional EP summary review inputs</span>
+  <span class="t-path">ep_summaries/risklink/</span> <span class="t-dim">optional EP summary review inputs</span>
+  <span class="t-path">output/</span>                <span class="t-dim">Hisco parquets, reports, debug audit folders</span></div>
+          </div>
+        </div>
+        <p class="script">If the plan fails, start here first: most demo issues are a missing seed, wrong vendor folder, or stale output folder.</p>
+      </section>
+
+      <section class="slide" aria-label="Configure local settings">
+        <div class="slide-number">04 / 11</div>
+        <div class="eyebrow">Local setup</div>
+        <h2>Copy config once; keep secrets <span class="accent">local.</span></h2>
+        <p class="subtitle"><code>rollup.local.toml</code> is the operator's machine-specific config. It is not committed, and it can hold path overrides, run options, and SQL connection settings.</p>
+        <div class="two-col">
+          <div class="terminal-wrap">
+            <div class="terminal">
+              <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">first-time setup</span></div>
+              <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">uv sync</span>
+<span class="t-prompt">$</span> <span class="t-cmd">cp rollup.example.toml rollup.local.toml</span>
+<span class="t-prompt">$</span> <span class="t-cmd">$EDITOR rollup.local.toml</span></div>
+            </div>
+          </div>
+          <div class="card strong">
+            <div class="n">SQL optional</div>
+            <h3>Configure only if pushing to SQL Server</h3>
+            <p>Set <code>[sql].mssql_conn_str</code> in <code>rollup.local.toml</code> or provide <code>ROLLUP_MSSQL_CONN_STR</code>. Skip it for parquet-only dry runs and file review.</p>
+          </div>
+        </div>
+        <p class="script">For the demo, we can run completely file-only, then separately prove whether SQL is reachable.</p>
+      </section>
+
+      <section class="slide" aria-label="Preflight plan">
+        <div class="slide-number">05 / 11</div>
+        <div class="eyebrow">Preflight</div>
+        <h2>Print the plan before <span class="accent">the run.</span></h2>
+        <p class="subtitle"><code>uv run rollup plan</code> validates the configured inputs and prints what the pipeline will touch without writing the Hisco outputs.</p>
+        <div class="terminal-wrap">
+          <div class="terminal">
+            <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">preflight</span></div>
+            <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">uv run rollup plan</span>
+
+<span class="t-hdr">[seeds]</span>       <span class="t-ok">✓</span> required CSVs present and schema-checked
+<span class="t-hdr">[ylt verisk]</span>  <span class="t-ok">✓</span> <span class="t-path">data/ylt/verisk/*.parquet</span>
+<span class="t-hdr">[ylt risklink]</span><span class="t-ok">✓</span> <span class="t-path">data/ylt/risklink/*.parquet</span>
+<span class="t-hdr">[outputs]</span>     <span class="t-dim">will write Hisco parquets and reports under</span> <span class="t-path">data/output/</span>
+<span class="t-hdr">[sql]</span>         <span class="t-dim">available only if mssql_conn_str is configured</span></div>
+          </div>
+        </div>
+        <p class="script">Pause here in the demo and ask: do the counts, vendor folders, and output path look like the analyst expects?</p>
+      </section>
+
+      <section class="slide" aria-label="Run command">
+        <div class="slide-number">06 / 11</div>
+        <div class="eyebrow">Run</div>
+        <h2>Run once, then inspect <span class="accent">the artifacts.</span></h2>
+        <p class="subtitle">Use the explicit <code>run</code> subcommand for the demo. Add flags based on the review objective.</p>
+        <div class="terminal-wrap">
+          <div class="terminal">
+            <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">run commands</span></div>
+            <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">uv run rollup run --yes</span>                         <span class="t-dim"># non-interactive run</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup run --yes --no-audit</span>              <span class="t-dim"># skip debug audit parquets</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup run --yes --min-loss 0</span>             <span class="t-dim"># keep every row</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup --log-level INFO run --yes</span>          <span class="t-dim"># show factor-chain trace</span></div>
+          </div>
+        </div>
+        <div class="three-col" style="margin-top:1.25rem">
+          <div class="step"><div class="n">Default</div><h3>Production-shaped</h3><p>Writes outputs with the configured/default minimum loss filter.</p></div>
+          <div class="step"><div class="n">No audit</div><h3>Faster file set</h3><p>Use when the analyst only needs final Hisco parquets and reports.</p></div>
+          <div class="step"><div class="n">Min loss 0</div><h3>Complete review</h3><p>Use when reconciling every event row rather than production thresholded rows.</p></div>
+        </div>
+        <p class="script">If we have only one live command this morning, make it the preflight, then this run command.</p>
+      </section>
+
+      <section class="slide" aria-label="Inspect outputs">
+        <div class="slide-number">07 / 11</div>
+        <div class="eyebrow">Review</div>
+        <h2>Know what good <span class="accent">looks like.</span></h2>
+        <p class="subtitle">After the run, validate the files by name and purpose before handing them to downstream users.</p>
+        <div class="output-grid">
+          <div class="path-card"><div class="n">Hisco parquets</div><h3><code>data/output/Hisco*.parquet</code></h3><p>Final AIR/RMS fanout tables for main and dials-up variants.</p></div>
+          <div class="path-card"><div class="n">Combined factors</div><h3><code>mts_tbl_ylt_combined_all_factors.parquet</code></h3><p>Review table with the attached factor chain and traceable intermediate columns.</p></div>
+          <div class="path-card"><div class="n">Audit</div><h3><code>data/output/debug/</code></h3><p>Debug audit files when audit output is enabled; useful for read-across and pivot review.</p></div>
+          <div class="path-card"><div class="n">Reports</div><h3><code>data/output/*report*</code></h3><p>Summary/report artifacts written by the reports layer for analyst checks.</p></div>
+        </div>
+        <p class="script">Do not push to SQL until the file outputs look right. SQL should be the final delivery step, not the first validation step.</p>
+      </section>
+
+      <section class="slide" aria-label="SQL connection check">
+        <div class="slide-number">08 / 11</div>
+        <div class="eyebrow">SQL check</div>
+        <h2>Probe SQL before <span class="accent">pushing.</span></h2>
+        <p class="subtitle">The SQL check is read-only. It proves the connection string works and optionally verifies that the target schema exists.</p>
+        <div class="terminal-wrap">
+          <div class="terminal">
+            <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">sql probe</span></div>
+            <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">uv run rollup test-sql --schema dbo</span>
+
+<span class="t-hdr">SQL Server</span> <span class="t-ok">✓</span> connection opened
+<span class="t-hdr">Version</span>    <span class="t-dim">reported by @@VERSION</span>
+<span class="t-hdr">Schema</span>     <span class="t-ok">✓</span> dbo exists</div>
+          </div>
+        </div>
+        <ul class="clean" style="margin-top:1.25rem">
+          <li>If this fails, fix <code>[sql].mssql_conn_str</code> before attempting a push.</li>
+          <li>If the schema check fails, create/confirm the target schema or choose the correct one.</li>
+        </ul>
+        <p class="script">This is a safe checkpoint to run live because it does not write or replace tables.</p>
+      </section>
+
+      <section class="slide" aria-label="Optional SQL push">
+        <div class="slide-number">09 / 11</div>
+        <div class="eyebrow">Optional delivery</div>
+        <h2>Push to SQL only after <span class="accent">review.</span></h2>
+        <p class="subtitle">Current master cleanly skips an interactive SQL push when the analyst declines. Non-interactive shells still require <code>--yes</code> to avoid accidental writes.</p>
+        <div class="terminal-wrap">
+          <div class="terminal">
+            <div class="terminal-chrome"><span class="tl-dots"><span class="tl-dot r"></span><span class="tl-dot y"></span><span class="tl-dot g"></span></span><span class="tl-title">sql push</span></div>
+            <div class="terminal-body"><span class="t-prompt">$</span> <span class="t-cmd">uv run rollup push-to-sql --schema dbo</span>       <span class="t-dim"># preview, ask y/N</span>
+<span class="t-prompt">$</span> <span class="t-cmd">uv run rollup push-to-sql --schema dbo --yes</span> <span class="t-dim"># confirmed non-interactive push</span>
+
+<span class="t-hdr">Preview</span> <span class="t-dim">lists target connection, schema, parquets, and target table names</span>
+<span class="t-hdr">Decline</span> <span class="t-ok">skipped SQL push</span>
+<span class="t-hdr">Accept</span>  <span class="t-dim">drops/recreates matching Hisco tables in the target schema</span></div>
+          </div>
+        </div>
+        <p class="script">The demo language is deliberate: this is optional delivery. Parquets are the reviewable output; SQL is a controlled publish step.</p>
+      </section>
+
+      <section class="slide" aria-label="Troubleshooting checklist">
+        <div class="slide-number">10 / 11</div>
+        <div class="eyebrow">Troubleshooting</div>
+        <h2>Five checks before <span class="accent">escalating.</span></h2>
+        <p class="subtitle">Most failures are local data or configuration issues. Use the preflight error text to locate the failing boundary.</p>
+        <div class="check-grid">
+          <div class="note-card"><div class="n">Seeds</div><h3>Missing or renamed CSVs</h3><p>Compare <code>data/seeds/</code> against the data requirements. Schema errors usually name the frame and columns.</p></div>
+          <div class="note-card"><div class="n">YLTs</div><h3>Wrong folder or glob</h3><p>Confirm Verisk files are under <code>data/ylt/verisk</code> and RiskLink files under <code>data/ylt/risklink</code>.</p></div>
+          <div class="note-card"><div class="n">Schema drift</div><h3>Columns or dtypes changed</h3><p>Vendor extracts and seeds are schema-checked; fix the source export or mapping, then rerun the plan.</p></div>
+          <div class="note-card"><div class="n">SQL</div><h3>Bad connection string</h3><p>Run <code>uv run rollup test-sql --schema dbo</code> and verify driver, server, database, credentials, and schema.</p></div>
+          <div class="note-card"><div class="n">Stale output</div><h3>Old files confuse review</h3><p>Clear or archive <code>data/output/</code> and <code>data/output/debug/</code> before a clean demo rerun.</p></div>
+          <div class="note-card"><div class="n">Flags</div><h3>Unexpected row counts</h3><p>Check whether the run used default min-loss filtering, <code>--min-loss 0</code>, or <code>--no-audit</code>.</p></div>
+        </div>
+        <p class="script">The fastest recovery path is plan, fix the named input, rerun plan, then rerun the pipeline.</p>
+      </section>
+
+      <section class="slide" aria-label="Demo script">
+        <div class="slide-number">11 / 11</div>
+        <div class="eyebrow">Speaker notes</div>
+        <h2>One-liners for the <span class="accent">live demo.</span></h2>
+        <p class="subtitle">Use these as presenter beats. Keep the demo moving; only drill into code if the analyst asks.</p>
+        <div class="two-col">
+          <ul class="clean">
+            <li>"The contract is simple: seeds and vendor YLTs in, Hisco parquets and reports out."</li>
+            <li>"The plan command is our safety gate; it tells us what will happen before we write anything."</li>
+            <li>"The local TOML keeps machine-specific settings and SQL credentials out of git."</li>
+            <li>"Use <code>--min-loss 0</code> when you want reconciliation breadth rather than production thresholding."</li>
+          </ul>
+          <ul class="clean">
+            <li>"Audit files are for debugging and read-across; <code>--no-audit</code> keeps the file set lean."</li>
+            <li>"Review parquets first, then test SQL, then optionally push."</li>
+            <li>"Declining an interactive SQL push is a clean skip on this branch."</li>
+            <li>"If it fails, trust the boundary message: missing input, schema drift, SQL, or stale files."</li>
+          </ul>
+        </div>
+        <p class="script">Close by opening <code>data/output/</code> and pointing at the exact files the analyst should hand off or review.</p>
+      </section>
+    </div>
+  </main>
+
+  <div class="hint"><kbd>←</kbd> <kbd>→</kbd> navigate · open locally in any browser</div>
+  <nav class="controls" aria-label="Carousel controls">
+    <button id="prev" type="button" aria-label="Previous slide">‹</button>
+    <div class="counter" id="counter">01 / 11</div>
+    <button id="next" type="button" aria-label="Next slide">›</button>
+  </nav>
+  <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progress"></div></div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const strip = document.getElementById('slides');
+    const counter = document.getElementById('counter');
+    const progress = document.getElementById('progress');
+    const prev = document.getElementById('prev');
+    const next = document.getElementById('next');
+    let current = 0;
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function render() {
+      strip.style.transform = `translateX(-${current * 100}%)`;
+      counter.textContent = `${pad(current + 1)} / ${pad(slides.length)}`;
+      progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+      slides[current].focus?.();
+    }
+
+    function go(delta) {
+      current = Math.max(0, Math.min(slides.length - 1, current + delta));
+      render();
+    }
+
+    prev.addEventListener('click', () => go(-1));
+    next.addEventListener('click', () => go(1));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+        event.preventDefault();
+        go(1);
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+        event.preventDefault();
+        go(-1);
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        current = 0;
+        render();
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        current = slides.length - 1;
+        render();
+      }
+    });
+    render();
+  </script>
+</body>
+</html>

@@ -137,6 +137,8 @@ eval "$(register-python-argcomplete rollup)"
 
 ## Docs
 
+- [`analyst-demo.html`](analyst-demo.html) — self-contained browser carousel for
+  walking an analyst through the morning demo runbook.
 - [`../docs/data-requirements.md`](../docs/data-requirements.md) — **start here**.
   Every YLT, seed, and CSV the pipeline needs, with the duckdb `COPY` SQL to
   produce each one. Also: failure-mode reference table.
