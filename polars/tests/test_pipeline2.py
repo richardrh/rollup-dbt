@@ -7,7 +7,7 @@ import polars as pl
 
 from rollup.intermediate.pipeline2 import select_losses
 from rollup.marts.pipeline2 import summarize_losses
-from rollup.pipeline2 import collect_loss_summary, preflight_pipeline2_boundary, selected_analyses_spec
+from rollup.pipeline2 import collect_loss_summary, load_dataset, preflight_pipeline2_boundary, selected_analyses_spec
 from rollup.pipeline2_schema import Pipeline2SchemaError, load_pipeline2_schema
 from rollup.staging.pipeline2 import build_normalized_ylt, stage_risklink_ylt, stage_selected_analyses, stage_verisk_ylt
 
@@ -89,6 +89,16 @@ def test_pipeline2_selected_analyses_uses_business_seed_path(tmp_path: Path) -> 
     assert spec.path == "data/seeds/business/selected_analyses.csv"
 
 
+def test_selected_analyses_template_validates_at_boundary() -> None:
+    schema = load_pipeline2_schema()
+    selected_analyses = load_dataset(schema.dataset("selected_analyses"), root=REPO_ROOT)
+
+    preflight_pipeline2_boundary(
+        _sources_with_selected_analyses(selected_analyses),
+        schema,
+    )
+
+
 def _write_pipeline2_fixture(tmp_path: Path, *, write_selected: bool) -> None:
     seeds = tmp_path / "data" / "seeds" / "business"
     risklink = tmp_path / "data" / "ylt" / "risklink"
@@ -152,3 +162,59 @@ def _write_pipeline2_fixture(tmp_path: Path, *, write_selected: bool) -> None:
             "filename": pl.String,
         },
     ).write_parquet(verisk / "verisk.parquet")
+
+
+def _sources_with_selected_analyses(selected_analyses: pl.LazyFrame):
+    from rollup.pipeline2 import Pipeline2Sources
+
+    raw_risklink_ylt = pl.DataFrame(
+        {
+            "yearid": [1],
+            "eventid": [10],
+            "p_value": [0.1],
+            "anlsid": [200],
+            "meanloss": [10.0],
+            "stddev": [0.0],
+            "expvalue": [10.0],
+            "loss": [10.0],
+        },
+        schema={
+            "yearid": pl.Int64,
+            "eventid": pl.Int64,
+            "p_value": pl.Float64,
+            "anlsid": pl.Int64,
+            "meanloss": pl.Float64,
+            "stddev": pl.Float64,
+            "expvalue": pl.Float64,
+            "loss": pl.Float64,
+        },
+    ).lazy()
+    raw_verisk_ylt = pl.DataFrame(
+        {
+            "Analysis": ["100"],
+            "ExposureAttribute": ["lob"],
+            "CatalogTypeCode": ["STC"],
+            "EventID": [20],
+            "ModelCode": [1],
+            "YearID": [1],
+            "PerilSetCode": [10],
+            "GroundUpLoss": [7.0],
+            "GrossLoss": [7.0],
+            "NetOfPreCatLoss": [7.0],
+            "filename": ["vk.parquet"],
+        },
+        schema={
+            "Analysis": pl.String,
+            "ExposureAttribute": pl.String,
+            "CatalogTypeCode": pl.String,
+            "EventID": pl.Int64,
+            "ModelCode": pl.Int64,
+            "YearID": pl.Int64,
+            "PerilSetCode": pl.Int64,
+            "GroundUpLoss": pl.Float64,
+            "GrossLoss": pl.Float64,
+            "NetOfPreCatLoss": pl.Float64,
+            "filename": pl.String,
+        },
+    ).lazy()
+    return Pipeline2Sources(selected_analyses=selected_analyses, raw_ylt=(raw_risklink_ylt, raw_verisk_ylt))

@@ -8,7 +8,7 @@ Pipeline2 expects business seeds under `data/seeds/business/`:
 - `lobs.csv`
 - `perils.csv`
 - `analyses.csv`
-- `selected_analyses.csv`
+- `selected_analyses.csv` — required operator scope file; header-only is valid before an operator selects analyses.
 
 Pipeline2 expects VOR seeds under `data/seeds/vor/`:
 

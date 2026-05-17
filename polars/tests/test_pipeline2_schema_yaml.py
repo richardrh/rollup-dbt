@@ -79,6 +79,12 @@ def test_selected_analyses_is_first_class() -> None:
     assert datasets["selected_analyses"]["required"] is True
 
 
+def test_selected_analyses_seed_template_exists_with_canonical_header() -> None:
+    selected_analyses = REPO_ROOT / "data" / "seeds" / "business" / "selected_analyses.csv"
+
+    assert selected_analyses.read_text(encoding="utf-8") == "vendor,analysis_id\n"
+
+
 def test_pipeline2_yaml_columns_are_explicit_and_described() -> None:
     datasets = _load_raw_schema()["datasets"]
 
