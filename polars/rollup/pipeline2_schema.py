@@ -10,7 +10,7 @@ import polars as pl
 import yaml
 
 
-DEFAULT_SCHEMA_PATH = Path(__file__).with_name("pipeline2_schema.yaml")
+DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "data" / "pipeline2" / "schema.yaml"
 
 _DTYPES: dict[str, pl.DataType] = {
     "bool": pl.Boolean,

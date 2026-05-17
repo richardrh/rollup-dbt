@@ -5,8 +5,11 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup.pipeline2 import collect_loss_summary, selected_analyses_spec
+from rollup.intermediate.pipeline2 import select_losses
+from rollup.marts.pipeline2 import summarize_losses
+from rollup.pipeline2 import collect_loss_summary, preflight_pipeline2_boundary, selected_analyses_spec
 from rollup.pipeline2_schema import load_pipeline2_schema
+from rollup.staging.pipeline2 import build_normalized_ylt, stage_risklink_ylt, stage_selected_analyses, stage_verisk_ylt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -14,9 +17,6 @@ LEGACY_RUNTIME_MODULES = {
     "rollup.pipeline",
     "rollup.seeds",
     "rollup.schemas",
-    "rollup.staging",
-    "rollup.intermediate",
-    "rollup.marts",
 }
 
 
@@ -31,6 +31,29 @@ def test_pipeline2_does_not_import_legacy_runtime_modules() -> None:
                 imported_modules.append(node.module)
 
         assert not (set(imported_modules) & LEGACY_RUNTIME_MODULES)
+
+
+def test_pipeline2_model_query_functions_are_in_dbt_layer_modules() -> None:
+    assert stage_selected_analyses.__module__ == "rollup.staging.pipeline2"
+    assert stage_risklink_ylt.__module__ == "rollup.staging.pipeline2"
+    assert stage_verisk_ylt.__module__ == "rollup.staging.pipeline2"
+    assert build_normalized_ylt.__module__ == "rollup.staging.pipeline2"
+    assert select_losses.__module__ == "rollup.intermediate.pipeline2"
+    assert summarize_losses.__module__ == "rollup.marts.pipeline2"
+
+
+def test_pipeline2_orchestrator_keeps_preflight_before_transformations() -> None:
+    tree = ast.parse((REPO_ROOT / "polars/rollup/pipeline2.py").read_text(encoding="utf-8"))
+    build_pipeline2 = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "build_pipeline2"
+    )
+    call_order = [
+        call.func.id
+        for call in ast.walk(build_pipeline2)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    ]
+
+    assert call_order.index("preflight_pipeline2_boundary") < call_order.index("build_staging")
 
 
 def test_pipeline2_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:

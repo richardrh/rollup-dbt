@@ -1,8 +1,7 @@
 version: 1
 description: >-
-  Experimental pipeline2 dataset contracts. This file is the source of truth for
-  the clean, explicit, dbt-style Polars path and is intentionally separate from
-  the legacy runtime schema modules.
+  Pipeline2 dataset contracts. This data-side manifest is the source of truth for
+  the clean, explicit, dbt-style Polars path.
 
 datasets:
   lobs:

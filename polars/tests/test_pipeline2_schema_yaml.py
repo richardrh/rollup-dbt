@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 
-SCHEMA_FILE = Path(__file__).resolve().parents[1] / "rollup" / "pipeline2_schema.yaml"
+SCHEMA_FILE = Path(__file__).resolve().parents[2] / "data" / "pipeline2" / "schema.yaml"
 
 
 def _load_raw_schema() -> dict:
