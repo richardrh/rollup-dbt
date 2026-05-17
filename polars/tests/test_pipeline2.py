@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import polars as pl
+
+from rollup.pipeline2 import collect_loss_summary, selected_analyses_spec
+from rollup.pipeline2_schema import load_pipeline2_schema
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LEGACY_RUNTIME_MODULES = {
+    "rollup.pipeline",
+    "rollup.seeds",
+    "rollup.schemas",
+    "rollup.staging",
+    "rollup.intermediate",
+    "rollup.marts",
+}
+
+
+def test_pipeline2_does_not_import_legacy_runtime_modules() -> None:
+    for relative in ("polars/rollup/pipeline2.py", "polars/rollup/pipeline2_schema.py"):
+        tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
+        imported_modules: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported_modules.append(node.module)
+
+        assert not (set(imported_modules) & LEGACY_RUNTIME_MODULES)
+
+
+def test_pipeline2_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
+
+    summary = collect_loss_summary(root=tmp_path)
+
+    assert summary.to_dict(as_series=False) == {
+        "vendor": ["risklink", "verisk"],
+        "analysis_id": ["200", "100"],
+        "total_loss": [10.0, 7.0],
+        "event_count": [1, 1],
+    }
+
+
+def test_pipeline2_prefers_selected_analyses_over_legacy_fallback(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
+    (tmp_path / "data" / "seeds" / "valid_analyses.csv").write_text(
+        "vendor,analysis_id\nrisklink,999\n",
+        encoding="utf-8",
+    )
+
+    spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
+
+    assert spec.name == "selected_analyses"
+    assert spec.status == "first_class"
+
+
+def test_pipeline2_uses_valid_analyses_only_as_legacy_fallback(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, selected_name="valid_analyses.csv")
+
+    spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
+    summary = collect_loss_summary(root=tmp_path)
+
+    assert spec.name == "valid_analyses"
+    assert spec.status == "legacy_fallback"
+    assert summary["analysis_id"].to_list() == ["200", "100"]
+
+
+def _write_pipeline2_fixture(tmp_path: Path, *, selected_name: str) -> None:
+    seeds = tmp_path / "data" / "seeds"
+    risklink = tmp_path / "data" / "ylt" / "risklink"
+    verisk = tmp_path / "data" / "ylt" / "verisk"
+    seeds.mkdir(parents=True)
+    risklink.mkdir(parents=True)
+    verisk.mkdir(parents=True)
+
+    (seeds / selected_name).write_text(
+        "vendor,analysis_id\nrisklink,200\nverisk,100\n",
+        encoding="utf-8",
+    )
+    pl.DataFrame(
+        {
+            "yearid": [1, 1],
+            "eventid": [10, 11],
+            "p_value": [0.1, 0.2],
+            "anlsid": [200, 999],
+            "meanloss": [10.0, 99.0],
+            "stddev": [0.0, 0.0],
+            "expvalue": [10.0, 99.0],
+            "loss": [10.0, 99.0],
+        },
+        schema={
+            "yearid": pl.Int64,
+            "eventid": pl.Int64,
+            "p_value": pl.Float64,
+            "anlsid": pl.Int64,
+            "meanloss": pl.Float64,
+            "stddev": pl.Float64,
+            "expvalue": pl.Float64,
+            "loss": pl.Float64,
+        },
+    ).write_parquet(risklink / "risklink.parquet")
+    pl.DataFrame(
+        {
+            "Analysis": ["100", "998"],
+            "ExposureAttribute": ["lob", "lob"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [20, 21],
+            "ModelCode": [1, 1],
+            "YearID": [1, 1],
+            "PerilSetCode": [10, 10],
+            "GroundUpLoss": [7.0, 88.0],
+            "GrossLoss": [7.0, 88.0],
+            "NetOfPreCatLoss": [7.0, 88.0],
+            "filename": ["vk.parquet", "vk.parquet"],
+        },
+        schema={
+            "Analysis": pl.String,
+            "ExposureAttribute": pl.String,
+            "CatalogTypeCode": pl.String,
+            "EventID": pl.Int64,
+            "ModelCode": pl.Int64,
+            "YearID": pl.Int64,
+            "PerilSetCode": pl.Int64,
+            "GroundUpLoss": pl.Float64,
+            "GrossLoss": pl.Float64,
+            "NetOfPreCatLoss": pl.Float64,
+            "filename": pl.String,
+        },
+    ).write_parquet(verisk / "verisk.parquet")
