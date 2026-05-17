@@ -24,6 +24,21 @@ uv run pytest -q                         # run the default suite (integration sk
 
 `python -m rollup` is equivalent.
 
+## Experimental pipeline2 track
+
+`rollup.pipeline2` is a separate, experimental clean path. Its dataset
+contracts live in `rollup/pipeline2_schema.yaml`, and the code only uses the
+new YAML schema helper plus Polars. It does not import the legacy runtime
+modules, and the existing `rollup.pipeline` CLI/runtime remains unchanged for
+now.
+
+The initial pipeline2 scope is intentionally small: load YAML-declared sources,
+validate columns strictly, stage raw YLT rows into a minimal canonical shape,
+filter to first-class `selected_analyses` (with `valid_analyses` only as a
+legacy fallback), and produce a demonstrable loss-summary mart. It is a safe
+foundation for a future dbt-style linear DAG rather than a port of all legacy
+business transformations.
+
 Need to know what data to provide before the run? See
 [`../docs/load-data.md`](../docs/load-data.md) for a step-by-step procedural walkthrough, or
 [`../docs/data-requirements.md`](../docs/data-requirements.md) for the canonical
