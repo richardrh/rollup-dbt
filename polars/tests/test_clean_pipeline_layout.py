@@ -54,7 +54,10 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
 def test_legacy_docs_are_absent_and_pipeline_docs_remain() -> None:
     assert (REPO_ROOT / "polars" / "README.md").is_file()
     assert (REPO_ROOT / "docs" / "index.md").is_file()
-    assert {path.name for path in (REPO_ROOT / "docs").iterdir()} == {"index.md"}
+    assert {path.name for path in (REPO_ROOT / "docs").iterdir()} == {
+        "index.md",
+        "pipeline-workflow.html",
+    }
 
     absent_paths = (
         "polars/RH-TODO-DATA.md",
