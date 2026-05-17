@@ -1,26 +1,70 @@
 version: 1
-description: Pipeline output dataset contracts colocated with output targets.
+description: Pipeline mart output dataset contracts.
 
 datasets:
   mart_loss_summary:
     role: mart
     path: data/output/pipeline_loss_summary.parquet
-    format: parquet
+    format: lazyframe
     required: true
-    description: Final fanout loss summary output by vendor and analysis.
+    description: Backward-compatible analysis loss summary output.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
       - {name: total_loss, dtype: float64, required: true, description: Total selected loss.}
-      - {name: event_count, dtype: uint32, required: true, description: Number of selected YLT rows.}
+      - {name: event_count, dtype: uint32, required: true, description: Selected event row count.}
 
-  report_summary_ep_stats:
-    role: report
-    path: data/output/pipeline_report.xlsx
-    format: xlsx
+  mart_analysis_loss_summary:
+    role: mart
+    path: data/output/pipeline_analysis_loss_summary.parquet
+    format: lazyframe
     required: true
-    description: XLSX report sheet containing summary EP-style portfolio statistics.
+    description: Fanout output aggregated by analysis and business dimensions.
     columns:
-      - {name: analysis_count, dtype: uint32, required: true, description: Number of analysis summaries.}
-      - {name: portfolio_total_loss, dtype: float64, required: true, description: Total selected portfolio loss.}
-      - {name: portfolio_event_count, dtype: uint32, required: true, description: Number of selected portfolio events.}
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: rollup_lob, dtype: string, required: false, description: Rollup LOB.}
+      - {name: currency, dtype: string, required: false, description: Local currency.}
+      - {name: total_loss, dtype: float64, required: true, description: Total selected loss.}
+      - {name: adjusted_total_loss, dtype: float64, required: true, description: Total adjusted loss.}
+      - {name: event_count, dtype: uint32, required: true, description: Selected event row count.}
+
+  mart_event_loss_fanout:
+    role: mart
+    path: data/output/pipeline_event_loss_fanout.parquet
+    format: lazyframe
+    required: true
+    description: Event-level fanout output with business dimensions and adjustments.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: region, dtype: string, required: false, description: Peril region.}
+      - {name: peril_family, dtype: string, required: false, description: Peril family.}
+      - {name: rollup_lob, dtype: string, required: false, description: Rollup LOB.}
+      - {name: currency, dtype: string, required: false, description: Local currency.}
+      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+      - {name: forecast_factor, dtype: float64, required: true, description: Forecast scalar.}
+      - {name: fx_rate, dtype: float64, required: true, description: FX scalar.}
+      - {name: euws_rate_factor, dtype: float64, required: true, description: EUWS scalar.}
+      - {name: adjusted_loss, dtype: float64, required: true, description: Adjusted GBP loss.}
+
+  mart_blended_loss_summary:
+    role: mart
+    path: data/output/pipeline_blended_loss_summary.parquet
+    format: lazyframe
+    required: true
+    description: Blended VOR fanout output by peril and vendor.
+    columns:
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: base_model, dtype: string, required: false, description: Blend base model.}
+      - {name: blend_weight, dtype: float64, required: true, description: Vendor blend weight.}
+      - {name: adjusted_total_loss, dtype: float64, required: true, description: Total adjusted loss.}
+      - {name: blended_total_loss, dtype: float64, required: true, description: Total weighted adjusted loss.}
