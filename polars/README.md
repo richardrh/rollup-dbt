@@ -13,15 +13,26 @@ parallel path to confuse with pipeline2.
 
 ## Current flow
 
-Pipeline2 loads YAML-declared sources, validates their columns strictly, stages
+On first application load, `preflight_pipeline2_inputs()` reads the data-side
+YAML manifests, resolves `selected_analyses`/`valid_analyses`, and validates the
+schema for every required source dataset before the DAG is built. Parquet dtypes
+are checked from file metadata; CSV inputs have their headers checked strictly
+and the YAML-declared dtypes applied as the planned read schema because CSV has
+no physical dtype metadata.
+
+After that boundary preflight, pipeline2 loads YAML-declared sources, stages
 RiskLink and Verisk YLT rows into a minimal canonical shape, filters to selected
-analyses, and produces a loss-summary mart.
+analyses, and produces a loss-summary mart. The staging projections are inline in
+`build_staging()` so the Polars queries are directly visible in the pipeline.
 
 ```
-data/seeds/schema.yaml + data/ylt/schema.yaml
+data-side schema.yaml manifests
         │
         ▼
-load + validate sources
+preflight source file schemas
+        │
+        ▼
+load sources
         │
         ▼
 stage normalized YLT rows

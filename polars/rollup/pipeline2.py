@@ -1,6 +1,7 @@
 """YAML-backed Polars pipeline2 flow.
 
-The flow is a small linear DAG: source loading and validation -> staging ->
+The application boundary preflights source file schemas from the data-side YAML
+manifests before the small linear DAG runs: source loading -> staging ->
 intermediate -> mart.
 """
 
@@ -61,7 +62,7 @@ class Pipeline2Models:
 
 
 def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.LazyFrame:
-    """Scan a YAML-declared dataset and validate its columns."""
+    """Scan a YAML-declared dataset with defensive column validation."""
 
     root_path = Path(root)
     if spec.path is not None:
@@ -73,6 +74,27 @@ def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.Lazy
 
     validate_columns(frame, spec, strict=True)
     return frame
+
+
+def preflight_pipeline2_inputs(
+    *,
+    root: Path | str = Path.cwd(),
+    schema: Pipeline2Schema | None = None,
+) -> Pipeline2Schema:
+    """Validate source file schemas at the application boundary before the DAG.
+
+    Parquet files expose physical schema metadata, so dtype mismatches are caught
+    without collecting data. CSV files have no physical dtype metadata; preflight
+    validates headers strictly and applies the YAML-declared Polars dtypes as the
+    planned read schema before any pipeline transformation is built.
+    """
+
+    loaded_schema = schema or load_pipeline2_schema()
+    root_path = Path(root)
+    selected_spec = selected_analyses_spec(loaded_schema, root=root_path)
+    for spec in _source_specs_for_preflight(loaded_schema, selected_spec, root=root_path):
+        _preflight_dataset_files(root_path, spec)
+    return loaded_schema
 
 
 def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
@@ -111,36 +133,27 @@ def build_sources(
     return Pipeline2Sources(selected_analyses=selected, raw_ylt=raw_ylt)
 
 
-def stage_risklink_ylt(raw: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw RiskLink YLT rows into the minimal canonical YLT shape."""
-
-    return raw.select(
-        pl.lit("risklink").alias("vendor"),
-        pl.col("anlsid").cast(pl.String).alias("analysis_id"),
-        pl.col("yearid").alias("year_id"),
-        pl.col("eventid").alias("event_id"),
-        pl.col("loss").cast(pl.Float64).alias("loss"),
-    )
-
-
-def stage_verisk_ylt(raw: pl.LazyFrame) -> pl.LazyFrame:
-    """Project raw Verisk YLT rows into the minimal canonical YLT shape."""
-
-    return raw.select(
-        pl.lit("verisk").alias("vendor"),
-        pl.col("Analysis").cast(pl.String).alias("analysis_id"),
-        pl.col("YearID").alias("year_id"),
-        pl.col("EventID").alias("event_id"),
-        pl.col("GroundUpLoss").cast(pl.Float64).alias("loss"),
-    )
-
-
 def build_staging(sources: Pipeline2Sources, schema: Pipeline2Schema) -> Pipeline2Staging:
-    """Build staging models from already-validated source frames."""
+    """Build staging models with source projections inline and visible."""
 
     risklink, verisk = sources.raw_ylt
     normalized_ylt = pl.concat(
-        [stage_risklink_ylt(risklink), stage_verisk_ylt(verisk)],
+        [
+            risklink.select(
+                pl.lit("risklink").alias("vendor"),
+                pl.col("anlsid").cast(pl.String).alias("analysis_id"),
+                pl.col("yearid").alias("year_id"),
+                pl.col("eventid").alias("event_id"),
+                pl.col("loss").cast(pl.Float64).alias("loss"),
+            ),
+            verisk.select(
+                pl.lit("verisk").alias("vendor"),
+                pl.col("Analysis").cast(pl.String).alias("analysis_id"),
+                pl.col("YearID").alias("year_id"),
+                pl.col("EventID").alias("event_id"),
+                pl.col("GroundUpLoss").cast(pl.Float64).alias("loss"),
+            ),
+        ],
         how="vertical",
     )
     validate_columns(normalized_ylt, schema.dataset("stg_normalized_ylt"), strict=True)
@@ -185,7 +198,7 @@ def build_pipeline2(
 ) -> Pipeline2Models:
     """Build the full initial pipeline2 DAG without collecting it."""
 
-    loaded_schema = schema or load_pipeline2_schema()
+    loaded_schema = preflight_pipeline2_inputs(root=root, schema=schema)
     sources = build_sources(root=root, schema=loaded_schema)
     staging = build_staging(sources, loaded_schema)
     intermediate = build_intermediate(sources, staging, loaded_schema)
@@ -228,3 +241,49 @@ def _scan_file(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
     if spec.format == "csv":
         return pl.scan_csv(path, schema_overrides=spec.pl_schema, try_parse_dates=True)
     raise Pipeline2SchemaError(f"{spec.name}: unsupported scan format: {spec.format}")
+
+
+def _source_specs_for_preflight(
+    schema: Pipeline2Schema,
+    selected_spec: DatasetSpec,
+    *,
+    root: Path,
+) -> tuple[DatasetSpec, ...]:
+    specs = [selected_spec]
+    for spec in schema.datasets.values():
+        if spec.role != "source" or spec.name in {"selected_analyses", "valid_analyses"}:
+            continue
+        if spec.required or _dataset_has_files(root, spec):
+            specs.append(spec)
+    return tuple(specs)
+
+
+def _preflight_dataset_files(root: Path, spec: DatasetSpec) -> None:
+    for path in _dataset_paths(root, spec, required=spec.required):
+        frame = _scan_file(path, spec)
+        try:
+            validate_columns(frame, spec, strict=True)
+        except Pipeline2SchemaError as exc:
+            raise Pipeline2SchemaError(f"{spec.name}: {path}: {exc}") from exc
+
+
+def _dataset_has_files(root: Path, spec: DatasetSpec) -> bool:
+    return bool(_dataset_paths(root, spec, required=False))
+
+
+def _dataset_paths(root: Path, spec: DatasetSpec, *, required: bool) -> tuple[Path, ...]:
+    if spec.path is not None:
+        path = root / spec.path
+        if path.exists():
+            return (path,)
+        if required:
+            raise Pipeline2SchemaError(f"{spec.name}: path does not exist: {path}")
+        return ()
+
+    if spec.glob is not None:
+        paths = tuple(Path(path) for path in sorted(glob(str(root / spec.glob))))
+        if paths or not required:
+            return paths
+        raise Pipeline2SchemaError(f"{spec.name}: glob matched no files: {spec.glob}")
+
+    raise Pipeline2SchemaError(f"{spec.name}: expected path or glob")
