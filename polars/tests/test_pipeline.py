@@ -5,8 +5,8 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup.intermediate.pipeline import select_losses
-from rollup.marts.pipeline import summarize_losses
+from rollup.intermediate.pipeline import apply_vor_adjustments, blend_losses, enrich_losses, select_losses
+from rollup.marts.pipeline import build_analysis_loss_summary, build_blended_loss_summary, build_event_loss_fanout, summarize_losses
 from rollup.reports.pipeline import prepare_summary_ep_stats
 from rollup.pipeline import collect_loss_summary, load_dataset, preflight_pipeline_boundary, selected_analyses_spec
 from rollup.pipeline_schema import PipelineSchemaError, load_pipeline_schema
@@ -40,7 +40,13 @@ def test_pipeline_model_query_functions_are_in_dbt_layer_modules() -> None:
     assert stage_verisk_ylt.__module__ == "rollup.staging.pipeline"
     assert build_normalized_ylt.__module__ == "rollup.staging.pipeline"
     assert select_losses.__module__ == "rollup.intermediate.pipeline"
+    assert enrich_losses.__module__ == "rollup.intermediate.pipeline"
+    assert apply_vor_adjustments.__module__ == "rollup.intermediate.pipeline"
+    assert blend_losses.__module__ == "rollup.intermediate.pipeline"
     assert summarize_losses.__module__ == "rollup.marts.pipeline"
+    assert build_analysis_loss_summary.__module__ == "rollup.marts.pipeline"
+    assert build_event_loss_fanout.__module__ == "rollup.marts.pipeline"
+    assert build_blended_loss_summary.__module__ == "rollup.marts.pipeline"
     assert prepare_summary_ep_stats.__module__ == "rollup.reports.pipeline"
 
 
@@ -103,6 +109,119 @@ def test_pipeline_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
     }
 
 
+def test_intermediate_owns_business_joins_and_vor_adjustments() -> None:
+    selected_losses = pl.DataFrame(
+        {
+            "vendor": ["risklink"],
+            "analysis_id": ["200"],
+            "year_id": [1847],
+            "event_id": [410024195],
+            "loss": [100.0],
+        }
+    ).lazy()
+    analyses = pl.DataFrame(
+        {"vendor": ["risklink"], "analysis_id": ["200"], "modelled_label": ["EU WS"], "peril_id": [3], "lob_id": [10]}
+    ).lazy()
+    perils = pl.DataFrame({"peril_id": [3], "name": ["Europe Winter Storm"], "region": ["EU"], "peril_family": ["WS"]}).lazy()
+    lobs = pl.DataFrame(
+        {
+            "lob_id": [10],
+            "modelled_lob": ["LOB"],
+            "rollup_lob": ["ROLLUP"],
+            "lob_type": ["prop"],
+            "cds_cat_class_name": ["Class"],
+            "office": ["London"],
+            "class": ["HH"],
+            "currency": ["EUR"],
+        }
+    ).lazy()
+    forecast_factors = pl.DataFrame(
+        {"class": ["HH"], "office": ["London"], "office_iso2": ["GB"], "forecast_date": ["2026-01-01"], "factor": [1.5]}
+    ).lazy()
+    fx_rates = pl.DataFrame(
+        {"currency_code": ["EUR"], "target_currency": ["GBP"], "rate_date": ["2026-01-01"], "rate": [0.8]}
+    ).lazy()
+    euws_rate_factors = pl.DataFrame({"model_event_id": [410024195], "occ_year": [1847], "factor": [2.0]}).lazy()
+    blending_weights = pl.DataFrame(
+        {
+            "peril_id": [3],
+            "return_period": [0],
+            "peril_name": ["Europe Winter Storm"],
+            "description": ["test"],
+            "sub_peril": [None],
+            "vendor": ["risklink"],
+            "base_model": ["verisk"],
+            "weight": [0.25],
+        },
+        schema={
+            "peril_id": pl.Int64,
+            "return_period": pl.Int64,
+            "peril_name": pl.String,
+            "description": pl.String,
+            "sub_peril": pl.String,
+            "vendor": pl.String,
+            "base_model": pl.String,
+            "weight": pl.Float64,
+        },
+    ).lazy()
+
+    enriched = enrich_losses(selected_losses, analyses, perils, lobs)
+    adjusted = apply_vor_adjustments(enriched, forecast_factors, fx_rates, euws_rate_factors)
+    blended = blend_losses(adjusted, blending_weights).collect()
+
+    assert blended.select("peril_name", "rollup_lob", "forecast_factor", "fx_rate", "euws_rate_factor", "adjusted_loss", "blend_weight", "blended_loss").to_dict(as_series=False) == {
+        "peril_name": ["Europe Winter Storm"],
+        "rollup_lob": ["ROLLUP"],
+        "forecast_factor": [1.5],
+        "fx_rate": [0.8],
+        "euws_rate_factor": [2.0],
+        "adjusted_loss": [240.0],
+        "blend_weight": [0.25],
+        "blended_loss": [60.0],
+    }
+
+
+def test_marts_create_analysis_event_and_blended_fanout_outputs() -> None:
+    adjusted_losses = pl.DataFrame(
+        {
+            "vendor": ["risklink"],
+            "analysis_id": ["200"],
+            "year_id": [1],
+            "event_id": [10],
+            "peril_id": [2],
+            "peril_name": ["Europe Flood"],
+            "region": ["EU"],
+            "peril_family": ["FL"],
+            "rollup_lob": ["ROLLUP"],
+            "currency": ["GBP"],
+            "loss": [10.0],
+            "forecast_factor": [1.0],
+            "fx_rate": [1.0],
+            "euws_rate_factor": [1.0],
+            "adjusted_loss": [10.0],
+        }
+    ).lazy()
+    blended_losses = adjusted_losses.with_columns(
+        pl.lit("risklink").alias("base_model"),
+        pl.lit(0.5).alias("blend_weight"),
+        pl.lit(5.0).alias("blended_loss"),
+    )
+
+    assert build_analysis_loss_summary(adjusted_losses).collect().select("vendor", "analysis_id", "adjusted_total_loss").to_dict(as_series=False) == {
+        "vendor": ["risklink"],
+        "analysis_id": ["200"],
+        "adjusted_total_loss": [10.0],
+    }
+    assert build_event_loss_fanout(adjusted_losses).collect().select("event_id", "adjusted_loss").to_dict(as_series=False) == {
+        "event_id": [10],
+        "adjusted_loss": [10.0],
+    }
+    assert build_blended_loss_summary(blended_losses).collect().select("vendor", "blended_total_loss").to_dict(as_series=False) == {
+        "vendor": ["risklink"],
+        "blended_total_loss": [5.0],
+    }
+
+
 def test_pipeline_report_hooks_produce_summary_ep_stats(tmp_path: Path) -> None:
     from rollup.pipeline import build_pipeline
 
@@ -116,6 +235,20 @@ def test_pipeline_report_hooks_produce_summary_ep_stats(tmp_path: Path) -> None:
         "portfolio_total_loss": [17.0],
         "portfolio_event_count": [2],
     }
+    assert models.reports.artifact is not None
+    assert set(models.reports.artifact) == {"loss_summary", "summary_ep_stats"}
+
+
+def test_pipeline_writes_xlsx_report_when_configured(tmp_path: Path) -> None:
+    from rollup.pipeline import build_pipeline
+
+    _write_pipeline_fixture(tmp_path, write_selected=True)
+    report_path = tmp_path / "reports" / "rollup.xlsx"
+
+    models = build_pipeline(root=tmp_path, report_path=report_path)
+
+    assert models.reports.xlsx_path == report_path
+    assert report_path.is_file()
 
 
 def test_pipeline_requires_selected_analyses(tmp_path: Path) -> None:
