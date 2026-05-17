@@ -1,48 +1,20 @@
 [project]
 name = "retail-rollup-dbt"
 version = "0.1.0"
-description = "Polars pipeline: vendor YLTs → Hisco loss parquets."
+description = "YAML-backed pipeline2 Polars flow."
 requires-python = "==3.13.*"
 dependencies = [
-    "argcomplete>=3.0",
-    "dbt-core>=1.11.2",
-    "dbt-duckdb>=1.10.0",
-    "duckdb>=1.4.4",
-    "tomli-w>=1.2.0",
-    "rich>=14.3.2",
-    "certifi>=2026.1.4",
-    "python-certifi-win32>=1.6.1",
     "polars>=1.20.0",
     "pyyaml>=6.0",
-    "sqlalchemy>=2.0",
-    "pyodbc",
-    "ibis>=3.3.0",
-    "datafusion>=53.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
-    "openpyxl>=3.1",
-    "pandoc>=2.4",
-    "pymdown-extensions>=10.16",
     "pytest>=9.0.2",
-    "numpy>=2.0",
-    # Integration-test stack: spin up SQL Server in Docker and connect with a
-    # pure-Python driver (pymssql ships freetds in its wheels — no system ODBC
-    # install required on the test runner).
-    "testcontainers[mssql]>=4.7",
-    "pymssql>=2.3",
-    # Property-based / fuzz testing.
-    "hypothesis>=6.100",
-    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
-
-[project.scripts]
-rollup = "rollup.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -54,7 +26,3 @@ packages = ["polars/rollup"]
 [tool.pytest.ini_options]
 testpaths = ["polars/tests"]
 pythonpath = ["polars"]
-markers = [
-    "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
-    "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
-]

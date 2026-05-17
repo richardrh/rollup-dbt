@@ -1,9 +1,6 @@
 # data/ylt
 
-Raw vendor YLT parquet inputs live here, split by vendor under `verisk/` and
-`risklink/`.
+`schema.yaml` is the pipeline2 source of truth for raw vendor YLT parquet inputs.
 
-For the experimental pipeline2 path, the authoritative raw YLT contracts are in
-[`schema.yaml`](schema.yaml) in this directory. Edit that manifest when vendor
-wire columns change; there is no authoritative pipeline2 schema YAML under
-`polars/rollup/`.
+Pipeline2 expects operators or tests to provide parquets under the globs declared
+there. The repository intentionally keeps only the YAML contract here.

@@ -18,6 +18,24 @@ LEGACY_RUNTIME_MODULES = {
     "rollup.intermediate",
     "rollup.marts",
 }
+LEGACY_RUNTIME_PATHS = {
+    "polars/rollup/pipeline.py",
+    "polars/rollup/cli.py",
+    "polars/rollup/wizard.py",
+    "polars/rollup/config.py",
+    "polars/rollup/plan.py",
+    "polars/rollup/plan_render.py",
+    "polars/rollup/schemas",
+    "polars/rollup/seeds.py",
+    "polars/rollup/staging",
+    "polars/rollup/intermediate",
+    "polars/rollup/marts",
+    "polars/rollup/reports",
+    "polars/rollup/io",
+    "polars/rollup/audit.py",
+    "polars/rollup/chain.py",
+    "polars/rollup/validate.py",
+}
 
 
 def test_pipeline2_does_not_import_legacy_runtime_modules() -> None:
@@ -31,6 +49,20 @@ def test_pipeline2_does_not_import_legacy_runtime_modules() -> None:
                 imported_modules.append(node.module)
 
         assert not (set(imported_modules) & LEGACY_RUNTIME_MODULES)
+
+
+def test_legacy_runtime_files_are_deleted() -> None:
+    assert all(not (REPO_ROOT / path).exists() for path in LEGACY_RUNTIME_PATHS)
+
+    remaining_rollup_files = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "polars" / "rollup").glob("*.py")
+    }
+    assert remaining_rollup_files == {
+        "polars/rollup/__init__.py",
+        "polars/rollup/pipeline2.py",
+        "polars/rollup/pipeline2_schema.py",
+    }
 
 
 def test_pipeline2_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:

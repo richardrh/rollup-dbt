@@ -1,7 +1,7 @@
-"""Experimental, isolated, schema-driven Polars pipeline2 flow.
+"""YAML-backed Polars pipeline2 flow.
 
-This module deliberately does not import the legacy runtime. The flow is a small
-linear DAG: source loading and validation -> staging -> intermediate -> mart.
+The flow is a small linear DAG: source loading and validation -> staging ->
+intermediate -> mart.
 """
 
 from __future__ import annotations

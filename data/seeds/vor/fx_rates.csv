@@ -1,7 +1,0 @@
-currency_code,target_currency,rate_date,rate
-GBP,GBP,2026-01-01,1.0
-EUR,GBP,2026-01-01,0.88
-USD,GBP,2026-01-01,0.80
-GBP,USD,2026-01-01,1.25
-EUR,USD,2026-01-01,1.10
-USD,USD,2026-01-01,1.0
