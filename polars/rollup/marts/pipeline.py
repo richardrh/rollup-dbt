@@ -16,3 +16,9 @@ def summarize_losses(selected_losses: pl.LazyFrame) -> pl.LazyFrame:
         )
         .sort("vendor", "analysis_id")
     )
+
+
+def build_loss_summary(selected_losses: pl.LazyFrame) -> pl.LazyFrame:
+    """Create the final fanout loss-summary mart output."""
+
+    return summarize_losses(selected_losses)

@@ -16,3 +16,12 @@ def select_losses(
         on=["vendor", "analysis_id"],
         how="inner",
     )
+
+
+def build_selected_losses(
+    normalized_ylt: pl.LazyFrame,
+    selected_analyses: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Run intermediate loss selection joins and business-rule transforms."""
+
+    return select_losses(normalized_ylt, selected_analyses)

@@ -1,5 +1,5 @@
 version: 1
-description: Pipeline output dataset contracts colocated with output files.
+description: Pipeline output dataset contracts colocated with output targets.
 
 datasets:
   mart_loss_summary:
@@ -7,9 +7,20 @@ datasets:
     path: data/output/pipeline_loss_summary.parquet
     format: parquet
     required: true
-    description: Demonstrable pipeline mart; total loss by vendor and analysis.
+    description: Final fanout loss summary output by vendor and analysis.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
-      - {name: total_loss, dtype: float64, required: true, description: Sum of selected losses.}
+      - {name: total_loss, dtype: float64, required: true, description: Total selected loss.}
       - {name: event_count, dtype: uint32, required: true, description: Number of selected YLT rows.}
+
+  report_summary_ep_stats:
+    role: report
+    path: data/output/pipeline_report.xlsx
+    format: xlsx
+    required: true
+    description: XLSX report sheet containing summary EP-style portfolio statistics.
+    columns:
+      - {name: analysis_count, dtype: uint32, required: true, description: Number of analysis summaries.}
+      - {name: portfolio_total_loss, dtype: float64, required: true, description: Total selected portfolio loss.}
+      - {name: portfolio_event_count, dtype: uint32, required: true, description: Number of selected portfolio events.}

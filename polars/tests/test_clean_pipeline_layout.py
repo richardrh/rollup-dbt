@@ -13,6 +13,7 @@ def test_pipeline_dbt_model_folders_are_clean() -> None:
         "polars/rollup/staging",
         "polars/rollup/intermediate",
         "polars/rollup/marts",
+        "polars/rollup/reports",
     ):
         layer = REPO_ROOT / relative
         assert layer.is_dir(), relative
@@ -31,7 +32,6 @@ def test_legacy_rollup_runtime_modules_are_absent() -> None:
         "polars/rollup/chain.py",
         "polars/rollup/audit.py",
         "polars/rollup/io",
-        "polars/rollup/reports",
     )
 
     assert [path for path in absent_paths if (REPO_ROOT / path).exists()] == []

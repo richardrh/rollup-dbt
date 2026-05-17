@@ -188,6 +188,28 @@ def validate_columns(
         raise PipelineSchemaError(f"{spec.name}: dtype mismatches: {mismatches}")
 
 
+def source_dataset_specs(schema: PipelineSchema) -> tuple[DatasetSpec, ...]:
+    """Return every schema-declared source dataset in manifest order."""
+
+    return tuple(spec for spec in schema.datasets.values() if spec.role == "source")
+
+
+def validate_input_contracts(
+    sources: dict[str, pl.LazyFrame],
+    schema: PipelineSchema,
+    *,
+    strict: bool = True,
+) -> None:
+    """Validate every configured source input before pipeline layers execute."""
+
+    for spec in source_dataset_specs(schema):
+        if spec.name not in sources:
+            if spec.required:
+                raise PipelineSchemaError(f"{spec.name}: required source was not loaded")
+            continue
+        validate_columns(sources[spec.name], spec, strict=strict)
+
+
 def _parse_dataset(name: str, raw_spec: Any) -> DatasetSpec:
     if not isinstance(name, str) or not name:
         raise PipelineSchemaError("dataset names must be non-empty strings")

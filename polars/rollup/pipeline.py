@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from glob import glob
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import polars as pl
 
-from rollup.intermediate.pipeline import select_losses
-from rollup.marts.pipeline import summarize_losses
+from rollup.intermediate.pipeline import build_selected_losses
+from rollup.marts.pipeline import build_loss_summary
 from rollup.pipeline_schema import (
-    DatasetSpec,
     PipelineSchema,
-    PipelineSchemaError,
     load_pipeline_schema,
+    validate_input_contracts,
     validate_columns,
 )
-from rollup.staging.pipeline import build_normalized_ylt, stage_selected_analyses
+from rollup.reports.pipeline import prepare_summary_ep_stats
+from rollup.staging.pipeline import (
+    build_normalized_ylt,
+    load_configured_sources,
+    load_dataset,
+    selected_analyses_spec,
+    stage_selected_analyses,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,7 @@ class PipelineSources:
 
     selected_analyses: pl.LazyFrame
     raw_ylt: tuple[pl.LazyFrame, ...]
+    datasets: dict[str, pl.LazyFrame] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,13 @@ class PipelineMarts:
 
 
 @dataclass(frozen=True)
+class PipelineReports:
+    """Report hooks and summary frames for the pipeline flow."""
+
+    summary_ep_stats: pl.LazyFrame
+
+
+@dataclass(frozen=True)
 class PipelineModels:
     """All models produced by the small linear pipeline DAG."""
 
@@ -58,32 +71,7 @@ class PipelineModels:
     staging: PipelineStaging
     intermediate: PipelineIntermediate
     marts: PipelineMarts
-
-
-def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.LazyFrame:
-    """Scan a YAML-declared dataset and validate its columns."""
-
-    root_path = Path(root)
-    if spec.path is not None:
-        frame = _scan_path(root_path / spec.path, spec)
-    elif spec.glob is not None:
-        frame = _scan_glob(root_path, spec)
-    else:
-        raise PipelineSchemaError(f"{spec.name}: expected path or glob")
-
-    validate_columns(frame, spec, strict=True)
-    return frame
-
-
-def selected_analyses_spec(schema: PipelineSchema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
-    """Return the required selected analysis allow-list spec."""
-
-    root_path = Path(root)
-    selected = schema.dataset("selected_analyses")
-    if selected.path is not None and (root_path / selected.path).exists():
-        return selected
-
-    raise PipelineSchemaError("selected_analyses is required")
+    reports: PipelineReports
 
 
 def build_sources(
@@ -94,23 +82,23 @@ def build_sources(
     """Load and validate the source frames needed by the initial pipeline flow."""
 
     loaded_schema = schema or load_pipeline_schema()
-    selected_spec = selected_analyses_spec(loaded_schema, root=root)
-    selected = load_dataset(selected_spec, root=root)
-    validate_columns(selected, loaded_schema.dataset("stg_selected_analyses"), strict=True)
-
-    raw_ylt = (
-        load_dataset(loaded_schema.dataset("raw_risklink_ylt"), root=root),
-        load_dataset(loaded_schema.dataset("raw_verisk_ylt"), root=root),
+    staged_sources = load_configured_sources(root=root, schema=loaded_schema)
+    return PipelineSources(
+        selected_analyses=staged_sources.selected_analyses,
+        raw_ylt=staged_sources.raw_ylt,
+        datasets=staged_sources.datasets,
     )
-    return PipelineSources(selected_analyses=selected, raw_ylt=raw_ylt)
 
 
 def preflight_pipeline_boundary(sources: PipelineSources, schema: PipelineSchema) -> None:
     """Validate source contracts before any pipeline transformations run."""
 
-    validate_columns(sources.selected_analyses, schema.dataset("stg_selected_analyses"), strict=True)
-    validate_columns(sources.raw_ylt[0], schema.dataset("raw_risklink_ylt"), strict=True)
-    validate_columns(sources.raw_ylt[1], schema.dataset("raw_verisk_ylt"), strict=True)
+    source_map = sources.datasets or {
+        "selected_analyses": sources.selected_analyses,
+        "raw_risklink_ylt": sources.raw_ylt[0],
+        "raw_verisk_ylt": sources.raw_ylt[1],
+    }
+    validate_input_contracts(source_map, schema, strict=True)
 
 
 def build_staging(sources: PipelineSources, schema: PipelineSchema) -> PipelineStaging:
@@ -131,7 +119,7 @@ def build_intermediate(
 ) -> PipelineIntermediate:
     """Filter staged losses to the selected analysis allow-list."""
 
-    selected_losses = select_losses(staging.normalized_ylt, staging.selected_analyses)
+    selected_losses = build_selected_losses(staging.normalized_ylt, staging.selected_analyses)
     validate_columns(selected_losses, schema.dataset("int_selected_losses"), strict=True)
     return PipelineIntermediate(selected_losses=selected_losses)
 
@@ -139,9 +127,15 @@ def build_intermediate(
 def build_marts(intermediate: PipelineIntermediate, schema: PipelineSchema) -> PipelineMarts:
     """Build the initial pipeline mart output."""
 
-    loss_summary = summarize_losses(intermediate.selected_losses)
+    loss_summary = build_loss_summary(intermediate.selected_losses)
     validate_columns(loss_summary, schema.dataset("mart_loss_summary"), strict=True)
     return PipelineMarts(loss_summary=loss_summary)
+
+
+def build_reports(marts: PipelineMarts) -> PipelineReports:
+    """Build report helper frames from mart outputs."""
+
+    return PipelineReports(summary_ep_stats=prepare_summary_ep_stats(marts.loss_summary))
 
 
 def build_pipeline(
@@ -157,7 +151,8 @@ def build_pipeline(
     staging = build_staging(sources, loaded_schema)
     intermediate = build_intermediate(sources, staging, loaded_schema)
     marts = build_marts(intermediate, loaded_schema)
-    return PipelineModels(sources=sources, staging=staging, intermediate=intermediate, marts=marts)
+    reports = build_reports(marts)
+    return PipelineModels(sources=sources, staging=staging, intermediate=intermediate, marts=marts, reports=reports)
 
 
 def collect_loss_summary(
@@ -168,30 +163,3 @@ def collect_loss_summary(
     """Run the initial pipeline flow and collect the loss summary mart."""
 
     return build_pipeline(root=root, schema=schema).marts.loss_summary.collect()
-
-
-def _scan_path(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
-    if not path.exists():
-        raise PipelineSchemaError(f"{spec.name}: path does not exist: {path}")
-    return _scan_file(path, spec)
-
-
-def _scan_glob(root: Path, spec: DatasetSpec) -> pl.LazyFrame:
-    if spec.glob is None:
-        raise PipelineSchemaError(f"{spec.name}: glob is required")
-    paths = sorted(glob(str(root / spec.glob)))
-    if not paths:
-        raise PipelineSchemaError(f"{spec.name}: glob matched no files: {spec.glob}")
-    if spec.format == "parquet":
-        return pl.scan_parquet(paths)
-    if spec.format == "csv":
-        return pl.scan_csv(paths, schema_overrides=spec.pl_schema, try_parse_dates=True)
-    raise PipelineSchemaError(f"{spec.name}: unsupported scan format: {spec.format}")
-
-
-def _scan_file(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
-    if spec.format == "parquet":
-        return pl.scan_parquet(path)
-    if spec.format == "csv":
-        return pl.scan_csv(path, schema_overrides=spec.pl_schema, try_parse_dates=True)
-    raise PipelineSchemaError(f"{spec.name}: unsupported scan format: {spec.format}")

@@ -7,6 +7,7 @@ import polars as pl
 
 from rollup.intermediate.pipeline import select_losses
 from rollup.marts.pipeline import summarize_losses
+from rollup.reports.pipeline import prepare_summary_ep_stats
 from rollup.pipeline import collect_loss_summary, load_dataset, preflight_pipeline_boundary, selected_analyses_spec
 from rollup.pipeline_schema import PipelineSchemaError, load_pipeline_schema
 from rollup.staging.pipeline import build_normalized_ylt, stage_risklink_ylt, stage_selected_analyses, stage_verisk_ylt
@@ -40,6 +41,7 @@ def test_pipeline_model_query_functions_are_in_dbt_layer_modules() -> None:
     assert build_normalized_ylt.__module__ == "rollup.staging.pipeline"
     assert select_losses.__module__ == "rollup.intermediate.pipeline"
     assert summarize_losses.__module__ == "rollup.marts.pipeline"
+    assert prepare_summary_ep_stats.__module__ == "rollup.reports.pipeline"
 
 
 def test_pipeline_orchestrator_keeps_preflight_before_transformations() -> None:
@@ -54,6 +56,38 @@ def test_pipeline_orchestrator_keeps_preflight_before_transformations() -> None:
     ]
 
     assert call_order.index("preflight_pipeline_boundary") < call_order.index("build_staging")
+    assert call_order.index("build_staging") < call_order.index("build_intermediate")
+    assert call_order.index("build_intermediate") < call_order.index("build_marts")
+    assert call_order.index("build_marts") < call_order.index("build_reports")
+
+
+def test_pipeline_preflight_failure_stops_before_stage_execution(monkeypatch) -> None:
+    from rollup import pipeline as pipeline_module
+    from rollup.pipeline import PipelineSources
+    from rollup.staging.pipeline import load_configured_sources
+
+    schema = load_pipeline_schema()
+    datasets = dict(load_configured_sources(root=REPO_ROOT, schema=schema).datasets)
+    datasets["selected_analyses"] = pl.DataFrame({"vendor": ["risklink"]}).lazy()
+    invalid_sources = PipelineSources(
+        selected_analyses=datasets["selected_analyses"],
+        raw_ylt=(datasets["raw_risklink_ylt"], datasets["raw_verisk_ylt"]),
+        datasets=datasets,
+    )
+
+    monkeypatch.setattr(pipeline_module, "build_sources", lambda *, root, schema: invalid_sources)
+
+    def fail_build_staging(*args, **kwargs):
+        raise AssertionError("staging should not run after preflight failure")
+
+    monkeypatch.setattr(pipeline_module, "build_staging", fail_build_staging)
+
+    try:
+        pipeline_module.build_pipeline(root=REPO_ROOT, schema=schema)
+    except PipelineSchemaError as exc:
+        assert "missing columns" in str(exc)
+    else:
+        raise AssertionError("preflight should reject invalid sources")
 
 
 def test_pipeline_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
@@ -66,6 +100,21 @@ def test_pipeline_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
         "analysis_id": ["200", "100"],
         "total_loss": [10.0, 7.0],
         "event_count": [1, 1],
+    }
+
+
+def test_pipeline_report_hooks_produce_summary_ep_stats(tmp_path: Path) -> None:
+    from rollup.pipeline import build_pipeline
+
+    _write_pipeline_fixture(tmp_path, write_selected=True)
+
+    models = build_pipeline(root=tmp_path)
+
+    assert isinstance(models.reports.summary_ep_stats, pl.LazyFrame)
+    assert models.reports.summary_ep_stats.collect().to_dict(as_series=False) == {
+        "analysis_count": [2],
+        "portfolio_total_loss": [17.0],
+        "portfolio_event_count": [2],
     }
 
 
@@ -90,20 +139,23 @@ def test_pipeline_selected_analyses_uses_business_seed_path(tmp_path: Path) -> N
 
 
 def test_selected_analyses_template_validates_at_boundary() -> None:
+    from rollup.pipeline import build_sources
+
     schema = load_pipeline_schema()
-    selected_analyses = load_dataset(schema.dataset("selected_analyses"), root=REPO_ROOT)
 
     preflight_pipeline_boundary(
-        _sources_with_selected_analyses(selected_analyses),
+        build_sources(root=REPO_ROOT, schema=schema),
         schema,
     )
 
 
 def _write_pipeline_fixture(tmp_path: Path, *, write_selected: bool) -> None:
     seeds = tmp_path / "data" / "seeds" / "business"
+    vor = tmp_path / "data" / "seeds" / "vor"
     risklink = tmp_path / "data" / "ylt" / "risklink"
     verisk = tmp_path / "data" / "ylt" / "verisk"
     seeds.mkdir(parents=True)
+    vor.mkdir(parents=True)
     risklink.mkdir(parents=True)
     verisk.mkdir(parents=True)
 
@@ -112,6 +164,25 @@ def _write_pipeline_fixture(tmp_path: Path, *, write_selected: bool) -> None:
             "vendor,analysis_id\nrisklink,200\nverisk,100\n",
             encoding="utf-8",
         )
+    (seeds / "lobs.csv").write_text(
+        "lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class,currency\n",
+        encoding="utf-8",
+    )
+    (seeds / "perils.csv").write_text("peril_id,name,region,peril_family\n", encoding="utf-8")
+    (seeds / "analyses.csv").write_text(
+        "vendor,analysis_id,modelled_label,peril_id,lob_id\n",
+        encoding="utf-8",
+    )
+    (vor / "blending_weights.csv").write_text(
+        "peril_id,return_period,peril_name,description,sub_peril,vendor,base_model,weight\n",
+        encoding="utf-8",
+    )
+    (vor / "forecast_factors.csv").write_text(
+        "class,office,office_iso2,forecast_date,factor\n",
+        encoding="utf-8",
+    )
+    (vor / "fx_rates.csv").write_text("currency_code,target_currency,rate_date,rate\n", encoding="utf-8")
+    (vor / "euws_rate_factors.csv").write_text("model_event_id,occ_year,factor\n", encoding="utf-8")
     pl.DataFrame(
         {
             "yearid": [1, 1],
