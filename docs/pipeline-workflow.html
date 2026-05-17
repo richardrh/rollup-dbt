@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restored Polars Pipeline Workflow</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#5b6475; --line:#d8dee9; --bg:#f7f9fc; --card:#fff; --accent:#2457a6; --ok:#0f766e; }
+    body { margin:0; font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--bg); }
+    main { max-width:1180px; margin:0 auto; padding:32px 22px 56px; }
+    h1 { margin:0 0 8px; font-size:32px; }
+    h2 { margin-top:32px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+    h3 { margin-top:22px; }
+    code, pre { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    code { background:#eef2f7; padding:1px 5px; border-radius:4px; }
+    pre { overflow:auto; background:#101827; color:#e5e7eb; padding:14px; border-radius:10px; }
+    table { width:100%; border-collapse:collapse; background:var(--card); margin:12px 0 20px; }
+    th, td { border:1px solid var(--line); padding:8px 10px; vertical-align:top; }
+    th { background:#edf2fb; text-align:left; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:14px 0; }
+    .note { border-left:4px solid var(--accent); padding:10px 14px; background:#eef5ff; }
+    .warn { border-left:4px solid #b45309; padding:10px 14px; background:#fff7ed; }
+    .flow { display:grid; grid-template-columns:repeat(6,minmax(130px,1fr)); gap:10px; align-items:stretch; }
+    .box { background:#fff; border:2px solid var(--line); border-radius:12px; padding:12px; position:relative; min-height:104px; }
+    .box strong { color:var(--accent); display:block; margin-bottom:4px; }
+    .box:not(:last-child)::after { content:"→"; position:absolute; right:-18px; top:42%; color:var(--accent); font-size:22px; font-weight:700; z-index:2; }
+    ul.tight { margin-top:6px; padding-left:20px; }
+    @media (max-width:900px){ .flow{grid-template-columns:1fr}.box:not(:last-child)::after{content:"↓"; right:50%; top:auto; bottom:-25px;} }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Restored Polars Pipeline Workflow</h1>
+  <p class="note">This document describes the current code path in this repository. The restored pipeline is a schema-driven Polars LazyFrame DAG, not a SQL/dbt runtime.</p>
+
+  <h2>1. CLI and supported invocation</h2>
+  <div class="warn"><strong>CLI availability:</strong> there is no formal pipeline CLI entrypoint in <code>pyproject.toml</code> (<code>[project.scripts]</code> is absent), and <code>polars/rollup/pipeline.py</code> has no <code>main()</code>, argparse, Click, or Typer command. The supported invocation path is Python API usage.</div>
+  <p>Call the orchestrator from Python with the repository root as <code>root</code>. Typical calls:</p>
+  <pre><code>from rollup.pipeline import build_pipeline, collect_loss_summary
+
+models = build_pipeline(root=".", report_path="data/output/report.xlsx")
+loss_summary = collect_loss_summary(root=".")</code></pre>
+  <p>Call path from invocation into <code>polars/rollup/pipeline.py</code>:</p>
+  <pre><code>Python caller
+  ├─ rollup.pipeline.build_pipeline(root=..., report_path=...)
+  │    ├─ load_pipeline_schema()
+  │    ├─ build_sources()
+  │    ├─ preflight_pipeline_boundary()
+  │    ├─ build_staging()
+  │    ├─ build_intermediate()
+  │    ├─ build_marts()
+  │    └─ build_reports()
+  └─ rollup.pipeline.collect_loss_summary(root=...)
+       └─ build_pipeline(...).marts.loss_summary.collect()</code></pre>
+
+  <h2>2. Visual workflow</h2>
+  <section class="flow" aria-label="Pipeline flowchart">
+    <div class="box"><strong>Invoke</strong><code>build_pipeline()</code><br>or <code>collect_loss_summary()</code></div>
+    <div class="box"><strong>Schema</strong><code>load_pipeline_schema()</code><br>merge YAML manifests</div>
+    <div class="box"><strong>Preflight</strong>scan source files lazily, then validate every source contract</div>
+    <div class="box"><strong>Staging</strong>project selected analyses and normalize vendor YLT</div>
+    <div class="box"><strong>Intermediate</strong>select, enrich, adjust, and blend losses</div>
+    <div class="box"><strong>Marts + reports</strong>aggregate/fan out marts; optionally write XLSX</div>
+  </section>
+
+  <h2>3. Validation workflow</h2>
+  <table>
+    <thead><tr><th>When</th><th>Function/class</th><th>What it validates</th></tr></thead>
+    <tbody>
+      <tr><td>Start of <code>build_pipeline()</code></td><td><code>pipeline_schema.load_pipeline_schema()</code>, <code>PipelineSchema</code>, <code>DatasetSpec</code>, <code>ColumnSpec</code></td><td>Loads <code>data/seeds/schema.yaml</code>, <code>data/ylt/schema.yaml</code>, <code>data/ep_summaries/schema.yaml</code>, and <code>data/output/schema.yaml</code>; checks manifest shape, version consistency, duplicate datasets, column definitions, and supported Polars dtypes.</td></tr>
+      <tr><td>Source loading</td><td><code>staging.load_configured_sources()</code>, <code>staging.load_dataset()</code>, <code>_scan_file()</code>, <code>_scan_glob()</code></td><td>Verifies required source files/globs exist. Creates lazy scans with <code>pl.scan_csv(..., schema_overrides=spec.pl_schema, try_parse_dates=True)</code> or <code>pl.scan_parquet(...)</code>. Validation is deferred here by passing <code>validate=False</code>.</td></tr>
+      <tr><td>Before transformations</td><td><code>pipeline.preflight_pipeline_boundary()</code>, <code>pipeline_schema.validate_input_contracts()</code>, <code>validate_columns()</code></td><td>Validates every schema dataset with role <code>source</code> before staging/intermediate/marts/reports run. Checks missing required columns, unexpected columns in strict mode, and dtype mismatches via LazyFrame <code>collect_schema()</code>.</td></tr>
+      <tr><td>After staging</td><td><code>pipeline.build_staging()</code>, <code>validate_columns()</code></td><td>Validates <code>stg_selected_analyses</code> and <code>stg_normalized_ylt</code> contracts.</td></tr>
+      <tr><td>After intermediate models</td><td><code>pipeline.build_intermediate()</code>, <code>validate_columns()</code></td><td>Validates <code>int_selected_losses</code>, <code>int_enriched_losses</code>, <code>int_adjusted_losses</code>, and <code>int_blended_losses</code>.</td></tr>
+      <tr><td>After marts</td><td><code>pipeline.build_marts()</code>, <code>validate_columns()</code></td><td>Validates <code>mart_loss_summary</code>, <code>mart_analysis_loss_summary</code>, <code>mart_event_loss_fanout</code>, and <code>mart_blended_loss_summary</code>.</td></tr>
+      <tr><td>Reports</td><td><code>pipeline.build_reports()</code></td><td>No schema contract is applied to report helper frames; report generation collects mart LazyFrames and optionally writes XLSX.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. Ordered function call graph</h2>
+  <pre><code>polars/rollup/pipeline.py::build_pipeline
+  ├─ polars/rollup/pipeline_schema.py::load_pipeline_schema
+  ├─ polars/rollup/pipeline.py::build_sources
+  │    └─ polars/rollup/staging/pipeline.py::load_configured_sources
+  │         └─ load_dataset → _scan_path/_scan_glob → _scan_file
+  ├─ polars/rollup/pipeline.py::preflight_pipeline_boundary
+  │    └─ polars/rollup/pipeline_schema.py::validate_input_contracts → validate_columns
+  ├─ polars/rollup/pipeline.py::build_staging
+  │    ├─ staging.stage_selected_analyses
+  │    └─ staging.build_normalized_ylt → stage_risklink_ylt + stage_verisk_ylt
+  ├─ polars/rollup/pipeline.py::build_intermediate
+  │    └─ intermediate.build_intermediate_losses
+  │         ├─ select_losses
+  │         ├─ enrich_losses
+  │         ├─ apply_vor_adjustments
+  │         └─ blend_losses
+  ├─ polars/rollup/pipeline.py::build_marts
+  │    ├─ marts.build_analysis_loss_summary
+  │    ├─ marts.build_event_loss_fanout
+  │    └─ marts.build_blended_loss_summary
+  └─ polars/rollup/pipeline.py::build_reports
+       ├─ reports.prepare_summary_ep_stats
+       ├─ reports.collect_report_artifact
+       └─ reports.write_xlsx_report (only when report_path is provided)</code></pre>
+
+  <h2>5. Polars lazy queries and data operations by stage</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Reads</th><th>Key Polars operations</th><th>Produces</th></tr></thead>
+    <tbody>
+      <tr><td>Source scans</td><td>Required CSV seeds; RiskLink/Verisk YLT parquet globs; optional canonical EP summary CSV globs if present.</td><td><code>pl.scan_csv</code> with schema overrides and date parsing for CSV; <code>pl.scan_parquet</code> for parquet path/glob scans.</td><td>Raw source LazyFrames in <code>PipelineSources.datasets</code>.</td></tr>
+      <tr><td>Selected analyses staging</td><td><code>selected_analyses</code> source CSV.</td><td><code>select(pl.col("vendor").cast(pl.String), pl.col("analysis_id").cast(pl.String))</code>.</td><td><code>stg_selected_analyses</code>: run allow-list.</td></tr>
+      <tr><td>YLT normalization staging</td><td><code>raw_risklink_ylt</code> and <code>raw_verisk_ylt</code>.</td><td>RiskLink <code>select</code>: literal vendor <code>risklink</code>, aliases <code>anlsid/yearid/eventid/loss</code>, casts analysis/loss. Verisk <code>select</code>: literal vendor <code>verisk</code>, aliases <code>Analysis/YearID/EventID/GroundUpLoss</code>, casts analysis/loss. <code>pl.concat(..., how="vertical")</code>.</td><td><code>stg_normalized_ylt</code>: canonical vendor, analysis, year, event, loss rows.</td></tr>
+      <tr><td>Select losses</td><td>Normalized YLT and staged selected analyses.</td><td><code>join(..., on=["vendor", "analysis_id"], how="inner")</code>.</td><td><code>int_selected_losses</code>: only selected analysis/event losses.</td></tr>
+      <tr><td>Enrich losses</td><td>Selected losses plus <code>analyses</code>, <code>perils</code>, <code>lobs</code>.</td><td>Dimension <code>select</code>s for analysis/peril/LOB columns, then left joins on <code>[vendor, analysis_id]</code>, <code>peril_id</code>, and <code>lob_id</code>.</td><td><code>int_enriched_losses</code>: losses with peril, LOB, office/class/currency metadata.</td></tr>
+      <tr><td>Apply VOR adjustments</td><td>Enriched losses plus <code>forecast_factors</code>, <code>fx_rates</code>, <code>euws_rate_factors</code>.</td><td>Forecast <code>select(class, office, factor)</code>; FX <code>filter(target_currency == "GBP")</code> then <code>select(currency_code→currency, rate→fx_rate)</code>; EUWS <code>select(model_event_id→event_id, occ_year→year_id, factor)</code>. Left joins, <code>with_columns(coalesce(..., 1.0))</code>, then <code>with_columns(loss * forecast_factor * fx_rate * euws_rate_factor)</code>.</td><td><code>int_adjusted_losses</code>: enriched rows with defaulted factors and <code>adjusted_loss</code>.</td></tr>
+      <tr><td>Blend losses</td><td>Adjusted losses plus <code>blending_weights</code>.</td><td><code>filter(return_period == 0)</code>, <code>select(peril_id, vendor, base_model, weight→blend_weight)</code>, left join on <code>[peril_id, vendor]</code>, default missing weight to <code>1.0</code>, compute <code>blended_loss = adjusted_loss * blend_weight</code>.</td><td><code>int_blended_losses</code>.</td></tr>
+      <tr><td>Analysis loss mart</td><td><code>int_adjusted_losses</code>.</td><td><code>group_by(vendor, analysis_id, peril_id, peril_name, rollup_lob, currency)</code>; aggregate <code>sum(loss)</code>, <code>sum(adjusted_loss)</code>, <code>len()</code>; <code>sort</code>.</td><td><code>mart_analysis_loss_summary</code>; <code>mart_loss_summary</code> is a compatibility <code>select(vendor, analysis_id, total_loss, event_count)</code> from it.</td></tr>
+      <tr><td>Event fanout mart</td><td><code>int_adjusted_losses</code>.</td><td><code>select</code> event, peril, rollup, currency, factor, and adjusted loss columns; <code>sort(vendor, analysis_id, year_id, event_id)</code>.</td><td><code>mart_event_loss_fanout</code>.</td></tr>
+      <tr><td>Blended summary mart</td><td><code>int_blended_losses</code>.</td><td><code>group_by(peril_id, peril_name, vendor, base_model)</code>; aggregate <code>max(blend_weight)</code>, <code>sum(adjusted_loss)</code>, <code>sum(blended_loss)</code>; <code>sort(peril_id, vendor)</code>.</td><td><code>mart_blended_loss_summary</code>.</td></tr>
+      <tr><td>Reports</td><td><code>mart_loss_summary</code>.</td><td><code>select(len(), sum(total_loss), sum(event_count))</code> for summary EP stats. <code>collect()</code> materializes <code>loss_summary</code> and <code>summary_ep_stats</code>. If requested, OpenPyXL writes two workbook sheets.</td><td>In-memory report artifact and optional XLSX file.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Important boundaries</h2>
+  <ul>
+    <li>All model transformations are Polars LazyFrame operations until report collection or <code>collect_loss_summary()</code>.</li>
+    <li>Preflight validation runs before any staging, intermediate, mart, or report transformation.</li>
+    <li>Strict schema validation rejects undeclared columns as well as missing or mistyped required columns.</li>
+    <li>No SQL statements are generated by this restored pipeline path.</li>
+  </ul>
+</main>
+</body>
+</html>
