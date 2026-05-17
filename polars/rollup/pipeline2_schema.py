@@ -4,13 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
 import polars as pl
 import yaml
 
 
-DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "data" / "pipeline2" / "schema.yaml"
+DATA_ROOT = Path(__file__).resolve().parents[2] / "data"
+DEFAULT_SCHEMA_PATHS = (
+    DATA_ROOT / "seeds" / "schema.yaml",
+    DATA_ROOT / "ylt" / "schema.yaml",
+    DATA_ROOT / "ep_summaries" / "schema.yaml",
+    DATA_ROOT / "output" / "schema.yaml",
+)
 
 _DTYPES: dict[str, pl.DataType] = {
     "bool": pl.Boolean,
@@ -96,30 +103,59 @@ def polars_dtype(dtype_name: str) -> pl.DataType:
         raise Pipeline2SchemaError(f"unsupported pipeline2 dtype: {dtype_name}") from exc
 
 
-def load_pipeline2_schema(path: Path | str = DEFAULT_SCHEMA_PATH) -> Pipeline2Schema:
-    """Load and minimally validate the pipeline2 YAML schema file."""
+def load_pipeline2_schema(paths: Path | str | Sequence[Path | str] = DEFAULT_SCHEMA_PATHS) -> Pipeline2Schema:
+    """Load and merge the colocated pipeline2 YAML schema manifests."""
 
-    schema_path = Path(path)
+    schema_paths = _schema_paths(paths)
+    raw_manifests = [_load_raw_manifest(path) for path in schema_paths]
+
+    version = raw_manifests[0]["version"]
+    descriptions: list[str] = []
+    merged_datasets: dict[str, Any] = {}
+    for schema_path, raw in zip(schema_paths, raw_manifests, strict=True):
+        if raw["version"] != version:
+            raise Pipeline2SchemaError(f"{schema_path}: schema version does not match {version}")
+        descriptions.append(raw["description"])
+        for name, raw_spec in raw["datasets"].items():
+            if name in merged_datasets:
+                raise Pipeline2SchemaError(f"duplicate pipeline2 dataset: {name}")
+            merged_datasets[name] = raw_spec
+
+    datasets = {
+        name: _parse_dataset(name, raw_spec)
+        for name, raw_spec in merged_datasets.items()
+    }
+    return Pipeline2Schema(
+        version=version,
+        description=" ".join(descriptions),
+        datasets=datasets,
+    )
+
+
+def _schema_paths(paths: Path | str | Sequence[Path | str]) -> tuple[Path, ...]:
+    if isinstance(paths, str | Path):
+        return (Path(paths),)
+    schema_paths = tuple(Path(path) for path in paths)
+    if not schema_paths:
+        raise Pipeline2SchemaError("at least one pipeline2 schema manifest is required")
+    return schema_paths
+
+
+def _load_raw_manifest(schema_path: Path) -> dict[str, Any]:
     raw = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise Pipeline2SchemaError("pipeline2 schema root must be a mapping")
-
+        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema root must be a mapping")
 
     version = raw.get("version")
     description = raw.get("description")
     raw_datasets = raw.get("datasets")
     if not isinstance(version, int):
-        raise Pipeline2SchemaError("pipeline2 schema version must be an integer")
+        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema version must be an integer")
     if not isinstance(description, str) or not description.strip():
-        raise Pipeline2SchemaError("pipeline2 schema description is required")
+        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema description is required")
     if not isinstance(raw_datasets, dict) or not raw_datasets:
-        raise Pipeline2SchemaError("pipeline2 schema datasets must be a non-empty mapping")
-
-    datasets = {
-        name: _parse_dataset(name, raw_spec)
-        for name, raw_spec in raw_datasets.items()
-    }
-    return Pipeline2Schema(version=version, description=description, datasets=datasets)
+        raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema datasets must be a non-empty mapping")
+    return raw
 
 
 def validate_columns(

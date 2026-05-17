@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 from rollup.pipeline2_schema import (
+    DEFAULT_SCHEMA_PATHS,
     Pipeline2SchemaError,
     load_pipeline2_schema,
     polars_dtype,
@@ -16,6 +17,7 @@ def test_pipeline2_schema_loads_and_maps_dtypes() -> None:
     spec = schema.dataset("mart_loss_summary")
 
     assert schema.version == 1
+    assert tuple(path.name for path in DEFAULT_SCHEMA_PATHS) == ("schema.yaml", "schema.yaml", "schema.yaml", "schema.yaml")
     assert polars_dtype("string") == pl.String
     assert polars_dtype("uint32") == pl.UInt32
     assert spec.pl_schema == pl.Schema({

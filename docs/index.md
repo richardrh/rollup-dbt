@@ -2,7 +2,10 @@
 
 Pipeline2 uses a clean dbt-style source layout without the old runtime.
 
-- Schema manifest: `data/pipeline2/schema.yaml`
+- Seed schema manifest: `data/seeds/schema.yaml`
+- YLT schema manifest: `data/ylt/schema.yaml`
+- EP summary schema manifest: `data/ep_summaries/schema.yaml`
+- Output schema manifest: `data/output/schema.yaml`
 - YAML helper: `polars/rollup/pipeline2_schema.py`
 - Orchestration: `polars/rollup/pipeline2.py`
 - Staging models: `polars/rollup/staging/pipeline2.py`

@@ -76,20 +76,14 @@ def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.Lazy
 
 
 def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
-    """Prefer first-class selected_analyses, with valid_analyses as legacy fallback."""
+    """Return the required selected analysis allow-list spec."""
 
     root_path = Path(root)
     selected = schema.dataset("selected_analyses")
     if selected.path is not None and (root_path / selected.path).exists():
         return selected
 
-    fallback = schema.dataset("valid_analyses")
-    if fallback.path is not None and (root_path / fallback.path).exists():
-        return fallback
-
-    raise Pipeline2SchemaError(
-        "selected_analyses is required; valid_analyses may be used only as a legacy fallback"
-    )
+    raise Pipeline2SchemaError("selected_analyses is required")
 
 
 def build_sources(

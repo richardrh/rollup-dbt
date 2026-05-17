@@ -8,7 +8,7 @@ import polars as pl
 from rollup.intermediate.pipeline2 import select_losses
 from rollup.marts.pipeline2 import summarize_losses
 from rollup.pipeline2 import collect_loss_summary, preflight_pipeline2_boundary, selected_analyses_spec
-from rollup.pipeline2_schema import load_pipeline2_schema
+from rollup.pipeline2_schema import Pipeline2SchemaError, load_pipeline2_schema
 from rollup.staging.pipeline2 import build_normalized_ylt, stage_risklink_ylt, stage_selected_analyses, stage_verisk_ylt
 
 
@@ -57,7 +57,7 @@ def test_pipeline2_orchestrator_keeps_preflight_before_transformations() -> None
 
 
 def test_pipeline2_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
-    _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
+    _write_pipeline2_fixture(tmp_path, write_selected=True)
 
     summary = collect_loss_summary(root=tmp_path)
 
@@ -69,42 +69,39 @@ def test_pipeline2_tiny_fixture_runs_linear_flow(tmp_path: Path) -> None:
     }
 
 
-def test_pipeline2_prefers_selected_analyses_over_legacy_fallback(tmp_path: Path) -> None:
-    _write_pipeline2_fixture(tmp_path, selected_name="selected_analyses.csv")
-    (tmp_path / "data" / "seeds" / "valid_analyses.csv").write_text(
-        "vendor,analysis_id\nrisklink,999\n",
-        encoding="utf-8",
-    )
+def test_pipeline2_requires_selected_analyses(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, write_selected=False)
+
+    try:
+        selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
+    except Pipeline2SchemaError as exc:
+        assert str(exc) == "selected_analyses is required"
+    else:
+        raise AssertionError("missing selected analyses should fail")
+
+
+def test_pipeline2_selected_analyses_uses_business_seed_path(tmp_path: Path) -> None:
+    _write_pipeline2_fixture(tmp_path, write_selected=True)
 
     spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
 
     assert spec.name == "selected_analyses"
-    assert spec.status == "first_class"
+    assert spec.path == "data/seeds/business/selected_analyses.csv"
 
 
-def test_pipeline2_uses_valid_analyses_only_as_legacy_fallback(tmp_path: Path) -> None:
-    _write_pipeline2_fixture(tmp_path, selected_name="valid_analyses.csv")
-
-    spec = selected_analyses_spec(load_pipeline2_schema(), root=tmp_path)
-    summary = collect_loss_summary(root=tmp_path)
-
-    assert spec.name == "valid_analyses"
-    assert spec.status == "legacy_fallback"
-    assert summary["analysis_id"].to_list() == ["200", "100"]
-
-
-def _write_pipeline2_fixture(tmp_path: Path, *, selected_name: str) -> None:
-    seeds = tmp_path / "data" / "seeds"
+def _write_pipeline2_fixture(tmp_path: Path, *, write_selected: bool) -> None:
+    seeds = tmp_path / "data" / "seeds" / "business"
     risklink = tmp_path / "data" / "ylt" / "risklink"
     verisk = tmp_path / "data" / "ylt" / "verisk"
     seeds.mkdir(parents=True)
     risklink.mkdir(parents=True)
     verisk.mkdir(parents=True)
 
-    (seeds / selected_name).write_text(
-        "vendor,analysis_id\nrisklink,200\nverisk,100\n",
-        encoding="utf-8",
-    )
+    if write_selected:
+        (seeds / "selected_analyses.csv").write_text(
+            "vendor,analysis_id\nrisklink,200\nverisk,100\n",
+            encoding="utf-8",
+        )
     pl.DataFrame(
         {
             "yearid": [1, 1],
