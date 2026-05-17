@@ -60,3 +60,89 @@ datasets:
       - {name: year_id, dtype: int64, required: true, description: Simulation year.}
       - {name: event_id, dtype: int64, required: true, description: Event identifier.}
       - {name: loss, dtype: float64, required: true, description: Selected loss.}
+
+  int_enriched_losses:
+    role: intermediate
+    format: lazyframe
+    required: true
+    description: Selected losses joined to analysis, peril, and LOB business dimensions.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+      - {name: modelled_label, dtype: string, required: false, description: Vendor modelled label.}
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: lob_id, dtype: int64, required: false, description: Canonical LOB key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: region, dtype: string, required: false, description: Peril region.}
+      - {name: peril_family, dtype: string, required: false, description: Peril family.}
+      - {name: modelled_lob, dtype: string, required: false, description: Vendor modelled LOB.}
+      - {name: rollup_lob, dtype: string, required: false, description: Rollup LOB.}
+      - {name: lob_type, dtype: string, required: false, description: LOB type.}
+      - {name: cds_cat_class_name, dtype: string, required: false, description: Hiscox class name.}
+      - {name: office, dtype: string, required: false, description: Hiscox office.}
+      - {name: class, dtype: string, required: false, description: Hiscox class code.}
+      - {name: currency, dtype: string, required: false, description: Local currency.}
+
+  int_adjusted_losses:
+    role: intermediate
+    format: lazyframe
+    required: true
+    description: Enriched losses with VOR forecast, FX, and EUWS factors applied.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+      - {name: modelled_label, dtype: string, required: false, description: Vendor modelled label.}
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: lob_id, dtype: int64, required: false, description: Canonical LOB key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: region, dtype: string, required: false, description: Peril region.}
+      - {name: peril_family, dtype: string, required: false, description: Peril family.}
+      - {name: modelled_lob, dtype: string, required: false, description: Vendor modelled LOB.}
+      - {name: rollup_lob, dtype: string, required: false, description: Rollup LOB.}
+      - {name: lob_type, dtype: string, required: false, description: LOB type.}
+      - {name: cds_cat_class_name, dtype: string, required: false, description: Hiscox class name.}
+      - {name: office, dtype: string, required: false, description: Hiscox office.}
+      - {name: class, dtype: string, required: false, description: Hiscox class code.}
+      - {name: currency, dtype: string, required: false, description: Local currency.}
+      - {name: forecast_factor, dtype: float64, required: true, description: Forecast scalar.}
+      - {name: fx_rate, dtype: float64, required: true, description: FX scalar.}
+      - {name: euws_rate_factor, dtype: float64, required: true, description: EUWS scalar.}
+      - {name: adjusted_loss, dtype: float64, required: true, description: Adjusted GBP loss.}
+
+  int_blended_losses:
+    role: intermediate
+    format: lazyframe
+    required: true
+    description: Adjusted losses with vendor blend weights applied.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+      - {name: modelled_label, dtype: string, required: false, description: Vendor modelled label.}
+      - {name: peril_id, dtype: int64, required: false, description: Canonical peril key.}
+      - {name: lob_id, dtype: int64, required: false, description: Canonical LOB key.}
+      - {name: peril_name, dtype: string, required: false, description: Peril display name.}
+      - {name: region, dtype: string, required: false, description: Peril region.}
+      - {name: peril_family, dtype: string, required: false, description: Peril family.}
+      - {name: modelled_lob, dtype: string, required: false, description: Vendor modelled LOB.}
+      - {name: rollup_lob, dtype: string, required: false, description: Rollup LOB.}
+      - {name: lob_type, dtype: string, required: false, description: LOB type.}
+      - {name: cds_cat_class_name, dtype: string, required: false, description: Hiscox class name.}
+      - {name: office, dtype: string, required: false, description: Hiscox office.}
+      - {name: class, dtype: string, required: false, description: Hiscox class code.}
+      - {name: currency, dtype: string, required: false, description: Local currency.}
+      - {name: forecast_factor, dtype: float64, required: true, description: Forecast scalar.}
+      - {name: fx_rate, dtype: float64, required: true, description: FX scalar.}
+      - {name: euws_rate_factor, dtype: float64, required: true, description: EUWS scalar.}
+      - {name: adjusted_loss, dtype: float64, required: true, description: Adjusted GBP loss.}
+      - {name: base_model, dtype: string, required: false, description: Blend base model.}
+      - {name: blend_weight, dtype: float64, required: true, description: Vendor blend weight.}
+      - {name: blended_loss, dtype: float64, required: true, description: Weighted adjusted loss.}
