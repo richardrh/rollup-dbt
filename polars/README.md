@@ -27,10 +27,14 @@ uv run pytest -q                         # run the default suite (integration sk
 ## Experimental pipeline2 track
 
 `rollup.pipeline2` is a separate, experimental clean path. Its dataset
-contracts live in `rollup/pipeline2_schema.yaml`, and the code only uses the
-new YAML schema helper plus Polars. It does not import the legacy runtime
-modules, and the existing `rollup.pipeline` CLI/runtime remains unchanged for
-now.
+contracts live under `../data/` next to the inputs they describe:
+`../data/seeds/schema.yaml`, `../data/ylt/schema.yaml`,
+`../data/ep_summaries/schema.yaml`, and `../data/output/schema.yaml`. Edit those
+data-side manifests when seed, YLT, EP-summary, or pipeline2 output shapes
+change; there is no authoritative schema YAML hidden under `rollup/`. The code
+only uses the new YAML schema helper plus Polars. It does not import the legacy
+runtime modules, and the existing `rollup.pipeline` CLI/runtime remains
+unchanged for now.
 
 The initial pipeline2 scope is intentionally small: load YAML-declared sources,
 validate columns strictly, stage raw YLT rows into a minimal canonical shape,
@@ -125,14 +129,18 @@ contract between the pipeline and the seeds + YLTs you supply.
 │
 └── data/                       # USER-OWNED — this is what you populate
     ├── seeds/                  # reference CSVs — see data/seeds/README.md
+    │   └── schema.yaml         # pipeline2 seed contracts live with seeds
     │                             + RH-TODO-DATA.md for the 4 blockers
     ├── ylt/
+    │   ├── schema.yaml         # pipeline2 raw YLT contracts live with inputs
     │   ├── verisk/*.parquet    # 10,000 simulation years (AIR)
     │   └── risklink/*.parquet  # 100,000 simulation years (RMS)
     ├── ep_summaries/           # optional review inputs
+    │   ├── schema.yaml         # pipeline2 EP summary contracts live here
     │   ├── verisk/*.long.csv
     │   └── risklink/*.long.csv
     └── output/                 # pipeline writes Hisco{AIR,RMS}_*.parquet
+        └── schema.yaml         # pipeline2 staging/intermediate/mart contracts
 ```
 
 Every path is overridable — `ROLLUP_SEEDS_DIR`, `ROLLUP_YLT_VERISK_DIR`,

@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 from rollup.pipeline2_schema import (
+    DEFAULT_SCHEMA_PATHS,
     Pipeline2SchemaError,
     load_pipeline2_schema,
     polars_dtype,
@@ -24,6 +25,19 @@ def test_pipeline2_schema_loads_and_maps_dtypes() -> None:
         "total_loss": pl.Float64,
         "event_count": pl.UInt32,
     })
+
+
+def test_pipeline2_schema_merges_default_data_side_manifests() -> None:
+    schema = load_pipeline2_schema(DEFAULT_SCHEMA_PATHS)
+
+    assert "Pipeline2 seed contracts" in schema.description
+    assert "Pipeline2 YLT input contracts" in schema.description
+    assert "Pipeline2 EP summary input contracts" in schema.description
+    assert "Pipeline2 staging, intermediate, and mart contracts" in schema.description
+    assert schema.dataset("selected_analyses").path == "data/seeds/selected_analyses.csv"
+    assert schema.dataset("raw_verisk_ylt").glob == "data/ylt/verisk/*.parquet"
+    assert schema.dataset("canonical_ep_summary").glob == "data/ep_summaries/**/*.long.csv"
+    assert schema.dataset("mart_loss_summary").path == "data/output/pipeline2_loss_summary.parquet"
 
 
 def test_pipeline2_validation_accepts_optional_missing_columns() -> None:

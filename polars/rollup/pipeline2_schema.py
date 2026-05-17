@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import polars as pl
 import yaml
 
 
-DEFAULT_SCHEMA_PATH = Path(__file__).with_name("pipeline2_schema.yaml")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SCHEMA_PATHS = (
+    REPO_ROOT / "data" / "seeds" / "schema.yaml",
+    REPO_ROOT / "data" / "ylt" / "schema.yaml",
+    REPO_ROOT / "data" / "ep_summaries" / "schema.yaml",
+    REPO_ROOT / "data" / "output" / "schema.yaml",
+)
 
 _DTYPES: dict[str, pl.DataType] = {
     "bool": pl.Boolean,
@@ -34,7 +40,7 @@ class Pipeline2SchemaError(ValueError):
 
 @dataclass(frozen=True)
 class ColumnSpec:
-    """One declarative column contract from ``pipeline2_schema.yaml``."""
+    """One declarative column contract from a data-side pipeline2 schema manifest."""
 
     name: str
     dtype_name: str
@@ -45,7 +51,7 @@ class ColumnSpec:
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    """One dataset contract from ``pipeline2_schema.yaml``."""
+    """One dataset contract from a data-side pipeline2 schema manifest."""
 
     name: str
     role: str
@@ -96,11 +102,10 @@ def polars_dtype(dtype_name: str) -> pl.DataType:
         raise Pipeline2SchemaError(f"unsupported pipeline2 dtype: {dtype_name}") from exc
 
 
-def load_pipeline2_schema(path: Path | str = DEFAULT_SCHEMA_PATH) -> Pipeline2Schema:
-    """Load and minimally validate the pipeline2 YAML schema file."""
+def load_pipeline2_schema(path: Path | str | Iterable[Path | str] | None = None) -> Pipeline2Schema:
+    """Load and minimally validate the data-side pipeline2 YAML schema manifest(s)."""
 
-    schema_path = Path(path)
-    raw = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    raw = _load_raw_schema(path)
     if not isinstance(raw, dict):
         raise Pipeline2SchemaError("pipeline2 schema root must be a mapping")
 
@@ -120,6 +125,53 @@ def load_pipeline2_schema(path: Path | str = DEFAULT_SCHEMA_PATH) -> Pipeline2Sc
         for name, raw_spec in raw_datasets.items()
     }
     return Pipeline2Schema(version=version, description=description, datasets=datasets)
+
+
+def _load_raw_schema(path: Path | str | Iterable[Path | str] | None) -> dict[str, Any]:
+    schema_paths = _schema_paths(path)
+    raw_documents = []
+    for schema_path in schema_paths:
+        raw_document = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+        if not isinstance(raw_document, dict):
+            raise Pipeline2SchemaError(f"{schema_path}: pipeline2 schema root must be a mapping")
+        raw_documents.append((schema_path, raw_document))
+
+    if len(raw_documents) == 1:
+        return raw_documents[0][1]
+
+    versions = {raw_document.get("version") for _, raw_document in raw_documents}
+    if len(versions) != 1:
+        raise Pipeline2SchemaError("pipeline2 schema manifests must share one version")
+
+    descriptions = []
+    datasets: dict[str, Any] = {}
+    for schema_path, raw_document in raw_documents:
+        description = raw_document.get("description")
+        raw_datasets = raw_document.get("datasets")
+        if isinstance(description, str) and description.strip():
+            descriptions.append(description.strip())
+        if not isinstance(raw_datasets, dict) or not raw_datasets:
+            raise Pipeline2SchemaError(
+                f"{schema_path}: pipeline2 schema datasets must be a non-empty mapping"
+            )
+        duplicates = sorted(set(datasets) & set(raw_datasets))
+        if duplicates:
+            raise Pipeline2SchemaError(f"duplicate pipeline2 dataset declarations: {duplicates}")
+        datasets.update(raw_datasets)
+
+    return {
+        "version": versions.pop(),
+        "description": " ".join(descriptions),
+        "datasets": datasets,
+    }
+
+
+def _schema_paths(path: Path | str | Iterable[Path | str] | None) -> tuple[Path, ...]:
+    if path is None:
+        return DEFAULT_SCHEMA_PATHS
+    if isinstance(path, (str, Path)):
+        return (Path(path),)
+    return tuple(Path(schema_path) for schema_path in path)
 
 
 def validate_columns(

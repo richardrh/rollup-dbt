@@ -7,6 +7,10 @@ Drop long-format CSVs here. Normal pipeline runs use the reviewed
 override model blending weights. Original xlsx files may coexist but are not
 read after conversion.
 
+For the experimental pipeline2 path, the authoritative EP summary input contract
+is [`schema.yaml`](schema.yaml) in this directory so schema edits stay alongside
+the EP files they describe.
+
 ---
 
 ## RiskLink — `risklink/*.long.csv`

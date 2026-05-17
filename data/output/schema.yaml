@@ -1,0 +1,50 @@
+version: 1
+description: >-
+  Pipeline2 staging, intermediate, and mart contracts. This data-side manifest
+  keeps output-facing schemas near pipeline outputs instead of hidden under code.
+
+datasets:
+  stg_selected_analyses:
+    role: staging
+    format: dataframe
+    required: true
+    description: Validated selected analyses after first-class/fallback resolution.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Selected analysis id.}
+
+  stg_normalized_ylt:
+    role: staging
+    format: lazyframe
+    required: true
+    description: Minimal canonical YLT shape used by initial pipeline2 flow.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: loss, dtype: float64, required: true, description: Ground-up or normalized loss.}
+
+  int_selected_losses:
+    role: intermediate
+    format: lazyframe
+    required: true
+    description: Normalized YLT rows filtered to selected analyses.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
+      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
+      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+
+  mart_loss_summary:
+    role: mart
+    path: data/output/pipeline2_loss_summary.parquet
+    format: parquet
+    required: true
+    description: Demonstrable pipeline2 mart; total loss by vendor and analysis.
+    columns:
+      - {name: vendor, dtype: string, required: true, description: Vendor name.}
+      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
+      - {name: total_loss, dtype: float64, required: true, description: Sum of selected losses.}
+      - {name: event_count, dtype: uint32, required: true, description: Number of selected YLT rows.}

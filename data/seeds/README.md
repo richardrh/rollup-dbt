@@ -23,6 +23,10 @@ Each seed has a corresponding `pl.Schema` in
 parquet and validates at the boundary so shape drift is caught immediately,
 not in the middle of a stage ten joins later.
 
+For the experimental pipeline2 path, the authoritative seed contracts are in
+[`schema.yaml`](schema.yaml) in this directory. Keep pipeline2 seed shape edits
+next to the seed CSVs rather than under `polars/rollup/`.
+
 ## The 11 seeds
 
 ```

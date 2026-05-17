@@ -4,12 +4,38 @@ from pathlib import Path
 
 import yaml
 
+from rollup.pipeline2_schema import DEFAULT_SCHEMA_PATHS
 
-SCHEMA_FILE = Path(__file__).resolve().parents[1] / "rollup" / "pipeline2_schema.yaml"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LEGACY_CODE_SCHEMA_FILE = REPO_ROOT / "polars" / "rollup" / "pipeline2_schema.yaml"
 
 
 def _load_raw_schema() -> dict:
-    return yaml.safe_load(SCHEMA_FILE.read_text(encoding="utf-8"))
+    datasets = {}
+    descriptions = []
+    version = None
+    for schema_file in DEFAULT_SCHEMA_PATHS:
+        raw = yaml.safe_load(schema_file.read_text(encoding="utf-8"))
+        if version is None:
+            version = raw["version"]
+        assert raw["version"] == version
+        descriptions.append(raw["description"])
+        datasets.update(raw["datasets"])
+    return {"version": version, "description": " ".join(descriptions), "datasets": datasets}
+
+
+def test_pipeline2_yaml_schema_lives_alongside_data_inputs_not_code() -> None:
+    expected_schema_files = {
+        REPO_ROOT / "data" / "seeds" / "schema.yaml",
+        REPO_ROOT / "data" / "ylt" / "schema.yaml",
+        REPO_ROOT / "data" / "ep_summaries" / "schema.yaml",
+        REPO_ROOT / "data" / "output" / "schema.yaml",
+    }
+
+    assert set(DEFAULT_SCHEMA_PATHS) == expected_schema_files
+    assert all(schema_file.exists() for schema_file in DEFAULT_SCHEMA_PATHS)
+    assert all(schema_file.is_relative_to(REPO_ROOT / "data") for schema_file in DEFAULT_SCHEMA_PATHS)
+    assert not LEGACY_CODE_SCHEMA_FILE.exists()
 
 
 def test_pipeline2_yaml_schema_declares_required_sources() -> None:
