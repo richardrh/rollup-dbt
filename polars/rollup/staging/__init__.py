@@ -1,1 +1,1 @@
-"""Pipeline2 staging models live in ``rollup.staging.pipeline2``."""
+"""Pipeline staging models live in ``rollup.staging.pipeline``."""

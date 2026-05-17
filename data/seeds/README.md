@@ -1,16 +1,16 @@
 # data/seeds
 
-Seed inputs are user-owned data for pipeline2. Their colocated manifest is
+Seed inputs are user-owned data for pipeline. Their colocated manifest is
 `data/seeds/schema.yaml`.
 
-Pipeline2 expects business seeds under `data/seeds/business/`:
+Pipeline expects business seeds under `data/seeds/business/`:
 
 - `lobs.csv`
 - `perils.csv`
 - `analyses.csv`
 - `selected_analyses.csv` — required operator scope file; header-only is valid before an operator selects analyses.
 
-Pipeline2 expects VOR seeds under `data/seeds/vor/`:
+Pipeline expects VOR seeds under `data/seeds/vor/`:
 
 - `blending_weights.csv`
 - `forecast_factors.csv`

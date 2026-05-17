@@ -22,12 +22,12 @@ def _load_raw_schema() -> dict:
     return {"datasets": datasets}
 
 
-def test_pipeline2_schema_manifests_are_colocated_with_data_areas() -> None:
-    assert not (REPO_ROOT / "data" / "pipeline2" / "schema.yaml").exists()
+def test_pipeline_schema_manifests_are_colocated_with_data_areas() -> None:
+    assert not (REPO_ROOT / "data" / "pipeline" / "schema.yaml").exists()
     assert all(schema_file.is_file() for schema_file in SCHEMA_FILES)
 
 
-def test_pipeline2_yaml_schema_declares_required_sources() -> None:
+def test_pipeline_yaml_schema_declares_required_sources() -> None:
     datasets = _load_raw_schema()["datasets"]
 
     expected = {
@@ -69,7 +69,7 @@ def test_ylt_ep_and_output_schema_paths_match_operator_layout() -> None:
     assert datasets["raw_verisk_ylt"]["glob"] == "data/ylt/verisk/*.parquet"
     assert datasets["raw_risklink_ylt"]["glob"] == "data/ylt/risklink/*.parquet"
     assert datasets["canonical_ep_summary"]["glob"] == "data/ep_summaries/**/*.long.csv"
-    assert datasets["mart_loss_summary"]["path"] == "data/output/pipeline2_loss_summary.parquet"
+    assert datasets["mart_loss_summary"]["path"] == "data/output/pipeline_loss_summary.parquet"
 
 
 def test_selected_analyses_is_first_class() -> None:
@@ -85,7 +85,7 @@ def test_selected_analyses_seed_template_exists_with_canonical_header() -> None:
     assert selected_analyses.read_text(encoding="utf-8") == "vendor,analysis_id\n"
 
 
-def test_pipeline2_yaml_columns_are_explicit_and_described() -> None:
+def test_pipeline_yaml_columns_are_explicit_and_described() -> None:
     datasets = _load_raw_schema()["datasets"]
 
     for name, spec in datasets.items():

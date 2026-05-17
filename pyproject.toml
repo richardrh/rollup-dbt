@@ -1,7 +1,7 @@
 [project]
 name = "retail-rollup-dbt"
 version = "0.1.0"
-description = "Clean pipeline2 Polars DAG with dbt-style model folders."
+description = "Clean pipeline Polars DAG with dbt-style model folders."
 requires-python = "==3.13.*"
 dependencies = [
     "argcomplete>=3.0",

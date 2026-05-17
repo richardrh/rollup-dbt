@@ -3,17 +3,17 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from rollup.pipeline2_schema import (
+from rollup.pipeline_schema import (
     DEFAULT_SCHEMA_PATHS,
-    Pipeline2SchemaError,
-    load_pipeline2_schema,
+    PipelineSchemaError,
+    load_pipeline_schema,
     polars_dtype,
     validate_columns,
 )
 
 
-def test_pipeline2_schema_loads_and_maps_dtypes() -> None:
-    schema = load_pipeline2_schema()
+def test_pipeline_schema_loads_and_maps_dtypes() -> None:
+    schema = load_pipeline_schema()
     spec = schema.dataset("mart_loss_summary")
 
     assert schema.version == 1
@@ -28,8 +28,8 @@ def test_pipeline2_schema_loads_and_maps_dtypes() -> None:
     })
 
 
-def test_pipeline2_validation_accepts_optional_missing_columns() -> None:
-    schema = load_pipeline2_schema()
+def test_pipeline_validation_accepts_optional_missing_columns() -> None:
+    schema = load_pipeline_schema()
     spec = schema.dataset("analyses")
     frame = pl.DataFrame(
         {
@@ -49,20 +49,20 @@ def test_pipeline2_validation_accepts_optional_missing_columns() -> None:
     validate_columns(frame, spec)
 
 
-def test_pipeline2_validation_rejects_missing_required_columns() -> None:
-    schema = load_pipeline2_schema()
+def test_pipeline_validation_rejects_missing_required_columns() -> None:
+    schema = load_pipeline_schema()
     spec = schema.dataset("mart_loss_summary")
     frame = pl.DataFrame(
         {"vendor": ["verisk"], "analysis_id": ["100"], "event_count": [1]},
         schema={"vendor": pl.String, "analysis_id": pl.String, "event_count": pl.UInt32},
     )
 
-    with pytest.raises(Pipeline2SchemaError, match="missing columns"):
+    with pytest.raises(PipelineSchemaError, match="missing columns"):
         validate_columns(frame, spec)
 
 
-def test_pipeline2_validation_rejects_extra_columns_when_strict() -> None:
-    schema = load_pipeline2_schema()
+def test_pipeline_validation_rejects_extra_columns_when_strict() -> None:
+    schema = load_pipeline_schema()
     spec = schema.dataset("mart_loss_summary")
     frame = pl.DataFrame(
         {
@@ -81,12 +81,12 @@ def test_pipeline2_validation_rejects_extra_columns_when_strict() -> None:
         },
     )
 
-    with pytest.raises(Pipeline2SchemaError, match="unexpected columns"):
+    with pytest.raises(PipelineSchemaError, match="unexpected columns"):
         validate_columns(frame, spec, strict=True)
 
 
-def test_pipeline2_validation_rejects_dtype_mismatches() -> None:
-    schema = load_pipeline2_schema()
+def test_pipeline_validation_rejects_dtype_mismatches() -> None:
+    schema = load_pipeline_schema()
     spec = schema.dataset("mart_loss_summary")
     frame = pl.DataFrame(
         {
@@ -103,5 +103,5 @@ def test_pipeline2_validation_rejects_dtype_mismatches() -> None:
         },
     )
 
-    with pytest.raises(Pipeline2SchemaError, match="dtype mismatches"):
+    with pytest.raises(PipelineSchemaError, match="dtype mismatches"):
         validate_columns(frame.lazy(), spec)

@@ -1,4 +1,4 @@
-"""Orchestration for the isolated, schema-driven pipeline2 Polars flow."""
+"""Orchestration for the isolated, schema-driven pipeline Polars flow."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup.intermediate.pipeline2 import select_losses
-from rollup.marts.pipeline2 import summarize_losses
-from rollup.pipeline2_schema import (
+from rollup.intermediate.pipeline import select_losses
+from rollup.marts.pipeline import summarize_losses
+from rollup.pipeline_schema import (
     DatasetSpec,
-    Pipeline2Schema,
-    Pipeline2SchemaError,
-    load_pipeline2_schema,
+    PipelineSchema,
+    PipelineSchemaError,
+    load_pipeline_schema,
     validate_columns,
 )
-from rollup.staging.pipeline2 import build_normalized_ylt, stage_selected_analyses
+from rollup.staging.pipeline import build_normalized_ylt, stage_selected_analyses
 
 
 @dataclass(frozen=True)
-class Pipeline2Sources:
+class PipelineSources:
     """Source LazyFrames after YAML-backed column validation."""
 
     selected_analyses: pl.LazyFrame
@@ -29,35 +29,35 @@ class Pipeline2Sources:
 
 
 @dataclass(frozen=True)
-class Pipeline2Staging:
-    """Staging models for the initial pipeline2 flow."""
+class PipelineStaging:
+    """Staging models for the initial pipeline flow."""
 
     selected_analyses: pl.LazyFrame
     normalized_ylt: pl.LazyFrame
 
 
 @dataclass(frozen=True)
-class Pipeline2Intermediate:
-    """Intermediate models for the initial pipeline2 flow."""
+class PipelineIntermediate:
+    """Intermediate models for the initial pipeline flow."""
 
     selected_losses: pl.LazyFrame
 
 
 @dataclass(frozen=True)
-class Pipeline2Marts:
-    """Mart models for the initial pipeline2 flow."""
+class PipelineMarts:
+    """Mart models for the initial pipeline flow."""
 
     loss_summary: pl.LazyFrame
 
 
 @dataclass(frozen=True)
-class Pipeline2Models:
-    """All models produced by the small linear pipeline2 DAG."""
+class PipelineModels:
+    """All models produced by the small linear pipeline DAG."""
 
-    sources: Pipeline2Sources
-    staging: Pipeline2Staging
-    intermediate: Pipeline2Intermediate
-    marts: Pipeline2Marts
+    sources: PipelineSources
+    staging: PipelineStaging
+    intermediate: PipelineIntermediate
+    marts: PipelineMarts
 
 
 def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.LazyFrame:
@@ -69,13 +69,13 @@ def load_dataset(spec: DatasetSpec, *, root: Path | str = Path.cwd()) -> pl.Lazy
     elif spec.glob is not None:
         frame = _scan_glob(root_path, spec)
     else:
-        raise Pipeline2SchemaError(f"{spec.name}: expected path or glob")
+        raise PipelineSchemaError(f"{spec.name}: expected path or glob")
 
     validate_columns(frame, spec, strict=True)
     return frame
 
 
-def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
+def selected_analyses_spec(schema: PipelineSchema, *, root: Path | str = Path.cwd()) -> DatasetSpec:
     """Return the required selected analysis allow-list spec."""
 
     root_path = Path(root)
@@ -83,17 +83,17 @@ def selected_analyses_spec(schema: Pipeline2Schema, *, root: Path | str = Path.c
     if selected.path is not None and (root_path / selected.path).exists():
         return selected
 
-    raise Pipeline2SchemaError("selected_analyses is required")
+    raise PipelineSchemaError("selected_analyses is required")
 
 
 def build_sources(
     *,
     root: Path | str = Path.cwd(),
-    schema: Pipeline2Schema | None = None,
-) -> Pipeline2Sources:
-    """Load and validate the source frames needed by the initial pipeline2 flow."""
+    schema: PipelineSchema | None = None,
+) -> PipelineSources:
+    """Load and validate the source frames needed by the initial pipeline flow."""
 
-    loaded_schema = schema or load_pipeline2_schema()
+    loaded_schema = schema or load_pipeline_schema()
     selected_spec = selected_analyses_spec(loaded_schema, root=root)
     selected = load_dataset(selected_spec, root=root)
     validate_columns(selected, loaded_schema.dataset("stg_selected_analyses"), strict=True)
@@ -102,18 +102,18 @@ def build_sources(
         load_dataset(loaded_schema.dataset("raw_risklink_ylt"), root=root),
         load_dataset(loaded_schema.dataset("raw_verisk_ylt"), root=root),
     )
-    return Pipeline2Sources(selected_analyses=selected, raw_ylt=raw_ylt)
+    return PipelineSources(selected_analyses=selected, raw_ylt=raw_ylt)
 
 
-def preflight_pipeline2_boundary(sources: Pipeline2Sources, schema: Pipeline2Schema) -> None:
-    """Validate source contracts before any pipeline2 transformations run."""
+def preflight_pipeline_boundary(sources: PipelineSources, schema: PipelineSchema) -> None:
+    """Validate source contracts before any pipeline transformations run."""
 
     validate_columns(sources.selected_analyses, schema.dataset("stg_selected_analyses"), strict=True)
     validate_columns(sources.raw_ylt[0], schema.dataset("raw_risklink_ylt"), strict=True)
     validate_columns(sources.raw_ylt[1], schema.dataset("raw_verisk_ylt"), strict=True)
 
 
-def build_staging(sources: Pipeline2Sources, schema: Pipeline2Schema) -> Pipeline2Staging:
+def build_staging(sources: PipelineSources, schema: PipelineSchema) -> PipelineStaging:
     """Build staging models from already-validated source frames."""
 
     risklink, verisk = sources.raw_ylt
@@ -121,72 +121,72 @@ def build_staging(sources: Pipeline2Sources, schema: Pipeline2Schema) -> Pipelin
     normalized_ylt = build_normalized_ylt(risklink, verisk)
     validate_columns(selected_analyses, schema.dataset("stg_selected_analyses"), strict=True)
     validate_columns(normalized_ylt, schema.dataset("stg_normalized_ylt"), strict=True)
-    return Pipeline2Staging(selected_analyses=selected_analyses, normalized_ylt=normalized_ylt)
+    return PipelineStaging(selected_analyses=selected_analyses, normalized_ylt=normalized_ylt)
 
 
 def build_intermediate(
-    sources: Pipeline2Sources,
-    staging: Pipeline2Staging,
-    schema: Pipeline2Schema,
-) -> Pipeline2Intermediate:
+    sources: PipelineSources,
+    staging: PipelineStaging,
+    schema: PipelineSchema,
+) -> PipelineIntermediate:
     """Filter staged losses to the selected analysis allow-list."""
 
     selected_losses = select_losses(staging.normalized_ylt, staging.selected_analyses)
     validate_columns(selected_losses, schema.dataset("int_selected_losses"), strict=True)
-    return Pipeline2Intermediate(selected_losses=selected_losses)
+    return PipelineIntermediate(selected_losses=selected_losses)
 
 
-def build_marts(intermediate: Pipeline2Intermediate, schema: Pipeline2Schema) -> Pipeline2Marts:
-    """Build the initial pipeline2 mart output."""
+def build_marts(intermediate: PipelineIntermediate, schema: PipelineSchema) -> PipelineMarts:
+    """Build the initial pipeline mart output."""
 
     loss_summary = summarize_losses(intermediate.selected_losses)
     validate_columns(loss_summary, schema.dataset("mart_loss_summary"), strict=True)
-    return Pipeline2Marts(loss_summary=loss_summary)
+    return PipelineMarts(loss_summary=loss_summary)
 
 
-def build_pipeline2(
+def build_pipeline(
     *,
     root: Path | str = Path.cwd(),
-    schema: Pipeline2Schema | None = None,
-) -> Pipeline2Models:
-    """Build the full initial pipeline2 DAG without collecting it."""
+    schema: PipelineSchema | None = None,
+) -> PipelineModels:
+    """Build the full initial pipeline DAG without collecting it."""
 
-    loaded_schema = schema or load_pipeline2_schema()
+    loaded_schema = schema or load_pipeline_schema()
     sources = build_sources(root=root, schema=loaded_schema)
-    preflight_pipeline2_boundary(sources, loaded_schema)
+    preflight_pipeline_boundary(sources, loaded_schema)
     staging = build_staging(sources, loaded_schema)
     intermediate = build_intermediate(sources, staging, loaded_schema)
     marts = build_marts(intermediate, loaded_schema)
-    return Pipeline2Models(sources=sources, staging=staging, intermediate=intermediate, marts=marts)
+    return PipelineModels(sources=sources, staging=staging, intermediate=intermediate, marts=marts)
 
 
 def collect_loss_summary(
     *,
     root: Path | str = Path.cwd(),
-    schema: Pipeline2Schema | None = None,
+    schema: PipelineSchema | None = None,
 ) -> pl.DataFrame:
-    """Run the initial pipeline2 flow and collect the loss summary mart."""
+    """Run the initial pipeline flow and collect the loss summary mart."""
 
-    return build_pipeline2(root=root, schema=schema).marts.loss_summary.collect()
+    return build_pipeline(root=root, schema=schema).marts.loss_summary.collect()
 
 
 def _scan_path(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
     if not path.exists():
-        raise Pipeline2SchemaError(f"{spec.name}: path does not exist: {path}")
+        raise PipelineSchemaError(f"{spec.name}: path does not exist: {path}")
     return _scan_file(path, spec)
 
 
 def _scan_glob(root: Path, spec: DatasetSpec) -> pl.LazyFrame:
     if spec.glob is None:
-        raise Pipeline2SchemaError(f"{spec.name}: glob is required")
+        raise PipelineSchemaError(f"{spec.name}: glob is required")
     paths = sorted(glob(str(root / spec.glob)))
     if not paths:
-        raise Pipeline2SchemaError(f"{spec.name}: glob matched no files: {spec.glob}")
+        raise PipelineSchemaError(f"{spec.name}: glob matched no files: {spec.glob}")
     if spec.format == "parquet":
         return pl.scan_parquet(paths)
     if spec.format == "csv":
         return pl.scan_csv(paths, schema_overrides=spec.pl_schema, try_parse_dates=True)
-    raise Pipeline2SchemaError(f"{spec.name}: unsupported scan format: {spec.format}")
+    raise PipelineSchemaError(f"{spec.name}: unsupported scan format: {spec.format}")
 
 
 def _scan_file(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
@@ -194,4 +194,4 @@ def _scan_file(path: Path, spec: DatasetSpec) -> pl.LazyFrame:
         return pl.scan_parquet(path)
     if spec.format == "csv":
         return pl.scan_csv(path, schema_overrides=spec.pl_schema, try_parse_dates=True)
-    raise Pipeline2SchemaError(f"{spec.name}: unsupported scan format: {spec.format}")
+    raise PipelineSchemaError(f"{spec.name}: unsupported scan format: {spec.format}")

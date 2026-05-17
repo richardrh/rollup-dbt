@@ -1,5 +1,5 @@
 version: 1
-description: Pipeline2 seed dataset contracts colocated with seed inputs.
+description: Pipeline seed dataset contracts colocated with seed inputs.
 
 datasets:
   lobs:
@@ -49,7 +49,7 @@ datasets:
     format: csv
     required: true
     status: first_class
-    description: First-class pipeline2 allow-list of vendor analysis IDs selected for a run.
+    description: First-class pipeline allow-list of vendor analysis IDs selected for a run.
     columns:
       - {name: vendor, dtype: string, required: true, description: Vendor name.}
       - {name: analysis_id, dtype: string, required: true, description: Selected vendor-native analysis identifier.}

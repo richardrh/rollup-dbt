@@ -6,8 +6,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_pipeline2_dbt_model_folders_are_clean() -> None:
-    expected_files = {"__init__.py", "pipeline2.py"}
+def test_pipeline_dbt_model_folders_are_clean() -> None:
+    expected_files = {"__init__.py", "pipeline.py"}
 
     for relative in (
         "polars/rollup/staging",
@@ -21,7 +21,6 @@ def test_pipeline2_dbt_model_folders_are_clean() -> None:
 
 def test_legacy_rollup_runtime_modules_are_absent() -> None:
     absent_paths = (
-        "polars/rollup/pipeline.py",
         "polars/rollup/schemas",
         "polars/rollup/seeds.py",
         "polars/rollup/config.py",
@@ -38,13 +37,13 @@ def test_legacy_rollup_runtime_modules_are_absent() -> None:
     assert [path for path in absent_paths if (REPO_ROOT / path).exists()] == []
 
 
-def test_reduced_test_suite_contains_only_pipeline2_tests() -> None:
+def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
     expected_tests = {
         "__init__.py",
-        "test_clean_pipeline2_layout.py",
-        "test_pipeline2.py",
-        "test_pipeline2_schema.py",
-        "test_pipeline2_schema_yaml.py",
+        "test_clean_pipeline_layout.py",
+        "test_pipeline.py",
+        "test_pipeline_schema.py",
+        "test_pipeline_schema_yaml.py",
     }
 
     tests_dir = REPO_ROOT / "polars" / "tests"
@@ -52,7 +51,7 @@ def test_reduced_test_suite_contains_only_pipeline2_tests() -> None:
     assert {path.name for path in tests_dir.iterdir() if path.name != "__pycache__"} == expected_tests
 
 
-def test_legacy_docs_are_absent_and_pipeline2_docs_remain() -> None:
+def test_legacy_docs_are_absent_and_pipeline_docs_remain() -> None:
     assert (REPO_ROOT / "polars" / "README.md").is_file()
     assert (REPO_ROOT / "docs" / "index.md").is_file()
     assert {path.name for path in (REPO_ROOT / "docs").iterdir()} == {"index.md"}
