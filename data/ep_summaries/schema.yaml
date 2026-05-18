@@ -9,10 +9,40 @@ datasets:
     required: false
     description: Optional canonical long EP summary input for review or blending derivation.
     columns:
-      - {name: vendor, dtype: string, required: true, description: Vendor name.}
-      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
-      - {name: lob, dtype: string, required: true, description: LOB label.}
-      - {name: region_peril, dtype: string, required: true, description: Region/peril label.}
-      - {name: ep_type, dtype: string, required: true, description: EP type such as AEP or OEP.}
-      - {name: return_period, dtype: int64, required: true, description: Return period.}
-      - {name: loss, dtype: float64, required: true, description: EP loss.}
+      - {
+          name: vendor,
+          dtype: string,
+          required: true,
+          description: Vendor name.,
+        }
+      - {
+          name: analysis_id,
+          dtype: string,
+          required: true,
+          description: Vendor-native analysis identifier.,
+        }
+      - {
+          name: modelled_lob,
+          dtype: string,
+          required: true,
+          description: LOB label.,
+        }
+      - {
+          name: modelled_peril,
+          dtype: string,
+          required: true,
+          description: Region/peril label.,
+        }
+      - {
+          name: ep_type,
+          dtype: string,
+          required: true,
+          description: EP type such as AEP or OEP.,
+        }
+      - {
+          name: return_period,
+          dtype: int64,
+          required: true,
+          description: Return period.,
+        }
+      - { name: loss, dtype: float64, required: true, description: EP loss. }

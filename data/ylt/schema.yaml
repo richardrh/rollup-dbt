@@ -9,17 +9,72 @@ datasets:
     required: true
     description: Raw AIR/Verisk YLT parquet exports with vendor wire column names.
     columns:
-      - {name: Analysis, dtype: string, required: true, description: Verisk analysis label/id.}
-      - {name: ExposureAttribute, dtype: string, required: true, description: Verisk LOB label.}
-      - {name: CatalogTypeCode, dtype: string, required: true, description: Verisk catalog type.}
-      - {name: EventID, dtype: int64, required: true, description: Event identifier.}
-      - {name: ModelCode, dtype: int64, required: true, description: Model code.}
-      - {name: YearID, dtype: int64, required: true, description: Simulation year.}
-      - {name: PerilSetCode, dtype: int64, required: true, description: Verisk peril set code.}
-      - {name: GroundUpLoss, dtype: float64, required: true, description: Ground-up loss.}
-      - {name: GrossLoss, dtype: float64, required: true, description: Gross loss.}
-      - {name: NetOfPreCatLoss, dtype: float64, required: true, description: Net pre-cat loss.}
-      - {name: filename, dtype: string, required: true, description: Source file name.}
+      - {
+          name: Analysis,
+          dtype: string,
+          required: true,
+          description: Verisk analysis label/id.,
+        }
+      - {
+          name: ExposureAttribute,
+          dtype: string,
+          required: true,
+          description: Verisk LOB label.,
+        }
+      - {
+          name: CatalogTypeCode,
+          dtype: string,
+          required: true,
+          description: Verisk catalog type.,
+        }
+      - {
+          name: EventID,
+          dtype: int64,
+          required: true,
+          description: Event identifier.,
+        }
+      - {
+          name: ModelCode,
+          dtype: int64,
+          required: true,
+          description: Model code.,
+        }
+      - {
+          name: YearID,
+          dtype: int64,
+          required: true,
+          description: Simulation year.,
+        }
+      - {
+          name: PerilSetCode,
+          dtype: int64,
+          required: true,
+          description: Verisk peril set code.,
+        }
+      - {
+          name: GroundUpLoss,
+          dtype: float64,
+          required: true,
+          description: Ground-up loss.,
+        }
+      - {
+          name: GrossLoss,
+          dtype: float64,
+          required: true,
+          description: Gross loss.,
+        }
+      - {
+          name: NetOfPreCatLoss,
+          dtype: float64,
+          required: true,
+          description: Net pre-cat loss.,
+        }
+      - {
+          name: filename,
+          dtype: string,
+          required: true,
+          description: Source file name.,
+        }
 
   raw_risklink_ylt:
     role: source
@@ -28,14 +83,49 @@ datasets:
     required: true
     description: Raw RMS/RiskLink YLT parquet exports with vendor wire column names.
     columns:
-      - {name: yearid, dtype: int64, required: true, description: Simulation year.}
-      - {name: eventid, dtype: int64, required: true, description: Event identifier.}
-      - {name: p_value, dtype: float64, required: true, description: Probability value.}
-      - {name: anlsid, dtype: int64, required: true, description: RiskLink analysis identifier.}
-      - {name: meanloss, dtype: float64, required: true, description: Mean loss.}
-      - {name: stddev, dtype: float64, required: true, description: Standard deviation.}
-      - {name: expvalue, dtype: float64, required: true, description: Expected value.}
-      - {name: loss, dtype: float64, required: true, description: Loss.}
+      - {
+          name: yearid,
+          dtype: int64,
+          required: true,
+          description: Simulation year.,
+        }
+      - {
+          name: eventid,
+          dtype: int64,
+          required: true,
+          description: Event identifier.,
+        }
+      - {
+          name: p_value,
+          dtype: float64,
+          required: true,
+          description: Probability value.,
+        }
+      - {
+          name: anlsid,
+          dtype: int64,
+          required: true,
+          description: RiskLink analysis identifier.,
+        }
+      - {
+          name: meanloss,
+          dtype: float64,
+          required: true,
+          description: Mean loss.,
+        }
+      - {
+          name: stddev,
+          dtype: float64,
+          required: true,
+          description: Standard deviation.,
+        }
+      - {
+          name: expvalue,
+          dtype: float64,
+          required: true,
+          description: Expected value.,
+        }
+      - { name: loss, dtype: float64, required: true, description: Loss. }
 
   stg_normalized_ylt:
     role: staging
@@ -43,11 +133,48 @@ datasets:
     required: true
     description: Minimal canonical YLT shape used by initial pipeline flow.
     columns:
-      - {name: vendor, dtype: string, required: true, description: Vendor name.}
-      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
-      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
-      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
-      - {name: loss, dtype: float64, required: true, description: Ground-up or normalized loss.}
+      - {
+          name: vendor,
+          dtype: string,
+          required: true,
+          description: Vendor name.,
+        }
+      - {
+          name: analysis_id,
+          dtype: string,
+          required: true,
+          description: Vendor-native analysis identifier.,
+        }
+      - {
+          name: modelled_lob,
+          dtype: string,
+          required: true,
+          description: Vendor-native analysis identifier.,
+        }
+      - {
+          name: modelled_peril,
+          dtype: string,
+          required: true,
+          description: Vendor-native analysis identifier.,
+        }
+      - {
+          name: year_id,
+          dtype: int64,
+          required: true,
+          description: Simulation year.,
+        }
+      - {
+          name: event_id,
+          dtype: int64,
+          required: true,
+          description: Event identifier.,
+        }
+      - {
+          name: loss,
+          dtype: float64,
+          required: true,
+          description: Ground-up or normalized loss.,
+        }
 
   int_selected_losses:
     role: intermediate
@@ -55,8 +182,33 @@ datasets:
     required: true
     description: Normalized YLT rows filtered to selected analyses.
     columns:
-      - {name: vendor, dtype: string, required: true, description: Vendor name.}
-      - {name: analysis_id, dtype: string, required: true, description: Vendor-native analysis identifier.}
-      - {name: year_id, dtype: int64, required: true, description: Simulation year.}
-      - {name: event_id, dtype: int64, required: true, description: Event identifier.}
-      - {name: loss, dtype: float64, required: true, description: Selected loss.}
+      - {
+          name: vendor,
+          dtype: string,
+          required: true,
+          description: Vendor name.,
+        }
+      - {
+          name: analysis_id,
+          dtype: string,
+          required: true,
+          description: Vendor-native analysis identifier.,
+        }
+      - {
+          name: year_id,
+          dtype: int64,
+          required: true,
+          description: Simulation year.,
+        }
+      - {
+          name: event_id,
+          dtype: int64,
+          required: true,
+          description: Event identifier.,
+        }
+      - {
+          name: loss,
+          dtype: float64,
+          required: true,
+          description: Selected loss.,
+        }

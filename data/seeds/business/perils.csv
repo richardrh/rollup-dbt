@@ -1,6 +1,27 @@
-peril_id,name,region,peril_family
-1,Europe Earthquake,EU,EQ
-2,Europe Flood,EU,FL
-3,Europe Winter Storm,EU,WS
-4,UK Flood,UK,FL
-5,UK Winter Storm,UK,WS
+modelled_peril,rollup_peril,region,peril,region_peril_id
+BE FL,Belgium_FL,Belgium,FL,216
+DE FL,Germany_FL,Germany,FL,216
+EU_EQ,Europe_EQ,Europe,EQ,205
+EU_FL,Europe_FL,Europe,FL,216
+EU_WS,Europe_WS,Europe,WS,206
+EU_WS_GCAdj,Europe_WS,Europe,WS,206
+EU FL HD,Europe_FL,Europe,FL,216
+EUxESGB EQ,Europe_EQ,Europe,EQ,205
+EUxESGB EQ Adj,Europe_EQ,Europe,EQ,205
+EUxGB WS,Europe_WS,Europe,WS,206
+EUxGB WS (FlrArea),Europe_WS,Europe,WS,206
+EUxGB WS CVV,Europe_WS,Europe,WS,206
+EUxGB WS CVV (FlrArea),Europe_WS,Europe,WS,206
+GB FL,UK_FL,UK,FL,217
+GB FL HD,UK_FL,UK,FL,217
+GB_FL_wPLA,UK_FL,UK,FL,217
+GB WSSS,UK_WS,UK,WS,206
+GB WSSS (FlrArea),UK_WS,UK,WS,206
+GB WSSS CVV,UK_WS,UK,WS,206
+GB WSSS CVV (FlrArea),UK_WS,UK,WS,206
+GB_WSSS_wPLA,UK_WS,UK,WS,206
+GB_WSSS_wPLA_CVV,UK_WS,UK,WS,206
+UK_FL,UK_FL,UK,FL,217
+UKFL_HD_V2.1_wPLA,UK_FL,UK,FL,217
+UK_WSSS,UK_WS,UK,WS,206
+UK_WSSS_GCAdj,UK_WS,UK,WS,206
