@@ -5,6 +5,7 @@ from pathlib import Path
 
 import polars as pl
 
+from rollup.analysis import write_ep_report
 from rollup.pipeline import (
     load_validated_ep_summary_frames,
     load_validated_seed_frames,
@@ -27,6 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "validate",
         help="Validate configured inputs and print a validation report.",
+    )
+
+    subcommands.add_parser(
+        "analyze",
+        aliases=["analyse"],
+        help="Build EP analysis CSV from pipeline outputs.",
     )
 
     run_parser = subcommands.add_parser(
@@ -89,6 +96,12 @@ def run_command(data_root: Path, *, debug: bool = False) -> int:
     return 0
 
 
+def analyze_command(data_root: Path) -> int:
+    output_path = write_ep_report(data_root)
+    print(f"Analysis report written to {output_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -98,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         return validate_command(data_root)
     if args.command == "run":
         return run_command(data_root, debug=args.debug)
+    if args.command in {"analyze", "analyse"}:
+        return analyze_command(data_root)
 
     parser.error(f"unknown command: {args.command}")
     return 2
