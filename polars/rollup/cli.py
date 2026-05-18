@@ -8,6 +8,7 @@ import sys
 import polars as pl
 
 from rollup.analysis import write_ep_report
+from rollup.ep_summary_generator import generate_ep_summaries
 from rollup.pipeline import (
     load_validated_ep_summary_frames,
     load_validated_seed_frames,
@@ -42,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
         "analyze",
         aliases=["analyse"],
         help="Build EP analysis CSV from pipeline outputs.",
+    )
+
+    subcommands.add_parser(
+        "generate-ep-summaries",
+        help="Generate canonical long EP summary CSVs from source XLSX files.",
     )
 
     run_parser = subcommands.add_parser(
@@ -116,6 +122,13 @@ def analyze_command(data_root: Path) -> int:
     return 0
 
 
+def generate_ep_summaries_command(data_root: Path) -> int:
+    output_paths = generate_ep_summaries(data_root)
+    for output_path in output_paths:
+        print(f"EP summary written to {output_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -128,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_command(data_root, debug=args.debug)
     if args.command in {"analyze", "analyse"}:
         return analyze_command(data_root)
+    if args.command == "generate-ep-summaries":
+        return generate_ep_summaries_command(data_root)
 
     parser.error(f"unknown command: {args.command}")
     return 2

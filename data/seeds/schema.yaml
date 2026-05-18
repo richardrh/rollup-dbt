@@ -95,6 +95,12 @@ datasets:
           required: true,
           description: Main blending factor RegionPerilID.,
         }
+      - {
+          name: selection_priority,
+          dtype: int64,
+          required: true,
+          description: Priority for selecting one modelled peril per vendor, rollup LOB, and rollup peril. Lower values win; 99 means fallback.,
+        }
 
   blending_weights:
     role: source

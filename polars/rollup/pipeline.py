@@ -560,121 +560,14 @@ def stage_ep_summaries(
         "region",
         "peril",
         Col.region_peril_id,
+        Col.selection_priority,
     )
 
     enriched = (
         ep_summaries.frame.join(lobs, on=Col.modelled_lob, how="left")
         .join(perils, on=Col.modelled_peril, how="left")
+        .with_columns(pl.col(Col.selection_priority).fill_null(99))
     )
-
-    priority = (
-        pl.when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_EQ")
-            & (pl.col(Col.modelled_peril) == "EUxESGB EQ Adj")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_EQ")
-            & (pl.col(Col.modelled_peril) == "EUxESGB EQ")
-        )
-        .then(2)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EUxGB WS CVV (FlrArea)")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EUxGB WS CVV")
-        )
-        .then(2)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EUxGB WS (FlrArea)")
-        )
-        .then(3)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EUxGB WS")
-        )
-        .then(4)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "GB WSSS CVV (FlrArea)")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "GB WSSS CVV")
-        )
-        .then(2)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "GB WSSS (FlrArea)")
-        )
-        .then(3)
-        .when(
-            (pl.col(Col.vendor) == "risklink")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "GB WSSS")
-        )
-        .then(4)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "Europe_EQ")
-            & (pl.col(Col.modelled_peril) == "EU_EQ")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "Europe_FL")
-            & (pl.col(Col.modelled_peril) == "EU_FL")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EU_WS_GCAdj")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "Europe_WS")
-            & (pl.col(Col.modelled_peril) == "EU_WS")
-        )
-        .then(2)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "UK_FL")
-            & (pl.col(Col.modelled_peril) == "UK_FL")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "UK_WSSS_GCAdj")
-        )
-        .then(1)
-        .when(
-            (pl.col(Col.vendor) == "verisk")
-            & (pl.col(Col.rollup_peril) == "UK_WS")
-            & (pl.col(Col.modelled_peril) == "UK_WSSS")
-        )
-        .then(2)
-        .otherwise(100)
-        .alias(Col.selection_priority)
-    )
-
-    enriched = enriched.with_columns(priority)
     selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
     selected_candidates = enriched.select(
         *selection_keys,

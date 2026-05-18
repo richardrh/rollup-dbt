@@ -30,7 +30,4 @@ polars/tests/data/
 jan-rollup/combined_table
 
 # Generated artefacts (regenerable via CLI subcommands)
-data/ep_summaries/*/*.long.csv
-data/ylt/risklink/_unused/
-data/ylt/risklink/*synthetic.csv
 /data/output

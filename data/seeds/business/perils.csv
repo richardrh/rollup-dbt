@@ -1,27 +1,27 @@
-modelled_peril,rollup_peril,region,peril,region_peril_id
-BE FL,Belgium_FL,Belgium,FL,216
-DE FL,Germany_FL,Germany,FL,216
-EU_EQ,Europe_EQ,Europe,EQ,205
-EU_FL,Europe_FL,Europe,FL,216
-EU_WS,Europe_WS,Europe,WS,206
-EU_WS_GCAdj,Europe_WS,Europe,WS,206
-EU FL HD,Europe_FL,Europe,FL,216
-EUxESGB EQ,Europe_EQ,Europe,EQ,205
-EUxESGB EQ Adj,Europe_EQ,Europe,EQ,205
-EUxGB WS,Europe_WS,Europe,WS,206
-EUxGB WS (FlrArea),Europe_WS,Europe,WS,206
-EUxGB WS CVV,Europe_WS,Europe,WS,206
-EUxGB WS CVV (FlrArea),Europe_WS,Europe,WS,206
-GB FL,UK_FL,UK,FL,217
-GB FL HD,UK_FL,UK,FL,217
-GB_FL_wPLA,UK_FL,UK,FL,217
-GB WSSS,UK_WS,UK,WS,206
-GB WSSS (FlrArea),UK_WS,UK,WS,206
-GB WSSS CVV,UK_WS,UK,WS,206
-GB WSSS CVV (FlrArea),UK_WS,UK,WS,206
-GB_WSSS_wPLA,UK_WS,UK,WS,206
-GB_WSSS_wPLA_CVV,UK_WS,UK,WS,206
-UK_FL,UK_FL,UK,FL,217
-UKFL_HD_V2.1_wPLA,UK_FL,UK,FL,217
-UK_WSSS,UK_WS,UK,WS,206
-UK_WSSS_GCAdj,UK_WS,UK,WS,206
+modelled_peril,rollup_peril,region,peril,region_peril_id,selection_priority
+BE FL,Belgium_FL,Belgium,FL,216,99
+DE FL,Germany_FL,Germany,FL,216,99
+EU_EQ,Europe_EQ,Europe,EQ,205,1
+EU_FL,Europe_FL,Europe,FL,216,1
+EU_WS,Europe_WS,Europe,WS,206,2
+EU_WS_GCAdj,Europe_WS,Europe,WS,206,1
+EU FL HD,Europe_FL,Europe,FL,216,99
+EUxESGB EQ,Europe_EQ,Europe,EQ,205,2
+EUxESGB EQ Adj,Europe_EQ,Europe,EQ,205,1
+EUxGB WS,Europe_WS,Europe,WS,206,4
+EUxGB WS (FlrArea),Europe_WS,Europe,WS,206,3
+EUxGB WS CVV,Europe_WS,Europe,WS,206,2
+EUxGB WS CVV (FlrArea),Europe_WS,Europe,WS,206,1
+GB FL,UK_FL,UK,FL,217,99
+GB FL HD,UK_FL,UK,FL,217,99
+GB_FL_wPLA,UK_FL,UK,FL,217,99
+GB WSSS,UK_WS,UK,WS,206,4
+GB WSSS (FlrArea),UK_WS,UK,WS,206,3
+GB WSSS CVV,UK_WS,UK,WS,206,2
+GB WSSS CVV (FlrArea),UK_WS,UK,WS,206,1
+GB_WSSS_wPLA,UK_WS,UK,WS,206,99
+GB_WSSS_wPLA_CVV,UK_WS,UK,WS,206,99
+UK_FL,UK_FL,UK,FL,217,1
+UKFL_HD_V2.1_wPLA,UK_FL,UK,FL,217,99
+UK_WSSS,UK_WS,UK,WS,206,2
+UK_WSSS_GCAdj,UK_WS,UK,WS,206,1
