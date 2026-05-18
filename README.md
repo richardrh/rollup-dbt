@@ -5,7 +5,7 @@ Polars. The active orchestration is in `polars/rollup/pipeline.py`; the command
 line interface is in `polars/rollup/cli.py`.
 
 The pipeline reads seed CSVs, vendor YLT parquet files, and canonical EP summary
-CSVs, then writes Hiscox fanout parquet files for downstream consumers.
+CSVs, then writes mart parquet outputs for downstream consumers on every run.
 
 ## Commands
 
@@ -35,8 +35,8 @@ uv run python -m rollup.cli --data-root data run --debug
 
 ## Input layout
 
-Schemas are declared in colocated `schema.yaml` files and are checked during
-`validate` and before `run`.
+Schemas are declared in colocated `schema.yaml` files. `validate` checks existing
+seed CSVs, YLT parquet files, and EP summary CSVs against those schemas.
 
 ```text
 data/
@@ -96,8 +96,9 @@ data/
 - RiskLink YLTs: parquet under `data/ylt/risklink/*.parquet`, including
   `anlsid`, `yearid`, `eventid`, and `loss`.
 - Validation catalogues: `verisk_events.parquet` maps Verisk event/year/model to
-  model event IDs and event days. `risklink_flood22_model_events.parquet` is used
-  or planned for RiskLink flood event-day lookup from `ModelOccurrenceDate`.
+  model event IDs and event days. RiskLink flood event day is derived from
+  `risklink_flood22_model_events.parquet` using `ModelOccurrenceDate`
+  day-of-year.
 
 ## Pipeline stages
 
@@ -129,6 +130,8 @@ Inspect debug parquet files with DuckDB, for example:
 duckdb -c "SELECT * FROM 'data/output/debug/int_ylt_blending_applied.parquet' LIMIT 10;"
 duckdb -c "SELECT COUNT(*) FROM 'data/output/debug/stg_ep_summaries_selected.parquet';"
 duckdb -c "SELECT vendor, rollup_peril, COUNT(*) AS rows FROM 'data/output/debug/int_ylt_combined_enriched.parquet' GROUP BY vendor, rollup_peril ORDER BY vendor, rollup_peril;"
+duckdb -c "SELECT * FROM 'data/output/debug/mts_event_validation.parquet' LIMIT 20;"
+duckdb -c "SELECT forecast_date, rollup_peril, COUNT(*) AS rows FROM 'data/output/debug/mts_ylt_combined_all_factors.parquet' GROUP BY forecast_date, rollup_peril ORDER BY forecast_date, rollup_peril;"
 ```
 
 ### EP variant selection priorities
@@ -187,7 +190,7 @@ Concrete priorities:
 
 ## Outputs
 
-Non-debug runs write mart fanout parquet files to `data/output/marts/`:
+Every run writes mart outputs. Fanout parquet files go to `data/output/marts/`:
 
 ```text
 HiscoAIR_YYYYMM_main.parquet
@@ -210,12 +213,20 @@ Fanout schema:
 - `ModelEventDay`
 - `LossClassName`
 
+Wide/report parquet files go to `data/output/`:
+
+- `mts_tbl_ylt_combined_all_factors.parquet`
+- `mts_tbl_ylt_dialsup.parquet`
+- `mts_event_validation.parquet`
+
 ## Validation and troubleshooting
 
-- `validate` prints one combined validation report for seeds, YLTs, and EP
-  summaries, plus a YLT loss validation summary.
-- The command exits non-zero if any required input is missing or has schema
-  errors.
+- `validate` checks existing seed CSVs, YLT parquet files, and EP summary CSVs
+  against configured schemas, then prints validation reports.
+- It does not yet prove every schema-declared seed exists, and it does not
+  schema-validate validation parquet catalogues.
+- The command exits non-zero if a checked input has schema errors or a required
+  scanned input area is missing.
 - If a run produces empty outputs, inspect `data/output/debug/` from `run
   --debug`, especially `stg_ep_summaries_selected`, `int_ep_blending_targets`,
   and `int_ylt_blending_applied`.
@@ -225,10 +236,7 @@ Fanout schema:
 
 ## Known limitations and follow-up work
 
+- Validate missing RiskLink event days.
+- Confirm final RiskLink event-day join keys.
 - Validate Verisk and RiskLink event IDs against validation parquet catalogues.
-- Finish RiskLink flood event-day handling from
-  `risklink_flood22_model_events.parquet` using day-of-year from
-  `ModelOccurrenceDate`, joined by `ModelEventID` and `ModelOccurrenceYear`.
-- Generate wide parquet outputs similar to the old
-  `mts_tbl_ylt_combined_all_factors`; DIALSUP may have its own wide parquet.
 - Clean up repetitive `intermediate_frames[...] = ...` wiring.

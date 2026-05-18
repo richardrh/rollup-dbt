@@ -7,6 +7,8 @@ import pandera.polars as pa
 import polars as pl
 import yaml
 
+from rollup.columns import Col, FanoutCol, RawCol
+
 
 _DTYPE_MAP: dict[str, pl.DataType] = {
     "bool": pl.Boolean,
@@ -153,7 +155,7 @@ def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationRe
             row_count = None
 
             if not errors:
-                row_count = file_frame.select(pl.len().alias("row_count")).collect().item()
+                row_count = file_frame.select(pl.len().alias(Col.row_count)).collect().item()
 
             rows.append(
                 {
@@ -178,15 +180,15 @@ def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationRe
 def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
     data_root = Path(data_root)
     vendor_specs = {
-        "verisk": (data_root / "ylt" / "verisk", "GroundUpLoss", 10_000),
-        "risklink": (data_root / "ylt" / "risklink", "loss", 100_000),
+        "verisk": (data_root / "ylt" / "verisk", RawCol.GroundUpLoss, 10_000),
+        "risklink": (data_root / "ylt" / "risklink", RawCol.loss, 100_000),
     }
     rows: list[dict[str, object]] = []
 
     for vendor, (folder, loss_column, divisor) in vendor_specs.items():
         for file_path in sorted(folder.glob("*.parquet")):
             frame = pl.scan_parquet(file_path)
-            loss_sum = frame.select(pl.col(loss_column).sum().alias("loss_sum")).collect().item()
+            loss_sum = frame.select(pl.col(loss_column).sum().alias(Col.loss_sum)).collect().item()
             rows.append(
                 {
                     "vendor": vendor,
@@ -206,11 +208,11 @@ def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
     return pl.scan_parquet(
         Path(data_root) / "seeds" / "validation" / "verisk_events.parquet"
     ).select(
-        pl.col("EventID").alias("model_event_id"),
-        pl.col("ModelID").alias("model_code"),
-        pl.col("Event").alias("event_id"),
-        pl.col("Year").alias("year_id"),
-        pl.col("Day").alias("event_day"),
+        pl.col(RawCol.EventID).alias(Col.model_event_id),
+        pl.col(RawCol.ModelID).alias(Col.model_code),
+        pl.col(RawCol.Event).alias(Col.event_id),
+        pl.col(RawCol.Year).alias(Col.year_id),
+        pl.col(RawCol.Day).alias(Col.event_day),
     )
 
 
@@ -219,15 +221,15 @@ def load_risklink_flood_events(data_root: Path | str = "data") -> pl.LazyFrame:
         pl.scan_parquet(
             Path(data_root) / "seeds" / "validation" / "risklink_flood22_model_events.parquet"
         )
-        .group_by("ModelEventID", "RegionPerilID")
-        .agg(pl.col("ModelOccurrenceDate").min().alias("model_occurrence_date"))
+        .group_by(FanoutCol.ModelEventID, RawCol.RegionPerilID)
+        .agg(pl.col(RawCol.ModelOccurrenceDate).min().alias(Col.model_occurrence_date))
         .select(
-            pl.col("ModelEventID").alias("event_id"),
-            pl.col("RegionPerilID").alias("region_peril_id"),
-            pl.col("model_occurrence_date")
+            pl.col(FanoutCol.ModelEventID).alias(Col.event_id),
+            pl.col(RawCol.RegionPerilID).alias(Col.region_peril_id),
+            pl.col(Col.model_occurrence_date)
             .dt.ordinal_day()
             .cast(pl.Int64)
-            .alias("risklink_event_day"),
+            .alias(Col.risklink_event_day),
         )
     )
 
@@ -266,7 +268,7 @@ def load_validated_ep_summary_frames(
         row_count = None
 
         if not errors:
-            row_count = file_frame.select(pl.len().alias("row_count")).collect().item()
+            row_count = file_frame.select(pl.len().alias(Col.row_count)).collect().item()
 
         rows.append(
             {
@@ -388,26 +390,26 @@ class PipelineRunResult:
 
 
 def normalize_ylt(ylt: YltValidationResult) -> NormalizedYltFrames:
-    verisk = ylt.frames.verisk.filter(pl.col("CatalogTypeCode") == "STC").select(
-        pl.lit("verisk").alias("vendor"),
-        pl.col("Analysis").cast(pl.String).alias("analysis_id"),
-        pl.col("Analysis").cast(pl.String).alias("modelled_peril"),
-        pl.col("ExposureAttribute").cast(pl.String).alias("modelled_lob"),
-        pl.col("ModelCode").cast(pl.Int64).alias("model_code"),
-        pl.col("YearID").cast(pl.Int64).alias("year_id"),
-        pl.col("EventID").cast(pl.Int64).alias("event_id"),
-        pl.col("GroundUpLoss").cast(pl.Float64).alias("loss"),
+    verisk = ylt.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
+        pl.lit("verisk").alias(Col.vendor),
+        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.analysis_id),
+        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
+        pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
+        pl.col(RawCol.ModelCode).cast(pl.Int64).alias(Col.model_code),
+        pl.col(RawCol.YearID).cast(pl.Int64).alias(Col.year_id),
+        pl.col(RawCol.EventID).cast(pl.Int64).alias(Col.event_id),
+        pl.col(RawCol.GroundUpLoss).cast(pl.Float64).alias(Col.loss),
     )
 
     risklink = ylt.frames.risklink.select(
-        pl.lit("risklink").alias("vendor"),
-        pl.col("anlsid").cast(pl.String).alias("analysis_id"),
-        pl.lit(None).cast(pl.String).alias("modelled_peril"),
-        pl.lit(None).cast(pl.String).alias("modelled_lob"),
-        pl.lit(None).cast(pl.Int64).alias("model_code"),
-        pl.col("yearid").cast(pl.Int64).alias("year_id"),
-        pl.col("eventid").cast(pl.Int64).alias("event_id"),
-        pl.col("loss").cast(pl.Float64).alias("loss"),
+        pl.lit("risklink").alias(Col.vendor),
+        pl.col(RawCol.anlsid).cast(pl.String).alias(Col.analysis_id),
+        pl.lit(None).cast(pl.String).alias(Col.modelled_peril),
+        pl.lit(None).cast(pl.String).alias(Col.modelled_lob),
+        pl.lit(None).cast(pl.Int64).alias(Col.model_code),
+        pl.col(RawCol.yearid).cast(pl.Int64).alias(Col.year_id),
+        pl.col(RawCol.eventid).cast(pl.Int64).alias(Col.event_id),
+        pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
     )
 
     return NormalizedYltFrames(verisk=verisk, risklink=risklink)
@@ -420,79 +422,79 @@ def enrich_ylt_with_ep_summaries(
     ep_summary = staged_ep_summaries.selected
 
     verisk_keys = (
-        ep_summary.filter(pl.col("vendor") == "verisk")
+        ep_summary.filter(pl.col(Col.vendor) == "verisk")
         .select(
-            "vendor",
-            "modelled_lob",
-            "modelled_peril",
-            "rollup_lob",
-            "rollup_peril",
-            "region_peril_id",
-            "cds_cat_class_name",
-            "class",
-            "office",
-            "currency",
+            Col.vendor,
+            Col.modelled_lob,
+            Col.modelled_peril,
+            Col.rollup_lob,
+            Col.rollup_peril,
+            Col.region_peril_id,
+            Col.cds_cat_class_name,
+            Col.class_,
+            Col.office,
+            Col.currency,
         )
         .unique()
     )
     verisk = normalized_ylt.verisk.join(
         verisk_keys,
-        on=["vendor", "modelled_lob", "modelled_peril"],
+        on=[Col.vendor, Col.modelled_lob, Col.modelled_peril],
         how="inner",
     ).select(
-        "vendor",
-        "analysis_id",
-        "modelled_lob",
-        "modelled_peril",
-        "rollup_lob",
-        "rollup_peril",
-        "region_peril_id",
-        "cds_cat_class_name",
-        "class",
-        "office",
-        "currency",
-        "model_code",
-        "year_id",
-        "event_id",
-        "loss",
+        Col.vendor,
+        Col.analysis_id,
+        Col.modelled_lob,
+        Col.modelled_peril,
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        Col.cds_cat_class_name,
+        Col.class_,
+        Col.office,
+        Col.currency,
+        Col.model_code,
+        Col.year_id,
+        Col.event_id,
+        Col.loss,
     )
 
     risklink_lookup = (
-        ep_summary.filter(pl.col("vendor") == "risklink")
+        ep_summary.filter(pl.col(Col.vendor) == "risklink")
         .select(
-            "vendor",
-            "analysis_id",
-            "modelled_lob",
-            "modelled_peril",
-            "rollup_lob",
-            "rollup_peril",
-            "region_peril_id",
-            "cds_cat_class_name",
-            "class",
-            "office",
-            "currency",
+            Col.vendor,
+            Col.analysis_id,
+            Col.modelled_lob,
+            Col.modelled_peril,
+            Col.rollup_lob,
+            Col.rollup_peril,
+            Col.region_peril_id,
+            Col.cds_cat_class_name,
+            Col.class_,
+            Col.office,
+            Col.currency,
         )
         .unique()
     )
     risklink = (
-        normalized_ylt.risklink.drop("modelled_lob", "modelled_peril")
-        .join(risklink_lookup, on=["vendor", "analysis_id"], how="inner")
+        normalized_ylt.risklink.drop(Col.modelled_lob, Col.modelled_peril)
+        .join(risklink_lookup, on=[Col.vendor, Col.analysis_id], how="inner")
         .select(
-            "vendor",
-            "analysis_id",
-            "modelled_lob",
-            "modelled_peril",
-            "rollup_lob",
-            "rollup_peril",
-            "region_peril_id",
-            "cds_cat_class_name",
-            "class",
-            "office",
-            "currency",
-            "model_code",
-            "year_id",
-            "event_id",
-            "loss",
+            Col.vendor,
+            Col.analysis_id,
+            Col.modelled_lob,
+            Col.modelled_peril,
+            Col.rollup_lob,
+            Col.rollup_peril,
+            Col.region_peril_id,
+            Col.cds_cat_class_name,
+            Col.class_,
+            Col.office,
+            Col.currency,
+            Col.model_code,
+            Col.year_id,
+            Col.event_id,
+            Col.loss,
         )
     )
 
@@ -506,89 +508,157 @@ def stage_ep_summaries(
     seeds: SeedValidationResult,
 ) -> StagedEpSummaries:
     lobs = seeds.frames["lobs.csv"].lazy().select(
-        "modelled_lob",
-        "rollup_lob",
-        "cds_cat_class_name",
-        "class",
-        "office",
-        "currency",
+        Col.modelled_lob,
+        Col.rollup_lob,
+        Col.cds_cat_class_name,
+        Col.class_,
+        Col.office,
+        Col.currency,
     )
     perils = seeds.frames["perils.csv"].lazy().select(
-        "modelled_peril",
-        "rollup_peril",
+        Col.modelled_peril,
+        Col.rollup_peril,
         "region",
         "peril",
-        "region_peril_id",
+        Col.region_peril_id,
     )
 
     enriched = (
-        ep_summaries.frame.join(lobs, on="modelled_lob", how="left")
-        .join(perils, on="modelled_peril", how="left")
+        ep_summaries.frame.join(lobs, on=Col.modelled_lob, how="left")
+        .join(perils, on=Col.modelled_peril, how="left")
     )
 
     priority = (
-        pl.when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_EQ") & (pl.col("modelled_peril") == "EUxESGB EQ Adj"))
+        pl.when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_EQ")
+            & (pl.col(Col.modelled_peril) == "EUxESGB EQ Adj")
+        )
         .then(1)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_EQ") & (pl.col("modelled_peril") == "EUxESGB EQ"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_EQ")
+            & (pl.col(Col.modelled_peril) == "EUxESGB EQ")
+        )
         .then(2)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EUxGB WS CVV (FlrArea)"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EUxGB WS CVV (FlrArea)")
+        )
         .then(1)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EUxGB WS CVV"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EUxGB WS CVV")
+        )
         .then(2)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EUxGB WS (FlrArea)"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EUxGB WS (FlrArea)")
+        )
         .then(3)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EUxGB WS"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EUxGB WS")
+        )
         .then(4)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "GB WSSS CVV (FlrArea)"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "GB WSSS CVV (FlrArea)")
+        )
         .then(1)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "GB WSSS CVV"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "GB WSSS CVV")
+        )
         .then(2)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "GB WSSS (FlrArea)"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "GB WSSS (FlrArea)")
+        )
         .then(3)
-        .when((pl.col("vendor") == "risklink") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "GB WSSS"))
+        .when(
+            (pl.col(Col.vendor) == "risklink")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "GB WSSS")
+        )
         .then(4)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "Europe_EQ") & (pl.col("modelled_peril") == "EU_EQ"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "Europe_EQ")
+            & (pl.col(Col.modelled_peril) == "EU_EQ")
+        )
         .then(1)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "Europe_FL") & (pl.col("modelled_peril") == "EU_FL"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "Europe_FL")
+            & (pl.col(Col.modelled_peril) == "EU_FL")
+        )
         .then(1)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EU_WS_GCAdj"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EU_WS_GCAdj")
+        )
         .then(1)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "Europe_WS") & (pl.col("modelled_peril") == "EU_WS"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "Europe_WS")
+            & (pl.col(Col.modelled_peril) == "EU_WS")
+        )
         .then(2)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "UK_FL") & (pl.col("modelled_peril") == "UK_FL"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "UK_FL")
+            & (pl.col(Col.modelled_peril) == "UK_FL")
+        )
         .then(1)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "UK_WSSS_GCAdj"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "UK_WSSS_GCAdj")
+        )
         .then(1)
-        .when((pl.col("vendor") == "verisk") & (pl.col("rollup_peril") == "UK_WS") & (pl.col("modelled_peril") == "UK_WSSS"))
+        .when(
+            (pl.col(Col.vendor) == "verisk")
+            & (pl.col(Col.rollup_peril) == "UK_WS")
+            & (pl.col(Col.modelled_peril) == "UK_WSSS")
+        )
         .then(2)
         .otherwise(100)
-        .alias("selection_priority")
+        .alias(Col.selection_priority)
     )
 
     enriched = enriched.with_columns(priority)
-    selection_keys = ["vendor", "rollup_lob", "rollup_peril"]
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
     selected_candidates = enriched.select(
         *selection_keys,
-        "modelled_peril",
-        "selection_priority",
+        Col.modelled_peril,
+        Col.selection_priority,
     ).unique()
     selected_priorities = selected_candidates.group_by(selection_keys).agg(
-        pl.col("selection_priority").min()
+        pl.col(Col.selection_priority).min()
     )
     selected_modelled_perils = (
         selected_candidates.join(
             selected_priorities,
-            on=[*selection_keys, "selection_priority"],
+            on=[*selection_keys, Col.selection_priority],
             how="inner",
         )
-        .sort([*selection_keys, "selection_priority", "modelled_peril"])
+        .sort([*selection_keys, Col.selection_priority, Col.modelled_peril])
         .group_by(selection_keys, maintain_order=True)
         .first()
-        .select(*selection_keys, "modelled_peril")
+        .select(*selection_keys, Col.modelled_peril)
     )
     selected = enriched.join(
         selected_modelled_perils,
-        on=[*selection_keys, "modelled_peril"],
+        on=[*selection_keys, Col.modelled_peril],
         how="inner",
     )
 
@@ -600,16 +670,22 @@ def join_ep_summaries(
 ) -> JoinedEpSummaries:
     enriched = staged_ep_summaries.selected
 
-    join_keys = ["rollup_lob", "rollup_peril", "region_peril_id", "ep_type", "return_period"]
+    join_keys = [
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        Col.ep_type,
+        Col.return_period,
+    ]
     verisk = (
-        enriched.filter(pl.col("vendor") == "verisk")
+        enriched.filter(pl.col(Col.vendor) == "verisk")
         .group_by(join_keys)
-        .agg(pl.col("loss").sum().alias("verisk_loss"))
+        .agg(pl.col(Col.loss).sum().alias(Col.verisk_loss))
     )
     risklink = (
-        enriched.filter(pl.col("vendor") == "risklink")
+        enriched.filter(pl.col(Col.vendor) == "risklink")
         .group_by(join_keys)
-        .agg(pl.col("loss").sum().alias("risklink_loss"))
+        .agg(pl.col(Col.loss).sum().alias(Col.risklink_loss))
     )
     joined = risklink.join(verisk, on=join_keys, how="full", coalesce=True)
 
@@ -626,56 +702,59 @@ def calculate_ep_blending_targets(
     seeds: SeedValidationResult,
 ) -> EpBlendingTargets:
     target_points = joined_ep_summaries.joined.filter(
-        ((pl.col("ep_type") == "AAL") & (pl.col("return_period") == 0))
-        | ((pl.col("ep_type") == "OEP") & (pl.col("return_period").is_in([200, 1000])))
+        ((pl.col(Col.ep_type) == "AAL") & (pl.col(Col.return_period) == 0))
+        | (
+            (pl.col(Col.ep_type) == "OEP")
+            & (pl.col(Col.return_period).is_in([200, 1000]))
+        )
     )
 
     weights = (
         seeds.frames["blending_factors.csv"]
         .lazy()
         .filter(
-            (pl.col("RegionPerilID") != 216)
-            | (pl.col("SubRegionPerilID") == "216b")
+            (pl.col(RawCol.RegionPerilID) != 216)
+            | (pl.col(RawCol.SubRegionPerilID) == "216b")
         )
-        .sort("SubRegionPerilID")
-        .group_by("RegionPerilID")
+        .sort(RawCol.SubRegionPerilID)
+        .group_by(RawCol.RegionPerilID)
         .first()
         .select(
-            pl.col("RegionPerilID").alias("region_peril_id"),
-            pl.col("SubRegionPerilID").alias("sub_region_peril_id"),
-            pl.col("SubRegionPeril").alias("sub_region_peril"),
-            pl.col("AIRBlend").cast(pl.Float64).alias("verisk_weight"),
-            pl.col("RMSBlend").cast(pl.Float64).alias("risklink_weight"),
+            pl.col(RawCol.RegionPerilID).alias(Col.region_peril_id),
+            pl.col(RawCol.SubRegionPerilID).alias(Col.sub_region_peril_id),
+            pl.col(RawCol.SubRegionPeril).alias(Col.sub_region_peril),
+            pl.col(RawCol.AIRBlend).cast(pl.Float64).alias(Col.verisk_weight),
+            pl.col(RawCol.RMSBlend).cast(pl.Float64).alias(Col.risklink_weight),
         )
     )
 
     blended = (
         target_points.filter(
-            pl.col("risklink_loss").is_not_null()
-            & pl.col("verisk_loss").is_not_null()
+            pl.col(Col.risklink_loss).is_not_null()
+            & pl.col(Col.verisk_loss).is_not_null()
         )
-        .join(weights, on="region_peril_id", how="left")
+        .join(weights, on=Col.region_peril_id, how="left")
         .with_columns(
             (
-                (pl.col("verisk_loss") * pl.col("verisk_weight"))
-                + (pl.col("risklink_loss") * pl.col("risklink_weight"))
-            ).alias("target_loss")
+                (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
+                + (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
+            ).alias(Col.target_loss)
         )
         .with_columns(
-            pl.when(pl.col("rollup_peril").is_in(["Europe_FL", "UK_FL"]))
+            pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
             .then(pl.lit("risklink"))
             .otherwise(pl.lit("verisk"))
-            .alias("base_model")
+            .alias(Col.base_model)
         )
         .with_columns(
-            pl.when(pl.col("base_model") == "risklink")
-            .then(pl.col("risklink_loss"))
-            .otherwise(pl.col("verisk_loss"))
-            .alias("base_model_loss")
+            pl.when(pl.col(Col.base_model) == "risklink")
+            .then(pl.col(Col.risklink_loss))
+            .otherwise(pl.col(Col.verisk_loss))
+            .alias(Col.base_model_loss)
         )
         .with_columns(
-            (pl.col("target_loss") / pl.col("base_model_loss")).alias(
-                "uplift_factor_on_base_model"
+            (pl.col(Col.target_loss) / pl.col(Col.base_model_loss)).alias(
+                Col.uplift_factor_on_base_model
             )
         )
     )
@@ -692,69 +771,69 @@ def apply_ep_blending_to_ylt(
     ep_blending_targets: EpBlendingTargets,
 ) -> dict[str, pl.LazyFrame]:
     base_model_expr = (
-        pl.when(pl.col("rollup_peril").is_in(["Europe_FL", "UK_FL"]))
+        pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
         .then(pl.lit("risklink"))
         .otherwise(pl.lit("verisk"))
     )
     base_model_only = (
-        enriched_ylts.combined.with_columns(base_model_expr.alias("base_model"))
-        .filter(pl.col("vendor") == pl.col("base_model"))
+        enriched_ylts.combined.with_columns(base_model_expr.alias(Col.base_model))
+        .filter(pl.col(Col.vendor) == pl.col(Col.base_model))
     )
 
     ranked = (
         base_model_only.with_columns(
-            pl.col("loss")
+            pl.col(Col.loss)
             .rank(method="ordinal", descending=True)
-            .over("modelled_lob", "rollup_peril")
+            .over(Col.modelled_lob, Col.rollup_peril)
             .cast(pl.Int64)
-            .alias("rnk")
+            .alias(Col.rnk)
         )
         .with_columns(
-            pl.when(pl.col("vendor") == "risklink")
-            .then(100_000.0 / pl.col("rnk"))
-            .otherwise(10_000.0 / pl.col("rnk"))
-            .alias("rp")
+            pl.when(pl.col(Col.vendor) == "risklink")
+            .then(100_000.0 / pl.col(Col.rnk))
+            .otherwise(10_000.0 / pl.col(Col.rnk))
+            .alias(Col.rp)
         )
         .with_columns(
-            pl.when(pl.col("rp") < 200)
+            pl.when(pl.col(Col.rp) < 200)
             .then(pl.lit(0))
-            .when(pl.col("rp") < 1000)
+            .when(pl.col(Col.rp) < 1000)
             .then(pl.lit(200))
             .otherwise(pl.lit(1000))
-            .alias("rp_bucket"),
+            .alias(Col.rp_bucket),
         )
     )
 
     factors = ep_blending_targets.blended.select(
-        "rollup_lob",
-        "rollup_peril",
-        "region_peril_id",
-        pl.col("return_period").alias("rp_bucket"),
-        "ep_type",
-        "risklink_loss",
-        "verisk_loss",
-        "target_loss",
-        "base_model",
-        "base_model_loss",
-        "uplift_factor_on_base_model",
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        pl.col(Col.return_period).alias(Col.rp_bucket),
+        Col.ep_type,
+        Col.risklink_loss,
+        Col.verisk_loss,
+        Col.target_loss,
+        Col.base_model,
+        Col.base_model_loss,
+        Col.uplift_factor_on_base_model,
     )
 
     blended = (
         ranked.join(
             factors,
             on=[
-                "rollup_lob",
-                "rollup_peril",
-                "region_peril_id",
-                "rp_bucket",
-                "base_model",
+                Col.rollup_lob,
+                Col.rollup_peril,
+                Col.region_peril_id,
+                Col.rp_bucket,
+                Col.base_model,
             ],
             how="inner",
         )
         .with_columns(
-            pl.col("loss").alias("original_ylt_loss"),
-            (pl.col("loss") * pl.col("uplift_factor_on_base_model")).alias(
-                "original_ylt_loss_blended"
+            pl.col(Col.loss).alias(Col.original_ylt_loss),
+            (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias(
+                Col.original_ylt_loss_blended
             ),
         )
     )
@@ -773,19 +852,19 @@ def apply_fx_to_ylt(
     fx_rates = (
         seeds.frames["fx_rates.csv"]
         .lazy()
-        .filter(pl.col("target_currency") == "GBP")
+        .filter(pl.col(Col.target_currency) == "GBP")
         .select(
-            pl.col("currency_code").alias("currency"),
-            "target_currency",
-            pl.col("rate_date").alias("fx_rate_date"),
-            pl.col("rate").alias("fx_rate"),
+            pl.col(RawCol.currency_code).alias(Col.currency),
+            Col.target_currency,
+            pl.col(RawCol.rate_date).alias(Col.fx_rate_date),
+            pl.col(RawCol.rate).alias(Col.fx_rate),
         )
     )
 
-    return blended_ylt.join(fx_rates, on="currency", how="inner").with_columns(
+    return blended_ylt.join(fx_rates, on=Col.currency, how="inner").with_columns(
         (
-            pl.col("original_ylt_loss_blended") * pl.col("fx_rate")
-        ).alias("original_ylt_loss_blended_gbp")
+            pl.col(Col.original_ylt_loss_blended) * pl.col(Col.fx_rate)
+        ).alias(Col.original_ylt_loss_blended_gbp)
     )
 
 
@@ -794,27 +873,31 @@ def apply_forecast_to_ylt(
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     forecast_factors = seeds.frames["forecast_factors.csv"].lazy()
-    forecast_dates = forecast_factors.select("forecast_date").unique()
+    forecast_dates = forecast_factors.select(Col.forecast_date).unique()
     forecast_factors = forecast_factors.select(
-        "class",
-        "office",
-        "forecast_date",
-        pl.col("factor").alias("forecast_factor_raw"),
+        Col.class_,
+        Col.office,
+        Col.forecast_date,
+        pl.col(RawCol.factor).alias(Col.forecast_factor_raw),
     )
 
     return (
         fx_ylt.join(forecast_dates, how="cross")
-        .join(forecast_factors, on=["class", "office", "forecast_date"], how="left")
-        .with_columns(
-            pl.col("forecast_factor_raw")
-            .fill_null(1.0)
-            .alias("forecast_factor"),
-            (
-                pl.col("original_ylt_loss_blended_gbp")
-                * pl.col("forecast_factor_raw").fill_null(1.0)
-            ).alias("original_ylt_loss_blended_gbp_forecast")
+        .join(
+            forecast_factors,
+            on=[Col.class_, Col.office, Col.forecast_date],
+            how="left",
         )
-        .drop("forecast_factor_raw")
+        .with_columns(
+            pl.col(Col.forecast_factor_raw)
+            .fill_null(1.0)
+            .alias(Col.forecast_factor),
+            (
+                pl.col(Col.original_ylt_loss_blended_gbp)
+                * pl.col(Col.forecast_factor_raw).fill_null(1.0)
+            ).alias(Col.original_ylt_loss_blended_gbp_forecast)
+        )
+        .drop(Col.forecast_factor_raw)
     )
 
 
@@ -824,31 +907,31 @@ def apply_euws_to_ylt(
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     euws_factors = seeds.frames["euws_rate_factors.csv"].lazy().select(
-        "model_event_id",
-        pl.col("occ_year").alias("year_id"),
-        pl.col("factor").alias("euws_factor_raw_source"),
+        Col.model_event_id,
+        pl.col(RawCol.occ_year).alias(Col.year_id),
+        pl.col(RawCol.factor).alias(Col.euws_factor_raw_source),
     )
 
     return (
         forecast_ylt.join(
             verisk_events,
-            on=["event_id", "year_id", "model_code"],
+            on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
         )
-        .join(euws_factors, on=["model_event_id", "year_id"], how="left")
+        .join(euws_factors, on=[Col.model_event_id, Col.year_id], how="left")
         .with_columns(
-            pl.when(pl.col("rollup_peril") == "Europe_WS")
-            .then(pl.col("euws_factor_raw_source").fill_null(1.0))
+            pl.when(pl.col(Col.rollup_peril) == "Europe_WS")
+            .then(pl.col(Col.euws_factor_raw_source).fill_null(1.0))
             .otherwise(pl.lit(1.0))
-            .alias("euws_factor_raw")
+            .alias(Col.euws_factor_raw)
         )
         .with_columns(
             (
-                pl.col("original_ylt_loss_blended_gbp_forecast")
-                * pl.col("euws_factor_raw")
-            ).alias("original_ylt_loss_blended_gbp_forecast_euws_raw")
+                pl.col(Col.original_ylt_loss_blended_gbp_forecast)
+                * pl.col(Col.euws_factor_raw)
+            ).alias(Col.original_ylt_loss_blended_gbp_forecast_euws_raw)
         )
-        .drop("euws_factor_raw_source")
+        .drop(Col.euws_factor_raw_source)
     )
 
 
@@ -857,30 +940,30 @@ def apply_euws_overrides_to_ylt(
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     overrides = seeds.frames["euws_rank_overrides.csv"].lazy().select(
-        "rollup_lob",
-        pl.col("max_rank").alias("euws_override_max_rank"),
-        pl.col("factor").alias("euws_override_factor"),
+        Col.rollup_lob,
+        pl.col(RawCol.max_rank).alias(Col.euws_override_max_rank),
+        pl.col(RawCol.factor).alias(Col.euws_override_factor),
     )
     override_condition = (
-        pl.col("euws_override_factor").is_not_null()
-        & (pl.col("rnk") <= pl.col("euws_override_max_rank"))
-        & (pl.col("euws_factor_raw") == 0)
+        pl.col(Col.euws_override_factor).is_not_null()
+        & (pl.col(Col.rnk) <= pl.col(Col.euws_override_max_rank))
+        & (pl.col(Col.euws_factor_raw) == 0)
     )
 
     return (
-        euws_ylt.join(overrides, on="rollup_lob", how="left")
+        euws_ylt.join(overrides, on=Col.rollup_lob, how="left")
         .with_columns(
-            override_condition.alias("euws_override_applied"),
+            override_condition.alias(Col.euws_override_applied),
             pl.when(override_condition)
-            .then(pl.col("euws_override_factor"))
-            .otherwise(pl.col("euws_factor_raw"))
-            .alias("euws_factor"),
+            .then(pl.col(Col.euws_override_factor))
+            .otherwise(pl.col(Col.euws_factor_raw))
+            .alias(Col.euws_factor),
         )
         .with_columns(
             (
-                pl.col("original_ylt_loss_blended_gbp_forecast")
-                * pl.col("euws_factor")
-            ).alias("original_ylt_loss_blended_gbp_forecast_euws")
+                pl.col(Col.original_ylt_loss_blended_gbp_forecast)
+                * pl.col(Col.euws_factor)
+            ).alias(Col.original_ylt_loss_blended_gbp_forecast_euws)
         )
     )
 
@@ -893,49 +976,53 @@ def calculate_dialsup(
     fx_rates = (
         seeds.frames["fx_rates.csv"]
         .lazy()
-        .filter(pl.col("target_currency") == "GBP")
+        .filter(pl.col(Col.target_currency) == "GBP")
         .select(
-            pl.col("currency_code").alias("currency"),
-            "target_currency",
-            pl.col("rate_date").alias("fx_rate_date"),
-            pl.col("rate").alias("fx_rate"),
+            pl.col(RawCol.currency_code).alias(Col.currency),
+            Col.target_currency,
+            pl.col(RawCol.rate_date).alias(Col.fx_rate_date),
+            pl.col(RawCol.rate).alias(Col.fx_rate),
         )
     )
     forecast_factors = seeds.frames["forecast_factors.csv"].lazy()
-    forecast_dates = forecast_factors.select("forecast_date").unique()
+    forecast_dates = forecast_factors.select(Col.forecast_date).unique()
     forecast_factors = forecast_factors.select(
-        "class",
-        "office",
-        "forecast_date",
-        pl.col("factor").alias("forecast_factor_raw"),
+        Col.class_,
+        Col.office,
+        Col.forecast_date,
+        pl.col(RawCol.factor).alias(Col.forecast_factor_raw),
     )
 
     return (
         base_model_ylt.join(
             verisk_events,
-            on=["event_id", "year_id", "model_code"],
+            on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
         )
-        .join(fx_rates, on="currency", how="inner")
+        .join(fx_rates, on=Col.currency, how="inner")
         .join(forecast_dates, how="cross")
-        .join(forecast_factors, on=["class", "office", "forecast_date"], how="left")
+        .join(
+            forecast_factors,
+            on=[Col.class_, Col.office, Col.forecast_date],
+            how="left",
+        )
         .with_columns(
-            pl.col("loss").alias("dialsup_original_ylt_loss"),
-            pl.col("forecast_factor_raw")
+            pl.col(Col.loss).alias(Col.dialsup_original_ylt_loss),
+            pl.col(Col.forecast_factor_raw)
             .fill_null(1.0)
-            .alias("forecast_factor"),
+            .alias(Col.forecast_factor),
         )
         .with_columns(
-            (pl.col("dialsup_original_ylt_loss") * pl.col("fx_rate")).alias(
-                "dialsup_loss_gbp"
+            (pl.col(Col.dialsup_original_ylt_loss) * pl.col(Col.fx_rate)).alias(
+                Col.dialsup_loss_gbp
             )
         )
         .with_columns(
-            (pl.col("dialsup_loss_gbp") * pl.col("forecast_factor")).alias(
-                "dialsup_loss_gbp_forecast"
+            (pl.col(Col.dialsup_loss_gbp) * pl.col(Col.forecast_factor)).alias(
+                Col.dialsup_loss_gbp_forecast
             )
         )
-        .drop("forecast_factor_raw")
+        .drop(Col.forecast_factor_raw)
     )
 
 
@@ -945,7 +1032,7 @@ def enrich_risklink_event_days(
 ) -> pl.LazyFrame:
     return ylt.join(
         risklink_events,
-        on=["event_id", "region_peril_id"],
+        on=[Col.event_id, Col.region_peril_id],
         how="left",
     )
 
@@ -956,27 +1043,27 @@ def build_main_fanout(
 ) -> pl.LazyFrame:
     ylt = enrich_risklink_event_days(ylt, risklink_events)
     return ylt.select(
-        "forecast_date",
-        "base_model",
-        pl.lit("main").alias("metric"),
-        pl.when(pl.col("base_model") == "risklink")
-        .then(pl.col("event_id"))
-        .otherwise(pl.col("model_event_id"))
+        Col.forecast_date,
+        Col.base_model,
+        pl.lit("main").alias(Col.metric),
+        pl.when(pl.col(Col.base_model) == "risklink")
+        .then(pl.col(Col.event_id))
+        .otherwise(pl.col(Col.model_event_id))
         .cast(pl.Int64)
-        .alias("ModelEventID"),
-        pl.col("year_id").cast(pl.Int64).alias("ModelYear"),
-        pl.col("target_currency").alias("CurrencyCode"),
-        pl.lit(0).cast(pl.Int64).alias("ModelYOA"),
-        pl.col("original_ylt_loss_blended_gbp_forecast_euws")
+        .alias(FanoutCol.ModelEventID),
+        pl.col(Col.year_id).cast(pl.Int64).alias(FanoutCol.ModelYear),
+        pl.col(Col.target_currency).alias(FanoutCol.CurrencyCode),
+        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelYOA),
+        pl.col(Col.original_ylt_loss_blended_gbp_forecast_euws)
         .cast(pl.Float64)
-        .alias("ModelGrossLoss"),
-        pl.lit(0).cast(pl.Int64).alias("ModelInwardsReinstatement"),
-        pl.when(pl.col("base_model") == "risklink")
-        .then(pl.col("risklink_event_day"))
-        .otherwise(pl.col("event_day"))
+        .alias(FanoutCol.ModelGrossLoss),
+        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelInwardsReinstatement),
+        pl.when(pl.col(Col.base_model) == "risklink")
+        .then(pl.col(Col.risklink_event_day))
+        .otherwise(pl.col(Col.event_day))
         .cast(pl.Int64)
-        .alias("ModelEventDay"),
-        pl.col("cds_cat_class_name").alias("LossClassName"),
+        .alias(FanoutCol.ModelEventDay),
+        pl.col(Col.cds_cat_class_name).alias(FanoutCol.LossClassName),
     )
 
 
@@ -986,27 +1073,27 @@ def build_dialsup_fanout(
 ) -> pl.LazyFrame:
     ylt = enrich_risklink_event_days(ylt, risklink_events)
     return ylt.select(
-        "forecast_date",
-        "base_model",
-        pl.lit("dialsup").alias("metric"),
-        pl.when(pl.col("base_model") == "risklink")
-        .then(pl.col("event_id"))
-        .otherwise(pl.col("model_event_id"))
+        Col.forecast_date,
+        Col.base_model,
+        pl.lit("dialsup").alias(Col.metric),
+        pl.when(pl.col(Col.base_model) == "risklink")
+        .then(pl.col(Col.event_id))
+        .otherwise(pl.col(Col.model_event_id))
         .cast(pl.Int64)
-        .alias("ModelEventID"),
-        pl.col("year_id").cast(pl.Int64).alias("ModelYear"),
-        pl.col("target_currency").alias("CurrencyCode"),
-        pl.lit(0).cast(pl.Int64).alias("ModelYOA"),
-        pl.col("dialsup_loss_gbp_forecast")
+        .alias(FanoutCol.ModelEventID),
+        pl.col(Col.year_id).cast(pl.Int64).alias(FanoutCol.ModelYear),
+        pl.col(Col.target_currency).alias(FanoutCol.CurrencyCode),
+        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelYOA),
+        pl.col(Col.dialsup_loss_gbp_forecast)
         .cast(pl.Float64)
-        .alias("ModelGrossLoss"),
-        pl.lit(0).cast(pl.Int64).alias("ModelInwardsReinstatement"),
-        pl.when(pl.col("base_model") == "risklink")
-        .then(pl.col("risklink_event_day"))
-        .otherwise(pl.col("event_day"))
+        .alias(FanoutCol.ModelGrossLoss),
+        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelInwardsReinstatement),
+        pl.when(pl.col(Col.base_model) == "risklink")
+        .then(pl.col(Col.risklink_event_day))
+        .otherwise(pl.col(Col.event_day))
         .cast(pl.Int64)
-        .alias("ModelEventDay"),
-        pl.col("cds_cat_class_name").alias("LossClassName"),
+        .alias(FanoutCol.ModelEventDay),
+        pl.col(Col.cds_cat_class_name).alias(FanoutCol.LossClassName),
     )
 
 
@@ -1014,10 +1101,16 @@ def build_event_validation_report(*fanouts: pl.LazyFrame) -> pl.LazyFrame:
     reports = []
     for fanout in fanouts:
         reports.append(
-            fanout.group_by("base_model", "metric", "forecast_date").agg(
-                pl.len().alias("row_count"),
-                pl.col("ModelEventID").is_null().sum().alias("missing_model_event_id"),
-                pl.col("ModelEventDay").is_null().sum().alias("missing_model_event_day"),
+            fanout.group_by(Col.base_model, Col.metric, Col.forecast_date).agg(
+                pl.len().alias(Col.row_count),
+                pl.col(FanoutCol.ModelEventID)
+                .is_null()
+                .sum()
+                .alias(Col.missing_model_event_id),
+                pl.col(FanoutCol.ModelEventDay)
+                .is_null()
+                .sum()
+                .alias(Col.missing_model_event_day),
             )
         )
     return pl.concat(reports, how="vertical")
@@ -1025,58 +1118,58 @@ def build_event_validation_report(*fanouts: pl.LazyFrame) -> pl.LazyFrame:
 
 def build_ylt_combined_all_factors(ylt: pl.LazyFrame) -> pl.LazyFrame:
     return ylt.select(
-        "rp",
-        "rp_bucket",
-        "rnk",
-        "vendor",
-        "region_peril_id",
-        "rollup_peril",
-        "rollup_lob",
-        "cds_cat_class_name",
-        "model_code",
-        "year_id",
-        "event_id",
-        "loss",
-        "base_model",
-        "uplift_factor_on_base_model",
-        "forecast_date",
-        "forecast_factor",
-        "target_currency",
-        "fx_rate",
-        "original_ylt_loss",
-        "original_ylt_loss_blended",
-        "original_ylt_loss_blended_gbp",
-        "original_ylt_loss_blended_gbp_forecast",
-        "model_event_id",
-        "event_day",
-        "euws_factor_raw",
-        "euws_factor",
-        "euws_override_applied",
-        "original_ylt_loss_blended_gbp_forecast_euws",
+        Col.rp,
+        Col.rp_bucket,
+        Col.rnk,
+        Col.vendor,
+        Col.region_peril_id,
+        Col.rollup_peril,
+        Col.rollup_lob,
+        Col.cds_cat_class_name,
+        Col.model_code,
+        Col.year_id,
+        Col.event_id,
+        Col.loss,
+        Col.base_model,
+        Col.uplift_factor_on_base_model,
+        Col.forecast_date,
+        Col.forecast_factor,
+        Col.target_currency,
+        Col.fx_rate,
+        Col.original_ylt_loss,
+        Col.original_ylt_loss_blended,
+        Col.original_ylt_loss_blended_gbp,
+        Col.original_ylt_loss_blended_gbp_forecast,
+        Col.model_event_id,
+        Col.event_day,
+        Col.euws_factor_raw,
+        Col.euws_factor,
+        Col.euws_override_applied,
+        Col.original_ylt_loss_blended_gbp_forecast_euws,
     )
 
 
 def build_ylt_dialsup_wide(ylt: pl.LazyFrame) -> pl.LazyFrame:
     return ylt.select(
-        "vendor",
-        "region_peril_id",
-        "rollup_peril",
-        "rollup_lob",
-        "cds_cat_class_name",
-        "model_code",
-        "year_id",
-        "event_id",
-        "loss",
-        "base_model",
-        "forecast_date",
-        "forecast_factor",
-        "target_currency",
-        "fx_rate",
-        "model_event_id",
-        "event_day",
-        "dialsup_original_ylt_loss",
-        "dialsup_loss_gbp",
-        "dialsup_loss_gbp_forecast",
+        Col.vendor,
+        Col.region_peril_id,
+        Col.rollup_peril,
+        Col.rollup_lob,
+        Col.cds_cat_class_name,
+        Col.model_code,
+        Col.year_id,
+        Col.event_id,
+        Col.loss,
+        Col.base_model,
+        Col.forecast_date,
+        Col.forecast_factor,
+        Col.target_currency,
+        Col.fx_rate,
+        Col.model_event_id,
+        Col.event_day,
+        Col.dialsup_original_ylt_loss,
+        Col.dialsup_loss_gbp,
+        Col.dialsup_loss_gbp_forecast,
     )
 
 
@@ -1138,31 +1231,31 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
         if not name.endswith("fanout"):
             continue
         partitions = (
-            frame.select("forecast_date", "base_model", "metric")
+            frame.select(Col.forecast_date, Col.base_model, Col.metric)
             .unique()
             .collect()
-            .sort("forecast_date", "base_model", "metric")
+            .sort(Col.forecast_date, Col.base_model, Col.metric)
         )
         for row in partitions.iter_rows(named=True):
-            tag = forecast_tag(row["forecast_date"])
-            vendor = hisco_vendor_label(row["base_model"])
-            metric = row["metric"]
+            tag = forecast_tag(row[Col.forecast_date])
+            vendor = hisco_vendor_label(row[Col.base_model])
+            metric = row[Col.metric]
             output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
             (
                 frame.filter(
-                    (pl.col("forecast_date") == row["forecast_date"])
-                    & (pl.col("base_model") == row["base_model"])
-                    & (pl.col("metric") == metric)
+                    (pl.col(Col.forecast_date) == row[Col.forecast_date])
+                    & (pl.col(Col.base_model) == row[Col.base_model])
+                    & (pl.col(Col.metric) == metric)
                 )
                 .select(
-                    "ModelEventID",
-                    "ModelYear",
-                    "CurrencyCode",
-                    "ModelYOA",
-                    "ModelGrossLoss",
-                    "ModelInwardsReinstatement",
-                    "ModelEventDay",
-                    "LossClassName",
+                    FanoutCol.ModelEventID,
+                    FanoutCol.ModelYear,
+                    FanoutCol.CurrencyCode,
+                    FanoutCol.ModelYOA,
+                    FanoutCol.ModelGrossLoss,
+                    FanoutCol.ModelInwardsReinstatement,
+                    FanoutCol.ModelEventDay,
+                    FanoutCol.LossClassName,
                 )
                 .collect()
                 .write_parquet(output_path)
@@ -1200,9 +1293,6 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
     staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
     staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
     staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
-
-    # TODO : We need to validate the 'validation' parquet files that are used at
-    # the end of the process
 
     # INTERMEDIATE
     enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
@@ -1253,9 +1343,6 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
         ylt_euws_override_applied,
     )
     mart_frames["ylt_dialsup_wide"] = build_ylt_dialsup_wide(ylt_dialsup)
-
-    # Marts
-    # TODO: We validate the output against the validation files
 
     result = PipelineRunResult(
         seeds=PipelineStage(seed_frames),
