@@ -14,6 +14,9 @@ dependencies = [
     "pyodbc",
 ]
 
+[project.scripts]
+rollup = "rollup.cli:main"
+
 [dependency-groups]
 dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
