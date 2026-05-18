@@ -20,6 +20,7 @@ CANONICAL_COLUMNS = [
     "return_period",
     "loss",
 ]
+RISKLINK_HEADER_WIDTH = 30
 
 
 def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
@@ -83,28 +84,41 @@ def build_risklink_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
         / "Hiscox RNL26 RMS by LOB (EDM & RDM).xlsx"
     )
     worksheet = load_workbook(workbook_path, read_only=True, data_only=True)["OEPAEP Curves"]
-    header_width = _last_populated_column(worksheet, (5, 6))
+    header_rows = list(
+        worksheet.iter_rows(
+            min_row=5,
+            max_row=6,
+            min_col=1,
+            max_col=RISKLINK_HEADER_WIDTH,
+            values_only=True,
+        )
+    )
+    ep_type_headers = header_rows[0]
+    field_headers = header_rows[1]
     field_columns = {
-        _clean_string(worksheet.cell(6, column).value): column
-        for column in range(1, header_width + 1)
-        if worksheet.cell(6, column).value is not None
+        _clean_string(value): index
+        for index, value in enumerate(field_headers)
+        if value is not None
     }
     metric_columns = []
-    for column in range(1, header_width + 1):
-        ep_type = _clean_string(worksheet.cell(5, column).value)
-        return_period = worksheet.cell(6, column).value
+    for index, (ep_type_raw, return_period) in enumerate(zip(ep_type_headers, field_headers, strict=True)):
+        ep_type = _clean_string(ep_type_raw)
         if ep_type in {"OEP", "AEP"} and isinstance(return_period, int | float):
-            metric_columns.append((ep_type, int(return_period), column))
+            metric_columns.append((ep_type, int(return_period), index))
 
     rows: list[dict[str, Any]] = []
-    for row_number in range(7, worksheet.max_row + 1):
-        analysis_id = worksheet.cell(row_number, field_columns["ID"]).value
-        modelled_lob = _clean_string(worksheet.cell(row_number, field_columns["LOB"]).value)
-        modelled_peril = _clean_string(worksheet.cell(row_number, field_columns["RegionPeril"]).value)
+    for row in worksheet.iter_rows(
+        min_row=7,
+        max_col=RISKLINK_HEADER_WIDTH,
+        values_only=True,
+    ):
+        analysis_id = row[field_columns["ID"]]
+        modelled_lob = _clean_string(row[field_columns["LOB"]])
+        modelled_peril = _clean_string(row[field_columns["RegionPeril"]])
         if analysis_id is None or not modelled_lob or not modelled_peril:
             continue
 
-        aal = worksheet.cell(row_number, field_columns["AAL"]).value
+        aal = row[field_columns["AAL"]]
         if aal is not None:
             rows.append(
                 {
@@ -119,7 +133,7 @@ def build_risklink_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
             )
 
         for ep_type, return_period, column in metric_columns:
-            loss = worksheet.cell(row_number, column).value
+            loss = row[column]
             if loss is None:
                 continue
             rows.append(
@@ -183,11 +197,3 @@ def _clean_string(value: Any) -> str | None:
     cleaned = str(value).strip()
     return cleaned or None
 
-
-def _last_populated_column(worksheet: Any, row_numbers: tuple[int, ...]) -> int:
-    last_column = 1
-    for row_number in row_numbers:
-        for column, value in enumerate(_row_values(worksheet, row_number), start=1):
-            if value is not None:
-                last_column = max(last_column, column)
-    return last_column
