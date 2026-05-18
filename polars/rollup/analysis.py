@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 import polars as pl
+
+
+logger = logging.getLogger(__name__)
 
 
 RETURN_PERIODS = [30, 200, 1000]
@@ -58,7 +63,16 @@ def write_ep_report(data_root: Path | str = "data") -> Path:
     data_root = Path(data_root)
     output_path = data_root / "output" / "analysis" / "ep_report.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    build_ep_report(data_root).write_csv(output_path)
+    started = time.perf_counter()
+    logger.info("writing output=%s", output_path)
+    report = build_ep_report(data_root)
+    report.write_csv(output_path)
+    logger.info(
+        "wrote output=%s rows=%d elapsed=%.2fs",
+        output_path,
+        report.height,
+        time.perf_counter() - started,
+    )
     return output_path
 
 

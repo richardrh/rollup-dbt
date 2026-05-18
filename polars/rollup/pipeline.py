@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +12,21 @@ import polars as pl
 import yaml
 
 from rollup.columns import Col, FanoutCol, RawCol
+
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def logged_phase(phase: str) -> Iterator[None]:
+    started = time.perf_counter()
+    logger.info("start phase=%s", phase)
+    try:
+        yield
+    except Exception:
+        logger.exception("failed phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
+        raise
+    logger.info("done phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
 
 
 _DTYPE_MAP: dict[str, pl.DataType] = {
@@ -202,6 +221,26 @@ def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
             )
 
     return pl.DataFrame(rows)
+
+
+def ensure_valid_inputs(
+    seeds: SeedValidationResult,
+    ylts: YltValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+) -> None:
+    report = pl.concat(
+        [
+            seeds.report.with_columns(pl.lit("seeds").alias("source_group")),
+            ylts.report.with_columns(pl.lit("ylt").alias("source_group")),
+            ep_summaries.report.with_columns(pl.lit("ep_summaries").alias("source_group")),
+        ],
+        how="diagonal",
+    )
+    invalid_count = report.filter(~pl.col("valid")).height
+    if invalid_count:
+        raise ValueError(
+            f"input validation failed for {invalid_count} file(s); run `rollup validate` for details"
+        )
 
 
 def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
@@ -1097,7 +1136,9 @@ def build_dialsup_fanout(
     )
 
 
-def build_event_validation_report(*fanouts: pl.LazyFrame) -> pl.LazyFrame:
+def build_event_validation_report(
+    *fanouts: pl.DataFrame | pl.LazyFrame,
+) -> pl.DataFrame | pl.LazyFrame:
     reports = []
     for fanout in fanouts:
         reports.append(
@@ -1180,10 +1221,21 @@ def write_debug_frame(
 ) -> None:
     debug_dir.mkdir(parents=True, exist_ok=True)
     output_path = debug_dir / f"{name}.parquet"
+    write_parquet_with_log(frame, output_path)
+
+
+def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
+    started = time.perf_counter()
+    logger.info("writing output=%s", output_path)
     if isinstance(frame, pl.LazyFrame):
-        frame.collect().write_parquet(output_path)
-        return
+        frame = frame.collect()
     frame.write_parquet(output_path)
+    logger.info(
+        "wrote output=%s rows=%d elapsed=%.2fs",
+        output_path,
+        frame.height,
+        time.perf_counter() - started,
+    )
 
 
 def write_debug_outputs(data_root: Path, result: PipelineRunResult) -> None:
@@ -1217,23 +1269,39 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
     output_dir = data_root / "output" / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    fanouts: dict[str, pl.DataFrame] = {}
+    for name, frame in result.marts.frames.items():
+        if not name.endswith("fanout"):
+            continue
+        started = time.perf_counter()
+        logger.info("collecting fanout=%s", name)
+        fanouts[name] = frame.collect() if isinstance(frame, pl.LazyFrame) else frame
+        logger.info(
+            "collected fanout=%s rows=%d elapsed=%.2fs",
+            name,
+            fanouts[name].height,
+            time.perf_counter() - started,
+        )
+
     root_output_dir = data_root / "output"
     for filename, frame_name in {
         "mts_tbl_ylt_combined_all_factors.parquet": "ylt_combined_all_factors",
         "mts_tbl_ylt_dialsup.parquet": "ylt_dialsup_wide",
-        "mts_event_validation.parquet": "event_validation",
     }.items():
         frame = result.marts.frames.get(frame_name)
         if frame is not None:
-            frame.collect().write_parquet(root_output_dir / filename)
+            write_parquet_with_log(frame, root_output_dir / filename)
 
-    for name, frame in result.marts.frames.items():
-        if not name.endswith("fanout"):
-            continue
+    if fanouts:
+        write_parquet_with_log(
+            build_event_validation_report(*fanouts.values()),
+            root_output_dir / "mts_event_validation.parquet",
+        )
+
+    for name, frame in fanouts.items():
         partitions = (
             frame.select(Col.forecast_date, Col.base_model, Col.metric)
             .unique()
-            .collect()
             .sort(Col.forecast_date, Col.base_model, Col.metric)
         )
         for row in partitions.iter_rows(named=True):
@@ -1241,13 +1309,12 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
             vendor = hisco_vendor_label(row[Col.base_model])
             metric = row[Col.metric]
             output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
-            (
+            write_parquet_with_log(
                 frame.filter(
                     (pl.col(Col.forecast_date) == row[Col.forecast_date])
                     & (pl.col(Col.base_model) == row[Col.base_model])
                     & (pl.col(Col.metric) == metric)
-                )
-                .select(
+                ).select(
                     FanoutCol.ModelEventID,
                     FanoutCol.ModelYear,
                     FanoutCol.CurrencyCode,
@@ -1256,9 +1323,8 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
                     FanoutCol.ModelInwardsReinstatement,
                     FanoutCol.ModelEventDay,
                     FanoutCol.LossClassName,
-                )
-                .collect()
-                .write_parquet(output_path)
+                ),
+                output_path,
             )
 
 
@@ -1269,80 +1335,84 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
     intermediate_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     mart_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
 
-    # STAGING
-    seeds = load_validated_seed_frames(data_root)
-    for filename, frame in seeds.frames.items():
-        seed_frames[Path(filename).stem] = frame
-    verisk_events = load_verisk_events(data_root)
-    seed_frames["verisk_events"] = verisk_events
-    risklink_events = load_risklink_flood_events(data_root)
-    seed_frames["risklink_flood_events"] = risklink_events
-    staging_frames["validation_seeds"] = seeds.report
+    with logged_phase("validation"):
+        seeds = load_validated_seed_frames(data_root)
+        ylts = load_validated_ylt_frames(data_root)
+        ep_summaries = load_validated_ep_summary_frames(data_root)
+        ensure_valid_inputs(seeds, ylts, ep_summaries)
 
-    ylts = load_validated_ylt_frames(data_root)
-    staging_frames["validation_ylt"] = ylts.report
+    with logged_phase("staging"):
+        for filename, frame in seeds.frames.items():
+            seed_frames[Path(filename).stem] = frame
+        verisk_events = load_verisk_events(data_root)
+        seed_frames["verisk_events"] = verisk_events
+        risklink_events = load_risklink_flood_events(data_root)
+        seed_frames["risklink_flood_events"] = risklink_events
+        staging_frames["validation_seeds"] = seeds.report
 
-    normalized_ylts = normalize_ylt(ylts)
-    staging_frames["ylt_verisk_normalized"] = normalized_ylts.verisk
-    staging_frames["ylt_risklink_normalized"] = normalized_ylts.risklink
+        staging_frames["validation_ylt"] = ylts.report
 
-    ep_summaries = load_validated_ep_summary_frames(data_root)
-    staging_frames["validation_ep_summaries"] = ep_summaries.report
-    staging_frames["ep_summaries"] = ep_summaries.frame
+        normalized_ylts = normalize_ylt(ylts)
+        staging_frames["ylt_verisk_normalized"] = normalized_ylts.verisk
+        staging_frames["ylt_risklink_normalized"] = normalized_ylts.risklink
 
-    staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
-    staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
-    staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
+        staging_frames["validation_ep_summaries"] = ep_summaries.report
+        staging_frames["ep_summaries"] = ep_summaries.frame
 
-    # INTERMEDIATE
-    enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
-    intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
-    intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
-    intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
+        staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
+        staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
+        staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
 
-    joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
-    intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
-    intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
-    intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
-    intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
+    with logged_phase("intermediate"):
+        enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
+        intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
+        intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
+        intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
 
-    ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds)
-    intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
-    intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
-    intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
+        joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
+        intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
+        intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
+        intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
+        intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
 
-    ylt_blending_frames = apply_ep_blending_to_ylt(enriched_ylts, ep_blending_targets)
-    intermediate_frames.update(ylt_blending_frames)
+        ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds)
+        intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
+        intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
+        intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
 
-    ylt_dialsup = calculate_dialsup(ylt_blending_frames["ylt_base_model"], verisk_events, seeds)
-    intermediate_frames["ylt_dialsup"] = ylt_dialsup
+        ylt_blending_frames = apply_ep_blending_to_ylt(enriched_ylts, ep_blending_targets)
+        intermediate_frames.update(ylt_blending_frames)
 
-    ylt_fx_applied = apply_fx_to_ylt(ylt_blending_frames["ylt_blending_applied"], seeds)
-    intermediate_frames["ylt_fx_applied"] = ylt_fx_applied
+        ylt_dialsup = calculate_dialsup(ylt_blending_frames["ylt_base_model"], verisk_events, seeds)
+        intermediate_frames["ylt_dialsup"] = ylt_dialsup
 
-    ylt_forecast_applied = apply_forecast_to_ylt(ylt_fx_applied, seeds)
-    intermediate_frames["ylt_forecast_applied"] = ylt_forecast_applied
+        ylt_fx_applied = apply_fx_to_ylt(ylt_blending_frames["ylt_blending_applied"], seeds)
+        intermediate_frames["ylt_fx_applied"] = ylt_fx_applied
 
-    ylt_euws_applied = apply_euws_to_ylt(ylt_forecast_applied, verisk_events, seeds)
-    intermediate_frames["ylt_euws_applied"] = ylt_euws_applied
+        ylt_forecast_applied = apply_forecast_to_ylt(ylt_fx_applied, seeds)
+        intermediate_frames["ylt_forecast_applied"] = ylt_forecast_applied
 
-    ylt_euws_override_applied = apply_euws_overrides_to_ylt(ylt_euws_applied, seeds)
-    intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override_applied
+        ylt_euws_applied = apply_euws_to_ylt(ylt_forecast_applied, verisk_events, seeds)
+        intermediate_frames["ylt_euws_applied"] = ylt_euws_applied
 
-    main_fanout = build_main_fanout(ylt_euws_override_applied, risklink_events)
-    mart_frames["main_fanout"] = main_fanout
+        ylt_euws_override_applied = apply_euws_overrides_to_ylt(ylt_euws_applied, seeds)
+        intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override_applied
 
-    dialsup_fanout = build_dialsup_fanout(ylt_dialsup, risklink_events)
-    mart_frames["dialsup_fanout"] = dialsup_fanout
+    with logged_phase("marts"):
+        main_fanout = build_main_fanout(ylt_euws_override_applied, risklink_events)
+        mart_frames["main_fanout"] = main_fanout
 
-    mart_frames["event_validation"] = build_event_validation_report(
-        main_fanout,
-        dialsup_fanout,
-    )
-    mart_frames["ylt_combined_all_factors"] = build_ylt_combined_all_factors(
-        ylt_euws_override_applied,
-    )
-    mart_frames["ylt_dialsup_wide"] = build_ylt_dialsup_wide(ylt_dialsup)
+        dialsup_fanout = build_dialsup_fanout(ylt_dialsup, risklink_events)
+        mart_frames["dialsup_fanout"] = dialsup_fanout
+
+        mart_frames["event_validation"] = build_event_validation_report(
+            main_fanout,
+            dialsup_fanout,
+        )
+        mart_frames["ylt_combined_all_factors"] = build_ylt_combined_all_factors(
+            ylt_euws_override_applied,
+        )
+        mart_frames["ylt_dialsup_wide"] = build_ylt_dialsup_wide(ylt_dialsup)
 
     result = PipelineRunResult(
         seeds=PipelineStage(seed_frames),
@@ -1352,13 +1422,15 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
     )
 
     if debug:
-        write_debug_outputs(data_root, result)
+        with logged_phase("debug_outputs"):
+            write_debug_outputs(data_root, result)
 
-    write_mart_outputs(data_root, result)
+    with logged_phase("write_outputs"):
+        write_mart_outputs(data_root, result)
 
     return result
 
 
 if __name__ == "__main__":
-    # Configure logger here.
+    logging.basicConfig(level=logging.INFO)
     run()

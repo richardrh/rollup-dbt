@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
+import sys
 
 import polars as pl
 
@@ -22,6 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="data",
         help="Root data directory containing schema.yaml files and inputs.",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Console logging level.",
+    )
 
     subcommands = parser.add_subparsers(dest="command", required=True)
 
@@ -38,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subcommands.add_parser(
         "run",
-        help="Run the pipeline. Currently validates inputs first.",
+        help="Run the pipeline.",
     )
     run_parser.add_argument(
         "--debug",
@@ -47,6 +55,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def configure_logging(log_level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+        stream=sys.stdout,
+        force=True,
+    )
 
 
 def validate_command(data_root: Path) -> int:
@@ -86,10 +104,6 @@ def validate_command(data_root: Path) -> int:
 
 
 def run_command(data_root: Path, *, debug: bool = False) -> int:
-    exit_code = validate_command(data_root)
-    if exit_code:
-        return exit_code
-
     run(data_root, debug=debug)
     if debug:
         print(f"Debug frames written to {data_root / 'output' / 'debug'}")
@@ -105,6 +119,7 @@ def analyze_command(data_root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    configure_logging(args.log_level)
     data_root = Path(args.data_root)
 
     if args.command == "validate":

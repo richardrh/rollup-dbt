@@ -7,6 +7,40 @@ line interface is in `polars/rollup/cli.py`.
 The pipeline reads seed CSVs, vendor YLT parquet files, and canonical EP summary
 CSVs, then writes mart parquet outputs for downstream consumers on every run.
 
+## Quickstart
+
+Run from the repository root.
+
+### Docs preview
+
+`zensical` is installed as a dev dependency and `zensical.toml` exists, but the
+configured `docs/` source directory is not present. For now, this README is the
+primary docs and no working local docs server is configured.
+
+### Drop in data first
+
+- YLT parquet: `data/ylt/verisk/*.parquet`, `data/ylt/risklink/*.parquet`
+- EP summaries: `data/ep_summaries/verisk/verisk_ep_summary.long.csv`,
+  `data/ep_summaries/risklink/rms_ep_summary.long.csv`
+- Seed CSVs: required files under `data/seeds/...`
+- Validation catalogues: parquet files under `data/seeds/validation/`
+
+### Run
+
+Preferred script entrypoint from `pyproject.toml`:
+
+```bash
+uv run rollup validate
+uv run rollup run
+uv run rollup run --debug
+```
+
+Outputs:
+
+- Mart fanouts: `data/output/marts/`
+- Wide/report outputs: `data/output/`
+- Debug frames from `--debug`: `data/output/debug/`
+
 ## Commands
 
 Run commands from the repository root.
