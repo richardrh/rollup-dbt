@@ -25,4 +25,6 @@ uv run rollup docs            # serve these docs and print a URL
 - Debug frames are written to `output/debug/` only when `--debug` is used.
 
 Start with [Quickstart](first-run.md), then use [Loading your data](load-data.md)
-for exact file locations.
+for exact file locations. For reference details, see the
+[data-flow architecture](architecture.md), [schema contracts](schema-contracts.md),
+and [seed files](data-requirements.md#seed-files).

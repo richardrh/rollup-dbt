@@ -49,8 +49,10 @@ Before validation, check these files especially:
 uv run rollup validate
 ```
 
-Validation checks input schemas and modelled LOB/peril lookup coverage. Read the
-output in three sections:
+Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
+files, columns, dtypes, and required flags come from the colocated
+[`schema.yaml` contracts](schema-contracts.md). Read the output in three
+sections:
 
 1. `Validation report`: schema, required-column, and type checks. `valid=False`
    means fix the file format before running.
