@@ -76,7 +76,10 @@ optional:
 rollup validate
 ```
 
-Validation checks schemas and modelled LOB/peril lookups, including:
+Validation checks schemas and modelled LOB/peril lookups. Expected files,
+columns, dtypes, and required flags are defined by the colocated `schema.yaml`
+contracts under `data/seeds/`, `data/ylt/`, and `data/ep_summaries/`.
+Validation includes:
 
 - EP summary `modelled_lob` values exist in `data/seeds/business/lobs.csv`.
 - EP summary `modelled_peril` values exist in `data/seeds/business/perils.csv`.
@@ -159,6 +162,9 @@ duckdb -c "SELECT forecast_date, rollup_peril, COUNT(*) rows FROM 'output/debug/
 
 Debug frame prefixes are `seed_*`, `stg_*`, `int_*`, and `mts_*`.
 
+For more detail, see `docs/architecture.md` for the data-flow chart and
+`docs/data-requirements.md#seed-files` for the seed file reference.
+
 ## Running documentation
 
 Serve the Zensical docs through the application CLI:
@@ -183,8 +189,8 @@ uv run zensical serve --config-file zensical.toml --dev-addr 127.0.0.1:8000
    Prefer `LazyFrame` and keep file IO at the edges.
 2. Put new shared column names in `src/rollup/columns.py` enums instead of
    scattering string literals.
-3. If an input schema changes, update the colocated `schema.yaml` and validation
-   tests.
+3. If a step adds or changes an input, output, stage, or mart contract, update
+   the appropriate colocated `schema.yaml` and validation tests.
 4. Wire the function into the right phase inside `run()`: validation, staging,
    intermediate, or marts.
 5. Add the result to the relevant stage dictionary: `seed_frames`,
