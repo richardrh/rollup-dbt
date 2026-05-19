@@ -11,12 +11,10 @@ nav = [
   { "Loading your data" = "load-data.md" },
   { "Troubleshooting" = "troubleshooting.md" },
   { "Reference" = [
-    { "File formats" = "file-formats.md" },
     { "Data requirements" = "data-requirements.md" },
+    { "Schema contracts" = "schema-contracts.md" },
     { "Architecture" = "architecture.md" },
     { "Developer guide" = "developer-guide.md" },
-    { "Factor chain" = "factor-chain.md" },
-    { "Calculations" = "calculations.md" },
     { "Operating modes" = "operating-modes.md" },
   ]},
 ]
