@@ -26,8 +26,9 @@ rollup.local.toml
 .dual-graph/
 
 # Synthetic test fixture output (regenerated on each pytest run)
-polars/tests/data/
+tests/data/
 jan-rollup/combined_table
 
 # Generated artefacts (regenerable via CLI subcommands)
-/data/output
+/output/*
+!/output/schema.yaml

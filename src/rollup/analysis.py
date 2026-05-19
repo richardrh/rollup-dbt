@@ -17,14 +17,13 @@ SIMULATION_COUNTS = {
 }
 
 
-def build_ep_report(data_root: Path | str = "data") -> pl.DataFrame:
-    data_root = Path(data_root)
-    output_dir = data_root / "output"
+def build_ep_report(output_root: Path | str = "output") -> pl.DataFrame:
+    output_root = Path(output_root)
 
     losses = pl.concat(
         [
-            _main_losses(output_dir / "mts_tbl_ylt_combined_all_factors.parquet"),
-            _dialsup_losses(output_dir / "mts_tbl_ylt_dialsup.parquet"),
+            _main_losses(output_root / "mts_tbl_ylt_combined_all_factors.parquet"),
+            _dialsup_losses(output_root / "mts_tbl_ylt_dialsup.parquet"),
         ],
         how="vertical",
     ).with_columns(
@@ -59,13 +58,13 @@ def build_ep_report(data_root: Path | str = "data") -> pl.DataFrame:
     )
 
 
-def write_ep_report(data_root: Path | str = "data") -> Path:
-    data_root = Path(data_root)
-    output_path = data_root / "output" / "analysis" / "ep_report.csv"
+def write_ep_report(output_root: Path | str = "output") -> Path:
+    output_root = Path(output_root)
+    output_path = output_root / "analysis" / "ep_report.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     logger.info("writing output=%s", output_path)
-    report = build_ep_report(data_root)
+    report = build_ep_report(output_root)
     report.write_csv(output_path)
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",

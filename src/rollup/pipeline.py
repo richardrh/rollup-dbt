@@ -223,6 +223,175 @@ def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
+_MODELLED_DIMENSION_COVERAGE_SCHEMA = {
+    "filename": pl.String,
+    "path": pl.String,
+    "check_name": pl.String,
+    "severity": pl.String,
+    "valid": pl.Boolean,
+    "direction": pl.String,
+    "source_group": pl.String,
+    "dimension": pl.String,
+    "field": pl.String,
+    "value": pl.String,
+    "count": pl.Int64,
+    "row_count": pl.Int64,
+    "error": pl.String,
+    "message": pl.String,
+}
+
+
+def empty_modelled_dimension_coverage_report() -> pl.DataFrame:
+    return pl.DataFrame(schema=_MODELLED_DIMENSION_COVERAGE_SCHEMA)
+
+
+def _unique_values(
+    frame: pl.DataFrame | pl.LazyFrame,
+    column: str,
+    *,
+    alias: str = "value",
+) -> pl.LazyFrame:
+    lazy = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
+    return (
+        lazy.select(pl.col(column).cast(pl.String).alias(alias))
+        .filter(pl.col(alias).is_not_null())
+        .group_by(alias)
+        .agg(pl.len().alias("count"))
+    )
+
+
+def _coverage_rows(
+    missing_values: pl.LazyFrame,
+    *,
+    severity: str,
+    direction: str,
+    source_group: str,
+    dimension: str,
+    field: str,
+    path: Path,
+    message: str,
+) -> pl.LazyFrame:
+    return missing_values.with_columns(
+        pl.lit(None).cast(pl.String).alias("filename"),
+        pl.lit(str(path)).alias("path"),
+        pl.lit("modelled_dimension_coverage").alias("check_name"),
+        pl.lit(severity).alias("severity"),
+        pl.lit(False).alias("valid"),
+        pl.lit(direction).alias("direction"),
+        pl.lit(source_group).alias("source_group"),
+        pl.lit(dimension).alias("dimension"),
+        pl.lit(field).alias("field"),
+        pl.col("count").cast(pl.Int64).alias("row_count"),
+        pl.concat_str(
+            [
+                pl.lit(message),
+                pl.lit(" field="),
+                pl.lit(field),
+                pl.lit(" value="),
+                pl.col("value"),
+                pl.lit(" count="),
+                pl.col("count").cast(pl.String),
+                pl.lit(" path="),
+                pl.lit(str(path)),
+            ]
+        ).alias("error"),
+        pl.lit(message).alias("message"),
+    ).select(*_MODELLED_DIMENSION_COVERAGE_SCHEMA)
+
+
+def modelled_dimension_coverage_report(
+    seeds: SeedValidationResult,
+    ylts: YltValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    data_root = Path(data_root)
+    structural_report = pl.concat(
+        [seeds.report, ylts.report, ep_summaries.report],
+        how="diagonal_relaxed",
+    )
+    if structural_report.filter(~pl.col("valid")).height:
+        return empty_modelled_dimension_coverage_report()
+
+    if "lobs.csv" not in seeds.frames or "perils.csv" not in seeds.frames:
+        return empty_modelled_dimension_coverage_report()
+
+    seed_lobs = _unique_values(seeds.frames["lobs.csv"], Col.modelled_lob)
+    seed_perils = _unique_values(seeds.frames["perils.csv"], Col.modelled_peril)
+
+    stc_verisk = ylts.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC")
+    verisk_lobs = _unique_values(stc_verisk, RawCol.ExposureAttribute)
+    verisk_perils = _unique_values(stc_verisk, RawCol.Analysis)
+    ep_lobs = _unique_values(ep_summaries.frame, Col.modelled_lob)
+    ep_perils = _unique_values(ep_summaries.frame, Col.modelled_peril)
+
+    report_parts = [
+        _coverage_rows(
+            verisk_lobs.join(seed_lobs, on="value", how="anti"),
+            severity="error",
+            direction="input_missing_from_seed",
+            source_group="verisk_ylt",
+            dimension=Col.modelled_lob,
+            field=RawCol.ExposureAttribute,
+            path=data_root / "ylt" / "verisk" / "*.parquet",
+            message="Verisk YLT modelled LOB is missing from lobs.csv.",
+        ),
+        _coverage_rows(
+            verisk_perils.join(seed_perils, on="value", how="anti"),
+            severity="error",
+            direction="input_missing_from_seed",
+            source_group="verisk_ylt",
+            dimension=Col.modelled_peril,
+            field=RawCol.Analysis,
+            path=data_root / "ylt" / "verisk" / "*.parquet",
+            message="Verisk YLT modelled peril is missing from perils.csv.",
+        ),
+        _coverage_rows(
+            ep_lobs.join(seed_lobs, on="value", how="anti"),
+            severity="error",
+            direction="input_missing_from_seed",
+            source_group="ep_summaries",
+            dimension=Col.modelled_lob,
+            field=Col.modelled_lob,
+            path=data_root / "ep_summaries" / "**" / "*.long.csv",
+            message="EP summary modelled LOB is missing from lobs.csv.",
+        ),
+        _coverage_rows(
+            ep_perils.join(seed_perils, on="value", how="anti"),
+            severity="error",
+            direction="input_missing_from_seed",
+            source_group="ep_summaries",
+            dimension=Col.modelled_peril,
+            field=Col.modelled_peril,
+            path=data_root / "ep_summaries" / "**" / "*.long.csv",
+            message="EP summary modelled peril is missing from perils.csv.",
+        ),
+    ]
+
+    report = pl.concat(report_parts, how="vertical").collect()
+    if report.is_empty():
+        return empty_modelled_dimension_coverage_report()
+    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
+
+
+def build_semantic_validation_report(
+    seeds: SeedValidationResult,
+    ylts: YltValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    return modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
+
+
+def ensure_modelled_dimension_coverage(report: pl.DataFrame) -> None:
+    error_count = report.filter(pl.col("severity") == "error").height
+    if error_count:
+        raise ValueError(
+            f"modelled LOB/peril coverage validation failed for {error_count} value(s); "
+            "run `rollup validate` for details"
+        )
+
+
 def ensure_valid_inputs(
     seeds: SeedValidationResult,
     ylts: YltValidationResult,
@@ -426,6 +595,40 @@ class PipelineRunResult:
     staging: PipelineStage
     intermediate: PipelineStage
     marts: PipelineStage
+
+
+@dataclass(frozen=True)
+class PipelineValidationInputs:
+    seeds: SeedValidationResult
+    ylts: YltValidationResult
+    ep_summaries: EpSummaryValidationResult
+    coverage_report: pl.DataFrame
+
+
+def load_pipeline_validation_inputs(
+    data_root: Path | str = "data",
+) -> PipelineValidationInputs:
+    data_root = Path(data_root)
+    seeds = load_validated_seed_frames(data_root)
+    ylts = load_validated_ylt_frames(data_root)
+    ep_summaries = load_validated_ep_summary_frames(data_root)
+    coverage_report = modelled_dimension_coverage_report(
+        seeds,
+        ylts,
+        ep_summaries,
+        data_root,
+    )
+    return PipelineValidationInputs(
+        seeds=seeds,
+        ylts=ylts,
+        ep_summaries=ep_summaries,
+        coverage_report=coverage_report,
+    )
+
+
+def ensure_pipeline_validation_inputs(inputs: PipelineValidationInputs) -> None:
+    ensure_valid_inputs(inputs.seeds, inputs.ylts, inputs.ep_summaries)
+    ensure_modelled_dimension_coverage(inputs.coverage_report)
 
 
 def normalize_ylt(ylt: YltValidationResult) -> NormalizedYltFrames:
@@ -1119,7 +1322,6 @@ def write_debug_frame(
 
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
-    logger.info("writing output=%s", output_path)
     if isinstance(frame, pl.LazyFrame):
         frame = frame.collect()
     frame.write_parquet(output_path)
@@ -1131,8 +1333,8 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
     )
 
 
-def write_debug_outputs(data_root: Path, result: PipelineRunResult) -> None:
-    debug_dir = data_root / "output" / "debug"
+def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
+    debug_dir = output_root / "debug"
 
     for prefix, stage in {
         "seed": result.seeds,
@@ -1158,8 +1360,8 @@ def hisco_vendor_label(base_model: str) -> str:
     raise ValueError(f"unknown base model: {base_model}")
 
 
-def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
-    output_dir = data_root / "output" / "marts"
+def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
+    output_dir = output_root / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fanouts: dict[str, pl.DataFrame] = {}
@@ -1176,19 +1378,18 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
             time.perf_counter() - started,
         )
 
-    root_output_dir = data_root / "output"
     for filename, frame_name in {
         "mts_tbl_ylt_combined_all_factors.parquet": "ylt_combined_all_factors",
         "mts_tbl_ylt_dialsup.parquet": "ylt_dialsup_wide",
     }.items():
         frame = result.marts.frames.get(frame_name)
         if frame is not None:
-            write_parquet_with_log(frame, root_output_dir / filename)
+            write_parquet_with_log(frame, output_root / filename)
 
     if fanouts:
         write_parquet_with_log(
             build_event_validation_report(*fanouts.values()),
-            root_output_dir / "mts_event_validation.parquet",
+            output_root / "mts_event_validation.parquet",
         )
 
     for name, frame in fanouts.items():
@@ -1221,18 +1422,29 @@ def write_mart_outputs(data_root: Path, result: PipelineRunResult) -> None:
             )
 
 
-def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunResult:
+def run(
+    data_root: Path | str = "data",
+    *,
+    output_root: Path | str = "output",
+    debug: bool = False,
+    validation_inputs: PipelineValidationInputs | None = None,
+) -> PipelineRunResult:
     data_root = Path(data_root)
+    output_root = Path(output_root)
     seed_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     staging_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     intermediate_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     mart_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
 
     with logged_phase("validation"):
-        seeds = load_validated_seed_frames(data_root)
-        ylts = load_validated_ylt_frames(data_root)
-        ep_summaries = load_validated_ep_summary_frames(data_root)
-        ensure_valid_inputs(seeds, ylts, ep_summaries)
+        if validation_inputs is None:
+            validation_inputs = load_pipeline_validation_inputs(data_root)
+        ensure_pipeline_validation_inputs(validation_inputs)
+
+        seeds = validation_inputs.seeds
+        ylts = validation_inputs.ylts
+        ep_summaries = validation_inputs.ep_summaries
+        coverage_report = validation_inputs.coverage_report
 
     with logged_phase("staging"):
         for filename, frame in seeds.frames.items():
@@ -1244,6 +1456,7 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
         staging_frames["validation_seeds"] = seeds.report
 
         staging_frames["validation_ylt"] = ylts.report
+        staging_frames["modelled_dimension_coverage"] = coverage_report
 
         normalized_ylts = normalize_ylt(ylts)
         staging_frames["ylt_verisk_normalized"] = normalized_ylts.verisk
@@ -1316,10 +1529,10 @@ def run(data_root: Path | str = "data", *, debug: bool = False) -> PipelineRunRe
 
     if debug:
         with logged_phase("debug_outputs"):
-            write_debug_outputs(data_root, result)
+            write_debug_outputs(output_root, result)
 
     with logged_phase("write_outputs"):
-        write_mart_outputs(data_root, result)
+        write_mart_outputs(output_root, result)
 
     return result
 

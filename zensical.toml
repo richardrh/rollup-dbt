@@ -1,6 +1,6 @@
 [project]
-site_name = "Polars Rollup Pipeline"
-site_description = "Documentation for the polars rollup pipeline — RiskLink + Verisk YLTs to Hisco parquets."
+site_name = "Rollup Pipeline"
+site_description = "Documentation for the rollup pipeline — RiskLink + Verisk YLTs to Hisco parquets."
 site_author = "Hiscox"
 copyright = "Hiscox"
 docs_dir = "docs"
@@ -14,6 +14,7 @@ nav = [
     { "File formats" = "file-formats.md" },
     { "Data requirements" = "data-requirements.md" },
     { "Architecture" = "architecture.md" },
+    { "Developer guide" = "developer-guide.md" },
     { "Factor chain" = "factor-chain.md" },
     { "Calculations" = "calculations.md" },
     { "Operating modes" = "operating-modes.md" },
