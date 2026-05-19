@@ -5,12 +5,12 @@ from pathlib import Path
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_FILES = (
     REPO_ROOT / "data" / "seeds" / "schema.yaml",
     REPO_ROOT / "data" / "ylt" / "schema.yaml",
     REPO_ROOT / "data" / "ep_summaries" / "schema.yaml",
-    REPO_ROOT / "data" / "output" / "schema.yaml",
+    REPO_ROOT / "output" / "schema.yaml",
 )
 
 
@@ -69,7 +69,7 @@ def test_ylt_ep_and_output_schema_paths_match_operator_layout() -> None:
     assert datasets["raw_verisk_ylt"]["glob"] == "data/ylt/verisk/*.parquet"
     assert datasets["raw_risklink_ylt"]["glob"] == "data/ylt/risklink/*.parquet"
     assert datasets["canonical_ep_summary"]["glob"] == "data/ep_summaries/**/*.long.csv"
-    assert datasets["mart_loss_summary"]["path"] == "data/output/pipeline_loss_summary.parquet"
+    assert datasets["mart_loss_summary"]["path"] == "output/pipeline_loss_summary.parquet"
 
 
 def test_selected_analyses_is_a_staging_contract() -> None:

@@ -1,25 +1,12 @@
 """Pytest bootstrap.
 
-Two responsibilities:
-
-1. Put this folder on `sys.path` so `import rollup` resolves. The on-disk
-   folder is `polars/` to match the project's mental model, but the
-   importable package inside is `rollup/` to avoid shadowing the polars
-   library. See polars/README.md.
-
-2. Gate integration tests behind `--run-integration`. Tests marked
-   `@pytest.mark.integration` are SKIPPED by default. Pass the flag (or
-   `-m integration`) to opt in. Integration tests typically require
-   external resources (Docker for SQL Server, network, etc.) and are
-   slower / heavier than the default unit suite.
+Gate integration tests behind `--run-integration`. Tests marked
+`@pytest.mark.integration` are SKIPPED by default. Pass the flag (or
+    `-m integration`) to opt in. Integration tests typically require
+    external resources (Docker for SQL Server, network, etc.) and are
+    slower / heavier than the default unit suite.
 """
-import sys
-from pathlib import Path
-
 import pytest
-
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 
 def pytest_addoption(parser):
