@@ -25,6 +25,16 @@ uv run rollup run
 
 Writes mart fanouts to `output/marts/` and wide/report parquets to `output/`.
 
+## Validation reports
+
+```bash
+uv run rollup validate --report-dir output/validation
+```
+
+Use `--report-dir` when you need to share validation evidence or attach outputs
+to a ticket. The command still prints the normal console report and also writes
+one CSV per validation table under the chosen directory.
+
 ## Debug run
 
 ```bash

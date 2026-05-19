@@ -13,6 +13,8 @@ from rollup.analysis import write_ep_report
 from rollup.ep_summary_generator import generate_ep_summaries
 from rollup.pipeline import (
     PipelineValidationInputs,
+    empty_input_ylt_aal_by_lob_peril_summary,
+    input_ylt_aal_by_lob_peril_summary,
     load_pipeline_validation_inputs,
     run,
     ylt_loss_validation_summary,
@@ -40,9 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    subcommands.add_parser(
+    validate_parser = subcommands.add_parser(
         "validate",
         help="Validate configured inputs and print a validation report.",
+    )
+    validate_parser.add_argument(
+        "--report-dir",
+        type=Path,
+        help="Directory to write validation report CSV files.",
     )
 
     subcommands.add_parser(
@@ -101,6 +108,7 @@ class ValidationReports:
     report: pl.DataFrame
     coverage_report: pl.DataFrame
     ylt_loss_report: pl.DataFrame
+    input_ylt_aal_report: pl.DataFrame
 
 
 def _validation_report(inputs: PipelineValidationInputs) -> pl.DataFrame:
@@ -124,11 +132,16 @@ def collect_validation_reports(data_root: Path) -> ValidationReports:
         ylt_loss_report = pl.DataFrame(
             [{"valid": False, "error": f"YLT loss validation summary failed: {exc}"}]
         )
+    try:
+        input_ylt_aal_report = input_ylt_aal_by_lob_peril_summary(inputs)
+    except Exception:
+        input_ylt_aal_report = empty_input_ylt_aal_by_lob_peril_summary()
     return ValidationReports(
         inputs=inputs,
         report=report,
         coverage_report=inputs.coverage_report,
         ylt_loss_report=ylt_loss_report,
+        input_ylt_aal_report=input_ylt_aal_report,
     )
 
 
@@ -145,6 +158,23 @@ def print_validation_reports(reports: ValidationReports) -> None:
         print(reports.coverage_report)
         print("\nYLT loss validation summary")
         print(reports.ylt_loss_report)
+        print("\nInput YLT AAL by LOB/peril summary")
+        print(reports.input_ylt_aal_report)
+
+
+_VALIDATION_CSV_REPORTS = {
+    "validation_report.csv": "report",
+    "modelled_lob_peril_anti_join_report.csv": "coverage_report",
+    "ylt_loss_validation_summary.csv": "ylt_loss_report",
+    "input_ylt_aal_by_lob_peril_summary.csv": "input_ylt_aal_report",
+}
+
+
+def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -> None:
+    report_dir.mkdir(parents=True, exist_ok=True)
+    for filename, attribute_name in _VALIDATION_CSV_REPORTS.items():
+        report = getattr(reports, attribute_name)
+        report.write_csv(report_dir / filename)
 
 
 def validation_exit_code(reports: ValidationReports) -> int:
@@ -155,9 +185,19 @@ def validation_exit_code(reports: ValidationReports) -> int:
     return 1 if invalid_count or coverage_error_count else 0
 
 
-def validate_command(data_root: Path) -> int:
+def validate_command(data_root: Path, *, report_dir: Path | None = None) -> int:
     reports = collect_validation_reports(data_root)
     print_validation_reports(reports)
+    if report_dir is not None:
+        try:
+            write_validation_csv_reports(reports, report_dir)
+        except Exception as exc:
+            print(
+                f"Failed to write validation CSV reports to {report_dir}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Validation CSV reports written to {report_dir}")
     return validation_exit_code(reports)
 
 
@@ -235,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     output_root = Path(args.output_root)
 
     if args.command == "validate":
-        return validate_command(data_root)
+        return validate_command(data_root, report_dir=args.report_dir)
     if args.command == "run":
         return run_command(data_root, output_root=output_root, debug=args.debug)
     if args.command in {"analyze", "analyse"}:

@@ -49,9 +49,21 @@ Before validation, check these files especially:
 uv run rollup validate
 ```
 
+To keep CSV evidence while preserving the same console output, write validation
+reports to a directory:
+
+```bash
+uv run rollup validate --report-dir output/validation
+```
+
+This creates `validation_report.csv`,
+`modelled_lob_peril_anti_join_report.csv`,
+`ylt_loss_validation_summary.csv`, and
+`input_ylt_aal_by_lob_peril_summary.csv` under `output/validation/`.
+
 Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
 files, columns, dtypes, and required flags come from the colocated
-[`schema.yaml` contracts](schema-contracts.md). Read the output in three
+[`schema.yaml` contracts](schema-contracts.md). Read the output in four
 sections:
 
 1. `Validation report`: schema, required-column, and type checks. `valid=False`
@@ -60,6 +72,9 @@ sections:
    errors; add/fix values in `lobs.csv`/`perils.csv` or correct the input data.
 3. `YLT loss validation summary`: non-blocking sanity totals unless an input read
    failed. Check file names, loss sums, and scaled loss.
+4. `Input YLT AAL by LOB/peril summary`: raw input YLT AAL by vendor,
+   rollup/modelled LOB, and rollup/modelled peril before blending, FX, forecast,
+   or EUWS adjustments.
 
 ## 4. Run
 

@@ -69,6 +69,20 @@ Before validation, check the business seed lookups:
 uv run rollup validate
 ```
 
+To also write each validation table to a separate CSV file, provide a report
+directory:
+
+```bash
+uv run rollup validate --report-dir output/validation
+```
+
+Console output still prints. The report directory receives:
+
+- `validation_report.csv`
+- `modelled_lob_peril_anti_join_report.csv`
+- `ylt_loss_validation_summary.csv`
+- `input_ylt_aal_by_lob_peril_summary.csv`
+
 If the project is installed and your virtual environment is activated, `uv` is
 optional:
 
@@ -86,7 +100,7 @@ Validation includes:
 - Verisk YLT `ExposureAttribute` values exist in `lobs.csv`.
 - Verisk YLT `Analysis` values exist in `perils.csv`.
 
-Read the output in three sections:
+Read the output in four sections:
 
 1. `Validation report`: file-level schema, required-column, and type checks for
    seeds, YLTs, and EP summaries. `valid=False` means fix the file format before
@@ -96,6 +110,10 @@ Read the output in three sections:
    the input data.
 3. `YLT loss validation summary`: non-blocking sanity totals unless an input
    read failed. Check file names, loss sums, and scaled loss for obvious issues.
+4. `Input YLT AAL by LOB/peril summary`: raw input YLT AAL by vendor,
+   rollup/modelled LOB, and rollup/modelled peril, sorted largest-to-smallest by
+   `raw_aal`. This is an analyst sanity check before business blending, FX,
+   forecast, or EUWS adjustments.
 
 ### 3. Run the pipeline
 

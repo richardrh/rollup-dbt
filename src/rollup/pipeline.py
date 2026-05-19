@@ -605,6 +605,23 @@ class PipelineValidationInputs:
     coverage_report: pl.DataFrame
 
 
+_INPUT_YLT_AAL_SUMMARY_SCHEMA = {
+    Col.vendor: pl.String,
+    Col.rollup_lob: pl.String,
+    Col.rollup_peril: pl.String,
+    Col.modelled_lob: pl.String,
+    Col.modelled_peril: pl.String,
+    Col.row_count: pl.Int64,
+    Col.loss_sum: pl.Float64,
+    "simulation_count": pl.Int64,
+    "raw_aal": pl.Float64,
+}
+
+
+def empty_input_ylt_aal_by_lob_peril_summary() -> pl.DataFrame:
+    return pl.DataFrame(schema=_INPUT_YLT_AAL_SUMMARY_SCHEMA)
+
+
 def load_pipeline_validation_inputs(
     data_root: Path | str = "data",
 ) -> PipelineValidationInputs:
@@ -798,6 +815,119 @@ def stage_ep_summaries(
     )
 
     return StagedEpSummaries(enriched=enriched, selected=selected)
+
+
+def _validation_has_blocking_errors(inputs: PipelineValidationInputs) -> bool:
+    structural_report = pl.concat(
+        [inputs.seeds.report, inputs.ylts.report, inputs.ep_summaries.report],
+        how="diagonal_relaxed",
+    )
+    if structural_report.filter(~pl.col("valid")).height:
+        return True
+    return inputs.coverage_report.filter(pl.col("severity") == "error").height > 0
+
+
+def _input_ylt_aal_group(frame: pl.LazyFrame, simulation_count: int) -> pl.LazyFrame:
+    keys = [
+        Col.vendor,
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.modelled_lob,
+        Col.modelled_peril,
+    ]
+    return (
+        frame.group_by(keys)
+        .agg(
+            pl.len().cast(pl.Int64).alias(Col.row_count),
+            pl.col(Col.loss).sum().cast(pl.Float64).alias(Col.loss_sum),
+        )
+        .with_columns(
+            pl.lit(simulation_count).cast(pl.Int64).alias("simulation_count"),
+            (pl.col(Col.loss_sum) / simulation_count).cast(pl.Float64).alias("raw_aal"),
+        )
+        .select(*_INPUT_YLT_AAL_SUMMARY_SCHEMA)
+    )
+
+
+def input_ylt_aal_by_lob_peril_summary(inputs: PipelineValidationInputs) -> pl.DataFrame:
+    if _validation_has_blocking_errors(inputs):
+        return empty_input_ylt_aal_by_lob_peril_summary()
+
+    required_seeds = {"lobs.csv", "perils.csv"}
+    if not required_seeds <= set(inputs.seeds.frames):
+        return empty_input_ylt_aal_by_lob_peril_summary()
+
+    lobs = inputs.seeds.frames["lobs.csv"].lazy().select(
+        Col.modelled_lob,
+        Col.rollup_lob,
+    )
+    perils = inputs.seeds.frames["perils.csv"].lazy().select(
+        Col.modelled_peril,
+        Col.rollup_peril,
+    )
+    verisk = (
+        inputs.ylts.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC")
+        .select(
+            pl.lit("verisk").alias(Col.vendor),
+            pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
+            pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
+            pl.col(RawCol.GroundUpLoss).cast(pl.Float64).alias(Col.loss),
+        )
+        .join(lobs, on=Col.modelled_lob, how="inner")
+        .join(perils, on=Col.modelled_peril, how="inner")
+    )
+
+    staged_ep_summaries = stage_ep_summaries(inputs.ep_summaries, inputs.seeds)
+    risklink_lookup = (
+        staged_ep_summaries.selected.filter(pl.col(Col.vendor) == "risklink")
+        .select(
+            Col.vendor,
+            Col.analysis_id,
+            Col.modelled_lob,
+            Col.modelled_peril,
+            Col.rollup_lob,
+            Col.rollup_peril,
+        )
+        .unique()
+    )
+    risklink = (
+        inputs.ylts.frames.risklink.select(
+            pl.lit("risklink").alias(Col.vendor),
+            pl.col(RawCol.anlsid).cast(pl.String).alias(Col.analysis_id),
+            pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
+        )
+        .join(risklink_lookup, on=[Col.vendor, Col.analysis_id], how="inner")
+        .select(
+            Col.vendor,
+            Col.rollup_lob,
+            Col.rollup_peril,
+            Col.modelled_lob,
+            Col.modelled_peril,
+            Col.loss,
+        )
+    )
+
+    return (
+        pl.concat(
+            [
+                _input_ylt_aal_group(verisk, 10_000),
+                _input_ylt_aal_group(risklink, 100_000),
+            ],
+            how="vertical",
+        )
+        .sort(
+            [
+                "raw_aal",
+                Col.vendor,
+                Col.rollup_lob,
+                Col.rollup_peril,
+                Col.modelled_lob,
+                Col.modelled_peril,
+            ],
+            descending=[True, False, False, False, False, False],
+        )
+        .collect()
+    )
 
 
 def join_ep_summaries(
