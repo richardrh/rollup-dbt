@@ -56,7 +56,9 @@ The validation report flags contract failures such as:
 Fix schema-validation failures before investigating modelled LOB/peril failures.
 After file-level schemas pass, validation runs anti-join checks against
 `data/seeds/business/lobs.csv` and `data/seeds/business/perils.csv`, then prints a
-YLT loss validation summary as a sanity check.
+YLT loss validation summary and raw input YLT AAL by LOB/peril summary as sanity
+checks. Add `--report-dir output/validation` to write the same validation tables
+to CSV files.
 
 ## Why this is the anchor point
 
