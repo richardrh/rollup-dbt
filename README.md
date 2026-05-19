@@ -35,6 +35,34 @@ data/
 
 Generated files go to `output/`. Do not put analyst inputs there.
 
+EP summaries are required as canonical long CSVs under
+`data/ep_summaries/**/*.long.csv`. The normal files are:
+
+- `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
+- `data/ep_summaries/risklink/rms_ep_summary.long.csv`
+
+Each EP summary row must use these columns:
+
+```text
+vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
+```
+
+If you only have source workbook extracts, generate the canonical long files
+before validating:
+
+```bash
+uv run rollup generate-ep-summaries
+```
+
+Before validation, check the business seed lookups:
+
+- `data/seeds/business/lobs.csv` must contain every EP `modelled_lob` and every
+  YLT modelled LOB. It maps modelled LOBs to rollup LOB, class, office,
+  currency, and CDS class metadata.
+- `data/seeds/business/perils.csv` must contain every EP `modelled_peril` and
+  every YLT modelled peril. It maps modelled perils to rollup peril,
+  region/peril labels, `region_peril_id`, and `selection_priority`.
+
 ### 2. Validate inputs
 
 ```bash
@@ -54,6 +82,17 @@ Validation checks schemas and modelled LOB/peril lookups, including:
 - EP summary `modelled_peril` values exist in `data/seeds/business/perils.csv`.
 - Verisk YLT `ExposureAttribute` values exist in `lobs.csv`.
 - Verisk YLT `Analysis` values exist in `perils.csv`.
+
+Read the output in three sections:
+
+1. `Validation report`: file-level schema, required-column, and type checks for
+   seeds, YLTs, and EP summaries. `valid=False` means fix the file format before
+   running the pipeline.
+2. `Modelled LOB/peril anti-join report`: should be empty. Any rows are
+   blocking lookup failures; add/fix the value in `lobs.csv`/`perils.csv` or fix
+   the input data.
+3. `YLT loss validation summary`: non-blocking sanity totals unless an input
+   read failed. Check file names, loss sums, and scaled loss for obvious issues.
 
 ### 3. Run the pipeline
 

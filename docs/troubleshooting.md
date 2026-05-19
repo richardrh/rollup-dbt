@@ -11,11 +11,18 @@ is intended to show real missing input values, not unused seed rows.
 
 ## Common validation failures
 
+- Missing, extra, or wrong-type columns versus the relevant `schema.yaml`. Fix
+  the file before running when the `Validation report` shows `valid=False`.
 - EP summary `modelled_lob` missing from `data/seeds/business/lobs.csv`.
 - EP summary `modelled_peril` missing from `data/seeds/business/perils.csv`.
 - Verisk YLT `ExposureAttribute` missing from `lobs.csv`.
 - Verisk YLT `Analysis` missing from `perils.csv`.
-- Input columns do not match the colocated `schema.yaml`.
+- Non-empty `Modelled LOB/peril anti-join report`. This is blocking: add/fix the
+  value in `lobs.csv`/`perils.csv` or correct the input data.
+
+The `YLT loss validation summary` is mainly a sanity check. Review file names,
+loss sums, and scaled loss for obvious issues; it is not blocking unless an input
+read failed.
 
 ## Empty or surprising outputs
 
