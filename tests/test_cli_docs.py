@@ -6,6 +6,9 @@ from pathlib import Path
 from rollup import cli
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _create_docs_dir(root: Path) -> None:
     docs_dir = root / "docs"
     docs_dir.mkdir()
@@ -263,3 +266,7 @@ def test_docs_foreground_flag_is_wired_through_main(monkeypatch, tmp_path) -> No
 
     assert cli.main(["docs", "--foreground"]) == 0
     assert foreground_values == [True]
+
+
+def test_docs_runtime_state_directory_is_gitignored() -> None:
+    assert "/.tmp/" in (REPO_ROOT / ".gitignore").read_text().splitlines()
