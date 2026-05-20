@@ -13,7 +13,8 @@ uv run rollup validate        # check inputs before a run
 uv run rollup run             # write normal outputs to output/
 uv run rollup run --debug     # also write intermediate frames to output/debug/
 uv run rollup analyze         # write output/analysis/ep_report.csv
-uv run rollup docs            # serve these docs and print a URL
+uv run rollup docs            # start these docs in the background
+uv run rollup docs --foreground  # serve docs in the current terminal
 ```
 
 ## Inputs and outputs
