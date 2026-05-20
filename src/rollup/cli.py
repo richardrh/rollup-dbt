@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -87,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=8000,
         type=int,
         help="Port for the docs server.",
+    )
+    docs_parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run the docs server in the foreground instead of the default background mode.",
     )
 
     return parser
@@ -229,7 +235,51 @@ def analyze_command(output_root: Path) -> int:
     return 0
 
 
-def docs_command(*, host: str = "127.0.0.1", port: int = 8000) -> int:
+DOCS_TMP_DIR = Path(".tmp")
+DOCS_LOG_PATH = DOCS_TMP_DIR / "rollup-docs.log"
+DOCS_PID_PATH = DOCS_TMP_DIR / "rollup-docs.pid"
+
+
+def _docs_server_command(host: str, port: int) -> list[str]:
+    return [
+        "zensical",
+        "serve",
+        "--config-file",
+        "zensical.toml",
+        "--dev-addr",
+        f"{host}:{port}",
+    ]
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _read_live_docs_pid(pid_path: Path) -> int | None:
+    try:
+        pid = int(pid_path.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+    if pid <= 0 or not _pid_is_alive(pid):
+        pid_path.unlink(missing_ok=True)
+        return None
+    return pid
+
+
+def _print_background_docs_details(*, url: str, pid: int, log_path: Path) -> None:
+    print(f"Docs available at {url}")
+    print(f"Docs server running in background with PID {pid}")
+    print(f"Logs: {log_path}")
+    print(f"Stop with: kill {pid}")
+
+
+def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool = False) -> int:
     docs_dir = Path("docs")
     if not docs_dir.is_dir():
         print(
@@ -240,24 +290,37 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000) -> int:
         return 1
 
     url = f"http://{host}:{port}/"
-    print(f"Docs available at {url}")
+    command = _docs_server_command(host, port)
+
+    if foreground:
+        print(f"Docs available at {url}")
+        try:
+            return subprocess.call(command)
+        except FileNotFoundError:
+            print(
+                "Could not find the 'zensical' executable. Install dev dependencies or run with `uv run rollup docs`.",
+                file=sys.stderr,
+            )
+            return 1
+
+    live_pid = _read_live_docs_pid(DOCS_PID_PATH)
+    if live_pid is not None:
+        _print_background_docs_details(url=url, pid=live_pid, log_path=DOCS_LOG_PATH)
+        return 0
+
+    DOCS_TMP_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        return subprocess.call(
-            [
-                "zensical",
-                "serve",
-                "--config-file",
-                "zensical.toml",
-                "--dev-addr",
-                f"{host}:{port}",
-            ]
-        )
+        with DOCS_LOG_PATH.open("ab") as log_file:
+            process = subprocess.Popen(command, stdout=log_file, stderr=log_file)
     except FileNotFoundError:
         print(
             "Could not find the 'zensical' executable. Install dev dependencies or run with `uv run rollup docs`.",
             file=sys.stderr,
         )
         return 1
+    DOCS_PID_PATH.write_text(f"{process.pid}\n")
+    _print_background_docs_details(url=url, pid=process.pid, log_path=DOCS_LOG_PATH)
+    return 0
 
 
 def generate_ep_summaries_command(data_root: Path) -> int:
@@ -283,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "generate-ep-summaries":
         return generate_ep_summaries_command(data_root)
     if args.command == "docs":
-        return docs_command(host=args.host, port=args.port)
+        return docs_command(host=args.host, port=args.port, foreground=args.foreground)
 
     parser.error(f"unknown command: {args.command}")
     return 2
