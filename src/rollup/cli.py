@@ -270,7 +270,28 @@ def _pid_is_alive(pid: int) -> bool:
     return True
 
 
-def _read_live_docs_state(pid_path: Path, *, host: str, port: int) -> DocsServerState | None:
+def _process_matches_docs_command(pid: int, command: list[str]) -> bool:
+    try:
+        raw_cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+
+    args = [part.decode(errors="ignore") for part in raw_cmdline.split(b"\0") if part]
+    if not args:
+        return False
+
+    executable_matches = any(Path(arg).name == "zensical" for arg in args)
+    required_args_match = all(expected in args for expected in command[1:])
+    return executable_matches and required_args_match
+
+
+def _read_live_docs_state(
+    pid_path: Path,
+    *,
+    host: str,
+    port: int,
+    command: list[str],
+) -> DocsServerState | None:
     try:
         raw_state = json.loads(pid_path.read_text())
         state = DocsServerState(
@@ -283,7 +304,11 @@ def _read_live_docs_state(pid_path: Path, *, host: str, port: int) -> DocsServer
 
     if state.host != host or state.port != port:
         return None
-    if state.pid <= 0 or not _pid_is_alive(state.pid):
+    if (
+        state.pid <= 0
+        or not _pid_is_alive(state.pid)
+        or not _process_matches_docs_command(state.pid, command)
+    ):
         pid_path.unlink(missing_ok=True)
         return None
     return state
@@ -336,7 +361,7 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool 
             )
             return 1
 
-    live_state = _read_live_docs_state(DOCS_PID_PATH, host=host, port=port)
+    live_state = _read_live_docs_state(DOCS_PID_PATH, host=host, port=port, command=command)
     if live_state is not None:
         _print_background_docs_details(url=url, pid=live_state.pid, log_path=DOCS_LOG_PATH)
         return 0

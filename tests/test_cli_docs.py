@@ -82,7 +82,16 @@ def test_docs_command_reuses_existing_live_background_server(monkeypatch, tmp_pa
     def unexpected_popen(*args, **kwargs):
         raise AssertionError("duplicate docs server should not be spawned")
 
+    def fake_read_bytes(path: Path) -> bytes:
+        assert str(path) == "/proc/9876/cmdline"
+        return (
+            b"/venv/bin/zensical\0serve\0--config-file\0zensical.toml\0"
+            b"--dev-addr\x00"
+            b"127.0.0.1:8000\0"
+        )
+
     monkeypatch.setattr(cli.os, "kill", fake_kill)
+    monkeypatch.setattr(cli.Path, "read_bytes", fake_read_bytes)
     monkeypatch.setattr(cli.subprocess, "Popen", unexpected_popen)
 
     assert cli.docs_command(host="127.0.0.1", port=8000) == 0
@@ -131,6 +140,53 @@ def test_docs_command_ignores_stale_pid_and_starts_new_server(monkeypatch, tmp_p
         ]
     ]
     assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text())["pid"] == 4321
+
+
+def test_docs_command_does_not_reuse_non_docs_process_cmdline(monkeypatch, tmp_path) -> None:
+    _create_docs_dir(tmp_path)
+    _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
+    monkeypatch.chdir(tmp_path)
+    popen_commands: list[list[str]] = []
+
+    class FakeProcess:
+        pid = 4321
+
+        def wait(self, *, timeout):
+            raise cli.subprocess.TimeoutExpired("zensical", timeout)
+
+    def fake_kill(pid: int, signal: int) -> None:
+        assert pid == 9876
+        assert signal == 0
+
+    def fake_read_bytes(path: Path) -> bytes:
+        assert str(path) == "/proc/9876/cmdline"
+        return b"/usr/bin/python\0-c\0import time; time.sleep(999)\0"
+
+    def fake_popen(command, *, stdout, stderr):
+        popen_commands.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(cli.os, "kill", fake_kill)
+    monkeypatch.setattr(cli.Path, "read_bytes", fake_read_bytes)
+    monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
+
+    assert cli.docs_command(host="127.0.0.1", port=8000) == 0
+
+    assert popen_commands == [
+        [
+            "zensical",
+            "serve",
+            "--config-file",
+            "zensical.toml",
+            "--dev-addr",
+            "127.0.0.1:8000",
+        ]
+    ]
+    assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text()) == {
+        "pid": 4321,
+        "host": "127.0.0.1",
+        "port": 8000,
+    }
 
 
 def test_docs_command_does_not_reuse_mismatched_host_port_state(monkeypatch, tmp_path) -> None:
