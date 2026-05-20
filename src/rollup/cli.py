@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
@@ -238,6 +239,14 @@ def analyze_command(output_root: Path) -> int:
 DOCS_TMP_DIR = Path(".tmp")
 DOCS_LOG_PATH = DOCS_TMP_DIR / "rollup-docs.log"
 DOCS_PID_PATH = DOCS_TMP_DIR / "rollup-docs.pid"
+DOCS_STARTUP_CHECK_SECONDS = 0.25
+
+
+@dataclass(frozen=True)
+class DocsServerState:
+    pid: int
+    host: str
+    port: int
 
 
 def _docs_server_command(host: str, port: int) -> list[str]:
@@ -261,15 +270,39 @@ def _pid_is_alive(pid: int) -> bool:
     return True
 
 
-def _read_live_docs_pid(pid_path: Path) -> int | None:
+def _read_live_docs_state(pid_path: Path, *, host: str, port: int) -> DocsServerState | None:
     try:
-        pid = int(pid_path.read_text().strip())
-    except (FileNotFoundError, ValueError):
+        raw_state = json.loads(pid_path.read_text())
+        state = DocsServerState(
+            pid=int(raw_state["pid"]),
+            host=str(raw_state["host"]),
+            port=int(raw_state["port"]),
+        )
+    except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
-    if pid <= 0 or not _pid_is_alive(pid):
+
+    if state.host != host or state.port != port:
+        return None
+    if state.pid <= 0 or not _pid_is_alive(state.pid):
         pid_path.unlink(missing_ok=True)
         return None
-    return pid
+    return state
+
+
+def _write_docs_state(pid_path: Path, *, pid: int, host: str, port: int) -> None:
+    pid_path.write_text(json.dumps({"pid": pid, "host": host, "port": port}) + "\n")
+
+
+def _exited_immediately(process: subprocess.Popen[bytes], *, log_path: Path) -> int | None:
+    try:
+        status = process.wait(timeout=DOCS_STARTUP_CHECK_SECONDS)
+    except subprocess.TimeoutExpired:
+        return None
+    print(
+        f"Docs server exited immediately with status {status}. See logs: {log_path}",
+        file=sys.stderr,
+    )
+    return status if status != 0 else 1
 
 
 def _print_background_docs_details(*, url: str, pid: int, log_path: Path) -> None:
@@ -303,9 +336,9 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool 
             )
             return 1
 
-    live_pid = _read_live_docs_pid(DOCS_PID_PATH)
-    if live_pid is not None:
-        _print_background_docs_details(url=url, pid=live_pid, log_path=DOCS_LOG_PATH)
+    live_state = _read_live_docs_state(DOCS_PID_PATH, host=host, port=port)
+    if live_state is not None:
+        _print_background_docs_details(url=url, pid=live_state.pid, log_path=DOCS_LOG_PATH)
         return 0
 
     DOCS_TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -318,7 +351,10 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool 
             file=sys.stderr,
         )
         return 1
-    DOCS_PID_PATH.write_text(f"{process.pid}\n")
+    startup_status = _exited_immediately(process, log_path=DOCS_LOG_PATH)
+    if startup_status is not None:
+        return startup_status
+    _write_docs_state(DOCS_PID_PATH, pid=process.pid, host=host, port=port)
     _print_background_docs_details(url=url, pid=process.pid, log_path=DOCS_LOG_PATH)
     return 0
 
