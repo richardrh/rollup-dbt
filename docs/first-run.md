@@ -18,6 +18,9 @@ data/seeds/**
 
 Generated outputs land in root `output/`; do not put analyst inputs there.
 
+YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
+the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
+
 EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
 The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
 `data/ep_summaries/risklink/rms_ep_summary.long.csv`.

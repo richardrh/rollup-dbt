@@ -28,6 +28,7 @@ uv run rollup docs --foreground  # serve docs in the current terminal
 Start with [Quickstart](first-run.md). On Windows, use the
 [Windows install guide](windows-install.md) first to install `uv` and build a
 local environment. Then use [Loading your data](load-data.md) for exact file
-locations. For reference details, see the
+locations. If a YLT arrives as CSV, see [Utilities](utilities.md) for the DuckDB
+CSV-to-Parquet command. For reference details, see the
 [data-flow architecture](architecture.md), [schema contracts](schema-contracts.md),
 and [seed files](data-requirements.md#seed-files).
