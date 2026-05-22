@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,23 +25,26 @@ CANONICAL_COLUMNS = [
 RISKLINK_HEADER_WIDTH = 30
 
 
-def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
-    data_root = Path(data_root)
-    outputs = [
-        _write_ep_summary(
-            build_verisk_ep_summary(data_root),
-            data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv",
-        ),
-        _write_ep_summary(
-            build_risklink_ep_summary(data_root),
-            data_root / "ep_summaries" / "risklink" / "rms_ep_summary.long.csv",
-        ),
-    ]
-    return outputs
+@dataclass(frozen=True)
+class EpSummaryVendorConfig:
+    vendor: str
+    source_dirname: str
+    output_filename: str
+    default_workbook_filename: str
+    builder: Callable[[Path | str], pl.DataFrame]
+
+    def source_dir(self, data_root: Path | str) -> Path:
+        return Path(data_root) / "ep_summaries" / self.source_dirname
+
+    def output_path(self, data_root: Path | str) -> Path:
+        return self.source_dir(data_root) / self.output_filename
+
+    def default_workbook_path(self, data_root: Path | str) -> Path:
+        return self.source_dir(data_root) / self.default_workbook_filename
 
 
-def build_verisk_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
-    workbook_path = Path(data_root) / "ep_summaries" / "verisk" / "verisk.xlsx"
+def build_verisk_ep_summary(workbook_path: Path | str) -> pl.DataFrame:
+    workbook_path = Path(workbook_path)
     worksheet = load_workbook(workbook_path, read_only=True, data_only=True)["PML by LOB"]
     headers = {value: index for index, value in enumerate(_row_values(worksheet, 7), start=1)}
     metric_columns = [
@@ -76,13 +81,8 @@ def build_verisk_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
     return _canonical_frame(rows)
 
 
-def build_risklink_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
-    workbook_path = (
-        Path(data_root)
-        / "ep_summaries"
-        / "risklink"
-        / "Hiscox RNL26 RMS by LOB (EDM & RDM).xlsx"
-    )
+def build_risklink_ep_summary(workbook_path: Path | str) -> pl.DataFrame:
+    workbook_path = Path(workbook_path)
     worksheet = load_workbook(workbook_path, read_only=True, data_only=True)["OEPAEP Curves"]
     header_rows = list(
         worksheet.iter_rows(
@@ -151,6 +151,67 @@ def build_risklink_ep_summary(data_root: Path | str = "data") -> pl.DataFrame:
     return _canonical_frame(rows)
 
 
+EP_SUMMARY_VENDOR_CONFIGS = {
+    "verisk": EpSummaryVendorConfig(
+        vendor="verisk",
+        source_dirname="verisk",
+        output_filename="verisk_ep_summary.long.csv",
+        default_workbook_filename="verisk.xlsx",
+        builder=build_verisk_ep_summary,
+    ),
+    "risklink": EpSummaryVendorConfig(
+        vendor="risklink",
+        source_dirname="risklink",
+        output_filename="rms_ep_summary.long.csv",
+        default_workbook_filename="Hiscox RNL26 RMS by LOB (EDM & RDM).xlsx",
+        builder=build_risklink_ep_summary,
+    ),
+}
+
+
+def ep_summary_vendor_names() -> list[str]:
+    return list(EP_SUMMARY_VENDOR_CONFIGS)
+
+
+def get_ep_summary_vendor_config(vendor: str) -> EpSummaryVendorConfig:
+    try:
+        return EP_SUMMARY_VENDOR_CONFIGS[vendor]
+    except KeyError as exc:
+        known_vendors = ", ".join(ep_summary_vendor_names())
+        raise ValueError(
+            f"unknown EP summary vendor {vendor!r}; expected one of: {known_vendors}"
+        ) from exc
+
+
+def scan_ep_summary_workbooks(data_root: Path | str, vendor: str) -> list[Path]:
+    config = get_ep_summary_vendor_config(vendor)
+    return sorted(
+        config.source_dir(data_root).glob("*.xlsx"),
+        key=lambda path: path.name.lower(),
+    )
+
+
+def generate_vendor_ep_summary(
+    data_root: Path | str,
+    vendor: str,
+    workbook_path: Path | str,
+) -> Path:
+    config = get_ep_summary_vendor_config(vendor)
+    return _write_ep_summary(config.builder(workbook_path), config.output_path(data_root))
+
+
+def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
+    data_root = Path(data_root)
+    return [
+        generate_vendor_ep_summary(
+            data_root,
+            vendor,
+            config.default_workbook_path(data_root),
+        )
+        for vendor, config in EP_SUMMARY_VENDOR_CONFIGS.items()
+    ]
+
+
 def _write_ep_summary(frame: pl.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
@@ -196,4 +257,3 @@ def _clean_string(value: Any) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
-
