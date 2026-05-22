@@ -30,7 +30,14 @@ def _write_minimal_verisk_workbook(path: Path, *, aal: float = 12.5) -> None:
 
 def _mock_input(monkeypatch, responses: list[str]) -> None:
     response_iter: Iterator[str] = iter(responses)
-    monkeypatch.setattr(builtins, "input", lambda prompt="": next(response_iter))
+
+    def input_response(prompt: str = "") -> str:
+        try:
+            return next(response_iter)
+        except StopIteration:
+            raise AssertionError(f"unexpected prompt: {prompt}") from None
+
+    monkeypatch.setattr(builtins, "input", input_response)
 
 
 def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
@@ -82,6 +89,22 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
     assert "Select EP summary vendor:" in captured
     assert "Select source XLSX workbook:" in captured
     assert "EP summary written to" in captured
+
+
+def test_generate_ep_summaries_interactive_writes_new_output_without_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_root = tmp_path / "data"
+    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
+    _write_minimal_verisk_workbook(workbook_path, aal=37.5)
+    _mock_input(monkeypatch, ["1", "1"])
+
+    exit_code = cli.main(["--data-root", str(data_root), "generate-ep-summaries"])
+
+    assert exit_code == 0
+    assert pl.read_csv(output_path).item(0, "loss") == 37.5
 
 
 def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
