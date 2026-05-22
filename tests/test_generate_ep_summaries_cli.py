@@ -110,6 +110,7 @@ def test_generate_ep_summaries_interactive_writes_new_output_without_confirmatio
 def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
     tmp_path: Path,
     monkeypatch,
+    capsys,
 ) -> None:
     data_root = tmp_path / "data"
     workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
@@ -136,6 +137,15 @@ def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
 
     assert exit_code == 0
     assert pl.read_csv(output_path).item(0, "loss") == 25.0
+    captured = capsys.readouterr().out
+    assert "EP summary written to" in captured
+    assert "EP summary overview:" in captured
+    assert "Rows: 2" in captured
+    assert "Columns (7): vendor, analysis_id, modelled_lob, modelled_peril, ep_type, return_period, loss" in captured
+    assert "Vendors: verisk" in captured
+    assert "EP type counts: AAL=1, AEP=1" in captured
+    assert "Modelled LOB/peril pairs: 1" in captured
+    assert "Return period range: 0-100" in captured
 
 
 def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_output(

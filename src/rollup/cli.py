@@ -343,6 +343,41 @@ def _resolve_xlsx_path(data_root: Path, vendor: str, xlsx: Path) -> Path:
     return xlsx
 
 
+def _sorted_distinct_values(frame: pl.DataFrame, column: str) -> list[str]:
+    return sorted(str(value) for value in frame.get_column(column).drop_nulls().unique())
+
+
+def _format_values(values: Sequence[str]) -> str:
+    return ", ".join(values) if values else "none"
+
+
+def _format_ep_type_counts(frame: pl.DataFrame) -> str:
+    counts = frame.group_by("ep_type").len(name="count").sort("ep_type")
+    values = [f"{ep_type}={count}" for ep_type, count in counts.iter_rows()]
+    return ", ".join(values) if values else "none"
+
+
+def _format_return_period_range(frame: pl.DataFrame) -> str:
+    if frame.is_empty():
+        return "n/a"
+    return_periods = frame.get_column("return_period").drop_nulls()
+    if return_periods.is_empty():
+        return "n/a"
+    return f"{return_periods.min()}-{return_periods.max()}"
+
+
+def _print_ep_summary_overview(output_path: Path) -> None:
+    frame = pl.read_csv(output_path)
+    modelled_pair_count = frame.select(["modelled_lob", "modelled_peril"]).unique().height
+    print("EP summary overview:")
+    print(f"  Rows: {frame.height}")
+    print(f"  Columns ({len(frame.columns)}): {', '.join(frame.columns)}")
+    print(f"  Vendors: {_format_values(_sorted_distinct_values(frame, 'vendor'))}")
+    print(f"  EP type counts: {_format_ep_type_counts(frame)}")
+    print(f"  Modelled LOB/peril pairs: {modelled_pair_count}")
+    print(f"  Return period range: {_format_return_period_range(frame)}")
+
+
 def generate_ep_summaries_command(
     data_root: Path,
     *,
@@ -399,6 +434,7 @@ def generate_ep_summaries_command(
         return 1
 
     print(f"EP summary written to {output_path}")
+    _print_ep_summary_overview(output_path)
     return 0
 
 
