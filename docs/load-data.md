@@ -34,12 +34,27 @@ Required columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-Use the generator when starting from source workbook/XLSX extracts instead of
-canonical long CSVs:
+Use the generator when starting from source canonical wide CSV extracts instead
+of canonical long CSVs. It scans `data/ep_summaries/<vendor>/*.csv` and excludes
+existing `*.long.csv` outputs:
 
 ```bash
 uv run rollup generate-ep-summaries
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
+
+Wide CSVs use row 1 as the header and require `id`, `modelled_lob`, and
+`modelled_peril`; `id` becomes `analysis_id`. Metric columns should be uppercase
+without a `.0` suffix:
+
+```csv
+id,modelled_lob,modelled_peril,AAL_0,AEP_50,OEP_100
+ANALYSIS_1,Property,US_WS,1250,1750472,2250000
+```
+
+Verisk-clean aliases `ExposureAttribute` -> `modelled_lob` and `Analysis` ->
+`modelled_peril` are accepted. If present, `CatalogTypeCode` filters to trimmed
+`STC` rows.
 
 ## Seed lookup checks
 

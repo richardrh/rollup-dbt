@@ -26,12 +26,18 @@ Required EP summary columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-If you have source XLSX/workbook data instead of canonical long CSVs, generate
+If you have source canonical wide CSVs instead of canonical long CSVs, generate
 the long files before validating:
 
 ```bash
 uv run rollup generate-ep-summaries
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
+
+Wide CSVs use row 1 as the header. Required ID columns are `id`, `modelled_lob`,
+and `modelled_peril`; `id` maps to long-output `analysis_id`. Metric columns
+should be uppercase with no `.0` suffix, such as `AAL_0`, `AEP_50`, and
+`OEP_100`.
 
 ## 2. Check seed lookups
 

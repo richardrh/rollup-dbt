@@ -20,11 +20,29 @@ EP summaries must be canonical long CSVs with:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-If source data arrives as workbooks, generate the long files first:
+If source data arrives as canonical wide CSVs, generate the long files first.
+The command scans `data/ep_summaries/<vendor>/*.csv` and excludes existing
+`*.long.csv` outputs:
 
 ```bash
 uv run rollup generate-ep-summaries
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
+
+Canonical wide CSVs must have their header on row 1. Required ID columns are
+`id`, `modelled_lob`, and `modelled_peril`; `id` becomes `analysis_id` in the
+long output. Metric columns should be uppercase and should not include a `.0`
+suffix, for example `AAL_0`, `AEP_50`, and `OEP_100`:
+
+```csv
+id,modelled_lob,modelled_peril,AAL_0,AEP_50,OEP_100
+ANALYSIS_1,Property,US_WS,1250,1750472,2250000
+```
+
+For Verisk-clean exports, `ExposureAttribute` is accepted as `modelled_lob` and
+`Analysis` is accepted as `modelled_peril`. If `CatalogTypeCode` is present, only
+rows with trimmed value `STC` are converted. Optional `segment`, `sd`, `sd_0`, and
+`sd_0.0` columns are ignored.
 
 ## Seed files
 
