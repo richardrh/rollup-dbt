@@ -8,7 +8,9 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import TypeVar
+from zipfile import BadZipFile
 
+from openpyxl.utils.exceptions import InvalidFileException
 import polars as pl
 
 from rollup.analysis import write_ep_report
@@ -29,6 +31,16 @@ from rollup.pipeline import (
 
 
 T = TypeVar("T")
+
+_USER_FACING_EP_SUMMARY_ERRORS = (
+    BadZipFile,
+    FileNotFoundError,
+    InvalidFileException,
+    KeyError,
+    OSError,
+    ValueError,
+    pl.exceptions.PolarsError,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -374,11 +386,18 @@ def generate_ep_summaries_command(
         if output_path.exists() and not yes and not _confirm_overwrite(output_path):
             print("EP summary generation cancelled; no files overwritten.")
             return 0
+
+        output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path)
     except EOFError:
         print("Input ended before EP summary generation could continue.", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("EP summary generation cancelled; no files overwritten.")
+        return 130
+    except _USER_FACING_EP_SUMMARY_ERRORS as exc:
+        print(f"EP summary generation failed: {exc}", file=sys.stderr)
+        return 1
 
-    output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path)
     print(f"EP summary written to {output_path}")
     return 0
 

@@ -188,6 +188,62 @@ def test_generate_ep_summaries_returns_nonzero_when_input_ends(
     assert "Input ended before EP summary generation could continue." in capsys.readouterr().err
 
 
+def test_generate_ep_summaries_ctrl_c_returns_clean_cancel_status(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    data_root = tmp_path / "data"
+    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    _write_minimal_verisk_workbook(workbook_path)
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt="": (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    exit_code = cli.main(["--data-root", str(data_root), "generate-ep-summaries"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 130
+    assert "EP summary generation cancelled; no files overwritten." in captured.out
+    assert "Traceback" not in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_generate_ep_summaries_parsing_error_is_user_friendly(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    data_root = tmp_path / "data"
+    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    _write_minimal_verisk_workbook(workbook_path)
+
+    def fail_generation(data_root: Path, vendor: str, workbook_path: Path) -> Path:
+        raise KeyError("PML by LOB")
+
+    monkeypatch.setattr(cli, "generate_vendor_ep_summary", fail_generation)
+
+    exit_code = cli.main(
+        [
+            "--data-root",
+            str(data_root),
+            "generate-ep-summaries",
+            "--vendor",
+            "verisk",
+            "--xlsx",
+            "selected.xlsx",
+            "--yes",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "EP summary generation failed: 'PML by LOB'" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_generate_ep_summaries_confirmation_defaults_to_no_without_overwrite(
     tmp_path: Path,
     monkeypatch,
