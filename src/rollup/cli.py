@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import TypeVar
 from zipfile import BadZipFile
 
@@ -422,7 +423,13 @@ def generate_ep_summaries_command(
             print("EP summary generation cancelled; no files overwritten.")
             return 0
 
-        output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path)
+        print("EP summary generation:")
+        print(f"  Vendor: {selected_vendor}")
+        print(f"  Workbook: {workbook_path}")
+        print(f"  Output: {output_path}")
+        started = time.perf_counter()
+        output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path, status_callback=print)
+        elapsed_seconds = time.perf_counter() - started
     except EOFError:
         print("Input ended before EP summary generation could continue.", file=sys.stderr)
         return 1
@@ -433,7 +440,7 @@ def generate_ep_summaries_command(
         print(f"EP summary generation failed: {exc}", file=sys.stderr)
         return 1
 
-    print(f"EP summary written to {output_path}")
+    print(f"Done in {elapsed_seconds:.2f}s. EP summary written to {output_path}")
     _print_ep_summary_overview(output_path)
     return 0
 

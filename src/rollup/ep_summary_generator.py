@@ -199,9 +199,15 @@ def generate_vendor_ep_summary(
     data_root: Path | str,
     vendor: str,
     workbook_path: Path | str,
+    status_callback: Callable[[str], None] | None = None,
 ) -> Path:
     config = get_ep_summary_vendor_config(vendor)
-    return _write_ep_summary(config.builder(workbook_path), config.output_path(data_root))
+    if status_callback is not None:
+        status_callback("Reading workbook...")
+    frame = config.builder(workbook_path)
+    if status_callback is not None:
+        status_callback("Writing canonical long CSV...")
+    return _write_ep_summary(frame, config.output_path(data_root))
 
 
 def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:

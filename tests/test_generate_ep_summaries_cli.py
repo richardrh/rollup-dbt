@@ -139,6 +139,13 @@ def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
     assert pl.read_csv(output_path).item(0, "loss") == 25.0
     captured = capsys.readouterr().out
     assert "EP summary written to" in captured
+    assert "EP summary generation:" in captured
+    assert "Vendor: verisk" in captured
+    assert f"Workbook: {workbook_path}" in captured
+    assert f"Output: {output_path}" in captured
+    assert "Reading workbook..." in captured
+    assert "Writing canonical long CSV..." in captured
+    assert "Done in " in captured
     assert "EP summary overview:" in captured
     assert "Rows: 2" in captured
     assert "Columns (7): vendor, analysis_id, modelled_lob, modelled_peril, ep_type, return_period, loss" in captured
@@ -230,7 +237,13 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
     workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
     _write_minimal_verisk_workbook(workbook_path)
 
-    def fail_generation(data_root: Path, vendor: str, workbook_path: Path) -> Path:
+    def fail_generation(
+        data_root: Path,
+        vendor: str,
+        workbook_path: Path,
+        *,
+        status_callback=None,
+    ) -> Path:
         raise KeyError("PML by LOB")
 
     monkeypatch.setattr(cli, "generate_vendor_ep_summary", fail_generation)
