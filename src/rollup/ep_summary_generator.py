@@ -46,23 +46,27 @@ class EpSummaryVendorConfig:
 def build_verisk_ep_summary(workbook_path: Path | str) -> pl.DataFrame:
     workbook_path = Path(workbook_path)
     worksheet = load_workbook(workbook_path, read_only=True, data_only=True)["PML by LOB"]
-    headers = {value: index for index, value in enumerate(_row_values(worksheet, 7), start=1)}
+    header_row = next(worksheet.iter_rows(min_row=7, max_row=7, values_only=True))
+    headers = {value: index for index, value in enumerate(header_row)}
     metric_columns = [
         (name, column)
         for name, column in headers.items()
         if isinstance(name, str) and (name.startswith("aal_") or name.startswith("aep_") or name.startswith("oep_"))
     ]
+    analysis_column = headers["Analysis"]
+    modelled_lob_column = headers["ExposureAttribute"]
+    catalog_type_column = headers["CatalogTypeCode"]
 
     rows: list[dict[str, Any]] = []
-    for row_number in range(8, worksheet.max_row + 1):
-        analysis = _clean_string(worksheet.cell(row_number, headers["Analysis"]).value)
-        modelled_lob = _clean_string(worksheet.cell(row_number, headers["ExposureAttribute"]).value)
-        catalog_type = _clean_string(worksheet.cell(row_number, headers["CatalogTypeCode"]).value)
+    for row in worksheet.iter_rows(min_row=8, max_row=worksheet.max_row, values_only=True):
+        analysis = _clean_string(row[analysis_column])
+        modelled_lob = _clean_string(row[modelled_lob_column])
+        catalog_type = _clean_string(row[catalog_type_column])
         if not analysis or not modelled_lob or catalog_type != "STC":
             continue
 
         for metric_name, column in metric_columns:
-            loss = worksheet.cell(row_number, column).value
+            loss = row[column]
             if loss is None:
                 continue
             ep_type, return_period = _parse_verisk_metric(metric_name)

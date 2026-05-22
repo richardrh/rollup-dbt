@@ -5,6 +5,7 @@ from pathlib import Path
 import polars as pl
 from openpyxl import Workbook
 
+from rollup import ep_summary_generator
 from rollup.ep_summary_generator import (
     build_verisk_ep_summary,
     generate_vendor_ep_summary,
@@ -51,6 +52,60 @@ def test_build_verisk_ep_summary_uses_explicit_workbook_path(tmp_path: Path) -> 
             "analysis_id": "TEST_PERIL",
             "modelled_lob": "TEST_LOB",
             "modelled_peril": "TEST_PERIL",
+            "ep_type": "AEP",
+            "return_period": 100,
+            "loss": 1000.0,
+        },
+    ]
+
+
+def test_build_verisk_ep_summary_streams_rows_without_random_cell_access(monkeypatch) -> None:
+    headers = ("Analysis", "ExposureAttribute", "CatalogTypeCode", "aal_0", "aep_100")
+    data_rows = [
+        ("TEST_PERIL", "TEST_LOB", "STC", 12.5, 1000.0),
+        ("IGNORED_PERIL", "IGNORED_LOB", "WSC", 99.0, 9999.0),
+    ]
+
+    class CellAccessForbiddenWorksheet:
+        max_row = 8
+
+        def iter_rows(self, *, min_row: int, max_row: int | None = None, values_only: bool = False):
+            assert values_only is True
+            if min_row == 7 and max_row == 7:
+                return iter([headers])
+            if min_row == 8:
+                return iter(data_rows)
+            raise AssertionError(f"unexpected iter_rows call: min_row={min_row}, max_row={max_row}")
+
+        def cell(self, row: int, column: int):
+            raise AssertionError(f"random cell access should not be used: row={row}, column={column}")
+
+    class WorkbookBySheet:
+        def __getitem__(self, sheet_name: str) -> CellAccessForbiddenWorksheet:
+            assert sheet_name == "PML by LOB"
+            return CellAccessForbiddenWorksheet()
+
+    def load_workbook_without_random_cell_access(path: Path, *, read_only: bool, data_only: bool) -> WorkbookBySheet:
+        assert path == Path("fake.xlsx")
+        assert read_only is True
+        assert data_only is True
+        return WorkbookBySheet()
+
+    monkeypatch.setattr(ep_summary_generator, "load_workbook", load_workbook_without_random_cell_access)
+
+    frame = build_verisk_ep_summary(Path("fake.xlsx"))
+
+    assert frame.select("analysis_id", "modelled_lob", "ep_type", "return_period", "loss").to_dicts() == [
+        {
+            "analysis_id": "TEST_PERIL",
+            "modelled_lob": "TEST_LOB",
+            "ep_type": "AAL",
+            "return_period": 0,
+            "loss": 12.5,
+        },
+        {
+            "analysis_id": "TEST_PERIL",
+            "modelled_lob": "TEST_LOB",
             "ep_type": "AEP",
             "return_period": 100,
             "loss": 1000.0,
