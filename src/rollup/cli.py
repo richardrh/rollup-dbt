@@ -9,9 +9,7 @@ import subprocess
 import sys
 import time
 from typing import TypeVar
-from zipfile import BadZipFile
 
-from openpyxl.utils.exceptions import InvalidFileException
 import polars as pl
 
 from rollup.analysis import write_ep_report
@@ -19,7 +17,7 @@ from rollup.ep_summary_generator import (
     ep_summary_vendor_names,
     generate_vendor_ep_summary,
     get_ep_summary_vendor_config,
-    scan_ep_summary_workbooks,
+    scan_ep_summary_csvs,
 )
 from rollup.pipeline import (
     PipelineValidationInputs,
@@ -34,11 +32,10 @@ from rollup.pipeline import (
 T = TypeVar("T")
 
 _USER_FACING_EP_SUMMARY_ERRORS = (
-    BadZipFile,
     FileNotFoundError,
-    InvalidFileException,
     KeyError,
     OSError,
+    UnicodeDecodeError,
     ValueError,
     pl.exceptions.PolarsError,
 )
@@ -83,10 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     ep_summary_parser = subcommands.add_parser(
         "generate-ep-summaries",
-        help="Generate one canonical long EP summary CSV from a selected source XLSX file.",
+        help="Generate one canonical long EP summary CSV from a selected source wide CSV file.",
         description=(
-            "Interactively select a vendor and discovered source XLSX file, or pass "
-            "--vendor, --xlsx, and --yes for non-interactive automation."
+            "Interactively select a vendor and discovered source wide CSV file, or pass "
+            "--vendor, --csv, and --yes for non-interactive automation."
         ),
     )
     ep_summary_parser.add_argument(
@@ -95,10 +92,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="EP summary vendor to generate.",
     )
     ep_summary_parser.add_argument(
-        "--xlsx",
+        "--csv",
         type=Path,
         help=(
-            "Source XLSX workbook path. Relative filenames are also resolved inside "
+            "Source canonical wide CSV path. Relative filenames are also resolved inside "
             "data/ep_summaries/<vendor>/."
         ),
     )
@@ -335,13 +332,13 @@ def _confirm_overwrite(output_path: Path) -> bool:
         print("Please answer y or n.")
 
 
-def _resolve_xlsx_path(data_root: Path, vendor: str, xlsx: Path) -> Path:
-    if xlsx.is_absolute() or xlsx.is_file():
-        return xlsx
-    candidate = get_ep_summary_vendor_config(vendor).source_dir(data_root) / xlsx
+def _resolve_csv_path(data_root: Path, vendor: str, csv: Path) -> Path:
+    if csv.is_absolute() or csv.is_file():
+        return csv
+    candidate = get_ep_summary_vendor_config(vendor).source_dir(data_root) / csv
     if candidate.is_file():
         return candidate
-    return xlsx
+    return csv
 
 
 def _sorted_distinct_values(frame: pl.DataFrame, column: str) -> list[str]:
@@ -383,7 +380,7 @@ def generate_ep_summaries_command(
     data_root: Path,
     *,
     vendor: str | None = None,
-    xlsx: Path | None = None,
+    csv: Path | None = None,
     yes: bool = False,
 ) -> int:
     try:
@@ -398,24 +395,24 @@ def generate_ep_summaries_command(
             print(str(exc), file=sys.stderr)
             return 1
 
-        if xlsx is None:
-            workbooks = scan_ep_summary_workbooks(data_root, selected_vendor)
-            if not workbooks:
+        if csv is None:
+            csv_files = scan_ep_summary_csvs(data_root, selected_vendor)
+            if not csv_files:
                 print(
-                    f"No .xlsx files found in {config.source_dir(data_root)}.",
+                    f"No source .csv files found in {config.source_dir(data_root)}.",
                     file=sys.stderr,
                 )
                 return 1
-            workbook_path = _prompt_numbered_option(
-                "Select source XLSX workbook:",
-                workbooks,
+            csv_path = _prompt_numbered_option(
+                "Select source wide CSV:",
+                csv_files,
                 lambda path: path.name,
             )
         else:
-            workbook_path = _resolve_xlsx_path(data_root, selected_vendor, xlsx)
+            csv_path = _resolve_csv_path(data_root, selected_vendor, csv)
 
-        if not workbook_path.is_file():
-            print(f"XLSX workbook not found: {workbook_path}", file=sys.stderr)
+        if not csv_path.is_file():
+            print(f"CSV file not found: {csv_path}", file=sys.stderr)
             return 1
 
         output_path = config.output_path(data_root)
@@ -425,10 +422,10 @@ def generate_ep_summaries_command(
 
         print("EP summary generation:")
         print(f"  Vendor: {selected_vendor}")
-        print(f"  Workbook: {workbook_path}")
+        print(f"  CSV: {csv_path}")
         print(f"  Output: {output_path}")
         started = time.perf_counter()
-        output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path, status_callback=print)
+        output_path = generate_vendor_ep_summary(data_root, selected_vendor, csv_path, status_callback=print)
         elapsed_seconds = time.perf_counter() - started
     except EOFError:
         print("Input ended before EP summary generation could continue.", file=sys.stderr)
@@ -462,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
         return generate_ep_summaries_command(
             data_root,
             vendor=args.vendor,
-            xlsx=args.xlsx,
+            csv=args.csv,
             yes=args.yes,
         )
     if args.command == "docs":

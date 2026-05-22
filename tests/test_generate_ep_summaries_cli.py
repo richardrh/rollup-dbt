@@ -5,27 +5,23 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import polars as pl
-from openpyxl import Workbook
 
 from rollup import cli
 
 
-def _write_minimal_verisk_workbook(path: Path, *, aal: float = 12.5) -> None:
+def _write_minimal_wide_csv(path: Path, *, aal: float = 12.5) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "PML by LOB"
-    for column, value in enumerate(
-        ["Analysis", "ExposureAttribute", "CatalogTypeCode", "aal_0", "aep_100"],
-        start=1,
-    ):
-        worksheet.cell(row=7, column=column, value=value)
-    for column, value in enumerate(
-        ["TEST_PERIL", "TEST_LOB", "STC", aal, 1000.0],
-        start=1,
-    ):
-        worksheet.cell(row=8, column=column, value=value)
-    workbook.save(path)
+    pl.DataFrame(
+        [
+            {
+                "id": "TEST_ANALYSIS",
+                "modelled_lob": "TEST_LOB",
+                "modelled_peril": "TEST_PERIL",
+                "AAL_0": aal,
+                "AEP_100": 1000.0,
+            },
+        ]
+    ).write_csv(path)
 
 
 def _mock_input(monkeypatch, responses: list[str]) -> None:
@@ -46,9 +42,9 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
     capsys,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
-    _write_minimal_verisk_workbook(workbook_path)
+    _write_minimal_wide_csv(csv_path)
     output_path.write_text("old contents\n", encoding="utf-8")
     _mock_input(monkeypatch, ["1", "1", "y"])
 
@@ -68,7 +64,7 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
     assert output.to_dicts() == [
         {
             "vendor": "verisk",
-            "analysis_id": "TEST_PERIL",
+            "analysis_id": "TEST_ANALYSIS",
             "modelled_lob": "TEST_LOB",
             "modelled_peril": "TEST_PERIL",
             "ep_type": "AAL",
@@ -77,7 +73,7 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
         },
         {
             "vendor": "verisk",
-            "analysis_id": "TEST_PERIL",
+            "analysis_id": "TEST_ANALYSIS",
             "modelled_lob": "TEST_LOB",
             "modelled_peril": "TEST_PERIL",
             "ep_type": "AEP",
@@ -87,7 +83,7 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
     ]
     captured = capsys.readouterr().out
     assert "Select EP summary vendor:" in captured
-    assert "Select source XLSX workbook:" in captured
+    assert "Select source wide CSV:" in captured
     assert "EP summary written to" in captured
 
 
@@ -96,9 +92,9 @@ def test_generate_ep_summaries_interactive_writes_new_output_without_confirmatio
     monkeypatch,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
-    _write_minimal_verisk_workbook(workbook_path, aal=37.5)
+    _write_minimal_wide_csv(csv_path, aal=37.5)
     _mock_input(monkeypatch, ["1", "1"])
 
     exit_code = cli.main(["--data-root", str(data_root), "generate-ep-summaries"])
@@ -107,15 +103,15 @@ def test_generate_ep_summaries_interactive_writes_new_output_without_confirmatio
     assert pl.read_csv(output_path).item(0, "loss") == 37.5
 
 
-def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
+def test_generate_ep_summaries_non_interactive_accepts_csv_filename(
     tmp_path: Path,
     monkeypatch,
     capsys,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
-    _write_minimal_verisk_workbook(workbook_path, aal=25.0)
+    _write_minimal_wide_csv(csv_path, aal=25.0)
     monkeypatch.setattr(
         builtins,
         "input",
@@ -129,8 +125,8 @@ def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
             "generate-ep-summaries",
             "--vendor",
             "verisk",
-            "--xlsx",
-            "selected.xlsx",
+            "--csv",
+            "selected.csv",
             "--yes",
         ]
     )
@@ -141,9 +137,9 @@ def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
     assert "EP summary written to" in captured
     assert "EP summary generation:" in captured
     assert "Vendor: verisk" in captured
-    assert f"Workbook: {workbook_path}" in captured
+    assert f"CSV: {csv_path}" in captured
     assert f"Output: {output_path}" in captured
-    assert "Reading workbook..." in captured
+    assert "Reading CSV..." in captured
     assert "Writing canonical long CSV..." in captured
     assert "Done in " in captured
     assert "EP summary overview:" in captured
@@ -160,9 +156,9 @@ def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_out
     monkeypatch,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
-    _write_minimal_verisk_workbook(workbook_path, aal=50.0)
+    _write_minimal_wide_csv(csv_path, aal=50.0)
     monkeypatch.setattr(
         builtins,
         "input",
@@ -176,8 +172,8 @@ def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_out
             "generate-ep-summaries",
             "--vendor",
             "verisk",
-            "--xlsx",
-            "selected.xlsx",
+            "--csv",
+            "selected.csv",
         ]
     )
 
@@ -191,8 +187,8 @@ def test_generate_ep_summaries_returns_nonzero_when_input_ends(
     capsys,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
-    _write_minimal_verisk_workbook(workbook_path)
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
+    _write_minimal_wide_csv(csv_path)
     monkeypatch.setattr(
         builtins,
         "input",
@@ -211,8 +207,8 @@ def test_generate_ep_summaries_ctrl_c_returns_clean_cancel_status(
     capsys,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
-    _write_minimal_verisk_workbook(workbook_path)
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
+    _write_minimal_wide_csv(csv_path)
     monkeypatch.setattr(
         builtins,
         "input",
@@ -234,17 +230,17 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
     capsys,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
-    _write_minimal_verisk_workbook(workbook_path)
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
+    _write_minimal_wide_csv(csv_path)
 
     def fail_generation(
         data_root: Path,
         vendor: str,
-        workbook_path: Path,
+        csv_path: Path,
         *,
         status_callback=None,
     ) -> Path:
-        raise KeyError("PML by LOB")
+        raise ValueError("missing required EP summary columns: modelled_lob")
 
     monkeypatch.setattr(cli, "generate_vendor_ep_summary", fail_generation)
 
@@ -255,15 +251,15 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
             "generate-ep-summaries",
             "--vendor",
             "verisk",
-            "--xlsx",
-            "selected.xlsx",
+            "--csv",
+            "selected.csv",
             "--yes",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "EP summary generation failed: 'PML by LOB'" in captured.err
+    assert "EP summary generation failed: missing required EP summary columns: modelled_lob" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -272,9 +268,9 @@ def test_generate_ep_summaries_confirmation_defaults_to_no_without_overwrite(
     monkeypatch,
 ) -> None:
     data_root = tmp_path / "data"
-    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    csv_path = data_root / "ep_summaries" / "verisk" / "selected.csv"
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
-    _write_minimal_verisk_workbook(workbook_path)
+    _write_minimal_wide_csv(csv_path)
     output_path.write_text("old contents\n", encoding="utf-8")
     _mock_input(monkeypatch, ["1", "1", ""])
 
@@ -282,3 +278,22 @@ def test_generate_ep_summaries_confirmation_defaults_to_no_without_overwrite(
 
     assert exit_code == 0
     assert output_path.read_text(encoding="utf-8") == "old contents\n"
+
+
+def test_generate_ep_summaries_reports_missing_csv(tmp_path: Path, capsys) -> None:
+    data_root = tmp_path / "data"
+
+    exit_code = cli.main(
+        [
+            "--data-root",
+            str(data_root),
+            "generate-ep-summaries",
+            "--vendor",
+            "verisk",
+            "--csv",
+            "missing.csv",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "CSV file not found: missing.csv" in capsys.readouterr().err
