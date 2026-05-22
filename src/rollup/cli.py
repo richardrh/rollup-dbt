@@ -338,41 +338,45 @@ def generate_ep_summaries_command(
     xlsx: Path | None = None,
     yes: bool = False,
 ) -> int:
-    selected_vendor = vendor or _prompt_numbered_option(
-        "Select EP summary vendor:",
-        ep_summary_vendor_names(),
-    )
-
     try:
-        config = get_ep_summary_vendor_config(selected_vendor)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-
-    if xlsx is None:
-        workbooks = scan_ep_summary_workbooks(data_root, selected_vendor)
-        if not workbooks:
-            print(
-                f"No .xlsx files found in {config.source_dir(data_root)}.",
-                file=sys.stderr,
-            )
-            return 1
-        workbook_path = _prompt_numbered_option(
-            "Select source XLSX workbook:",
-            workbooks,
-            lambda path: path.name,
+        selected_vendor = vendor or _prompt_numbered_option(
+            "Select EP summary vendor:",
+            ep_summary_vendor_names(),
         )
-    else:
-        workbook_path = _resolve_xlsx_path(data_root, selected_vendor, xlsx)
 
-    if not workbook_path.is_file():
-        print(f"XLSX workbook not found: {workbook_path}", file=sys.stderr)
+        try:
+            config = get_ep_summary_vendor_config(selected_vendor)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        if xlsx is None:
+            workbooks = scan_ep_summary_workbooks(data_root, selected_vendor)
+            if not workbooks:
+                print(
+                    f"No .xlsx files found in {config.source_dir(data_root)}.",
+                    file=sys.stderr,
+                )
+                return 1
+            workbook_path = _prompt_numbered_option(
+                "Select source XLSX workbook:",
+                workbooks,
+                lambda path: path.name,
+            )
+        else:
+            workbook_path = _resolve_xlsx_path(data_root, selected_vendor, xlsx)
+
+        if not workbook_path.is_file():
+            print(f"XLSX workbook not found: {workbook_path}", file=sys.stderr)
+            return 1
+
+        output_path = config.output_path(data_root)
+        if output_path.exists() and not yes and not _confirm_overwrite(output_path):
+            print("EP summary generation cancelled; no files overwritten.")
+            return 0
+    except EOFError:
+        print("Input ended before EP summary generation could continue.", file=sys.stderr)
         return 1
-
-    output_path = config.output_path(data_root)
-    if not yes and not _confirm_overwrite(output_path):
-        print("EP summary generation cancelled; no files overwritten.")
-        return 0
 
     output_path = generate_vendor_ep_summary(data_root, selected_vendor, workbook_path)
     print(f"EP summary written to {output_path}")

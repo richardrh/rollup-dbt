@@ -115,6 +115,56 @@ def test_generate_ep_summaries_non_interactive_accepts_xlsx_filename(
     assert pl.read_csv(output_path).item(0, "loss") == 25.0
 
 
+def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_root = tmp_path / "data"
+    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
+    _write_minimal_verisk_workbook(workbook_path, aal=50.0)
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
+    )
+
+    exit_code = cli.main(
+        [
+            "--data-root",
+            str(data_root),
+            "generate-ep-summaries",
+            "--vendor",
+            "verisk",
+            "--xlsx",
+            "selected.xlsx",
+        ]
+    )
+
+    assert exit_code == 0
+    assert pl.read_csv(output_path).item(0, "loss") == 50.0
+
+
+def test_generate_ep_summaries_returns_nonzero_when_input_ends(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    data_root = tmp_path / "data"
+    workbook_path = data_root / "ep_summaries" / "verisk" / "selected.xlsx"
+    _write_minimal_verisk_workbook(workbook_path)
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt="": (_ for _ in ()).throw(EOFError),
+    )
+
+    exit_code = cli.main(["--data-root", str(data_root), "generate-ep-summaries"])
+
+    assert exit_code == 1
+    assert "Input ended before EP summary generation could continue." in capsys.readouterr().err
+
+
 def test_generate_ep_summaries_confirmation_defaults_to_no_without_overwrite(
     tmp_path: Path,
     monkeypatch,
