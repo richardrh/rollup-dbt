@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import Path
-import subprocess
 import sys
 import time
 from typing import TypeVar
@@ -27,6 +28,7 @@ from rollup.pipeline import (
     run,
     ylt_loss_validation_summary,
 )
+from rollup import resources as rollup_resources
 
 
 T = TypeVar("T")
@@ -272,35 +274,69 @@ def analyze_command(output_root: Path) -> int:
     return 0
 
 
-def docs_command(*, host: str = "127.0.0.1", port: int = 8000) -> int:
-    docs_dir = Path("docs")
+@contextmanager
+def _working_directory(path: Path):
+    previous_cwd = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous_cwd)
+
+
+def _run_zensical(args: Sequence[str]) -> int:
+    try:
+        import zensical.main
+    except ModuleNotFoundError:
+        print(
+            "Could not import Zensical. Install dev dependencies or use the PyInstaller build that bundles docs support.",
+            file=sys.stderr,
+        )
+        return 1
+
+    result = zensical.main.cli.main(
+        args=list(args),
+        prog_name="zensical",
+        standalone_mode=False,
+    )
+    return int(result or 0)
+
+
+def docs_command(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
+) -> int:
+    resource_root = rollup_resources.resource_root()
+    docs_dir = rollup_resources.docs_dir()
     if not docs_dir.is_dir():
         print(
-            "Documentation source directory 'docs/' was not found. "
-            "Create docs/index.md before serving docs.",
+            f"Documentation source directory was not found: {docs_dir}",
+            file=sys.stderr,
+        )
+        return 1
+    config_file = rollup_resources.zensical_config_path()
+    if not config_file.is_file():
+        print(
+            f"Zensical configuration file was not found: {config_file}",
             file=sys.stderr,
         )
         return 1
 
     url = f"http://{host}:{port}/"
     print(f"Docs available at {url}")
-    try:
-        return subprocess.call(
-            [
-                "zensical",
-                "serve",
-                "--config-file",
-                "zensical.toml",
-                "--dev-addr",
-                f"{host}:{port}",
-            ]
-        )
-    except FileNotFoundError:
-        print(
-            "Could not find the 'zensical' executable. Install dev dependencies or run with `uv run rollup docs`.",
-            file=sys.stderr,
-        )
-        return 1
+    runner = zensical_runner or _run_zensical
+    args = [
+        "serve",
+        "--config-file",
+        str(config_file),
+        "--dev-addr",
+        f"{host}:{port}",
+    ]
+    with _working_directory(resource_root):
+        result = runner(args)
+    return int(result or 0)
 
 
 def _prompt_numbered_option(
