@@ -21,3 +21,14 @@ def test_pyinstaller_spec_bundles_docs_config_and_zensical_assets() -> None:
     assert "ROOT / \"docs\"" in spec
     assert "ROOT / \"zensical.toml\"" in spec
     assert 'name="rollup"' in spec
+
+
+def test_build_docs_include_pyinstaller_commands() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    developer_guide = (REPO_ROOT / "docs" / "developer-guide.md").read_text(encoding="utf-8")
+
+    for text in (readme, developer_guide):
+        assert "uv run --group build pyinstaller rollup.spec" in text
+        assert "dist/rollup/rollup --help" in text
+        assert "dist/rollup/rollup docs" in text
+        assert "dist/" in text and "not committed" in text

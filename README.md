@@ -207,6 +207,26 @@ Direct Zensical usage is also possible if needed:
 uv run zensical serve --config-file zensical.toml --dev-addr 127.0.0.1:8000
 ```
 
+## Build a standalone executable
+
+Use `uv` only on the developer/build machine to create the PyInstaller bundle:
+
+```bash
+uv run --group build pyinstaller rollup.spec
+```
+
+The generated one-folder distribution is written to `dist/rollup/`, ignored, and
+not committed. Analysts can run the executable without `uv`:
+
+```bash
+dist/rollup/rollup --help
+dist/rollup/rollup generate-ep-summaries --help
+dist/rollup/rollup docs
+```
+
+The bundle includes `docs/`, `zensical.toml`, and Zensical package assets so
+`rollup docs` does not require an external `zensical` command.
+
 ## Developer guide: add a pipeline step
 
 1. Add or modify a pure transformation function in `src/rollup/pipeline.py`.

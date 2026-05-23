@@ -34,3 +34,23 @@ uv run rollup analyze
 If a frame is useful for analysts or future debugging, put it in the right stage
 dictionary before returning from `run()`. Otherwise `--debug` cannot write it to
 `output/debug/`.
+
+## Build the standalone CLI bundle
+
+The PyInstaller build is managed by `uv`. Build from the repository root:
+
+```bash
+uv run --group build pyinstaller rollup.spec
+```
+
+The output is a one-folder distribution under `dist/rollup/`; `dist/` is ignored
+and not committed. Smoke test the executable after each build:
+
+```bash
+dist/rollup/rollup --help
+dist/rollup/rollup generate-ep-summaries --help
+dist/rollup/rollup docs
+```
+
+The bundle includes the project docs, `zensical.toml`, and Zensical assets so the
+docs command can run without `uv` or an external `zensical` executable.
