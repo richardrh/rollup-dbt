@@ -8,7 +8,12 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 ROOT = Path(SPECPATH)
 
 zensical_datas = collect_data_files("zensical", include_py_files=False)
-zensical_hiddenimports = collect_submodules("zensical")
+docs_hiddenimports = [
+    *collect_submodules("zensical"),
+    *collect_submodules("markdown"),
+    *collect_submodules("pymdownx"),
+    *collect_submodules("pygments.lexers"),
+]
 
 a = Analysis(
     [str(ROOT / "src" / "rollup" / "cli.py")],
@@ -19,7 +24,7 @@ a = Analysis(
         (str(ROOT / "zensical.toml"), "."),
         *zensical_datas,
     ],
-    hiddenimports=zensical_hiddenimports,
+    hiddenimports=docs_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

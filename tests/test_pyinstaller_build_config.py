@@ -18,6 +18,9 @@ def test_pyinstaller_spec_bundles_docs_config_and_zensical_assets() -> None:
 
     assert "collect_data_files(\"zensical\"" in spec
     assert "collect_submodules(\"zensical\")" in spec
+    assert "collect_submodules(\"markdown\")" in spec
+    assert "collect_submodules(\"pymdownx\")" in spec
+    assert "collect_submodules(\"pygments.lexers\")" in spec
     assert "ROOT / \"docs\"" in spec
     assert "ROOT / \"zensical.toml\"" in spec
     assert 'name="rollup"' in spec
