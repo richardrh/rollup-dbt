@@ -45,6 +45,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_pipeline_modelled_dimension_coverage.py",
         "test_pipeline_schema_yaml.py",
         "test_sql.py",
+        "test_sql_integration.py",
     }
 
     tests_dir = REPO_ROOT / "tests"

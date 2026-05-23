@@ -25,6 +25,7 @@ dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
     "pytest-xdist>=3.8.0",
+    "testcontainers>=4.13.0",
 ]
 
 [tool.uv]

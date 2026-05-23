@@ -34,3 +34,22 @@ uv run rollup analyze
 If a frame is useful for analysts or future debugging, put it in the right stage
 dictionary before returning from `run()`. Otherwise `--debug` cannot write it to
 `output/debug/`.
+
+## Integration tests
+
+The default unit suite does not require Docker or external services:
+
+```bash
+uv run pytest -q
+```
+
+SQL Server push has an opt-in integration test that starts a Microsoft SQL Server
+container, writes a tiny mart parquet via `push_mart_parquets_to_sql`, and reads
+the table back through SQLAlchemy/pyodbc:
+
+```bash
+uv run pytest tests/test_sql_integration.py --run-integration -q -rs
+```
+
+The test skips with a clear reason when Docker or a Microsoft SQL Server ODBC
+driver is not available on the host.
