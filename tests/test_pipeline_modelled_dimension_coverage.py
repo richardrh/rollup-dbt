@@ -407,6 +407,12 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
 
     monkeypatch.setattr(cli, "run", fake_run)
 
+    def fake_write_ep_report(output_root):
+        calls["analysis_output_root"] = output_root
+        return output_root / "analysis" / "ep_report.csv"
+
+    monkeypatch.setattr(cli, "write_ep_report", fake_write_ep_report)
+
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
 
@@ -420,6 +426,7 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
         "output_root": output_root,
         "debug": True,
         "validation_inputs": reports.inputs,
+        "analysis_output_root": output_root,
     }
 
 
