@@ -82,8 +82,7 @@ sections:
 uv run rollup run
 ```
 
-Outputs land in root `output/`, not `data/output/`. The run also regenerates
-`output/analysis/ep_report.csv`.
+Outputs land in root `output/`, not `data/output/`.
 
 ## 5. Optional: push marts to SQL Server
 
@@ -94,8 +93,7 @@ local file uncommitted. Check the connection first:
 uv run rollup sql-check --config rollup.local.toml
 ```
 
-To run the pipeline and push only `output/marts/*.parquet` after the EP report is
-regenerated:
+To run the pipeline and push only `output/marts/*.parquet`:
 
 ```bash
 uv run rollup run --push-sql --config rollup.local.toml

@@ -127,9 +127,6 @@ Use debug mode when you need intermediate inspection frames:
 uv run rollup run --debug
 ```
 
-`rollup run` also regenerates `output/analysis/ep_report.csv` after the pipeline
-outputs are written.
-
 ### 4. Optional: check SQL Server and push mart fanouts
 
 Copy `rollup.example.toml` to `rollup.local.toml` and set the `[sql]` connection
@@ -143,8 +140,7 @@ uv run rollup sql-check --config rollup.local.toml
 uv run rollup test-sql --config rollup.local.toml
 ```
 
-Run the local pipeline, regenerate `output/analysis/ep_report.csv`, then push
-only `output/marts/*.parquet` to SQL Server:
+Run the local pipeline, then push only `output/marts/*.parquet` to SQL Server:
 
 ```bash
 uv run rollup run --push-sql --config rollup.local.toml
