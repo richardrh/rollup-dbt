@@ -14,7 +14,7 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
 | Seeds | `data/seeds/**` |
 
-EP summaries consumed by the pipeline must be canonical long CSVs with exactly:
+EP summaries used by the pipeline must be long CSVs with exactly:
 
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
@@ -22,44 +22,51 @@ vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 
 ## Creating EP summary long CSVs from wide CSVs
 
-Use `rollup generate-ep-summaries` when an analyst or vendor provides a source
-wide CSV. The CLI converts one wide CSV into the canonical long CSV consumed by
-validation and the pipeline.
+Use `rollup generate-ep-summaries` when an analyst or vendor gives you a wide
+CSV instead of a `.long.csv` file.
 
-Place source wide CSVs under the vendor folder:
+### Step 1. Put the source CSV in the vendor folder
 
 ```text
 data/ep_summaries/verisk/*.csv
 data/ep_summaries/risklink/*.csv
 ```
 
-The scanner excludes existing `*.long.csv` outputs, so source CSVs can live next
-to generated long CSVs. RiskLink uses the same wide CSV schema and folder
-pattern as Verisk.
+Existing `*.long.csv` files are ignored during source selection. RiskLink uses
+the same source CSV format as Verisk.
 
-Run interactively to select vendor and source file:
+### Step 2. Run the converter
+
+Interactive:
 
 ```bash
 uv run rollup generate-ep-summaries
 ```
 
-Run non-interactively for automation. A relative `--csv` filename is resolved
-inside `data/ep_summaries/<vendor>/`:
+Non-interactive:
 
 ```bash
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv --yes
 ```
 
-Generated output paths are fixed by vendor:
+### Step 3. Check the generated `.long.csv`
+
+Output paths are fixed by vendor:
 
 - Verisk: `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - RiskLink: `data/ep_summaries/risklink/rms_ep_summary.long.csv`
 
+### Step 4. Validate
+
+```bash
+uv run rollup validate
+```
+
 ### Source wide CSV format
 
-Canonical wide CSVs must have their header on row 1. Use one row per analysis,
-LOB, and peril, with EP losses spread across metric columns.
+Source CSVs must have their header on row 1. Use one row per analysis, LOB, and
+peril, with EP losses in metric columns.
 
 | Column | Required? | Description | Example/Notes |
 | --- | --- | --- | --- |
@@ -73,10 +80,9 @@ LOB, and peril, with EP losses spread across metric columns.
 | `segment` | Optional | Accepted but not used in the output. | Ignored by the converter. |
 | `sd*` columns | Optional | Accepted but not used in the output. | `sd_0`, `sd_0.0`; ignored by the converter. |
 
-Metric columns should be uppercase and should not include a `.0` suffix. The
-converter accepts lowercase metric names and `.0` metric suffixes for older or
-dirty exports, but new source files should use names like `AAL_0`, `AEP_50`, and
-`OEP_100`.
+New source files should use metric names like `AAL_0`, `AEP_50`, and `OEP_100`.
+The converter also accepts lowercase metric names and `.0` suffixes from older
+exports.
 
 Example source CSV:
 
@@ -85,7 +91,7 @@ id,modelled_lob,modelled_peril,AAL_0,AEP_50,OEP_100
 ANALYSIS_1,Property,US_WS,1250,1750472,2250000
 ```
 
-Blank IDs, LOBs, perils, and losses are skipped in the generated output.
+Rows with blank IDs, LOBs, perils, or losses are skipped.
 
 ### Generated long CSV format
 
@@ -113,11 +119,9 @@ verisk,ANALYSIS_1,Property,US_WS,OEP,100,2250000.0
 ### Source schema file
 
 Do not add a separate YAML schema file for source wide CSVs yet. The converter
-validates this small source contract directly: required identifier columns and at
-least one EP metric column. The existing `data/ep_summaries/schema.yaml` remains
-the contract for canonical long CSV inputs consumed by validation and the
-pipeline. Add a source-wide schema only with architect approval if the source
-contract grows beyond this small converter-only surface.
+checks the required identifier columns and at least one EP metric column. The
+existing `data/ep_summaries/schema.yaml` remains the schema contract for the long
+CSV files used by validation and the pipeline.
 
 ## Seed files
 

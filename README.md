@@ -35,29 +35,25 @@ data/
 
 Generated files go to `output/`. Do not put analyst inputs there.
 
-EP summaries consumed by the pipeline must be canonical long CSVs under
-`data/ep_summaries/**/*.long.csv`. The normal files are:
+EP summaries must be `.long.csv` files:
 
 - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
 
-Each EP summary row must use these columns:
+If you have source CSVs instead:
 
-```text
-vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
-```
-
-If you only have source wide CSV extracts, generate the canonical long files
-before validating. Source files are discovered under
-`data/ep_summaries/<vendor>/*.csv`, excluding existing `*.long.csv` outputs:
+1. Put the source CSV in `data/ep_summaries/<vendor>/`.
+2. Run one converter command:
 
 ```bash
 uv run rollup generate-ep-summaries
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-For the source CSV schema, metric naming, RiskLink behavior, output paths, and
-schema-file guidance, see
+3. Check the generated `.long.csv` file.
+4. Run `uv run rollup validate`.
+
+For source and output columns, see
 [`docs/data-requirements.md`](docs/data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs).
 
 Before validation, check the business seed lookups:
