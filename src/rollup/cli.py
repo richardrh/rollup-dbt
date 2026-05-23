@@ -258,8 +258,6 @@ def run_command(
     )
     if debug:
         print(f"Debug frames written to {output_root / 'debug'}")
-    analysis_path = write_ep_report(output_root)
-    print(f"Analysis report written to {analysis_path}")
 
     if push_sql:
         try:
@@ -281,7 +279,7 @@ def analyze_command(output_root: Path) -> int:
 def sql_check_command(config_path: Path = DEFAULT_CONFIG_PATH) -> int:
     result = check_sql_connection(config_path)
     print(f"SQL check {result.status}: {result.message}")
-    return 1 if result.status == "FAIL" else 0
+    return 0 if result.status == "OK" else 1
 
 
 def docs_command(*, host: str = "127.0.0.1", port: int = 8000) -> int:

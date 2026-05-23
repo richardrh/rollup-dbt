@@ -37,7 +37,7 @@ def test_parser_accepts_test_sql_alias_with_config() -> None:
     assert args.config == Path("rollup.local.toml")
 
 
-def test_sql_check_command_returns_nonzero_only_on_failure(
+def test_sql_check_command_returns_success_only_on_ok(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -54,7 +54,7 @@ def test_sql_check_command_returns_nonzero_only_on_failure(
         "check_sql_connection",
         lambda config_path: SqlCheckResult("SKIPPED", "not configured"),
     )
-    assert cli.sql_check_command(Path("rollup.local.toml")) == 0
+    assert cli.sql_check_command(Path("rollup.local.toml")) == 1
 
     monkeypatch.setattr(
         cli,
@@ -64,7 +64,69 @@ def test_sql_check_command_returns_nonzero_only_on_failure(
     assert cli.sql_check_command(Path("rollup.local.toml")) == 1
 
 
-def test_run_push_sql_happens_after_pipeline_and_analysis(
+def test_run_without_push_sql_does_not_call_analysis_or_push(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    output_root = tmp_path / "output"
+    expected_inputs = object()
+    reports = SimpleNamespace(inputs=expected_inputs)
+    events: list[str] = []
+
+    monkeypatch.setattr(
+        cli,
+        "collect_validation_reports",
+        lambda data_root_arg: events.append("collect_validation") or reports,
+    )
+    monkeypatch.setattr(
+        cli,
+        "print_validation_reports",
+        lambda reports_arg: events.append("print_validation"),
+    )
+    monkeypatch.setattr(cli, "validation_exit_code", lambda reports_arg: 0)
+
+    def run_pipeline(
+        data_root_arg: Path,
+        *,
+        output_root: Path,
+        debug: bool,
+        validation_inputs: object,
+    ) -> None:
+        assert data_root_arg == data_root
+        assert output_root == output_root_path
+        assert debug is False
+        assert validation_inputs is expected_inputs
+        events.append("run_pipeline")
+
+    output_root_path = output_root
+    monkeypatch.setattr(cli, "run", run_pipeline)
+    monkeypatch.setattr(
+        cli,
+        "write_ep_report",
+        lambda output_root: pytest.fail("run should not generate analysis"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "push_mart_parquets_to_sql",
+        lambda output_root, sql_config: pytest.fail("run should not push SQL"),
+    )
+
+    exit_code = cli.main(
+        [
+            "--data-root",
+            str(data_root),
+            "--output-root",
+            str(output_root),
+            "run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert events == ["collect_validation", "print_validation", "run_pipeline"]
+
+
+def test_run_push_sql_happens_after_pipeline_without_analysis(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -103,12 +165,11 @@ def test_run_push_sql_happens_after_pipeline_and_analysis(
     output_root_path = output_root
     monkeypatch.setattr(cli, "run", run_pipeline)
 
-    def write_analysis(output_root_arg: Path) -> Path:
-        assert output_root_arg == output_root_path
-        events.append("write_analysis")
-        return output_root_arg / "analysis" / "ep_report.csv"
-
-    monkeypatch.setattr(cli, "write_ep_report", write_analysis)
+    monkeypatch.setattr(
+        cli,
+        "write_ep_report",
+        lambda output_root: pytest.fail("SQL push should not generate analysis"),
+    )
 
     sql_config = SqlConfig(connection_string="mssql+pyodbc://server/database")
     monkeypatch.setattr(
@@ -143,7 +204,6 @@ def test_run_push_sql_happens_after_pipeline_and_analysis(
         "collect_validation",
         "print_validation",
         "run_pipeline",
-        "write_analysis",
         "check_sql",
         "push_sql",
     ]
@@ -162,7 +222,7 @@ def test_run_push_sql_failure_is_user_friendly(
     monkeypatch.setattr(
         cli,
         "write_ep_report",
-        lambda output_root: Path(output_root) / "analysis" / "ep_report.csv",
+        lambda output_root: pytest.fail("SQL push should not generate analysis"),
     )
     monkeypatch.setattr(
         cli,

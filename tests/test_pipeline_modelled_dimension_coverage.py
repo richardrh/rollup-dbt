@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from rollup import cli
 from rollup.columns import Col, RawCol
@@ -407,11 +408,11 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
 
     monkeypatch.setattr(cli, "run", fake_run)
 
-    def fake_write_ep_report(output_root):
-        calls["analysis_output_root"] = output_root
-        return output_root / "analysis" / "ep_report.csv"
-
-    monkeypatch.setattr(cli, "write_ep_report", fake_write_ep_report)
+    monkeypatch.setattr(
+        cli,
+        "write_ep_report",
+        lambda output_root: pytest.fail("run should not generate analysis"),
+    )
 
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
@@ -426,7 +427,6 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
         "output_root": output_root,
         "debug": True,
         "validation_inputs": reports.inputs,
-        "analysis_output_root": output_root,
     }
 
 
