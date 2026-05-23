@@ -4,6 +4,12 @@ from pathlib import Path
 import sys
 
 
+def is_frozen() -> bool:
+    """Return whether the process is running from a PyInstaller bundle."""
+
+    return bool(getattr(sys, "frozen", False))
+
+
 def resource_root() -> Path:
     """Return the root containing bundled project resources.
 
@@ -12,7 +18,7 @@ def resource_root() -> Path:
     ``zensical.toml`` are bundled.
     """
 
-    if getattr(sys, "frozen", False):
+    if is_frozen():
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)).resolve()
     return Path(__file__).resolve().parents[2]
 

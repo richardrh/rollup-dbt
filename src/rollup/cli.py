@@ -7,7 +7,9 @@ from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 import time
 from typing import TypeVar
 
@@ -302,13 +304,27 @@ def _run_zensical(args: Sequence[str]) -> int:
     return int(result or 0)
 
 
+@contextmanager
+def _docs_runtime_project(docs_dir: Path, config_file: Path):
+    if not rollup_resources.is_frozen():
+        yield rollup_resources.resource_root(), config_file
+        return
+
+    with tempfile.TemporaryDirectory(prefix="rollup-docs-") as temp_dir:
+        runtime_root = Path(temp_dir)
+        runtime_docs_dir = runtime_root / "docs"
+        runtime_config_file = runtime_root / "zensical.toml"
+        shutil.copytree(docs_dir, runtime_docs_dir)
+        shutil.copy2(config_file, runtime_config_file)
+        yield runtime_root, runtime_config_file
+
+
 def docs_command(
     *,
     host: str = "127.0.0.1",
     port: int = 8000,
     zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
 ) -> int:
-    resource_root = rollup_resources.resource_root()
     docs_dir = rollup_resources.docs_dir()
     if not docs_dir.is_dir():
         print(
@@ -334,8 +350,10 @@ def docs_command(
         "--dev-addr",
         f"{host}:{port}",
     ]
-    with _working_directory(resource_root):
-        result = runner(args)
+    with _docs_runtime_project(docs_dir, config_file) as (runtime_root, runtime_config_file):
+        args[2] = str(runtime_config_file)
+        with _working_directory(runtime_root):
+            result = runner(args)
     return int(result or 0)
 
 

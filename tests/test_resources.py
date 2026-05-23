@@ -9,6 +9,7 @@ from rollup import resources
 def test_resource_root_source_mode_resolves_repo_root() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
+    assert not resources.is_frozen()
     assert resources.resource_root() == repo_root
     assert resources.docs_dir() == repo_root / "docs"
     assert resources.zensical_config_path() == repo_root / "zensical.toml"
@@ -23,6 +24,7 @@ def test_resource_root_frozen_mode_uses_pyinstaller_meipass(
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(bundle_root), raising=False)
 
+    assert resources.is_frozen()
     assert resources.resource_root() == bundle_root
     assert resources.resource_path("docs") == bundle_root / "docs"
 
