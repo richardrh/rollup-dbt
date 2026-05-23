@@ -22,8 +22,8 @@ Inputs belong under `data/`. Generated outputs belong under root `output/`.
 
 ## EP summary long format
 
-EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
-The standard drop files are:
+EP summaries consumed by the pipeline must be canonical long CSVs under
+`data/ep_summaries/**/*.long.csv`. The standard files are:
 
 - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
@@ -34,27 +34,18 @@ Required columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-Use the generator when starting from source canonical wide CSV extracts instead
-of canonical long CSVs. It scans `data/ep_summaries/<vendor>/*.csv` and excludes
-existing `*.long.csv` outputs:
+Use the generator when starting from source wide CSV extracts instead of
+canonical long CSVs. Put source files in `data/ep_summaries/<vendor>/`; the
+scanner excludes existing `*.long.csv` outputs:
 
 ```bash
 uv run rollup generate-ep-summaries
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-Wide CSVs use row 1 as the header and require `id`, `modelled_lob`, and
-`modelled_peril`; `id` becomes `analysis_id`. Metric columns should be uppercase
-without a `.0` suffix:
-
-```csv
-id,modelled_lob,modelled_peril,AAL_0,AEP_50,OEP_100
-ANALYSIS_1,Property,US_WS,1250,1750472,2250000
-```
-
-Verisk-clean aliases `ExposureAttribute` -> `modelled_lob` and `Analysis` ->
-`modelled_peril` are accepted. If present, `CatalogTypeCode` filters to trimmed
-`STC` rows.
+See [Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs)
+for the source CSV schema, metric naming, output paths, generated columns, and
+schema-file guidance.
 
 ## Seed lookup checks
 
