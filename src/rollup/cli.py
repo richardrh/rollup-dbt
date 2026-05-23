@@ -19,6 +19,23 @@ from rollup.pipeline import (
     run,
     ylt_loss_validation_summary,
 )
+from rollup.sql import (
+    check_sql_connection,
+    push_mart_parquets_to_sql,
+    require_working_sql_config,
+)
+
+
+DEFAULT_CONFIG_PATH = Path("rollup.local.toml")
+
+
+def _add_config_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Path to rollup local TOML config (default: rollup.local.toml).",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-root",
         default="output",
         help="Root output directory for generated pipeline artifacts.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to rollup local TOML config (default: rollup.local.toml).",
     )
 
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -63,14 +86,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate canonical long EP summary CSVs from source XLSX files.",
     )
 
+    sql_check_parser = subcommands.add_parser(
+        "sql-check",
+        aliases=["test-sql"],
+        help="Check configured SQL Server connectivity.",
+    )
+    _add_config_argument(sql_check_parser)
+
     run_parser = subcommands.add_parser(
         "run",
         help="Run the pipeline.",
     )
+    _add_config_argument(run_parser)
     run_parser.add_argument(
         "--debug",
         action="store_true",
         help="Write intermediate frames to output/debug.",
+    )
+    run_parser.add_argument(
+        "--push-sql",
+        action="store_true",
+        help="Push output/marts/*.parquet to SQL Server after a successful run.",
     )
 
     docs_parser = subcommands.add_parser(
@@ -205,7 +241,9 @@ def run_command(
     data_root: Path,
     *,
     output_root: Path,
+    config_path: Path = DEFAULT_CONFIG_PATH,
     debug: bool = False,
+    push_sql: bool = False,
 ) -> int:
     reports = collect_validation_reports(data_root)
     print_validation_reports(reports)
@@ -220,6 +258,17 @@ def run_command(
     )
     if debug:
         print(f"Debug frames written to {output_root / 'debug'}")
+    analysis_path = write_ep_report(output_root)
+    print(f"Analysis report written to {analysis_path}")
+
+    if push_sql:
+        try:
+            sql_config = require_working_sql_config(config_path)
+            pushed_tables = push_mart_parquets_to_sql(output_root, sql_config)
+        except Exception as exc:
+            print(f"Failed to push marts to SQL Server: {exc}", file=sys.stderr)
+            return 1
+        print(f"Pushed {len(pushed_tables)} mart parquet file(s) to SQL Server")
     return 0
 
 
@@ -227,6 +276,12 @@ def analyze_command(output_root: Path) -> int:
     output_path = write_ep_report(output_root)
     print(f"Analysis report written to {output_path}")
     return 0
+
+
+def sql_check_command(config_path: Path = DEFAULT_CONFIG_PATH) -> int:
+    result = check_sql_connection(config_path)
+    print(f"SQL check {result.status}: {result.message}")
+    return 1 if result.status == "FAIL" else 0
 
 
 def docs_command(*, host: str = "127.0.0.1", port: int = 8000) -> int:
@@ -273,13 +328,22 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(args.log_level)
     data_root = Path(args.data_root)
     output_root = Path(args.output_root)
+    config_path = Path(args.config)
 
     if args.command == "validate":
         return validate_command(data_root, report_dir=args.report_dir)
     if args.command == "run":
-        return run_command(data_root, output_root=output_root, debug=args.debug)
+        return run_command(
+            data_root,
+            output_root=output_root,
+            config_path=config_path,
+            debug=args.debug,
+            push_sql=args.push_sql,
+        )
     if args.command in {"analyze", "analyse"}:
         return analyze_command(output_root)
+    if args.command in {"sql-check", "test-sql"}:
+        return sql_check_command(config_path)
     if args.command == "generate-ep-summaries":
         return generate_ep_summaries_command(data_root)
     if args.command == "docs":
