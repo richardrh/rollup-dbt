@@ -33,7 +33,8 @@ data/ep_summaries/verisk/*.csv
 data/ep_summaries/risklink/*.csv
 ```
 
-The scanner excludes existing `*.long.csv` outputs, so source files can live next
+The scanner excludes existing `*.long.csv` outputs, so source CSVs can live next
+to generated long CSVs. RiskLink uses the same wide CSV schema and folder
 pattern as Verisk.
 
 Run interactively to select vendor and source file:
