@@ -18,8 +18,6 @@ pytestmark = pytest.mark.integration
 
 
 def test_push_mart_parquets_to_real_sql_server_container(tmp_path: Path) -> None:
-    driver = _sql_server_odbc_driver_or_skip()
-
     output_root = tmp_path / "output"
     marts_dir = output_root / "marts"
     marts_dir.mkdir(parents=True)
@@ -35,14 +33,15 @@ def test_push_mart_parquets_to_real_sql_server_container(tmp_path: Path) -> None
     try:
         host = container.get_container_host_ip()
         port = int(container.get_exposed_port(1433))
-        connection_url = _connection_url(host=host, port=port, driver=driver)
+        connection_url = _connection_url_or_skip(host=host, port=port)
         engine = create_engine(connection_url)
         try:
             _wait_for_sql_server(engine)
+            connection_string = connection_url.render_as_string(hide_password=False)
             pushed_tables = push_mart_parquets_to_sql(
                 output_root,
                 SqlConfig(
-                    connection_string=str(connection_url),
+                    connection_string=connection_string,
                     schema="dbo",
                     if_exists="replace",
                     table_prefix="it_",
@@ -76,24 +75,62 @@ def test_push_mart_parquets_to_real_sql_server_container(tmp_path: Path) -> None
         container.stop()
 
 
-def _sql_server_odbc_driver_or_skip() -> str:
+def _connection_url_or_skip(*, host: str, port: int) -> URL:
+    if _pymssql_is_available():
+        return URL.create(
+            "mssql+pymssql",
+            username="sa",
+            password=SA_PASSWORD,
+            host=host,
+            port=port,
+            database="master",
+        )
+
+    odbc_driver = _sql_server_odbc_driver()
+    if odbc_driver is not None:
+        return URL.create(
+            "mssql+pyodbc",
+            username="sa",
+            password=SA_PASSWORD,
+            host=host,
+            port=port,
+            database="master",
+            query={
+                "driver": odbc_driver,
+                "Encrypt": "yes",
+                "TrustServerCertificate": "yes",
+            },
+        )
+
+    pytest.skip(
+        "No usable SQL Server SQLAlchemy driver found. Install pymssql or "
+        "Microsoft ODBC Driver 18/17 for SQL Server to run this integration test."
+    )
+
+
+def _pymssql_is_available() -> bool:
+    try:
+        import pymssql  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _sql_server_odbc_driver() -> str | None:
     try:
         import pyodbc
-    except Exception as exc:
-        pytest.skip(f"pyodbc/ODBC is unavailable: {exc}")
+    except Exception:
+        return None
 
     try:
         drivers = pyodbc.drivers()
-    except Exception as exc:
-        pytest.skip(f"Could not enumerate ODBC drivers: {exc}")
+    except Exception:
+        return None
 
     for driver in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
         if driver in drivers:
             return driver
-    pytest.skip(
-        "No Microsoft SQL Server ODBC driver found; install ODBC Driver 18 "
-        "or 17 for SQL Server to run this integration test."
-    )
+    return None
 
 
 def _start_sql_server_container():
@@ -111,22 +148,6 @@ def _start_sql_server_container():
     except Exception as exc:
         pytest.skip(f"Could not start SQL Server Docker container: {exc}")
     return container
-
-
-def _connection_url(*, host: str, port: int, driver: str) -> URL:
-    return URL.create(
-        "mssql+pyodbc",
-        username="sa",
-        password=SA_PASSWORD,
-        host=host,
-        port=port,
-        database="master",
-        query={
-            "driver": driver,
-            "Encrypt": "yes",
-            "TrustServerCertificate": "yes",
-        },
-    )
 
 
 def _wait_for_sql_server(engine, *, timeout_seconds: int = 120) -> None:

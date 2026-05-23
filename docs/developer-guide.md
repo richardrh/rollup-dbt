@@ -45,11 +45,12 @@ uv run pytest -q
 
 SQL Server push has an opt-in integration test that starts a Microsoft SQL Server
 container, writes a tiny mart parquet via `push_mart_parquets_to_sql`, and reads
-the table back through SQLAlchemy/pyodbc:
+the table back through SQLAlchemy. The test uses the dev-only `pymssql` driver
+when available and falls back to a local Microsoft ODBC driver if needed:
 
 ```bash
 uv run pytest tests/test_sql_integration.py --run-integration -q -rs
 ```
 
-The test skips with a clear reason when Docker or a Microsoft SQL Server ODBC
-driver is not available on the host.
+The test skips with a clear reason when Docker or a usable SQL Server driver is
+not available on the host.
