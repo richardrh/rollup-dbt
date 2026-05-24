@@ -11,6 +11,9 @@ Active code lives in `src/rollup/`. The CLI entrypoint is
 
 Run commands from the repository root.
 
+Windows users: start with the [Windows install guide](docs/windows-install.md)
+to install `uv`, run `uv sync`, and avoid copying `.venv` between machines.
+
 ### 1. Drop analyst data under `data/`
 
 ```text
