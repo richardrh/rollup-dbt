@@ -32,3 +32,6 @@ jan-rollup/combined_table
 # Generated artefacts (regenerable via CLI subcommands)
 /output/*
 !/output/schema.yaml
+
+# Local runtime state
+/.tmp/

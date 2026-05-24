@@ -4,10 +4,12 @@ import argparse
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -134,6 +136,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=8000,
         type=int,
         help="Port for the docs server.",
+    )
+    docs_parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run the docs server in the foreground instead of the default background mode.",
     )
 
     return parser
@@ -276,6 +283,19 @@ def analyze_command(output_root: Path) -> int:
     return 0
 
 
+DOCS_TMP_DIR = Path(".tmp")
+DOCS_LOG_PATH = DOCS_TMP_DIR / "rollup-docs.log"
+DOCS_PID_PATH = DOCS_TMP_DIR / "rollup-docs.pid"
+DOCS_STARTUP_CHECK_SECONDS = 0.25
+
+
+@dataclass(frozen=True)
+class DocsServerState:
+    pid: int
+    host: str
+    port: int
+
+
 @contextmanager
 def _working_directory(path: Path):
     previous_cwd = Path.cwd()
@@ -319,11 +339,127 @@ def _docs_runtime_project(docs_dir: Path, config_file: Path):
         yield runtime_root, runtime_config_file
 
 
+def _docs_server_command(host: str, port: int) -> list[str]:
+    command = [
+        sys.executable,
+        "docs",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--foreground",
+    ]
+    if not rollup_resources.is_frozen():
+        command.insert(1, "-m")
+        command.insert(2, "rollup.cli")
+    return command
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _process_matches_docs_command(pid: int, command: list[str]) -> bool:
+    try:
+        raw_cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+
+    args = [part.decode(errors="ignore") for part in raw_cmdline.split(b"\0") if part]
+    if not args:
+        return False
+    return all(expected in args for expected in command)
+
+
+def _read_live_docs_state(
+    pid_path: Path,
+    *,
+    host: str,
+    port: int,
+    command: list[str],
+) -> DocsServerState | None:
+    try:
+        raw_state = json.loads(pid_path.read_text())
+        state = DocsServerState(
+            pid=int(raw_state["pid"]),
+            host=str(raw_state["host"]),
+            port=int(raw_state["port"]),
+        )
+    except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if state.host != host or state.port != port:
+        return None
+    if (
+        state.pid <= 0
+        or not _pid_is_alive(state.pid)
+        or not _process_matches_docs_command(state.pid, command)
+    ):
+        pid_path.unlink(missing_ok=True)
+        return None
+    return state
+
+
+def _write_docs_state(pid_path: Path, *, pid: int, host: str, port: int) -> None:
+    pid_path.write_text(json.dumps({"pid": pid, "host": host, "port": port}) + "\n")
+
+
+def _exited_immediately(process: subprocess.Popen[bytes], *, log_path: Path) -> int | None:
+    try:
+        status = process.wait(timeout=DOCS_STARTUP_CHECK_SECONDS)
+    except subprocess.TimeoutExpired:
+        return None
+    print(
+        f"Docs server exited immediately with status {status}. See logs: {log_path}",
+        file=sys.stderr,
+    )
+    return status if status != 0 else 1
+
+
+def _print_background_docs_details(*, url: str, pid: int, log_path: Path) -> None:
+    print(f"Docs available at {url}")
+    print(f"Docs server running in background with PID {pid}")
+    print(f"Logs: {log_path}")
+    print(f"Stop with: kill {pid}")
+
+
+def _run_docs_foreground(
+    *,
+    docs_dir: Path,
+    config_file: Path,
+    host: str,
+    port: int,
+    zensical_runner: Callable[[Sequence[str]], int | None] | None,
+) -> int:
+    print(f"Docs available at http://{host}:{port}/")
+    runner = zensical_runner or _run_zensical
+    args = [
+        "serve",
+        "--config-file",
+        str(config_file),
+        "--dev-addr",
+        f"{host}:{port}",
+    ]
+    with _docs_runtime_project(docs_dir, config_file) as (runtime_root, runtime_config_file):
+        args[2] = str(runtime_config_file)
+        with _working_directory(runtime_root):
+            result = runner(args)
+    return int(result or 0)
+
+
 def docs_command(
     *,
     host: str = "127.0.0.1",
     port: int = 8000,
+    foreground: bool = False,
     zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
+    process_factory: Callable[..., subprocess.Popen[bytes]] | None = None,
 ) -> int:
     docs_dir = rollup_resources.docs_dir()
     if not docs_dir.is_dir():
@@ -341,20 +477,39 @@ def docs_command(
         return 1
 
     url = f"http://{host}:{port}/"
-    print(f"Docs available at {url}")
-    runner = zensical_runner or _run_zensical
-    args = [
-        "serve",
-        "--config-file",
-        str(config_file),
-        "--dev-addr",
-        f"{host}:{port}",
-    ]
-    with _docs_runtime_project(docs_dir, config_file) as (runtime_root, runtime_config_file):
-        args[2] = str(runtime_config_file)
-        with _working_directory(runtime_root):
-            result = runner(args)
-    return int(result or 0)
+    if foreground:
+        return _run_docs_foreground(
+            docs_dir=docs_dir,
+            config_file=config_file,
+            host=host,
+            port=port,
+            zensical_runner=zensical_runner,
+        )
+
+    command = _docs_server_command(host, port)
+    process_factory = process_factory or subprocess.Popen
+    live_state = _read_live_docs_state(DOCS_PID_PATH, host=host, port=port, command=command)
+    if live_state is not None:
+        _print_background_docs_details(url=url, pid=live_state.pid, log_path=DOCS_LOG_PATH)
+        return 0
+
+    DOCS_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with DOCS_LOG_PATH.open("ab") as log_file:
+            process = process_factory(command, stdout=log_file, stderr=log_file)
+    except FileNotFoundError:
+        print(
+            "Could not start the docs server process. Install dev dependencies or run with `uv run rollup docs --foreground`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    startup_status = _exited_immediately(process, log_path=DOCS_LOG_PATH)
+    if startup_status is not None:
+        return startup_status
+    _write_docs_state(DOCS_PID_PATH, pid=process.pid, host=host, port=port)
+    _print_background_docs_details(url=url, pid=process.pid, log_path=DOCS_LOG_PATH)
+    return 0
 
 
 def _prompt_numbered_option(
@@ -517,7 +672,7 @@ def main(argv: list[str] | None = None) -> int:
             yes=args.yes,
         )
     if args.command == "docs":
-        return docs_command(host=args.host, port=args.port)
+        return docs_command(host=args.host, port=args.port, foreground=args.foreground)
 
     parser.error(f"unknown command: {args.command}")
     return 2

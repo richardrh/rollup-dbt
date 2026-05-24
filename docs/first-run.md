@@ -1,6 +1,8 @@
 # Quickstart
 
-Run from the repository root.
+Run from the repository root. If you are on a fresh Windows machine, first use
+the [Windows install guide](windows-install.md) to install `uv` and build the
+local environment.
 
 ## Step 1. Drop the data
 

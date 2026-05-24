@@ -13,7 +13,8 @@ uv run rollup validate        # check inputs before a run
 uv run rollup run             # write normal outputs to output/
 uv run rollup run --debug     # also write intermediate frames to output/debug/
 uv run rollup analyze         # write output/analysis/ep_report.csv
-uv run rollup docs            # serve these docs and print a URL
+uv run rollup docs            # start these docs in the background
+uv run rollup docs --foreground  # serve docs in the current terminal
 ```
 
 ## Inputs and outputs
@@ -24,7 +25,9 @@ uv run rollup docs            # serve these docs and print a URL
 - Wide/report parquets are written to `output/`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
 
-Start with [Quickstart](first-run.md), then use [Loading your data](load-data.md)
-for exact file locations. For reference details, see the
+Start with [Quickstart](first-run.md). On Windows, use the
+[Windows install guide](windows-install.md) first to install `uv` and build a
+local environment. Then use [Loading your data](load-data.md) for exact file
+locations. For reference details, see the
 [data-flow architecture](architecture.md), [schema contracts](schema-contracts.md),
 and [seed files](data-requirements.md#seed-files).
