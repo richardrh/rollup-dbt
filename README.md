@@ -68,6 +68,9 @@ Before validation, check the business seed lookups:
   every YLT modelled peril. It maps modelled perils to rollup peril,
   region/peril labels, `region_peril_id`, and `selection_priority`.
 
+If a YLT extract arrives as CSV, convert it to Parquet with DuckDB before
+validation. See `docs/utilities.md` for the command and DuckDB reference links.
+
 ### 2. Validate inputs
 
 ```bash

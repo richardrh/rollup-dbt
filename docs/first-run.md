@@ -6,7 +6,7 @@ local environment.
 
 ## Step 1. Drop the data
 
-Put analyst inputs here:
+Put analyst inputs under `data/`:
 
 ```text
 data/ylt/verisk/*.parquet
@@ -16,9 +16,22 @@ data/ep_summaries/risklink/rms_ep_summary.long.csv
 data/seeds/**
 ```
 
-Do not put analyst inputs in `output/`.
+Generated outputs land in root `output/`; do not put analyst inputs there.
 
-Need to convert a vendor CSV to `.long.csv`?
+YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
+the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
+
+EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
+The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
+`data/ep_summaries/risklink/rms_ep_summary.long.csv`.
+
+Required EP summary columns:
+
+```text
+vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
+```
+
+Need to convert a vendor/source EP summary CSV to `.long.csv`?
 
 1. Put the source CSV in `data/ep_summaries/<vendor>/`.
 2. Run one of these commands:
@@ -26,6 +39,14 @@ Need to convert a vendor CSV to `.long.csv`?
 ```bash
 uv run rollup generate-ep-summaries
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+```
+
+If you are using the standalone analyst bundle, run the bundled executable
+instead of `uv run rollup`:
+
+```bash
+dist/rollup/rollup generate-ep-summaries
+dist/rollup/rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
 3. Check the output file:
@@ -52,13 +73,21 @@ Check these files before validation:
 uv run rollup validate
 ```
 
-Optional: write validation reports to CSV:
+Optional: write validation reports to CSV while preserving the same console
+output:
 
 ```bash
 uv run rollup validate --report-dir output/validation
 ```
 
-Validation should pass before you run the pipeline. Read the output in four
+This creates `validation_report.csv`,
+`modelled_lob_peril_anti_join_report.csv`,
+`ylt_loss_validation_summary.csv`, and
+`input_ylt_aal_by_lob_peril_summary.csv` under `output/validation/`.
+
+Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
+files, columns, dtypes, and required flags come from the colocated
+[`schema.yaml` contracts](schema-contracts.md). Read the output in four
 sections:
 
 1. `Validation report`: schema, required-column, and type checks. `valid=False`
@@ -77,7 +106,7 @@ sections:
 uv run rollup run
 ```
 
-Outputs land in root `output/`.
+Outputs land in root `output/`, not `data/output/`.
 
 ## Step 5. Inspect outputs
 
