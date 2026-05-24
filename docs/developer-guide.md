@@ -40,7 +40,7 @@ dictionary before returning from `run()`. Otherwise `--debug` cannot write it to
 The PyInstaller build is managed by `uv`. Build from the repository root:
 
 ```bash
-uv run --group build pyinstaller rollup.spec
+uv run --group build pyinstaller -y rollup.spec
 ```
 
 The output is a one-folder distribution under `dist/rollup/`; `dist/` is ignored

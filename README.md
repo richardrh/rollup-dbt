@@ -208,7 +208,7 @@ uv run zensical serve --config-file zensical.toml --dev-addr 127.0.0.1:8000
 Use `uv` only on the developer/build machine to create the PyInstaller bundle:
 
 ```bash
-uv run --group build pyinstaller rollup.spec
+uv run --group build pyinstaller -y rollup.spec
 ```
 
 The generated one-folder distribution is written to `dist/rollup/`, ignored, and
