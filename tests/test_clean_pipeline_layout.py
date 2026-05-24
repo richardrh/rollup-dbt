@@ -39,6 +39,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
     expected_tests = {
         "__init__.py",
         "conftest.py",
+        "test_cli_docs.py",
         "test_clean_pipeline_layout.py",
         "test_pipeline_e2e_validation.py",
         "test_pipeline_modelled_dimension_coverage.py",

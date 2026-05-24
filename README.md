@@ -193,10 +193,13 @@ Serve the Zensical docs through the application CLI:
 ```bash
 uv run rollup docs
 uv run rollup docs --host 127.0.0.1 --port 8000
+uv run rollup docs --foreground
 ```
 
-The command starts/serves the local docs and prints a URL. With an activated
-environment, use `rollup docs` without `uv`.
+By default, the command starts the local docs server in the background, frees the
+terminal, and prints the URL, process ID, log path, and a `kill <pid>` stop
+command. Use `--foreground` when you want the previous blocking server process.
+With an activated environment, use `rollup docs` without `uv`.
 
 Direct Zensical usage is also possible if needed:
 
