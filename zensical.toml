@@ -14,6 +14,7 @@ nav = [
   { "Reference" = [
     { "Data requirements" = "data-requirements.md" },
     { "Schema contracts" = "schema-contracts.md" },
+    { "Utilities" = "utilities.md" },
     { "Architecture" = "architecture.md" },
     { "Developer guide" = "developer-guide.md" },
     { "Operating modes" = "operating-modes.md" },
