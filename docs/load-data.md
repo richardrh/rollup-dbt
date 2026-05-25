@@ -2,7 +2,7 @@
 
 Inputs belong under `data/`. Generated outputs belong under root `output/`.
 
-## Required analyst drop locations
+## Step 1. Put files in the right place
 
 | Data | Location |
 | --- | --- |
@@ -20,10 +20,9 @@ Inputs belong under `data/`. Generated outputs belong under root `output/`.
 | Verisk event catalogue | `data/seeds/validation/verisk_events.parquet` |
 | RiskLink flood event catalogue | `data/seeds/validation/risklink_flood22_model_events.parquet` |
 
-## EP summary long format
+## Step 2. Convert EP summary CSVs if needed
 
-EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
-The standard drop files are:
+The pipeline needs these `.long.csv` files:
 
 - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
@@ -34,14 +33,28 @@ Required columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-Use the generator when starting from source workbook/XLSX extracts instead of
-canonical long CSVs:
+If you have a vendor/source CSV instead:
+
+1. Put it in `data/ep_summaries/<vendor>/`.
+2. Run the interactive command:
 
 ```bash
 uv run rollup generate-ep-summaries
 ```
 
-## Seed lookup checks
+Or run without prompts:
+
+```bash
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+```
+
+3. Check the generated `.long.csv` file listed above.
+4. Run validation in Step 4.
+
+See [Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs)
+for the detailed source and output tables.
+
+## Step 3. Check seed lookups
 
 Check these before validating:
 
@@ -52,18 +65,17 @@ Check these before validating:
   every YLT modelled peril. It maps to rollup peril, region/peril labels,
   `region_peril_id`, and `selection_priority`.
 
-## Validate the drop
+## Step 4. Validate the drop
 
 ```bash
 uv run rollup validate
 ```
 
-The default anti-join report prints real missing-input errors. Common failures:
+Common failures:
 
 - EP `modelled_lob` is not in `lobs.csv`.
 - EP `modelled_peril` is not in `perils.csv`.
 - Verisk YLT `ExposureAttribute` is not in `lobs.csv`.
 - Verisk YLT `Analysis` is not in `perils.csv`.
 
-The anti-join report should be empty. Any rows are blocking errors to fix in the
-seed lookup or the input data.
+The anti-join report should be empty. Fix any rows before running the pipeline.

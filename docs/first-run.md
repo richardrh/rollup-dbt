@@ -4,7 +4,7 @@ Run from the repository root. If you are on a fresh Windows machine, first use
 the [Windows install guide](windows-install.md) to install `uv` and build the
 local environment.
 
-## 1. Drop the data
+## Step 1. Drop the data
 
 Put analyst inputs under `data/`:
 
@@ -31,16 +31,35 @@ Required EP summary columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-If you have source XLSX/workbook data instead of canonical long CSVs, generate
-the long files before validating:
+Need to convert a vendor/source EP summary CSV to `.long.csv`?
+
+1. Put the source CSV in `data/ep_summaries/<vendor>/`.
+2. Run one of these commands:
 
 ```bash
 uv run rollup generate-ep-summaries
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-## 2. Check seed lookups
+If you are using the standalone analyst bundle, run the bundled executable
+instead of `uv run rollup`:
 
-Before validation, check these files especially:
+```bash
+dist/rollup/rollup generate-ep-summaries
+dist/rollup/rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+```
+
+3. Check the output file:
+   - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
+   - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
+4. Continue to Step 3 and validate.
+
+For required source columns and output columns, see
+[Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs).
+
+## Step 2. Check seed lookups
+
+Check these files before validation:
 
 - `data/seeds/business/lobs.csv`: must contain every EP/YLT modelled LOB; maps
   to rollup LOB, class, office, currency, and CDS class metadata.
@@ -48,14 +67,14 @@ Before validation, check these files especially:
   maps to rollup peril, region/peril labels, `region_peril_id`, and
   `selection_priority`.
 
-## 3. Validate
+## Step 3. Validate
 
 ```bash
 uv run rollup validate
 ```
 
-To keep CSV evidence while preserving the same console output, write validation
-reports to a directory:
+Optional: write validation reports to CSV while preserving the same console
+output:
 
 ```bash
 uv run rollup validate --report-dir output/validation
@@ -81,7 +100,7 @@ sections:
    rollup/modelled LOB, and rollup/modelled peril before blending, FX, forecast,
    or EUWS adjustments.
 
-## 4. Run
+## Step 4. Run
 
 ```bash
 uv run rollup run
@@ -89,7 +108,7 @@ uv run rollup run
 
 Outputs land in root `output/`, not `data/output/`.
 
-## 5. Optional: push marts to SQL Server
+## Step 5. Optional: push marts to SQL Server
 
 Copy `rollup.example.toml` to `rollup.local.toml`, fill in `[sql]`, and keep the
 local file uncommitted. Check the connection first:
@@ -104,21 +123,21 @@ To run the pipeline and push only `output/marts/*.parquet`:
 uv run rollup run --push-sql --config rollup.local.toml
 ```
 
-## 6. Inspect outputs
+## Step 6. Inspect outputs
 
 ```bash
 duckdb -c "SELECT COUNT(*) FROM 'output/mts_tbl_ylt_combined_all_factors.parquet';"
 duckdb -c "SELECT * FROM 'output/mts_event_validation.parquet' LIMIT 20;"
 ```
 
-## 7. Debug if needed
+## Step 7. Debug if needed
 
 ```bash
 uv run rollup run --debug
 duckdb -c "SELECT * FROM 'output/debug/int_ylt_blending_applied.parquet' LIMIT 10;"
 ```
 
-## 8. Regenerate EP report explicitly
+## Step 8. Generate EP report
 
 ```bash
 uv run rollup analyze

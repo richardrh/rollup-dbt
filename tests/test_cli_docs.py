@@ -1,38 +1,70 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 from pathlib import Path
+import sys
 
 from rollup import cli
+from rollup import resources as rollup_resources
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _create_docs_dir(root: Path) -> None:
+def _write_docs_project(root: Path) -> None:
     docs_dir = root / "docs"
     docs_dir.mkdir()
-    (docs_dir / "index.md").write_text("# Docs\n")
+    (docs_dir / "index.md").write_text("# Docs\n", encoding="utf-8")
+    (root / "zensical.toml").write_text(
+        "[project]\nsite_name = 'Test'\ndocs_dir = 'docs'\n",
+        encoding="utf-8",
+    )
 
 
 def _write_docs_state(root: Path, *, pid: int, host: str, port: int) -> None:
     tmp_dir = root / ".tmp"
     tmp_dir.mkdir(exist_ok=True)
     (tmp_dir / "rollup-docs.pid").write_text(
-        json.dumps({"pid": pid, "host": host, "port": port}) + "\n"
+        json.dumps({"pid": pid, "host": host, "port": port}) + "\n",
+        encoding="utf-8",
     )
 
 
-def test_docs_command_starts_background_server(monkeypatch, tmp_path, capsys) -> None:
-    _create_docs_dir(tmp_path)
+def _expected_source_docs_command(host: str, port: int) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "rollup.cli",
+        "docs",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--foreground",
+    ]
+
+
+def _cmdline_bytes(args: Sequence[str]) -> bytes:
+    return b"".join(arg.encode() + b"\0" for arg in args)
+
+
+def _use_tmp_docs_project(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(rollup_resources, "resource_root", lambda: tmp_path)
+    monkeypatch.setattr(rollup_resources, "is_frozen", lambda: False)
+
+
+def test_docs_command_starts_background_server(monkeypatch, tmp_path, capsys) -> None:
+    _write_docs_project(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
     popen_calls: list[dict[str, object]] = []
 
     class FakeProcess:
         pid = 4321
 
         def wait(self, *, timeout):
-            raise cli.subprocess.TimeoutExpired("zensical", timeout)
+            raise cli.subprocess.TimeoutExpired("rollup docs", timeout)
 
     def fake_popen(command, *, stdout, stderr):
         popen_calls.append({"command": command, "stdout": stdout, "stderr": stderr})
@@ -44,14 +76,7 @@ def test_docs_command_starts_background_server(monkeypatch, tmp_path, capsys) ->
 
     assert popen_calls == [
         {
-            "command": [
-                "zensical",
-                "serve",
-                "--config-file",
-                "zensical.toml",
-                "--dev-addr",
-                "127.0.0.1:8000",
-            ],
+            "command": _expected_source_docs_command("127.0.0.1", 8000),
             "stdout": popen_calls[0]["stdout"],
             "stderr": popen_calls[0]["stdout"],
         }
@@ -71,9 +96,9 @@ def test_docs_command_starts_background_server(monkeypatch, tmp_path, capsys) ->
 
 
 def test_docs_command_reuses_existing_live_background_server(monkeypatch, tmp_path, capsys) -> None:
-    _create_docs_dir(tmp_path)
+    _write_docs_project(tmp_path)
     _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
-    monkeypatch.chdir(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
 
     def fake_kill(pid: int, signal: int) -> None:
         assert pid == 9876
@@ -84,11 +109,7 @@ def test_docs_command_reuses_existing_live_background_server(monkeypatch, tmp_pa
 
     def fake_read_bytes(path: Path) -> bytes:
         assert str(path) == "/proc/9876/cmdline"
-        return (
-            b"/venv/bin/zensical\0serve\0--config-file\0zensical.toml\0"
-            b"--dev-addr\x00"
-            b"127.0.0.1:8000\0"
-        )
+        return _cmdline_bytes(_expected_source_docs_command("127.0.0.1", 8000))
 
     monkeypatch.setattr(cli.os, "kill", fake_kill)
     monkeypatch.setattr(cli.Path, "read_bytes", fake_read_bytes)
@@ -104,16 +125,16 @@ def test_docs_command_reuses_existing_live_background_server(monkeypatch, tmp_pa
 
 
 def test_docs_command_ignores_stale_pid_and_starts_new_server(monkeypatch, tmp_path) -> None:
-    _create_docs_dir(tmp_path)
+    _write_docs_project(tmp_path)
     _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
-    monkeypatch.chdir(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
     popen_commands: list[list[str]] = []
 
     class FakeProcess:
         pid = 4321
 
         def wait(self, *, timeout):
-            raise cli.subprocess.TimeoutExpired("zensical", timeout)
+            raise cli.subprocess.TimeoutExpired("rollup docs", timeout)
 
     def fake_kill(pid: int, signal: int) -> None:
         assert pid == 9876
@@ -129,30 +150,21 @@ def test_docs_command_ignores_stale_pid_and_starts_new_server(monkeypatch, tmp_p
 
     assert cli.docs_command(host="127.0.0.1", port=8000) == 0
 
-    assert popen_commands == [
-        [
-            "zensical",
-            "serve",
-            "--config-file",
-            "zensical.toml",
-            "--dev-addr",
-            "127.0.0.1:8000",
-        ]
-    ]
+    assert popen_commands == [_expected_source_docs_command("127.0.0.1", 8000)]
     assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text())["pid"] == 4321
 
 
 def test_docs_command_does_not_reuse_non_docs_process_cmdline(monkeypatch, tmp_path) -> None:
-    _create_docs_dir(tmp_path)
+    _write_docs_project(tmp_path)
     _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
-    monkeypatch.chdir(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
     popen_commands: list[list[str]] = []
 
     class FakeProcess:
         pid = 4321
 
         def wait(self, *, timeout):
-            raise cli.subprocess.TimeoutExpired("zensical", timeout)
+            raise cli.subprocess.TimeoutExpired("rollup docs", timeout)
 
     def fake_kill(pid: int, signal: int) -> None:
         assert pid == 9876
@@ -172,16 +184,7 @@ def test_docs_command_does_not_reuse_non_docs_process_cmdline(monkeypatch, tmp_p
 
     assert cli.docs_command(host="127.0.0.1", port=8000) == 0
 
-    assert popen_commands == [
-        [
-            "zensical",
-            "serve",
-            "--config-file",
-            "zensical.toml",
-            "--dev-addr",
-            "127.0.0.1:8000",
-        ]
-    ]
+    assert popen_commands == [_expected_source_docs_command("127.0.0.1", 8000)]
     assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text()) == {
         "pid": 4321,
         "host": "127.0.0.1",
@@ -190,16 +193,16 @@ def test_docs_command_does_not_reuse_non_docs_process_cmdline(monkeypatch, tmp_p
 
 
 def test_docs_command_does_not_reuse_mismatched_host_port_state(monkeypatch, tmp_path) -> None:
-    _create_docs_dir(tmp_path)
+    _write_docs_project(tmp_path)
     _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
-    monkeypatch.chdir(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
     popen_commands: list[list[str]] = []
 
     class FakeProcess:
         pid = 2468
 
         def wait(self, *, timeout):
-            raise cli.subprocess.TimeoutExpired("zensical", timeout)
+            raise cli.subprocess.TimeoutExpired("rollup docs", timeout)
 
     def unexpected_kill(*args, **kwargs):
         raise AssertionError("mismatched host/port state should not be treated as reusable")
@@ -213,16 +216,7 @@ def test_docs_command_does_not_reuse_mismatched_host_port_state(monkeypatch, tmp
 
     assert cli.docs_command(host="0.0.0.0", port=9000) == 0
 
-    assert popen_commands == [
-        [
-            "zensical",
-            "serve",
-            "--config-file",
-            "zensical.toml",
-            "--dev-addr",
-            "0.0.0.0:9000",
-        ]
-    ]
+    assert popen_commands == [_expected_source_docs_command("0.0.0.0", 9000)]
     assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text()) == {
         "pid": 2468,
         "host": "0.0.0.0",
@@ -231,8 +225,8 @@ def test_docs_command_does_not_reuse_mismatched_host_port_state(monkeypatch, tmp
 
 
 def test_docs_command_reports_immediate_startup_failure(monkeypatch, tmp_path, capsys) -> None:
-    _create_docs_dir(tmp_path)
-    monkeypatch.chdir(tmp_path)
+    _write_docs_project(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
 
     class FailedProcess:
         pid = 4321
@@ -251,29 +245,32 @@ def test_docs_command_reports_immediate_startup_failure(monkeypatch, tmp_path, c
     assert not (tmp_path / ".tmp" / "rollup-docs.pid").exists()
 
 
-def test_docs_command_foreground_uses_blocking_call(monkeypatch, tmp_path, capsys) -> None:
-    _create_docs_dir(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    call_commands: list[list[str]] = []
+def test_docs_command_foreground_uses_in_process_zensical(monkeypatch, tmp_path, capsys) -> None:
+    _write_docs_project(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
+    runner_calls: list[list[str]] = []
 
-    def fake_call(command):
-        call_commands.append(command)
+    def runner(args: Sequence[str]) -> int:
+        runner_calls.append(list(args))
         return 7
 
     def unexpected_popen(*args, **kwargs):
-        raise AssertionError("foreground docs should use subprocess.call")
+        raise AssertionError("foreground docs should not spawn a background process")
 
-    monkeypatch.setattr(cli.subprocess, "call", fake_call)
     monkeypatch.setattr(cli.subprocess, "Popen", unexpected_popen)
 
-    assert cli.docs_command(host="0.0.0.0", port=9000, foreground=True) == 7
+    assert cli.docs_command(
+        host="0.0.0.0",
+        port=9000,
+        foreground=True,
+        zensical_runner=runner,
+    ) == 7
 
-    assert call_commands == [
+    assert runner_calls == [
         [
-            "zensical",
             "serve",
             "--config-file",
-            "zensical.toml",
+            str(tmp_path / "zensical.toml"),
             "--dev-addr",
             "0.0.0.0:9000",
         ]
@@ -283,17 +280,18 @@ def test_docs_command_foreground_uses_blocking_call(monkeypatch, tmp_path, capsy
 
 def test_docs_command_reports_missing_docs_dir(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(rollup_resources, "resource_root", lambda: tmp_path)
 
     assert cli.docs_command() == 1
 
     output = capsys.readouterr()
     assert output.out == ""
-    assert "Documentation source directory 'docs/' was not found" in output.err
+    assert f"Documentation source directory was not found: {tmp_path / 'docs'}" in output.err
 
 
-def test_docs_command_reports_missing_zensical(monkeypatch, tmp_path, capsys) -> None:
-    _create_docs_dir(tmp_path)
-    monkeypatch.chdir(tmp_path)
+def test_docs_command_reports_background_start_failure(monkeypatch, tmp_path, capsys) -> None:
+    _write_docs_project(tmp_path)
+    _use_tmp_docs_project(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         cli.subprocess,
@@ -303,11 +301,11 @@ def test_docs_command_reports_missing_zensical(monkeypatch, tmp_path, capsys) ->
 
     assert cli.docs_command() == 1
 
-    assert "Could not find the 'zensical' executable" in capsys.readouterr().err
+    assert "Could not start the docs server process" in capsys.readouterr().err
 
 
 def test_docs_foreground_flag_is_wired_through_main(monkeypatch, tmp_path) -> None:
-    _create_docs_dir(tmp_path)
+    _write_docs_project(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     foreground_values: list[bool] = []

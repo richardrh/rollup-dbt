@@ -37,14 +37,28 @@ def test_parser_accepts_test_sql_alias_with_config() -> None:
     assert args.config == Path("rollup.local.toml")
 
 
-def test_parser_keeps_sql_commands_and_background_docs_options() -> None:
+def test_parser_keeps_sql_ep_summary_and_background_docs_options() -> None:
     parser = cli.build_parser()
 
     sql_args = parser.parse_args(["sql-check", "--config", "sql.toml"])
+    ep_args = parser.parse_args(
+        [
+            "generate-ep-summaries",
+            "--vendor",
+            "verisk",
+            "--csv",
+            "selected.csv",
+            "--yes",
+        ]
+    )
     docs_args = parser.parse_args(["docs", "--foreground"])
 
     assert sql_args.command == "sql-check"
     assert sql_args.config == Path("sql.toml")
+    assert ep_args.command == "generate-ep-summaries"
+    assert ep_args.vendor == "verisk"
+    assert ep_args.csv == Path("selected.csv")
+    assert ep_args.yes is True
     assert docs_args.command == "docs"
     assert docs_args.foreground is True
 
