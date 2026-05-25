@@ -37,6 +37,18 @@ def test_parser_accepts_test_sql_alias_with_config() -> None:
     assert args.config == Path("rollup.local.toml")
 
 
+def test_parser_keeps_sql_commands_and_background_docs_options() -> None:
+    parser = cli.build_parser()
+
+    sql_args = parser.parse_args(["sql-check", "--config", "sql.toml"])
+    docs_args = parser.parse_args(["docs", "--foreground"])
+
+    assert sql_args.command == "sql-check"
+    assert sql_args.config == Path("sql.toml")
+    assert docs_args.command == "docs"
+    assert docs_args.foreground is True
+
+
 def test_sql_check_command_returns_success_only_on_ok(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

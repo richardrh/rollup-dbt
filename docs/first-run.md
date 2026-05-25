@@ -1,6 +1,8 @@
 # Quickstart
 
-Run from the repository root.
+Run from the repository root. If you are on a fresh Windows machine, first use
+the [Windows install guide](windows-install.md) to install `uv` and build the
+local environment.
 
 ## 1. Drop the data
 
@@ -15,6 +17,9 @@ data/seeds/**
 ```
 
 Generated outputs land in root `output/`; do not put analyst inputs there.
+
+YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
+the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
 
 EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
 The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
