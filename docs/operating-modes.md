@@ -25,6 +25,28 @@ uv run rollup run
 
 Writes mart fanouts to `output/marts/` and wide/report parquets to `output/`.
 
+## SQL Server check and push
+
+Copy `rollup.example.toml` to gitignored `rollup.local.toml`, then fill in the
+`[sql]` connection string, schema, push mode, and optional table prefix.
+
+Check SQL Server connectivity without running the pipeline:
+
+```bash
+uv run rollup sql-check --config rollup.local.toml
+uv run rollup test-sql --config rollup.local.toml
+```
+
+Run locally and push only mart fanout parquets from `output/marts/*.parquet`:
+
+```bash
+uv run rollup run --push-sql --config rollup.local.toml
+```
+
+Root-level output parquets and non-parquet files are not pushed. Table names are
+derived from mart filenames, optionally prefixed by `[sql].table_prefix`, and
+validated as safe SQL identifiers before writing.
+
 ## Validation reports
 
 ```bash

@@ -41,8 +41,9 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "conftest.py",
         "test_cli_docs.py",
         "test_clean_pipeline_layout.py",
-        "test_docs_content.py",
+        "test_cli_sql.py",
         "test_docs_cli.py",
+        "test_docs_content.py",
         "test_ep_summary_generator.py",
         "test_generate_ep_summaries_cli.py",
         "test_pipeline_e2e_validation.py",
@@ -50,6 +51,8 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_pipeline_schema_yaml.py",
         "test_pyinstaller_build_config.py",
         "test_resources.py",
+        "test_sql.py",
+        "test_sql_integration.py",
     }
 
     tests_dir = REPO_ROOT / "tests"

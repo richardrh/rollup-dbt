@@ -108,21 +108,36 @@ uv run rollup run
 
 Outputs land in root `output/`, not `data/output/`.
 
-## Step 5. Inspect outputs
+## Step 5. Optional: push marts to SQL Server
+
+Copy `rollup.example.toml` to `rollup.local.toml`, fill in `[sql]`, and keep the
+local file uncommitted. Check the connection first:
+
+```bash
+uv run rollup sql-check --config rollup.local.toml
+```
+
+To run the pipeline and push only `output/marts/*.parquet`:
+
+```bash
+uv run rollup run --push-sql --config rollup.local.toml
+```
+
+## Step 6. Inspect outputs
 
 ```bash
 duckdb -c "SELECT COUNT(*) FROM 'output/mts_tbl_ylt_combined_all_factors.parquet';"
 duckdb -c "SELECT * FROM 'output/mts_event_validation.parquet' LIMIT 20;"
 ```
 
-## Step 6. Debug if needed
+## Step 7. Debug if needed
 
 ```bash
 uv run rollup run --debug
 duckdb -c "SELECT * FROM 'output/debug/int_ylt_blending_applied.parquet' LIMIT 10;"
 ```
 
-## Step 7. Generate EP report
+## Step 8. Generate EP report
 
 ```bash
 uv run rollup analyze

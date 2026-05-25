@@ -135,13 +135,35 @@ Use debug mode when you need intermediate inspection frames:
 uv run rollup run --debug
 ```
 
-### 4. Generate the EP report
+### 4. Optional: check SQL Server and push mart fanouts
+
+Copy `rollup.example.toml` to `rollup.local.toml` and set the `[sql]` connection
+details. `rollup.local.toml` is gitignored; do not commit credentials.
+
+Check connectivity without running the pipeline:
+
+```bash
+uv run rollup sql-check --config rollup.local.toml
+# legacy alias also works:
+uv run rollup test-sql --config rollup.local.toml
+```
+
+Run the local pipeline, then push only `output/marts/*.parquet` to SQL Server:
+
+```bash
+uv run rollup run --push-sql --config rollup.local.toml
+```
+
+SQL table names are derived from each mart parquet stem, with optional
+`[sql].table_prefix`, under `[sql].schema`. Unsafe SQL identifiers are rejected.
+
+### 5. Generate the EP report explicitly
 
 ```bash
 uv run rollup analyze
 ```
 
-This reads pipeline outputs and writes `output/analysis/ep_report.csv`.
+This reads existing pipeline outputs and writes `output/analysis/ep_report.csv`.
 
 ## Outputs
 
