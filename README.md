@@ -38,24 +38,26 @@ data/
 
 Generated files go to `output/`. Do not put analyst inputs there.
 
-EP summaries are required as canonical long CSVs under
-`data/ep_summaries/**/*.long.csv`. The normal files are:
+EP summaries must be `.long.csv` files:
 
 - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
 
-Each EP summary row must use these columns:
+If you have source CSVs instead:
 
-```text
-vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
-```
-
-If you only have source workbook extracts, generate the canonical long files
-before validating:
+1. Put the source CSV in `data/ep_summaries/<vendor>/`.
+2. Run one converter command:
 
 ```bash
 uv run rollup generate-ep-summaries
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
+
+3. Check the generated `.long.csv` file.
+4. Run `uv run rollup validate`.
+
+For source and output columns, see
+[`docs/data-requirements.md`](docs/data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs).
 
 Before validation, check the business seed lookups:
 
@@ -209,6 +211,26 @@ Direct Zensical usage is also possible if needed:
 ```bash
 uv run zensical serve --config-file zensical.toml --dev-addr 127.0.0.1:8000
 ```
+
+## Build a standalone executable
+
+Use `uv` only on the developer/build machine to create the PyInstaller bundle:
+
+```bash
+uv run --group build pyinstaller -y rollup.spec
+```
+
+The generated one-folder distribution is written to `dist/rollup/`, ignored, and
+not committed. Analysts can run the executable without `uv`:
+
+```bash
+dist/rollup/rollup --help
+dist/rollup/rollup generate-ep-summaries --help
+dist/rollup/rollup docs
+```
+
+The bundle includes `docs/`, `zensical.toml`, and Zensical package assets so
+`rollup docs` does not require an external `zensical` command.
 
 ## Developer guide: add a pipeline step
 

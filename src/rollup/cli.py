@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
+from typing import TypeVar
 
 import polars as pl
 
 from rollup.analysis import write_ep_report
-from rollup.ep_summary_generator import generate_ep_summaries
+from rollup.ep_summary_generator import (
+    ep_summary_vendor_names,
+    generate_vendor_ep_summary,
+    get_ep_summary_vendor_config,
+    scan_ep_summary_csvs,
+)
 from rollup.pipeline import (
     PipelineValidationInputs,
     empty_input_ylt_aal_by_lob_peril_summary,
@@ -20,6 +31,19 @@ from rollup.pipeline import (
     load_pipeline_validation_inputs,
     run,
     ylt_loss_validation_summary,
+)
+from rollup import resources as rollup_resources
+
+
+T = TypeVar("T")
+
+_USER_FACING_EP_SUMMARY_ERRORS = (
+    FileNotFoundError,
+    KeyError,
+    OSError,
+    UnicodeDecodeError,
+    ValueError,
+    pl.exceptions.PolarsError,
 )
 
 
@@ -60,9 +84,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build EP analysis CSV from pipeline outputs.",
     )
 
-    subcommands.add_parser(
+    ep_summary_parser = subcommands.add_parser(
         "generate-ep-summaries",
-        help="Generate canonical long EP summary CSVs from source XLSX files.",
+        help="Generate one canonical long EP summary CSV from a selected source wide CSV file.",
+        description=(
+            "Interactively select a vendor and discovered source wide CSV file, or pass "
+            "--vendor, --csv, and --yes for non-interactive automation."
+        ),
+    )
+    ep_summary_parser.add_argument(
+        "--vendor",
+        choices=ep_summary_vendor_names(),
+        help="EP summary vendor to generate.",
+    )
+    ep_summary_parser.add_argument(
+        "--csv",
+        type=Path,
+        help=(
+            "Source canonical wide CSV path. Relative filenames are also resolved inside "
+            "data/ep_summaries/<vendor>/."
+        ),
+    )
+    ep_summary_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip overwrite confirmation for automation.",
     )
 
     run_parser = subcommands.add_parser(
@@ -249,15 +296,63 @@ class DocsServerState:
     port: int
 
 
+@contextmanager
+def _working_directory(path: Path):
+    previous_cwd = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous_cwd)
+
+
+def _run_zensical(args: Sequence[str]) -> int:
+    try:
+        import zensical.main
+    except ModuleNotFoundError:
+        print(
+            "Could not import Zensical. Install dev dependencies or use the PyInstaller build that bundles docs support.",
+            file=sys.stderr,
+        )
+        return 1
+
+    result = zensical.main.cli.main(
+        args=list(args),
+        prog_name="zensical",
+        standalone_mode=False,
+    )
+    return int(result or 0)
+
+
+@contextmanager
+def _docs_runtime_project(docs_dir: Path, config_file: Path):
+    if not rollup_resources.is_frozen():
+        yield rollup_resources.resource_root(), config_file
+        return
+
+    with tempfile.TemporaryDirectory(prefix="rollup-docs-") as temp_dir:
+        runtime_root = Path(temp_dir)
+        runtime_docs_dir = runtime_root / "docs"
+        runtime_config_file = runtime_root / "zensical.toml"
+        shutil.copytree(docs_dir, runtime_docs_dir)
+        shutil.copy2(config_file, runtime_config_file)
+        yield runtime_root, runtime_config_file
+
+
 def _docs_server_command(host: str, port: int) -> list[str]:
-    return [
-        "zensical",
-        "serve",
-        "--config-file",
-        "zensical.toml",
-        "--dev-addr",
-        f"{host}:{port}",
+    command = [
+        sys.executable,
+        "docs",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--foreground",
     ]
+    if not rollup_resources.is_frozen():
+        command.insert(1, "-m")
+        command.insert(2, "rollup.cli")
+    return command
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -279,10 +374,7 @@ def _process_matches_docs_command(pid: int, command: list[str]) -> bool:
     args = [part.decode(errors="ignore") for part in raw_cmdline.split(b"\0") if part]
     if not args:
         return False
-
-    executable_matches = any(Path(arg).name == "zensical" for arg in args)
-    required_args_match = all(expected in args for expected in command[1:])
-    return executable_matches and required_args_match
+    return all(expected in args for expected in command)
 
 
 def _read_live_docs_state(
@@ -337,30 +429,65 @@ def _print_background_docs_details(*, url: str, pid: int, log_path: Path) -> Non
     print(f"Stop with: kill {pid}")
 
 
-def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool = False) -> int:
-    docs_dir = Path("docs")
+def _run_docs_foreground(
+    *,
+    docs_dir: Path,
+    config_file: Path,
+    host: str,
+    port: int,
+    zensical_runner: Callable[[Sequence[str]], int | None] | None,
+) -> int:
+    print(f"Docs available at http://{host}:{port}/")
+    runner = zensical_runner or _run_zensical
+    args = [
+        "serve",
+        "--config-file",
+        str(config_file),
+        "--dev-addr",
+        f"{host}:{port}",
+    ]
+    with _docs_runtime_project(docs_dir, config_file) as (runtime_root, runtime_config_file):
+        args[2] = str(runtime_config_file)
+        with _working_directory(runtime_root):
+            result = runner(args)
+    return int(result or 0)
+
+
+def docs_command(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    foreground: bool = False,
+    zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
+    process_factory: Callable[..., subprocess.Popen[bytes]] | None = None,
+) -> int:
+    docs_dir = rollup_resources.docs_dir()
     if not docs_dir.is_dir():
         print(
-            "Documentation source directory 'docs/' was not found. "
-            "Create docs/index.md before serving docs.",
+            f"Documentation source directory was not found: {docs_dir}",
+            file=sys.stderr,
+        )
+        return 1
+    config_file = rollup_resources.zensical_config_path()
+    if not config_file.is_file():
+        print(
+            f"Zensical configuration file was not found: {config_file}",
             file=sys.stderr,
         )
         return 1
 
     url = f"http://{host}:{port}/"
-    command = _docs_server_command(host, port)
-
     if foreground:
-        print(f"Docs available at {url}")
-        try:
-            return subprocess.call(command)
-        except FileNotFoundError:
-            print(
-                "Could not find the 'zensical' executable. Install dev dependencies or run with `uv run rollup docs`.",
-                file=sys.stderr,
-            )
-            return 1
+        return _run_docs_foreground(
+            docs_dir=docs_dir,
+            config_file=config_file,
+            host=host,
+            port=port,
+            zensical_runner=zensical_runner,
+        )
 
+    command = _docs_server_command(host, port)
+    process_factory = process_factory or subprocess.Popen
     live_state = _read_live_docs_state(DOCS_PID_PATH, host=host, port=port, command=command)
     if live_state is not None:
         _print_background_docs_details(url=url, pid=live_state.pid, log_path=DOCS_LOG_PATH)
@@ -369,13 +496,14 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool 
     DOCS_TMP_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with DOCS_LOG_PATH.open("ab") as log_file:
-            process = subprocess.Popen(command, stdout=log_file, stderr=log_file)
+            process = process_factory(command, stdout=log_file, stderr=log_file)
     except FileNotFoundError:
         print(
-            "Could not find the 'zensical' executable. Install dev dependencies or run with `uv run rollup docs`.",
+            "Could not start the docs server process. Install dev dependencies or run with `uv run rollup docs --foreground`.",
             file=sys.stderr,
         )
         return 1
+
     startup_status = _exited_immediately(process, log_path=DOCS_LOG_PATH)
     if startup_status is not None:
         return startup_status
@@ -384,10 +512,142 @@ def docs_command(*, host: str = "127.0.0.1", port: int = 8000, foreground: bool 
     return 0
 
 
-def generate_ep_summaries_command(data_root: Path) -> int:
-    output_paths = generate_ep_summaries(data_root)
-    for output_path in output_paths:
-        print(f"EP summary written to {output_path}")
+def _prompt_numbered_option(
+    prompt: str,
+    options: Sequence[T],
+    display: Callable[[T], str] = str,
+) -> T:
+    while True:
+        print(prompt)
+        for index, option in enumerate(options, start=1):
+            print(f"  {index}. {display(option)}")
+        selection = input("Enter number: ").strip()
+        if selection.isdecimal():
+            index = int(selection)
+            if 1 <= index <= len(options):
+                return options[index - 1]
+        print(f"Invalid selection. Enter a number from 1 to {len(options)}.")
+
+
+def _confirm_overwrite(output_path: Path) -> bool:
+    while True:
+        response = input(f"Overwrite {output_path}? [y/N]: ").strip().lower()
+        if response == "":
+            return False
+        if response in {"y", "yes"}:
+            return True
+        if response in {"n", "no"}:
+            return False
+        print("Please answer y or n.")
+
+
+def _resolve_csv_path(data_root: Path, vendor: str, csv: Path) -> Path:
+    if csv.is_absolute() or csv.is_file():
+        return csv
+    candidate = get_ep_summary_vendor_config(vendor).source_dir(data_root) / csv
+    if candidate.is_file():
+        return candidate
+    return csv
+
+
+def _sorted_distinct_values(frame: pl.DataFrame, column: str) -> list[str]:
+    return sorted(str(value) for value in frame.get_column(column).drop_nulls().unique())
+
+
+def _format_values(values: Sequence[str]) -> str:
+    return ", ".join(values) if values else "none"
+
+
+def _format_ep_type_counts(frame: pl.DataFrame) -> str:
+    counts = frame.group_by("ep_type").len(name="count").sort("ep_type")
+    values = [f"{ep_type}={count}" for ep_type, count in counts.iter_rows()]
+    return ", ".join(values) if values else "none"
+
+
+def _format_return_period_range(frame: pl.DataFrame) -> str:
+    if frame.is_empty():
+        return "n/a"
+    return_periods = frame.get_column("return_period").drop_nulls()
+    if return_periods.is_empty():
+        return "n/a"
+    return f"{return_periods.min()}-{return_periods.max()}"
+
+
+def _print_ep_summary_overview(output_path: Path) -> None:
+    frame = pl.read_csv(output_path)
+    modelled_pair_count = frame.select(["modelled_lob", "modelled_peril"]).unique().height
+    print("EP summary overview:")
+    print(f"  Rows: {frame.height}")
+    print(f"  Columns ({len(frame.columns)}): {', '.join(frame.columns)}")
+    print(f"  Vendors: {_format_values(_sorted_distinct_values(frame, 'vendor'))}")
+    print(f"  EP type counts: {_format_ep_type_counts(frame)}")
+    print(f"  Modelled LOB/peril pairs: {modelled_pair_count}")
+    print(f"  Return period range: {_format_return_period_range(frame)}")
+
+
+def generate_ep_summaries_command(
+    data_root: Path,
+    *,
+    vendor: str | None = None,
+    csv: Path | None = None,
+    yes: bool = False,
+) -> int:
+    try:
+        selected_vendor = vendor or _prompt_numbered_option(
+            "Select EP summary vendor:",
+            ep_summary_vendor_names(),
+        )
+
+        try:
+            config = get_ep_summary_vendor_config(selected_vendor)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        if csv is None:
+            csv_files = scan_ep_summary_csvs(data_root, selected_vendor)
+            if not csv_files:
+                print(
+                    f"No source .csv files found in {config.source_dir(data_root)}.",
+                    file=sys.stderr,
+                )
+                return 1
+            csv_path = _prompt_numbered_option(
+                "Select source wide CSV:",
+                csv_files,
+                lambda path: path.name,
+            )
+        else:
+            csv_path = _resolve_csv_path(data_root, selected_vendor, csv)
+
+        if not csv_path.is_file():
+            print(f"CSV file not found: {csv_path}", file=sys.stderr)
+            return 1
+
+        output_path = config.output_path(data_root)
+        if output_path.exists() and not yes and not _confirm_overwrite(output_path):
+            print("EP summary generation cancelled; no files overwritten.")
+            return 0
+
+        print("EP summary generation:")
+        print(f"  Vendor: {selected_vendor}")
+        print(f"  CSV: {csv_path}")
+        print(f"  Output: {output_path}")
+        started = time.perf_counter()
+        output_path = generate_vendor_ep_summary(data_root, selected_vendor, csv_path, status_callback=print)
+        elapsed_seconds = time.perf_counter() - started
+    except EOFError:
+        print("Input ended before EP summary generation could continue.", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("EP summary generation cancelled; no files overwritten.")
+        return 130
+    except _USER_FACING_EP_SUMMARY_ERRORS as exc:
+        print(f"EP summary generation failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Done in {elapsed_seconds:.2f}s. EP summary written to {output_path}")
+    _print_ep_summary_overview(output_path)
     return 0
 
 
@@ -405,7 +665,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {"analyze", "analyse"}:
         return analyze_command(output_root)
     if args.command == "generate-ep-summaries":
-        return generate_ep_summaries_command(data_root)
+        return generate_ep_summaries_command(
+            data_root,
+            vendor=args.vendor,
+            csv=args.csv,
+            yes=args.yes,
+        )
     if args.command == "docs":
         return docs_command(host=args.host, port=args.port, foreground=args.foreground)
 
