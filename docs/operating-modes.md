@@ -23,7 +23,10 @@ rollup run
 uv run rollup run
 ```
 
-Writes mart fanouts to `output/marts/` and wide/report parquets to `output/`.
+Writes mart fanouts to `output/marts/`, wide/report parquets to `output/`, and
+`output/analysis/ep_report.csv`. The wide combined-all-factors parquet is
+`output/mts_tbl_ylt_combined_all_factors_wide.parquet` with forecast loss
+columns such as `main_YYYYMM_loss` and `dialsup_YYYYMM_loss`.
 
 ## SQL Server check and push
 
@@ -76,7 +79,8 @@ Also writes stage frames to `output/debug/` with prefixes:
 uv run rollup analyze
 ```
 
-Generates `output/analysis/ep_report.csv` from pipeline outputs.
+Regenerates `output/analysis/ep_report.csv` from existing pipeline outputs
+without rerunning the pipeline.
 
 ## Serve docs
 

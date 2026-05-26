@@ -157,13 +157,15 @@ uv run rollup run --push-sql --config rollup.local.toml
 SQL table names are derived from each mart parquet stem, with optional
 `[sql].table_prefix`, under `[sql].schema`. Unsafe SQL identifiers are rejected.
 
-### 5. Generate the EP report explicitly
+### 5. Regenerate the EP report explicitly
 
 ```bash
 uv run rollup analyze
 ```
 
-This reads existing pipeline outputs and writes `output/analysis/ep_report.csv`.
+`rollup run` writes `output/analysis/ep_report.csv` automatically after a
+successful pipeline run. Use `rollup analyze` to regenerate that CSV from
+existing pipeline outputs without rerunning the pipeline.
 
 ## Outputs
 
@@ -177,15 +179,19 @@ output/
     HiscoAIR_YYYYMM_dialsup.parquet
     HiscoRMS_YYYYMM_dialsup.parquet
   mts_tbl_ylt_combined_all_factors.parquet
+  mts_tbl_ylt_combined_all_factors_wide.parquet
   mts_tbl_ylt_dialsup.parquet
   mts_event_validation.parquet
   debug/                         # only when --debug is used
-  analysis/ep_report.csv          # after rollup analyze
+  analysis/ep_report.csv          # after rollup run or rollup analyze
 ```
 
 `mts_tbl_ylt_combined_all_factors.parquet` is the row-level wide/factor-enriched
 YLT mart built from `ylt_euws_override_applied`. It includes loss, rank/return
 period, FX, forecast, EUWS, LOB/peril, model, and event fields.
+`mts_tbl_ylt_combined_all_factors_wide.parquet` pivots the main and dialsup
+forecast losses into analysis columns such as `main_YYYYMM_loss` and
+`dialsup_YYYYMM_loss`.
 
 ## Inspect and validate output
 
