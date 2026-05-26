@@ -90,7 +90,7 @@ def test_sql_check_command_returns_success_only_on_ok(
     assert cli.sql_check_command(Path("rollup.local.toml")) == 1
 
 
-def test_run_without_push_sql_does_not_call_analysis_or_push(
+def test_run_without_push_sql_writes_analysis_but_does_not_push(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -130,7 +130,8 @@ def test_run_without_push_sql_does_not_call_analysis_or_push(
     monkeypatch.setattr(
         cli,
         "write_ep_report",
-        lambda output_root: pytest.fail("run should not generate analysis"),
+        lambda output_root_arg: events.append("write_ep_report")
+        or output_root_arg / "analysis" / "ep_report.csv",
     )
     monkeypatch.setattr(
         cli,
@@ -149,10 +150,15 @@ def test_run_without_push_sql_does_not_call_analysis_or_push(
     )
 
     assert exit_code == 0
-    assert events == ["collect_validation", "print_validation", "run_pipeline"]
+    assert events == [
+        "collect_validation",
+        "print_validation",
+        "run_pipeline",
+        "write_ep_report",
+    ]
 
 
-def test_run_push_sql_happens_after_pipeline_without_analysis(
+def test_run_push_sql_happens_after_pipeline_and_analysis(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -194,7 +200,8 @@ def test_run_push_sql_happens_after_pipeline_without_analysis(
     monkeypatch.setattr(
         cli,
         "write_ep_report",
-        lambda output_root: pytest.fail("SQL push should not generate analysis"),
+        lambda output_root_arg: events.append("write_ep_report")
+        or output_root_arg / "analysis" / "ep_report.csv",
     )
 
     sql_config = SqlConfig(connection_string="mssql+pyodbc://server/database")
@@ -230,6 +237,7 @@ def test_run_push_sql_happens_after_pipeline_without_analysis(
         "collect_validation",
         "print_validation",
         "run_pipeline",
+        "write_ep_report",
         "check_sql",
         "push_sql",
     ]
@@ -245,10 +253,12 @@ def test_run_push_sql_failure_is_user_friendly(
     monkeypatch.setattr(cli, "print_validation_reports", lambda reports: None)
     monkeypatch.setattr(cli, "validation_exit_code", lambda reports: 0)
     monkeypatch.setattr(cli, "run", lambda *args, **kwargs: None)
+    events: list[str] = []
     monkeypatch.setattr(
         cli,
         "write_ep_report",
-        lambda output_root: pytest.fail("SQL push should not generate analysis"),
+        lambda output_root: events.append("write_ep_report")
+        or output_root / "analysis" / "ep_report.csv",
     )
     monkeypatch.setattr(
         cli,
@@ -271,4 +281,5 @@ def test_run_push_sql_failure_is_user_friendly(
     )
 
     assert exit_code == 1
+    assert events == ["write_ep_report"]
     assert "Failed to push marts to SQL Server: write failed" in capsys.readouterr().err

@@ -10,7 +10,7 @@ activating the virtual environment, use `rollup ...` directly.
 
 ```bash
 uv run rollup validate        # check inputs before a run
-uv run rollup run             # write normal outputs to output/
+uv run rollup run             # write normal outputs and analysis/ep_report.csv
 uv run rollup run --debug     # also write intermediate frames to output/debug/
 uv run rollup analyze         # write output/analysis/ep_report.csv
 uv run rollup docs            # start these docs in the background
@@ -23,6 +23,10 @@ uv run rollup docs --foreground  # serve docs in the current terminal
 - Generated outputs default to root `output/`.
 - Mart fanouts are written to `output/marts/`.
 - Wide/report parquets are written to `output/`.
+- `output/mts_tbl_ylt_combined_all_factors_wide.parquet` includes forecast loss
+  columns such as `main_YYYYMM_loss` and `dialsup_YYYYMM_loss`.
+- `output/analysis/ep_report.csv` is written by `rollup run` and can be
+  regenerated with `rollup analyze`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
 
 Start with [Quickstart](first-run.md). On Windows, use the

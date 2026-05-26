@@ -408,11 +408,11 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
 
     monkeypatch.setattr(cli, "run", fake_run)
 
-    monkeypatch.setattr(
-        cli,
-        "write_ep_report",
-        lambda output_root: pytest.fail("run should not generate analysis"),
-    )
+    def fake_write_ep_report(output_root):
+        calls["analysis_output_root"] = output_root
+        return output_root / "analysis" / "ep_report.csv"
+
+    monkeypatch.setattr(cli, "write_ep_report", fake_write_ep_report)
 
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
@@ -427,6 +427,7 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
         "output_root": output_root,
         "debug": True,
         "validation_inputs": reports.inputs,
+        "analysis_output_root": output_root,
     }
 
 
@@ -445,6 +446,11 @@ def test_run_command_returns_nonzero_without_running_pipeline_on_validation_fail
         raise AssertionError("run should not be called when validation fails")
 
     monkeypatch.setattr(cli, "run", fail_run)
+    monkeypatch.setattr(
+        cli,
+        "write_ep_report",
+        lambda output_root: pytest.fail("analysis should not run when validation fails"),
+    )
 
     assert cli.run_command("data", output_root=tmp_path / "output") == 1
     captured = capsys.readouterr().out

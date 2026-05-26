@@ -431,4 +431,16 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
     ).item() == pytest.approx(10_000.0)
 
     assert (output_root / "mts_tbl_ylt_combined_all_factors.parquet").is_file()
+    assert (output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet").is_file()
     assert (output_root / "debug" / "mts_ylt_combined_all_factors.parquet").is_file()
+
+    wide_mts = pl.read_parquet(output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
+    assert "main_202601_loss" in wide_mts.columns
+    assert "dialsup_202601_loss" in wide_mts.columns
+    assert wide_mts.height == mart.height
+    assert wide_mts.select(pl.col("main_202601_loss").sum()).item() == pytest.approx(
+        10_000.0
+    )
+    assert wide_mts.select(pl.col("dialsup_202601_loss").sum()).item() == pytest.approx(
+        10_000.0
+    )

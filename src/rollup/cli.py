@@ -313,6 +313,9 @@ def run_command(
     if debug:
         print(f"Debug frames written to {output_root / 'debug'}")
 
+    analysis_path = write_ep_report(output_root)
+    print(f"Analysis report written to {analysis_path}")
+
     if push_sql:
         try:
             sql_config = require_working_sql_config(config_path)
