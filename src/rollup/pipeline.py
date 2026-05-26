@@ -1440,6 +1440,92 @@ def build_ylt_dialsup_wide(ylt: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
+MTS_WIDE_DIMENSIONS = [
+    Col.vendor,
+    Col.base_model,
+    Col.region_peril_id,
+    Col.rollup_peril,
+    Col.rollup_lob,
+    Col.cds_cat_class_name,
+    Col.model_code,
+    Col.year_id,
+    Col.event_id,
+    Col.model_event_id,
+    Col.event_day,
+    Col.target_currency,
+]
+
+
+def build_ylt_combined_all_factors_wide(
+    main_ylt: pl.DataFrame | pl.LazyFrame,
+    dialsup_ylt: pl.DataFrame | pl.LazyFrame,
+) -> pl.DataFrame:
+    main_losses = _mts_wide_metric_losses(
+        main_ylt,
+        metric="main",
+        loss_column=Col.original_ylt_loss_blended_gbp_forecast_euws,
+    )
+    dialsup_losses = _mts_wide_metric_losses(
+        dialsup_ylt,
+        metric="dialsup",
+        loss_column=Col.dialsup_loss_gbp_forecast,
+    )
+    long_losses = pl.concat([main_losses, dialsup_losses], how="vertical")
+    if long_losses.is_empty():
+        return pl.DataFrame(schema={column: pl.Null for column in MTS_WIDE_DIMENSIONS})
+
+    long_losses = (
+        long_losses.sort(
+            [*MTS_WIDE_DIMENSIONS, Col.forecast_date, "metric", "loss"],
+            nulls_last=True,
+        )
+        .with_columns(
+            (pl.col("loss").cum_count().over([*MTS_WIDE_DIMENSIONS, "wide_column"]) - 1)
+            .cast(pl.Int64)
+            .alias("row_ordinal")
+        )
+    )
+    wide = long_losses.pivot(
+        index=[*MTS_WIDE_DIMENSIONS, "row_ordinal"],
+        on="wide_column",
+        values="loss",
+        aggregate_function="first",
+    )
+    loss_columns = sorted(
+        column for column in wide.columns if column not in {*MTS_WIDE_DIMENSIONS, "row_ordinal"}
+    )
+
+    return wide.select(*MTS_WIDE_DIMENSIONS, "row_ordinal", *loss_columns).sort(
+        [*MTS_WIDE_DIMENSIONS, "row_ordinal"],
+        nulls_last=True,
+    )
+
+
+def _mts_wide_metric_losses(
+    ylt: pl.DataFrame | pl.LazyFrame,
+    *,
+    metric: str,
+    loss_column: str,
+) -> pl.DataFrame:
+    if isinstance(ylt, pl.LazyFrame):
+        ylt = ylt.collect()
+    return ylt.select(
+        *MTS_WIDE_DIMENSIONS,
+        Col.forecast_date,
+        pl.lit(metric).alias("metric"),
+        pl.col(loss_column).cast(pl.Float64).alias("loss"),
+    ).with_columns(
+        pl.concat_str(
+            [
+                pl.col("metric"),
+                pl.col(Col.forecast_date).map_elements(forecast_tag, return_dtype=pl.String),
+                pl.lit("loss"),
+            ],
+            separator="_",
+        ).alias("wide_column")
+    )
+
+
 def write_debug_frame(
     debug_dir: Path,
     name: str,
@@ -1510,6 +1596,7 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
 
     for filename, frame_name in {
         "mts_tbl_ylt_combined_all_factors.parquet": "ylt_combined_all_factors",
+        "mts_tbl_ylt_combined_all_factors_wide.parquet": "ylt_combined_all_factors_wide",
         "mts_tbl_ylt_dialsup.parquet": "ylt_dialsup_wide",
     }.items():
         frame = result.marts.frames.get(frame_name)
@@ -1649,6 +1736,10 @@ def run(
             ylt_euws_override_applied,
         )
         mart_frames["ylt_dialsup_wide"] = build_ylt_dialsup_wide(ylt_dialsup)
+        mart_frames["ylt_combined_all_factors_wide"] = build_ylt_combined_all_factors_wide(
+            mart_frames["ylt_combined_all_factors"],
+            mart_frames["ylt_dialsup_wide"],
+        )
 
     result = PipelineRunResult(
         seeds=PipelineStage(seed_frames),
