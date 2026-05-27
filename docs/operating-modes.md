@@ -86,13 +86,11 @@ without rerunning the pipeline.
 
 ```bash
 uv run rollup docs
-uv run rollup docs --host localhost --port 8000
-uv run rollup docs --foreground
+uv run rollup docs --host localhost --port 4322
 ```
 
-The command starts Zensical docs in the background by default and prints the URL,
-process ID, log path, and `kill <pid>` stop command. Use `--foreground` to keep
-the docs server attached to the terminal. Direct Zensical use is also available:
+The command starts Zensical docs in the foreground and prints the URL. Direct
+Zensical use is also available:
 
 ```bash
 uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
