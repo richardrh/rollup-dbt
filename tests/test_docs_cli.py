@@ -82,7 +82,7 @@ def test_docs_command_copies_bundled_docs_to_writable_runtime_project(
         "--config-file",
         str(runtime_root / "zensical.toml"),
         "--dev-addr",
-        "127.0.0.1:4322",
+        "localhost:4322",
     ]
 
 

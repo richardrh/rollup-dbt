@@ -172,7 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     docs_parser.add_argument(
         "--host",
-        default="127.0.0.1",
+        default="localhost",
         help="Host interface for the docs server.",
     )
     docs_parser.add_argument(
@@ -441,7 +441,7 @@ def _run_docs_foreground(
 
 def docs_command(
     *,
-    host: str = "127.0.0.1",
+    host: str = "localhost",
     port: int = 4322,
     zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
 ) -> int:
