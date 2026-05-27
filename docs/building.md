@@ -57,6 +57,49 @@ dist/rollup/rollup docs
 rm -rf dist/
 ```
 
+## What the analyst needs
+
+The `dist/rollup/` folder is the **complete software package**. The analyst
+only needs to copy that folder to their machine.
+
+| What | Included in bundle? | Notes |
+| --- | --- | --- |
+| `rollup` executable | Yes | Entry point inside `dist/rollup/` |
+| Documentation site | Yes | All `.md` files bundled in `_internal/docs/` |
+| Zensical config/theme | Yes | `zensical.toml` and Zensical assets bundled |
+| Pipeline code | Yes | All Python libraries bundled |
+| `data/` directory | **No** | Analyst provides their own inputs |
+| `rollup.local.toml` | **No** | Optional; only needed for SQL push |
+
+## Deployment
+
+1. Build the bundle:
+
+   ```bash
+   uv run --group build pyinstaller -y rollup.spec
+   ```
+
+2. Copy the entire `dist/rollup/` folder to the analyst's machine.
+
+3. Analyst creates a working directory with their data:
+
+   ```text
+   analyst-work/
+   ├── data/
+   │   ├── ep_summaries/
+   │   ├── seeds/
+   │   └── ylt/
+   └── rollup/          ← copied dist/rollup/ folder
+   ```
+
+4. Analyst runs the pipeline:
+
+   ```bash
+   cd analyst-work
+   ./rollup/rollup run
+   ./rollup/rollup docs
+   ```
+
 ## See also
 
 - [Developer guide](developer-guide.md) — pipeline development workflow
