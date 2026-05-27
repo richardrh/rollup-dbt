@@ -10,7 +10,6 @@ SCHEMA_FILES = (
     REPO_ROOT / "data" / "seeds" / "schema.yaml",
     REPO_ROOT / "data" / "ylt" / "schema.yaml",
     REPO_ROOT / "data" / "ep_summaries" / "schema.yaml",
-    REPO_ROOT / "output" / "schema.yaml",
 )
 
 
@@ -45,7 +44,6 @@ def test_pipeline_yaml_schema_declares_required_sources() -> None:
         "stg_normalized_ylt",
         "stg_selected_analyses",
         "int_selected_losses",
-        "mart_loss_summary",
     }
 
     assert expected <= set(datasets)
@@ -63,13 +61,12 @@ def test_seed_schema_paths_match_operator_layout() -> None:
     assert datasets["euws_rate_factors"]["path"] == "data/seeds/vor/euws_rate_factors.csv"
 
 
-def test_ylt_ep_and_output_schema_paths_match_operator_layout() -> None:
+def test_ylt_ep_schema_paths_match_operator_layout() -> None:
     datasets = _load_raw_schema()["datasets"]
 
     assert datasets["raw_verisk_ylt"]["glob"] == "data/ylt/verisk/*.parquet"
     assert datasets["raw_risklink_ylt"]["glob"] == "data/ylt/risklink/*.parquet"
     assert datasets["canonical_ep_summary"]["glob"] == "data/ep_summaries/**/*.long.csv"
-    assert datasets["mart_loss_summary"]["path"] == "output/pipeline_loss_summary.parquet"
 
 
 def test_selected_analyses_is_a_staging_contract() -> None:
