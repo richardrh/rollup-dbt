@@ -102,62 +102,6 @@ datasets:
           description: Priority for selecting one modelled peril per vendor, rollup LOB, and rollup peril. Lower values win; 99 means fallback.,
         }
 
-  blending_weights:
-    role: source
-    path: data/seeds/vor/blending_weights.csv
-    format: csv
-    required: true
-    description: Long-format vendor blending weights by peril and return period.
-    columns:
-      - {
-          name: peril_id,
-          dtype: int64,
-          required: true,
-          description: Canonical peril key.,
-        }
-      - {
-          name: return_period,
-          dtype: int64,
-          required: true,
-          description: EP return period.,
-        }
-      - {
-          name: peril_name,
-          dtype: string,
-          required: true,
-          description: Display peril name.,
-        }
-      - {
-          name: description,
-          dtype: string,
-          required: true,
-          description: Display description.,
-        }
-      - {
-          name: sub_peril,
-          dtype: string,
-          required: false,
-          description: Optional sub-peril split.,
-        }
-      - {
-          name: vendor,
-          dtype: string,
-          required: true,
-          description: Vendor receiving the weight.,
-        }
-      - {
-          name: base_model,
-          dtype: string,
-          required: true,
-          description: Vendor base model selection.,
-        }
-      - {
-          name: weight,
-          dtype: float64,
-          required: true,
-          description: Blend weight.,
-        }
-
   blending_factors:
     role: source
     path: data/seeds/vor/blending_factors.csv

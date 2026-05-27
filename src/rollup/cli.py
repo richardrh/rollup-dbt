@@ -107,6 +107,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build EP analysis CSV from pipeline outputs.",
     )
 
+    cleanup_parser = subcommands.add_parser(
+        "cleanup",
+        help="Delete generated pipeline output files.",
+    )
+    cleanup_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Actually delete generated output files; default is dry run.",
+    )
+
     ep_summary_parser = subcommands.add_parser(
         "generate-ep-summaries",
         help="Generate one canonical long EP summary CSV from a selected source wide CSV file.",
@@ -330,6 +340,35 @@ def run_command(
 def analyze_command(output_root: Path) -> int:
     output_path = write_ep_report(output_root)
     print(f"Analysis report written to {output_path}")
+    return 0
+
+
+def cleanup_paths(output_root: Path) -> list[Path]:
+    paths = sorted((output_root / "marts").glob("*.parquet"))
+    paths.extend(
+        path
+        for path in [
+            output_root / "mts_tbl_ylt_combined_all_factors.parquet",
+            output_root / "mts_tbl_ylt_dialsup.parquet",
+            output_root / "mts_event_validation.parquet",
+        ]
+        if path.is_file()
+    )
+    return paths
+
+
+def cleanup_command(output_root: Path, *, yes: bool = False) -> int:
+    paths = cleanup_paths(output_root)
+    if not yes:
+        print(f"Would delete {len(paths)} generated output file(s):")
+        for path in paths:
+            print(path)
+        print("Pass --yes to delete these files.")
+        return 0
+
+    for path in paths:
+        path.unlink(missing_ok=True)
+    print(f"Deleted {len(paths)} generated output file(s).")
     return 0
 
 
@@ -727,6 +766,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command in {"analyze", "analyse"}:
         return analyze_command(output_root)
+    if args.command == "cleanup":
+        return cleanup_command(output_root, yes=args.yes)
     if args.command in {"sql-check", "test-sql"}:
         return sql_check_command(config_path)
     if args.command == "generate-ep-summaries":

@@ -9,7 +9,6 @@ columns, and types.
 | `data/seeds/schema.yaml` | Seed CSV/parquet lookup and validation files |
 | `data/ylt/schema.yaml` | Vendor YLT parquet inputs |
 | `data/ep_summaries/schema.yaml` | Canonical long EP summary CSV inputs |
-| `output/schema.yaml` | Generated output contracts |
 
 ## Contract shape
 
