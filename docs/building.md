@@ -57,49 +57,47 @@ dist/rollup/rollup docs
 rm -rf dist/
 ```
 
-## What the analyst needs
+## What to send the analyst
 
-The `dist/rollup/` folder is the **complete software package**. The analyst
-only needs to copy that folder to their machine.
+After the build finishes you have a folder at `./dist/rollup/`. That is the
+only thing you send to the analyst.
 
-| What | Included in bundle? | Notes |
-| --- | --- | --- |
-| `rollup` executable | Yes | Entry point inside `dist/rollup/` |
-| Documentation site | Yes | All `.md` files bundled in `_internal/docs/` |
-| Zensical config/theme | Yes | `zensical.toml` and Zensical assets bundled |
-| Pipeline code | Yes | All Python libraries bundled |
-| `data/` directory | **No** | Analyst provides their own inputs |
-| `rollup.local.toml` | **No** | Optional; only needed for SQL push |
+The analyst does **not** need Python, `uv`, or this repository. They only need:
 
-## Deployment
+1. The `./dist/rollup/` folder you built.
+2. A `data/` folder with their own inputs (YLTs, EP summaries, seeds).
 
-1. Build the bundle:
+## How the analyst uses it
 
-   ```bash
-   uv run --group build pyinstaller -y rollup.spec
-   ```
-
-2. Copy the entire `dist/rollup/` folder to the analyst's machine.
-
-3. Analyst creates a working directory with their data:
+1. Put the `rollup` folder somewhere on their machine.
+2. Create a `data/` folder **next to** the `rollup` folder, or **above** it.
+   The CLI walks up the directory tree looking for `data/`:
 
    ```text
-   analyst-work/
-   ├── data/
+   work/
+   ├── data/              ← analyst puts their inputs here
    │   ├── ep_summaries/
    │   ├── seeds/
    │   └── ylt/
-   └── rollup/          ← copied dist/rollup/ folder
+   └── rollup/            ← the dist/rollup/ folder you sent
+       └── rollup         ← the executable
    ```
 
-4. Analyst runs the pipeline:
+3. Open a terminal in `work/` and run:
 
    ```bash
-   cd analyst-work
+   # Windows
+   rollup\rollup run
+   rollup\rollup docs
+
+   # macOS / Linux
    ./rollup/rollup run
    ./rollup/rollup docs
    ```
 
+Outputs are written to `work/output/`.
+
 ## See also
 
 - [Developer guide](developer-guide.md) — pipeline development workflow
+- [First run](first-run.md) — what goes in the `data/` folder
