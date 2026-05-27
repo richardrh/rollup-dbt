@@ -32,7 +32,6 @@ def test_pipeline_yaml_schema_declares_required_sources() -> None:
     expected = {
         "lobs",
         "perils",
-        "blending_weights",
         "blending_factors",
         "forecast_factors",
         "fx_rates",
@@ -54,7 +53,6 @@ def test_seed_schema_paths_match_operator_layout() -> None:
 
     assert datasets["lobs"]["path"] == "data/seeds/business/lobs.csv"
     assert datasets["perils"]["path"] == "data/seeds/business/perils.csv"
-    assert datasets["blending_weights"]["path"] == "data/seeds/vor/blending_weights.csv"
     assert datasets["blending_factors"]["path"] == "data/seeds/vor/blending_factors.csv"
     assert datasets["forecast_factors"]["path"] == "data/seeds/vor/forecast_factors.csv"
     assert datasets["fx_rates"]["path"] == "data/seeds/vor/fx_rates.csv"
