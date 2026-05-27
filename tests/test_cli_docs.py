@@ -154,6 +154,17 @@ def test_docs_command_ignores_stale_pid_and_starts_new_server(monkeypatch, tmp_p
     assert json.loads((tmp_path / ".tmp" / "rollup-docs.pid").read_text())["pid"] == 4321
 
 
+def test_pid_is_alive_returns_false_for_generic_oserror(monkeypatch) -> None:
+    def fake_kill(pid: int, signal: int) -> None:
+        assert pid == 9876
+        assert signal == 0
+        raise OSError("invalid parameter")
+
+    monkeypatch.setattr(cli.os, "kill", fake_kill)
+
+    assert cli._pid_is_alive(9876) is False
+
+
 def test_docs_command_does_not_reuse_non_docs_process_cmdline(monkeypatch, tmp_path) -> None:
     _write_docs_project(tmp_path)
     _write_docs_state(tmp_path, pid=9876, host="127.0.0.1", port=8000)
