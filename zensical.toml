@@ -10,14 +10,17 @@ nav = [
   { "Quickstart" = "first-run.md" },
   { "Windows install" = "windows-install.md" },
   { "Loading your data" = "load-data.md" },
+  { "EP Summaries" = "ep-summaries.md" },
   { "Troubleshooting" = "troubleshooting.md" },
   { "Reference" = [
     { "Data requirements" = "data-requirements.md" },
     { "Schema contracts" = "schema-contracts.md" },
+    { "Adding LOBs & perils" = "adding-lobs-perils.md" },
     { "Utilities" = "utilities.md" },
     { "Architecture" = "architecture.md" },
     { "Developer guide" = "developer-guide.md" },
     { "Operating modes" = "operating-modes.md" },
+    { "Building the bundle" = "building.md" },
   ]},
 ]
 

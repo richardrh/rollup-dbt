@@ -225,7 +225,7 @@ Serve the Zensical docs through the application CLI:
 
 ```bash
 uv run rollup docs
-uv run rollup docs --host 127.0.0.1 --port 8000
+uv run rollup docs --host localhost --port 8000
 uv run rollup docs --foreground
 ```
 
@@ -237,7 +237,7 @@ With an activated environment, use `rollup docs` without `uv`.
 Direct Zensical usage is also possible if needed:
 
 ```bash
-uv run zensical serve --config-file zensical.toml --dev-addr 127.0.0.1:8000
+uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
 ```
 
 ## Build a standalone executable
