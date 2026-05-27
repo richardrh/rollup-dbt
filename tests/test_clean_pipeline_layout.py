@@ -40,6 +40,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "__init__.py",
         "conftest.py",
         "test_cli_docs.py",
+        "test_cli_cleanup.py",
         "test_clean_pipeline_layout.py",
         "test_cli_sql.py",
         "test_docs_cli.py",
