@@ -27,3 +27,14 @@ Built bundle:
 ```
 
 Follow quickstart guide.
+
+## Build standalone bundle
+
+```bash
+uv run --group build pyinstaller -y rollup.spec
+dist/rollup/rollup --help
+dist/rollup/rollup docs
+```
+
+`dist/` is gitignored and not committed. See the building guide for analyst
+deployment notes.
