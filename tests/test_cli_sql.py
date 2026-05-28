@@ -96,43 +96,30 @@ def test_run_without_push_sql_writes_analysis_but_does_not_push(
 ) -> None:
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
-    expected_inputs = object()
-    reports = SimpleNamespace(inputs=expected_inputs)
     events: list[str] = []
 
-    monkeypatch.setattr(
-        cli,
-        "collect_validation_reports",
-        lambda data_root_arg: events.append("collect_validation") or reports,
-    )
     monkeypatch.setattr(
         cli,
         "print_validation_reports",
         lambda reports_arg: events.append("print_validation"),
     )
-    monkeypatch.setattr(cli, "validation_exit_code", lambda reports_arg: 0)
 
-    def run_pipeline(
+    def run_rollup(
         data_root_arg: Path,
         *,
         output_root: Path,
         debug: bool,
-        validation_inputs: object,
-    ) -> None:
+        validation_callback,
+    ) -> SimpleNamespace:
         assert data_root_arg == data_root
         assert output_root == output_root_path
         assert debug is False
-        assert validation_inputs is expected_inputs
-        events.append("run_pipeline")
+        validation_callback(SimpleNamespace())
+        events.append("run_rollup")
+        return SimpleNamespace(ep_report_path=output_root / "analysis" / "ep_report.csv")
 
     output_root_path = output_root
-    monkeypatch.setattr(cli, "run", run_pipeline)
-    monkeypatch.setattr(
-        cli,
-        "write_ep_report",
-        lambda output_root_arg: events.append("write_ep_report")
-        or output_root_arg / "analysis" / "ep_report.csv",
-    )
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
     monkeypatch.setattr(
         cli,
         "push_mart_parquets_to_sql",
@@ -151,10 +138,8 @@ def test_run_without_push_sql_writes_analysis_but_does_not_push(
 
     assert exit_code == 0
     assert events == [
-        "collect_validation",
         "print_validation",
-        "run_pipeline",
-        "write_ep_report",
+        "run_rollup",
     ]
 
 
@@ -165,44 +150,30 @@ def test_run_push_sql_happens_after_pipeline_and_analysis(
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     config_path = tmp_path / "rollup.local.toml"
-    expected_inputs = object()
-    reports = SimpleNamespace(inputs=expected_inputs)
     events: list[str] = []
 
-    monkeypatch.setattr(
-        cli,
-        "collect_validation_reports",
-        lambda data_root_arg: events.append("collect_validation") or reports,
-    )
     monkeypatch.setattr(
         cli,
         "print_validation_reports",
         lambda reports_arg: events.append("print_validation"),
     )
-    monkeypatch.setattr(cli, "validation_exit_code", lambda reports_arg: 0)
 
-    def run_pipeline(
+    def run_rollup(
         data_root_arg: Path,
         *,
         output_root: Path,
         debug: bool,
-        validation_inputs: object,
-    ) -> None:
+        validation_callback,
+    ) -> SimpleNamespace:
         assert data_root_arg == data_root
         assert output_root == output_root_path
         assert debug is False
-        assert validation_inputs is expected_inputs
-        events.append("run_pipeline")
+        validation_callback(SimpleNamespace())
+        events.append("run_rollup")
+        return SimpleNamespace(ep_report_path=output_root / "analysis" / "ep_report.csv")
 
     output_root_path = output_root
-    monkeypatch.setattr(cli, "run", run_pipeline)
-
-    monkeypatch.setattr(
-        cli,
-        "write_ep_report",
-        lambda output_root_arg: events.append("write_ep_report")
-        or output_root_arg / "analysis" / "ep_report.csv",
-    )
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
 
     sql_config = SqlConfig(connection_string="mssql+pyodbc://server/database")
     monkeypatch.setattr(
@@ -234,10 +205,8 @@ def test_run_push_sql_happens_after_pipeline_and_analysis(
 
     assert exit_code == 0
     assert events == [
-        "collect_validation",
         "print_validation",
-        "run_pipeline",
-        "write_ep_report",
+        "run_rollup",
         "check_sql",
         "push_sql",
     ]
@@ -248,18 +217,15 @@ def test_run_push_sql_failure_is_user_friendly(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    reports = SimpleNamespace(inputs=object())
-    monkeypatch.setattr(cli, "collect_validation_reports", lambda data_root: reports)
     monkeypatch.setattr(cli, "print_validation_reports", lambda reports: None)
-    monkeypatch.setattr(cli, "validation_exit_code", lambda reports: 0)
-    monkeypatch.setattr(cli, "run", lambda *args, **kwargs: None)
     events: list[str] = []
-    monkeypatch.setattr(
-        cli,
-        "write_ep_report",
-        lambda output_root: events.append("write_ep_report")
-        or output_root / "analysis" / "ep_report.csv",
-    )
+
+    def run_rollup(*args, **kwargs) -> SimpleNamespace:
+        kwargs["validation_callback"](SimpleNamespace())
+        events.append("run_rollup")
+        return SimpleNamespace(ep_report_path=tmp_path / "output" / "analysis" / "ep_report.csv")
+
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
     monkeypatch.setattr(
         cli,
         "require_working_sql_config",
@@ -281,5 +247,5 @@ def test_run_push_sql_failure_is_user_friendly(
     )
 
     assert exit_code == 1
-    assert events == ["write_ep_report"]
+    assert events == ["run_rollup"]
     assert "Failed to push marts to SQL Server: write failed" in capsys.readouterr().err

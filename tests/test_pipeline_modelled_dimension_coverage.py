@@ -380,8 +380,9 @@ def _cli_reports(*, valid: bool = True, coverage_error: bool = False) -> cli.Val
         else pl.DataFrame(schema={"severity": pl.String, "valid": pl.Boolean})
     )
     return cli.ValidationReports(
-        inputs=object(),
-        report=pl.DataFrame({"valid": [valid], "error": [None]}),
+        data_root=Path("data"),
+        is_valid=valid and not coverage_error,
+        validation_report=pl.DataFrame({"valid": [valid], "error": [None]}),
         coverage_report=coverage_report,
         ylt_loss_report=pl.DataFrame({"vendor": ["verisk"], "loss_sum": [1.0]}),
         input_ylt_aal_report=pl.DataFrame(
@@ -390,7 +391,7 @@ def _cli_reports(*, valid: bool = True, coverage_error: bool = False) -> cli.Val
     )
 
 
-def test_run_command_prints_validation_reports_and_reuses_inputs(
+def test_run_command_prints_validation_reports_from_api_result(
     monkeypatch,
     capsys,
     tmp_path,
@@ -398,21 +399,18 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
     reports = _cli_reports()
     calls = {}
 
-    monkeypatch.setattr(cli, "collect_validation_reports", lambda data_root: reports)
-
-    def fake_run(data_root, *, output_root, debug, validation_inputs):
+    def fake_run_rollup(data_root, *, output_root, debug, validation_callback):
         calls["data_root"] = data_root
         calls["output_root"] = output_root
         calls["debug"] = debug
-        calls["validation_inputs"] = validation_inputs
+        validation_callback(reports)
+        return type(
+            "RunResult",
+            (),
+            {"ep_report_path": output_root / "analysis" / "ep_report.csv"},
+        )()
 
-    monkeypatch.setattr(cli, "run", fake_run)
-
-    def fake_write_ep_report(output_root):
-        calls["analysis_output_root"] = output_root
-        return output_root / "analysis" / "ep_report.csv"
-
-    monkeypatch.setattr(cli, "write_ep_report", fake_write_ep_report)
+    monkeypatch.setattr(cli, "run_rollup", fake_run_rollup)
 
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
@@ -426,8 +424,6 @@ def test_run_command_prints_validation_reports_and_reuses_inputs(
         "data_root": "data",
         "output_root": output_root,
         "debug": True,
-        "validation_inputs": reports.inputs,
-        "analysis_output_root": output_root,
     }
 
 
@@ -436,21 +432,13 @@ def test_run_command_returns_nonzero_without_running_pipeline_on_validation_fail
     capsys,
     tmp_path,
 ) -> None:
-    monkeypatch.setattr(
-        cli,
-        "collect_validation_reports",
-        lambda data_root: _cli_reports(valid=False),
-    )
+    reports = _cli_reports(valid=False)
 
-    def fail_run(*args, **kwargs):
-        raise AssertionError("run should not be called when validation fails")
+    def fail_validation(*args, **kwargs):
+        kwargs["validation_callback"](reports)
+        raise cli.RollupValidationError(reports)
 
-    monkeypatch.setattr(cli, "run", fail_run)
-    monkeypatch.setattr(
-        cli,
-        "write_ep_report",
-        lambda output_root: pytest.fail("analysis should not run when validation fails"),
-    )
+    monkeypatch.setattr(cli, "run_rollup", fail_validation)
 
     assert cli.run_command("data", output_root=tmp_path / "output") == 1
     captured = capsys.readouterr().out

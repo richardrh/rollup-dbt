@@ -153,10 +153,17 @@ def test_generate_ep_summary_delegates_without_prompts(
 ) -> None:
     expected_path = tmp_path / "data" / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
 
-    def fake_generate_vendor_ep_summary(data_root, vendor, csv_path) -> Path:
+    def fake_generate_vendor_ep_summary(
+        data_root,
+        vendor,
+        csv_path,
+        *,
+        status_callback=None,
+    ) -> Path:
         assert data_root == tmp_path / "data"
         assert vendor == "verisk"
         assert csv_path == tmp_path / "source.csv"
+        assert status_callback is None
         return expected_path
 
     monkeypatch.setattr(api, "generate_vendor_ep_summary", fake_generate_vendor_ep_summary)

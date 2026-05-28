@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,11 +82,14 @@ def run_rollup(
     debug: bool = False,
     validate: bool = True,
     write_analysis: bool = True,
+    validation_callback: Callable[[RollupValidationResult], None] | None = None,
 ) -> RollupRunResult:
     data_root = Path(data_root)
     output_root = Path(output_root)
     validation_bundle = _collect_validation(data_root)
     validation = validation_bundle.result
+    if validation_callback is not None:
+        validation_callback(validation)
     if validate:
         validation.raise_for_errors()
 
@@ -113,8 +117,15 @@ def generate_ep_summary(
     data_root: str | Path,
     vendor: str,
     csv_path: str | Path,
+    *,
+    status_callback: Callable[[str], None] | None = None,
 ) -> Path:
-    return generate_vendor_ep_summary(data_root, vendor, csv_path)
+    return generate_vendor_ep_summary(
+        data_root,
+        vendor,
+        csv_path,
+        status_callback=status_callback,
+    )
 
 
 def collect_output_paths(
