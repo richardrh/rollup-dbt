@@ -40,15 +40,9 @@ uv run rollup sql-check --config rollup.local.toml
 uv run rollup test-sql --config rollup.local.toml
 ```
 
-Run locally and push only mart fanout parquets from `output/marts/*.parquet`:
-
-```bash
-uv run rollup run --push-sql --config rollup.local.toml
-```
-
-Root-level output parquets and non-parquet files are not pushed. Table names are
-derived from mart filenames, optionally prefixed by `[sql].table_prefix`, and
-validated as safe SQL identifiers before writing.
+`rollup run` writes files only. It no longer pushes marts to SQL Server as part
+of the run command. Load `output/marts/*.parquet` through Dataiku or a separate
+SQL-loading process after the pipeline finishes.
 
 ## Validation reports
 

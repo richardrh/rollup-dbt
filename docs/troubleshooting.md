@@ -55,14 +55,14 @@ duckdb -c "SELECT vendor, rollup_peril, COUNT(*) rows FROM 'output/debug/mts_ylt
 uv run rollup analyze
 ```
 
-## SQL Server push failures
+## SQL Server connection check failures
 
-Check the local SQL config before running a push:
+Check the local SQL config with:
 
 ```bash
 uv run rollup sql-check --config rollup.local.toml
 ```
 
 `rollup.local.toml` should stay uncommitted because it may contain credentials.
-`rollup run --push-sql --config rollup.local.toml` pushes only
-`output/marts/*.parquet`; root-level parquets are intentionally ignored.
+`rollup run` writes files only; load `output/marts/*.parquet` through Dataiku or
+a separate SQL-loading process after the pipeline run completes.

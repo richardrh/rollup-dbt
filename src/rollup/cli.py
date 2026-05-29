@@ -28,11 +28,7 @@ from rollup.ep_summary_generator import (
     scan_ep_summary_csvs,
 )
 from rollup import resources as rollup_resources
-from rollup.sql import (
-    check_sql_connection,
-    push_mart_parquets_to_sql,
-    require_working_sql_config,
-)
+from rollup.sql import check_sql_connection
 
 
 DEFAULT_CONFIG_PATH = Path("rollup.local.toml")
@@ -151,16 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
         "run",
         help="Run the pipeline.",
     )
-    _add_config_argument(run_parser)
     run_parser.add_argument(
         "--debug",
         action="store_true",
         help="Write intermediate frames to output/debug.",
-    )
-    run_parser.add_argument(
-        "--push-sql",
-        action="store_true",
-        help="Push output/marts/*.parquet to SQL Server after a successful run.",
     )
 
     docs_parser = subcommands.add_parser(
@@ -255,9 +245,7 @@ def run_command(
     data_root: Path,
     *,
     output_root: Path,
-    config_path: Path = DEFAULT_CONFIG_PATH,
     debug: bool = False,
-    push_sql: bool = False,
 ) -> int:
     try:
         result = run_rollup(
@@ -274,14 +262,6 @@ def run_command(
     if result.ep_report_path is not None:
         print(f"Analysis report written to {result.ep_report_path}")
 
-    if push_sql:
-        try:
-            sql_config = require_working_sql_config(config_path)
-            pushed_tables = push_mart_parquets_to_sql(output_root, sql_config)
-        except Exception as exc:
-            print(f"Failed to push marts to SQL Server: {exc}", file=sys.stderr)
-            return 1
-        print(f"Pushed {len(pushed_tables)} mart parquet file(s) to SQL Server")
     return 0
 
 
@@ -582,9 +562,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_command(
             data_root,
             output_root=output_root,
-            config_path=config_path,
             debug=args.debug,
-            push_sql=args.push_sql,
         )
     if args.command in {"analyze", "analyse"}:
         return analyze_command(output_root)
