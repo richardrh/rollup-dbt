@@ -40,15 +40,9 @@ uv run rollup sql-check --config rollup.local.toml
 uv run rollup test-sql --config rollup.local.toml
 ```
 
-Run locally and push only mart fanout parquets from `output/marts/*.parquet`:
-
-```bash
-uv run rollup run --push-sql --config rollup.local.toml
-```
-
-Root-level output parquets and non-parquet files are not pushed. Table names are
-derived from mart filenames, optionally prefixed by `[sql].table_prefix`, and
-validated as safe SQL identifiers before writing.
+`rollup run` writes files only. It no longer pushes marts to SQL Server as part
+of the run command. Load `output/marts/*.parquet` through Dataiku or a separate
+SQL-loading process after the pipeline finishes.
 
 ## Validation reports
 
@@ -86,13 +80,11 @@ without rerunning the pipeline.
 
 ```bash
 uv run rollup docs
-uv run rollup docs --host localhost --port 8000
-uv run rollup docs --foreground
+uv run rollup docs --host localhost --port 4322
 ```
 
-The command starts Zensical docs in the background by default and prints the URL,
-process ID, log path, and `kill <pid>` stop command. Use `--foreground` to keep
-the docs server attached to the terminal. Direct Zensical use is also available:
+The command starts Zensical docs in the foreground and prints the URL. Direct
+Zensical use is also available:
 
 ```bash
 uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322

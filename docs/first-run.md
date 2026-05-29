@@ -108,7 +108,7 @@ uv run rollup run
 
 Outputs land in root `output/`, not `data/output/`.
 
-## Step 5. Optional: push marts to SQL Server
+## Step 5. Optional: check SQL Server config
 
 Copy `rollup.example.toml` to `rollup.local.toml`, fill in `[sql]`, and keep the
 local file uncommitted. Check the connection first:
@@ -117,11 +117,9 @@ local file uncommitted. Check the connection first:
 uv run rollup sql-check --config rollup.local.toml
 ```
 
-To run the pipeline and push only `output/marts/*.parquet`:
-
-```bash
-uv run rollup run --push-sql --config rollup.local.toml
-```
+`rollup run` writes files only. If marts need to land in SQL Server, load
+`output/marts/*.parquet` through Dataiku or a separate SQL-loading process after
+the pipeline run completes.
 
 ## Step 6. Inspect outputs
 

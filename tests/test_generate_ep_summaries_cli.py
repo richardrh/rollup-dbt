@@ -242,7 +242,7 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
     ) -> Path:
         raise ValueError("missing required EP summary columns: modelled_lob")
 
-    monkeypatch.setattr(cli, "generate_vendor_ep_summary", fail_generation)
+    monkeypatch.setattr(cli, "generate_ep_summary", fail_generation)
 
     exit_code = cli.main(
         [

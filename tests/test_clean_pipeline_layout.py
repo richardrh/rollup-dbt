@@ -45,6 +45,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_cli_sql.py",
         "test_docs_cli.py",
         "test_docs_content.py",
+        "test_api.py",
         "test_ep_summary_generator.py",
         "test_generate_ep_summaries_cli.py",
         "test_pipeline_e2e_validation.py",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
@@ -15,27 +14,21 @@ from typing import TypeVar
 
 import polars as pl
 
-from rollup.analysis import write_ep_report
+from rollup.api import (
+    RollupValidationError,
+    RollupValidationResult,
+    build_ep_report,
+    generate_ep_summary,
+    run_rollup,
+    validate_rollup_inputs,
+)
 from rollup.ep_summary_generator import (
     ep_summary_vendor_names,
-    generate_vendor_ep_summary,
     get_ep_summary_vendor_config,
     scan_ep_summary_csvs,
 )
-from rollup.pipeline import (
-    PipelineValidationInputs,
-    empty_input_ylt_aal_by_lob_peril_summary,
-    input_ylt_aal_by_lob_peril_summary,
-    load_pipeline_validation_inputs,
-    run,
-    ylt_loss_validation_summary,
-)
 from rollup import resources as rollup_resources
-from rollup.sql import (
-    check_sql_connection,
-    push_mart_parquets_to_sql,
-    require_working_sql_config,
-)
+from rollup.sql import check_sql_connection
 
 
 DEFAULT_CONFIG_PATH = Path("rollup.local.toml")
@@ -154,16 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
         "run",
         help="Run the pipeline.",
     )
-    _add_config_argument(run_parser)
     run_parser.add_argument(
         "--debug",
         action="store_true",
         help="Write intermediate frames to output/debug.",
-    )
-    run_parser.add_argument(
-        "--push-sql",
-        action="store_true",
-        help="Push output/marts/*.parquet to SQL Server after a successful run.",
     )
 
     docs_parser = subcommands.add_parser(
@@ -195,47 +182,11 @@ def configure_logging(log_level: str) -> None:
     )
 
 
-@dataclass(frozen=True)
-class ValidationReports:
-    inputs: PipelineValidationInputs
-    report: pl.DataFrame
-    coverage_report: pl.DataFrame
-    ylt_loss_report: pl.DataFrame
-    input_ylt_aal_report: pl.DataFrame
-
-
-def _validation_report(inputs: PipelineValidationInputs) -> pl.DataFrame:
-    report_parts = [
-        inputs.seeds.report.with_columns(pl.lit("seeds").alias("source_group")),
-        inputs.ylts.report.with_columns(pl.lit("ylt").alias("source_group")),
-        inputs.ep_summaries.report.with_columns(pl.lit("ep_summaries").alias("source_group")),
-    ]
-    return pl.concat(
-        [part.with_columns(pl.col("error").cast(pl.String)) for part in report_parts],
-        how="diagonal",
-    )
+ValidationReports = RollupValidationResult
 
 
 def collect_validation_reports(data_root: Path) -> ValidationReports:
-    inputs = load_pipeline_validation_inputs(data_root)
-    report = _validation_report(inputs)
-    try:
-        ylt_loss_report = ylt_loss_validation_summary(data_root)
-    except Exception as exc:
-        ylt_loss_report = pl.DataFrame(
-            [{"valid": False, "error": f"YLT loss validation summary failed: {exc}"}]
-        )
-    try:
-        input_ylt_aal_report = input_ylt_aal_by_lob_peril_summary(inputs)
-    except Exception:
-        input_ylt_aal_report = empty_input_ylt_aal_by_lob_peril_summary()
-    return ValidationReports(
-        inputs=inputs,
-        report=report,
-        coverage_report=inputs.coverage_report,
-        ylt_loss_report=ylt_loss_report,
-        input_ylt_aal_report=input_ylt_aal_report,
-    )
+    return validate_rollup_inputs(data_root)
 
 
 def print_validation_reports(reports: ValidationReports) -> None:
@@ -246,7 +197,7 @@ def print_validation_reports(reports: ValidationReports) -> None:
         fmt_str_lengths=1000,
     ):
         print("Validation report")
-        print(reports.report)
+        print(reports.validation_report)
         print("\nModelled LOB/peril anti-join report")
         print(reports.coverage_report)
         print("\nYLT loss validation summary")
@@ -255,27 +206,12 @@ def print_validation_reports(reports: ValidationReports) -> None:
         print(reports.input_ylt_aal_report)
 
 
-_VALIDATION_CSV_REPORTS = {
-    "validation_report.csv": "report",
-    "modelled_lob_peril_anti_join_report.csv": "coverage_report",
-    "ylt_loss_validation_summary.csv": "ylt_loss_report",
-    "input_ylt_aal_by_lob_peril_summary.csv": "input_ylt_aal_report",
-}
-
-
 def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -> None:
-    report_dir.mkdir(parents=True, exist_ok=True)
-    for filename, attribute_name in _VALIDATION_CSV_REPORTS.items():
-        report = getattr(reports, attribute_name)
-        report.write_csv(report_dir / filename)
+    reports.write_reports(report_dir)
 
 
 def validation_exit_code(reports: ValidationReports) -> int:
-    invalid_count = reports.report.filter(~pl.col("valid")).height
-    coverage_error_count = reports.coverage_report.filter(
-        pl.col("severity") == "error"
-    ).height
-    return 1 if invalid_count or coverage_error_count else 0
+    return 0 if reports.is_valid else 1
 
 
 def validate_command(data_root: Path, *, report_dir: Path | None = None) -> int:
@@ -298,40 +234,28 @@ def run_command(
     data_root: Path,
     *,
     output_root: Path,
-    config_path: Path = DEFAULT_CONFIG_PATH,
     debug: bool = False,
-    push_sql: bool = False,
 ) -> int:
-    reports = collect_validation_reports(data_root)
-    print_validation_reports(reports)
-    if validation_exit_code(reports):
+    try:
+        result = run_rollup(
+            data_root,
+            output_root=output_root,
+            debug=debug,
+            validation_callback=print_validation_reports,
+        )
+    except RollupValidationError:
         return 1
-
-    run(
-        data_root,
-        output_root=output_root,
-        debug=debug,
-        validation_inputs=reports.inputs,
-    )
     if debug:
         print(f"Debug frames written to {output_root / 'debug'}")
 
-    analysis_path = write_ep_report(output_root)
-    print(f"Analysis report written to {analysis_path}")
+    if result.ep_report_path is not None:
+        print(f"Analysis report written to {result.ep_report_path}")
 
-    if push_sql:
-        try:
-            sql_config = require_working_sql_config(config_path)
-            pushed_tables = push_mart_parquets_to_sql(output_root, sql_config)
-        except Exception as exc:
-            print(f"Failed to push marts to SQL Server: {exc}", file=sys.stderr)
-            return 1
-        print(f"Pushed {len(pushed_tables)} mart parquet file(s) to SQL Server")
     return 0
 
 
 def analyze_command(output_root: Path) -> int:
-    output_path = write_ep_report(output_root)
+    output_path = build_ep_report(output_root)
     print(f"Analysis report written to {output_path}")
     return 0
 
@@ -591,7 +515,12 @@ def generate_ep_summaries_command(
         print(f"  CSV: {csv_path}")
         print(f"  Output: {output_path}")
         started = time.perf_counter()
-        output_path = generate_vendor_ep_summary(data_root, selected_vendor, csv_path, status_callback=print)
+        output_path = generate_ep_summary(
+            data_root,
+            selected_vendor,
+            csv_path,
+            status_callback=print,
+        )
         elapsed_seconds = time.perf_counter() - started
     except EOFError:
         print("Input ended before EP summary generation could continue.", file=sys.stderr)
@@ -622,9 +551,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_command(
             data_root,
             output_root=output_root,
-            config_path=config_path,
             debug=args.debug,
-            push_sql=args.push_sql,
         )
     if args.command in {"analyze", "analyse"}:
         return analyze_command(output_root)

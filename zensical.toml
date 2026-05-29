@@ -19,6 +19,7 @@ nav = [
     { "Utilities" = "utilities.md" },
     { "Architecture" = "architecture.md" },
     { "Developer guide" = "developer-guide.md" },
+    { "Programmatic API" = "programmatic-api.md" },
     { "Operating modes" = "operating-modes.md" },
     { "Building the bundle" = "building.md" },
   ]},
