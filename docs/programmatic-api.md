@@ -50,9 +50,7 @@ try:
     )
 except RollupValidationError as exc:
     validation_dir = output_root / "validation"
-    validation_dir.mkdir(parents=True, exist_ok=True)
-    exc.validation.validation_report.write_csv(validation_dir / "validation_report.csv")
-    exc.validation.coverage_report.write_csv(validation_dir / "lob_peril_coverage.csv")
+    exc.validation.write_reports(validation_dir)
     raise
 
 print("EP report:", result.ep_report_path)
@@ -139,9 +137,7 @@ with tempfile.TemporaryDirectory(prefix="rollup-dataiku-") as tmp_dir:
         result = run_rollup(data_root=data_root, output_root=output_root)
     except RollupValidationError as exc:
         validation_dir = local_output_root / "validation"
-        validation_dir.mkdir(parents=True, exist_ok=True)
-        exc.validation.validation_report.write_csv(validation_dir / "validation_report.csv")
-        exc.validation.coverage_report.write_csv(validation_dir / "lob_peril_coverage.csv")
+        exc.validation.write_reports(validation_dir)
         upload_tree(local_output_root, output_folder)
         raise
 
@@ -170,11 +166,12 @@ path for local runs, PyInstaller bundle runs, CLI runs, and Dataiku runs.
 ```python
 from rollup.api import validate_rollup_inputs
 
-validation = validate_rollup_inputs("/path/to/data")
+validation = validate_rollup_inputs(
+    "/path/to/data",
+    report_dir="/path/to/output/validation",  # optional
+)
 
 if not validation.is_valid:
-    validation.validation_report.write_csv("validation_report.csv")
-    validation.coverage_report.write_csv("lob_peril_coverage.csv")
     validation.raise_for_errors()
 ```
 
@@ -185,6 +182,19 @@ The validation object contains Polars DataFrames:
 - `ylt_loss_report`
 - `input_ylt_aal_report`
 
+You can write all validation frames to CSV with:
+
+```python
+written_paths = validation.write_reports("/path/to/output/validation")
+```
+
+The files are:
+
+- `validation_report.csv`
+- `modelled_lob_peril_anti_join_report.csv`
+- `ylt_loss_validation_summary.csv`
+- `input_ylt_aal_by_lob_peril_summary.csv`
+
 ## Handle validation failures
 
 ```python
@@ -193,8 +203,7 @@ from rollup.api import RollupValidationError, run_rollup
 try:
     result = run_rollup("/path/to/data", "/path/to/output")
 except RollupValidationError as exc:
-    exc.validation.validation_report.write_csv("failed_validation.csv")
-    exc.validation.coverage_report.write_csv("failed_lob_peril_coverage.csv")
+    exc.validation.write_reports("/path/to/output/validation")
     raise
 ```
 

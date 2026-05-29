@@ -66,6 +66,52 @@ def test_validate_rollup_inputs_returns_structured_reports(
     ]
     assert result.ylt_loss_report.get_column("valid").to_list() == [True]
     assert result.input_ylt_aal_report.get_column("raw_aal").to_list() == [1.0]
+    assert set(result.report_frames()) == {
+        "validation_report.csv",
+        "modelled_lob_peril_anti_join_report.csv",
+        "ylt_loss_validation_summary.csv",
+        "input_ylt_aal_by_lob_peril_summary.csv",
+    }
+
+
+def test_validate_rollup_inputs_writes_reports_when_report_dir_is_passed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _validation_inputs()
+    _patch_validation_helpers(monkeypatch, inputs)
+    report_dir = tmp_path / "validation"
+
+    result = api.validate_rollup_inputs(tmp_path / "data", report_dir=report_dir)
+
+    expected_files = {
+        "validation_report.csv",
+        "modelled_lob_peril_anti_join_report.csv",
+        "ylt_loss_validation_summary.csv",
+        "input_ylt_aal_by_lob_peril_summary.csv",
+    }
+    assert set(result.report_frames()) == expected_files
+    for filename in expected_files:
+        output_path = report_dir / filename
+        assert output_path.is_file()
+        assert output_path.read_text(encoding="utf-8")
+
+
+def test_validation_result_write_reports_returns_written_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _validation_inputs()
+    _patch_validation_helpers(monkeypatch, inputs)
+    result = api.validate_rollup_inputs(tmp_path / "data")
+
+    written_paths = result.write_reports(tmp_path / "reports")
+
+    assert written_paths == {
+        filename: tmp_path / "reports" / filename
+        for filename in result.report_frames()
+    }
+    assert all(path.is_file() for path in written_paths.values())
 
 
 def test_validation_result_raises_with_structured_failure(

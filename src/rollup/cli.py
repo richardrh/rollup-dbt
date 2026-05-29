@@ -206,19 +206,8 @@ def print_validation_reports(reports: ValidationReports) -> None:
         print(reports.input_ylt_aal_report)
 
 
-_VALIDATION_CSV_REPORTS = {
-    "validation_report.csv": "validation_report",
-    "modelled_lob_peril_anti_join_report.csv": "coverage_report",
-    "ylt_loss_validation_summary.csv": "ylt_loss_report",
-    "input_ylt_aal_by_lob_peril_summary.csv": "input_ylt_aal_report",
-}
-
-
 def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -> None:
-    report_dir.mkdir(parents=True, exist_ok=True)
-    for filename, attribute_name in _VALIDATION_CSV_REPORTS.items():
-        report = getattr(reports, attribute_name)
-        report.write_csv(report_dir / filename)
+    reports.write_reports(report_dir)
 
 
 def validation_exit_code(reports: ValidationReports) -> int:

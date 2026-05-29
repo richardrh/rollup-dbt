@@ -18,6 +18,14 @@ from rollup.pipeline import (
 )
 
 
+VALIDATION_REPORT_FILENAMES = {
+    "validation_report.csv": "validation_report",
+    "modelled_lob_peril_anti_join_report.csv": "coverage_report",
+    "ylt_loss_validation_summary.csv": "ylt_loss_report",
+    "input_ylt_aal_by_lob_peril_summary.csv": "input_ylt_aal_report",
+}
+
+
 @dataclass(frozen=True)
 class RollupValidationResult:
     data_root: Path
@@ -30,6 +38,22 @@ class RollupValidationResult:
     def raise_for_errors(self) -> None:
         if not self.is_valid:
             raise RollupValidationError(self)
+
+    def report_frames(self) -> dict[str, pl.DataFrame]:
+        return {
+            filename: getattr(self, attribute_name)
+            for filename, attribute_name in VALIDATION_REPORT_FILENAMES.items()
+        }
+
+    def write_reports(self, report_dir: str | Path) -> dict[str, Path]:
+        report_dir = Path(report_dir)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        written_paths: dict[str, Path] = {}
+        for filename, frame in self.report_frames().items():
+            output_path = report_dir / filename
+            frame.write_csv(output_path)
+            written_paths[filename] = output_path
+        return written_paths
 
 
 @dataclass(frozen=True)
@@ -71,8 +95,15 @@ class _ValidationBundle:
     result: RollupValidationResult
 
 
-def validate_rollup_inputs(data_root: str | Path = "data") -> RollupValidationResult:
-    return _collect_validation(data_root).result
+def validate_rollup_inputs(
+    data_root: str | Path = "data",
+    *,
+    report_dir: str | Path | None = None,
+) -> RollupValidationResult:
+    result = _collect_validation(data_root).result
+    if report_dir is not None:
+        result.write_reports(report_dir)
+    return result
 
 
 def run_rollup(

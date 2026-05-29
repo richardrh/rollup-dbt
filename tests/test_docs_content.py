@@ -28,3 +28,5 @@ def test_programmatic_api_docs_include_dataiku_recipes() -> None:
     assert "get_download_stream" in api_docs
     assert "upload_stream" in api_docs
     assert "run_rollup" in api_docs
+    assert "report_dir" in api_docs
+    assert "write_reports" in api_docs
