@@ -35,3 +35,16 @@ def test_build_docs_include_pyinstaller_commands() -> None:
         assert "dist/rollup/rollup --help" in text
         assert "dist/rollup/rollup docs" in text
         assert "dist/" in text and "not committed" in text
+
+
+def test_readme_explains_windows_analyst_bundle_flow() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "send the analyst the whole folder" in readme
+    assert "dist/rollup/" in readme
+    assert "Do **not** send just `rollup.exe`" in readme
+    assert "work/" in readme
+    assert "rollup\\rollup.exe validate" in readme
+    assert "rollup\\rollup.exe run" in readme
+    assert "rollup\\rollup.exe docs" in readme
+    assert "work/output/" in readme
