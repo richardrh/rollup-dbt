@@ -23,6 +23,148 @@ print(result.outputs.mart_files)
 `run_rollup` validates inputs, runs the pipeline, writes normal outputs, and
 writes `output/analysis/ep_report.csv` by default.
 
+## Dataiku recipe: local managed folders
+
+If the Dataiku managed folders expose local filesystem paths with `get_path()`,
+call the API directly on those paths. No temporary directory is needed.
+
+```python
+from pathlib import Path
+
+import dataiku
+
+from rollup.api import RollupValidationError, run_rollup
+
+
+input_folder = dataiku.Folder("ROLLUP_INPUTS")
+output_folder = dataiku.Folder("ROLLUP_OUTPUTS")
+
+data_root = Path(input_folder.get_path()) / "data"
+output_root = Path(output_folder.get_path()) / "output"
+
+try:
+    result = run_rollup(
+        data_root=data_root,
+        output_root=output_root,
+        debug=False,
+    )
+except RollupValidationError as exc:
+    validation_dir = output_root / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    exc.validation.validation_report.write_csv(validation_dir / "validation_report.csv")
+    exc.validation.coverage_report.write_csv(validation_dir / "lob_peril_coverage.csv")
+    raise
+
+print("EP report:", result.ep_report_path)
+print("MTS wide:", result.outputs.mts_wide)
+print("Mart files:", result.outputs.mart_files)
+```
+
+Expected input folder layout:
+
+```text
+ROLLUP_INPUTS/
+└── data/
+    ├── ep_summaries/
+    ├── seeds/
+    └── ylt/
+```
+
+The API writes outputs under the output managed folder:
+
+```text
+ROLLUP_OUTPUTS/
+└── output/
+    ├── analysis/
+    ├── marts/
+    ├── mts_tbl_ylt_combined_all_factors.parquet
+    ├── mts_tbl_ylt_combined_all_factors_wide.parquet
+    ├── mts_tbl_ylt_dialsup.parquet
+    └── mts_event_validation.parquet
+```
+
+## Dataiku recipe: remote managed folders
+
+If the managed folder does **not** expose a local filesystem path, stage files to
+a `TemporaryDirectory`, run the API locally, then upload generated outputs back
+to the output managed folder.
+
+This is needed because the pipeline scans directories and parquet files through
+normal filesystem paths.
+
+```python
+from pathlib import Path
+import shutil
+import tempfile
+
+import dataiku
+
+from rollup.api import RollupValidationError, run_rollup
+
+
+def download_managed_folder(folder, local_root: Path) -> None:
+    for remote_path in folder.list_paths_in_partition():
+        if remote_path.endswith("/"):
+            continue
+        local_path = local_root / remote_path.lstrip("/")
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        with folder.get_download_stream(remote_path) as source:
+            with local_path.open("wb") as target:
+                shutil.copyfileobj(source, target)
+
+
+def upload_tree(local_root: Path, folder) -> None:
+    for local_path in local_root.rglob("*"):
+        if not local_path.is_file():
+            continue
+        remote_path = "/" + local_path.relative_to(local_root).as_posix()
+        with local_path.open("rb") as source:
+            folder.upload_stream(remote_path, source)
+
+
+input_folder = dataiku.Folder("ROLLUP_INPUTS")
+output_folder = dataiku.Folder("ROLLUP_OUTPUTS")
+
+with tempfile.TemporaryDirectory(prefix="rollup-dataiku-") as tmp_dir:
+    work_root = Path(tmp_dir)
+    local_input_root = work_root / "input"
+    local_output_root = work_root / "output"
+
+    download_managed_folder(input_folder, local_input_root)
+
+    data_root = local_input_root / "data"
+    output_root = local_output_root / "output"
+
+    try:
+        result = run_rollup(data_root=data_root, output_root=output_root)
+    except RollupValidationError as exc:
+        validation_dir = local_output_root / "validation"
+        validation_dir.mkdir(parents=True, exist_ok=True)
+        exc.validation.validation_report.write_csv(validation_dir / "validation_report.csv")
+        exc.validation.coverage_report.write_csv(validation_dir / "lob_peril_coverage.csv")
+        upload_tree(local_output_root, output_folder)
+        raise
+
+    upload_tree(local_output_root, output_folder)
+
+print("EP report:", result.ep_report_path)
+```
+
+Use the temporary-directory recipe for S3, Azure Blob, shared object storage, or
+any managed folder where `get_path()` is unavailable or not a real local path.
+
+## Do we need a temp directory?
+
+Use this rule:
+
+| Dataiku storage type | Temp directory needed? | Why |
+| --- | --- | --- |
+| Filesystem managed folder with `get_path()` | No | The API can read/write real local paths directly |
+| Remote/object-store managed folder | Yes | Stage to local disk, run, upload outputs back |
+
+The pipeline API is intentionally filesystem-based. That keeps the same code
+path for local runs, PyInstaller bundle runs, CLI runs, and Dataiku runs.
+
 ## Validate inputs only
 
 ```python
