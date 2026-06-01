@@ -1,8 +1,14 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "retail-rollup-dbt"
-version = "0.1.0"
-description = "Clean pipeline Polars DAG with dbt-style model folders."
+name = "rollup"
+version = "0.12.0"
+description = "Retail rollup pipeliner"
+readme = "README.md"
 requires-python = "==3.13.*"
+authors = [ { name = "Richard Hampton" } ]
 dependencies = [
     "argcomplete>=3.0",
     "duckdb>=1.4.4",
@@ -18,8 +24,13 @@ dependencies = [
     "ruff>=0.15.13",
 ]
 
-[project.scripts]
-rollup = "rollup.cli:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["rollup"]
 
 [dependency-groups]
 build = [
@@ -31,14 +42,12 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pymssql>=2.3.0",
     "testcontainers>=4.13.0",
+    "build>=1.5.0",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rollup"]
