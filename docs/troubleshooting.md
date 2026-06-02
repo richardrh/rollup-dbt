@@ -7,7 +7,9 @@ uv run rollup validate
 ```
 
 Validation checks schemas and modelled LOB/peril references. The anti-join report
-is intended to show real missing input values, not unused seed rows.
+shows values in EP summaries or YLT data that are missing from `lobs.csv` or
+`perils.csv` (data-to-seed direction only). Seed rows without matching data do not
+appear in the report and are silently ignored downstream.
 
 ## Common validation failures
 

@@ -25,6 +25,12 @@ vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 Use `rollup generate-ep-summaries` when an analyst or vendor gives you a wide
 CSV instead of a `.long.csv` file.
 
+If the vendor provides an Excel file (`.xlsx`), the tool does not support Excel
+directly. Open the file in Excel or another spreadsheet application, save the
+relevant sheet as a CSV file (e.g. "Save As" → "CSV UTF-8 (Comma delimited)
+(*.csv)"), then place that CSV in the vendor folder and proceed with the steps
+below.
+
 ### Step 1. Put the source CSV in the vendor folder
 
 ```text
@@ -204,5 +210,7 @@ event day fields for RiskLink flood rows.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
 - Inputs must match their colocated `schema.yaml` contracts for required files,
   columns, and types.
+- Seed entries without matching EP/YLT data do not produce anti-join errors and
+  are silently ignored downstream.
 - Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking
   input or lookup errors.

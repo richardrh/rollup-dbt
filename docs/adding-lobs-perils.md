@@ -108,6 +108,12 @@ lists every EP summary and YLT modelled LOB/peril value that has no matching
 row in `lobs.csv` or `perils.csv`. The anti-join report must be empty before
 running the pipeline.
 
+The anti-join only checks data-to-seed direction: values in EP summaries or YLTs
+that are missing from `lobs.csv` or `perils.csv`. Adding a LOB or peril to a seed
+file that has no matching data produces no error — the entry is silently ignored
+downstream. To make a new LOB or peril actually flow through the pipeline, it must
+also appear in an EP summary or YLT input file.
+
 ```text
 Modelled LOB/peril anti-join report   ← check this section in the output
 shape: (0, 14)                        ← zero rows means all LOBs and perils match

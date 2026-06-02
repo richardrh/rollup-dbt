@@ -67,6 +67,10 @@ Check these files before validation:
   maps to rollup peril, region/peril labels, `region_peril_id`, and
   `selection_priority`.
 
+The anti-join validation only flags the reverse: input values missing from seed
+files. Adding a seed entry without matching data will not cause errors, but it
+will also not be used by the pipeline.
+
 ## Step 3. Validate
 
 ```bash
