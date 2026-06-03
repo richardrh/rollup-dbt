@@ -1054,7 +1054,7 @@ def apply_ep_blending_to_ylt(
         base_model_only.with_columns(
             pl.col(Col.loss)
             .rank(method="ordinal", descending=True)
-            .over(Col.modelled_lob, Col.rollup_peril)
+            .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
             .cast(pl.Int64)
             .alias(Col.rnk)
         )
