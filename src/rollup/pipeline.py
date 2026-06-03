@@ -1022,6 +1022,11 @@ def calculate_ep_blending_targets(
                 Col.uplift_factor_on_base_model
             )
         )
+        .with_columns(
+            pl.col(Col.uplift_factor_on_base_model)
+            .clip(lower_bound=0.1, upper_bound=10.0)
+            .alias(Col.uplift_factor_on_base_model)
+        )
     )
 
     return EpBlendingTargets(
