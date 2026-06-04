@@ -54,9 +54,15 @@ The validation report flags contract failures such as:
 - dtype mismatches for required columns and for optional columns when present.
 
 Raw vendor YLT contracts are intentionally minimal and allow extra export
-columns. Seed CSVs and canonical EP summary CSVs remain strict by default. Verisk
-YLT file names are derived from parquet paths for validation reporting, so a
-row-level `filename` column is optional rather than required. RiskLink YLT only
+columns. Their globs are `data/ylt/verisk/*.parquet` and
+`data/ylt/risklink/*.parquet`: validation expects at least one direct matching
+parquet file per vendor folder, validates each direct child parquet, and the
+loader scans all direct matches. There is no required filename convention beyond
+`.parquet` in the correct vendor folder. Subdirectories are ignored, and inactive
+or test parquet files should not be left in active vendor folders because they
+will be loaded. Seed CSVs and canonical EP summary CSVs remain strict by default.
+Verisk YLT file names are derived from parquet paths for validation reporting, so
+a row-level `filename` column is optional rather than required. RiskLink YLT only
 requires `anlsid`, `yearid`, `eventid`, and `loss`; `anlsid` must match RiskLink
 EP summary `analysis_id` values.
 
