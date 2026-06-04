@@ -1036,11 +1036,8 @@ def calculate_ep_blending_targets(
     )
 
 
-def apply_ep_blending_to_ylt(
-    ylt: pl.LazyFrame,
-    ep_blending_targets: EpBlendingTargets,
-) -> pl.LazyFrame:
-    ranked = ylt.with_columns(
+def _add_rank_columns(ylt: pl.LazyFrame) -> pl.LazyFrame:
+    return ylt.with_columns(
         pl.col(Col.loss)
         .rank(method="ordinal", descending=True)
         .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
@@ -1060,6 +1057,11 @@ def apply_ep_blending_to_ylt(
         .alias(Col.rp_bucket)
     )
 
+
+def apply_ep_blending_to_ylt(
+    ylt: pl.LazyFrame,
+    ep_blending_targets: EpBlendingTargets,
+) -> pl.LazyFrame:
     factors = ep_blending_targets.blended.select(
         Col.rollup_lob,
         Col.rollup_peril,
@@ -1074,8 +1076,9 @@ def apply_ep_blending_to_ylt(
         Col.uplift_factor_on_base_model,
     )
 
-    blended = (
-        ranked.join(
+    ylt_cols = ylt.collect_schema().names()
+    return (
+        ylt.join(
             factors,
             on=[
                 Col.rollup_lob,
@@ -1090,14 +1093,12 @@ def apply_ep_blending_to_ylt(
             (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias(Col.loss),
             pl.lit("blended").alias(Col.metric),
         )
-        .select(ranked.columns)
+        .select(ylt_cols)
     )
-
-    return pl.concat([ranked, blended], how="diagonal")
 
 
 def apply_fx_to_ylt(
-    ylt: pl.LazyFrame,
+    blended: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     fx_rates = (
@@ -1112,21 +1113,19 @@ def apply_fx_to_ylt(
         )
     )
 
-    gbp = (
-        ylt.filter(pl.col(Col.metric) == "blended")
-        .join(fx_rates, on=Col.currency, how="inner")
+    blended_cols = blended.collect_schema().names()
+    return (
+        blended.join(fx_rates, on=Col.currency, how="inner")
         .with_columns(
             (pl.col(Col.loss) * pl.col(Col.fx_rate)).alias(Col.loss),
             pl.lit("gbp").alias(Col.metric),
         )
-        .select(ylt.columns)
+        .select([*blended_cols, Col.target_currency])
     )
-
-    return pl.concat([ylt, gbp], how="diagonal")
 
 
 def apply_forecast_to_ylt(
-    ylt: pl.LazyFrame,
+    gbp: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     forecast_factors = seeds.frames["forecast_factors.csv"].lazy()
@@ -1138,29 +1137,23 @@ def apply_forecast_to_ylt(
         pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )
 
-    exploded = ylt.join(forecast_dates, how="cross")
-
-    gbp_forecast = (
-        exploded.filter(pl.col(Col.metric) == "gbp")
+    return (
+        gbp.join(forecast_dates, how="cross")
         .join(
             forecast_factors,
             on=[Col.class_, Col.office, Col.forecast_date],
             how="left",
         )
         .with_columns(
-            pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor"),
             (pl.col(Col.loss) * pl.col("_forecast_factor_raw").fill_null(1.0)).alias(Col.loss),
             pl.lit("gbp_forecast").alias(Col.metric),
         )
         .drop("_forecast_factor_raw")
-        .select(exploded.columns)
     )
-
-    return pl.concat([exploded, gbp_forecast], how="diagonal")
 
 
 def apply_euws_to_ylt(
-    ylt: pl.LazyFrame,
+    gbp_forecast: pl.LazyFrame,
     verisk_events: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
@@ -1170,9 +1163,9 @@ def apply_euws_to_ylt(
         pl.col(RawCol.factor).alias("_euws_factor_raw_source"),
     )
 
-    euws = (
-        ylt.filter(pl.col(Col.metric) == "gbp_forecast")
-        .join(
+    gbp_forecast_cols = gbp_forecast.collect_schema().names()
+    return (
+        gbp_forecast.join(
             verisk_events,
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
@@ -1190,14 +1183,12 @@ def apply_euws_to_ylt(
             pl.lit("euws").alias(Col.metric),
         )
         .drop("_euws_factor_raw_source")
-        .select([*ylt.columns, "_euws_factor_raw", "_gbp_forecast_loss"])
+        .select([*gbp_forecast_cols, "_euws_factor_raw", "_gbp_forecast_loss", Col.model_event_id, Col.event_day])
     )
-
-    return pl.concat([ylt, euws], how="diagonal")
 
 
 def apply_euws_overrides_to_ylt(
-    ylt: pl.LazyFrame,
+    euws: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     overrides = seeds.frames["euws_rank_overrides.csv"].lazy().select(
@@ -1205,15 +1196,15 @@ def apply_euws_overrides_to_ylt(
         pl.col(RawCol.max_rank).alias("_euws_override_max_rank"),
         pl.col(RawCol.factor).alias("_euws_override_factor"),
     )
+    euws_cols = euws.collect_schema().names()
     override_condition = (
         pl.col("_euws_override_factor").is_not_null()
         & (pl.col(Col.rnk) <= pl.col("_euws_override_max_rank"))
         & (pl.col("_euws_factor_raw") == 0)
     )
 
-    euws_override = (
-        ylt.filter(pl.col(Col.metric) == "euws")
-        .join(overrides, on=Col.rollup_lob, how="left")
+    return (
+        euws.join(overrides, on=Col.rollup_lob, how="left")
         .with_columns(
             pl.when(override_condition)
             .then(pl.col("_euws_override_factor"))
@@ -1228,10 +1219,8 @@ def apply_euws_overrides_to_ylt(
             pl.lit("euws_override").alias(Col.metric),
         )
         .drop("_euws_override_max_rank", "_euws_override_factor", "_euws_factor")
-        .select([*ylt.columns, "_euws_factor_raw", "_gbp_forecast_loss"])
+        .select(euws_cols)
     )
-
-    return pl.concat([ylt, euws_override], how="diagonal")
 
 
 def calculate_dialsup(
@@ -1277,7 +1266,7 @@ def calculate_dialsup(
         )
     )
 
-    output_cols = [c for c in base.columns if c not in ("_forecast_factor_raw", "_forecast_factor")]
+    output_cols = [c for c in base.collect_schema().names() if c not in ("_forecast_factor_raw", "_forecast_factor")]
 
     dialsup_original = base.with_columns(
         pl.lit("dialsup_original").alias(Col.metric),
@@ -1388,43 +1377,42 @@ def build_event_validation_report(
     return pl.concat(reports, how="vertical")
 
 
-def _mts_output_dimensions(frame: pl.LazyFrame) -> list[str]:
+def _mts_output_dimensions(frame: pl.DataFrame | pl.LazyFrame) -> list[str]:
     return [
         col for col in frame.columns
         if col not in (Col.metric, Col.forecast_date, Col.loss)
+        and not col.startswith("_")
     ]
 
 
 def _write_combined_outputs(
     output_root: Path,
-    ylt: pl.LazyFrame,
-    ylt_dialsup: pl.LazyFrame,
+    ylt: pl.DataFrame,
+    ylt_dialsup: pl.DataFrame,
 ) -> None:
     write_parquet_with_log(ylt, output_root / "mts_tbl_ylt_combined_all_factors.parquet")
     write_parquet_with_log(ylt_dialsup, output_root / "mts_tbl_ylt_dialsup.parquet")
 
-    combined = pl.concat([ylt, ylt_dialsup])
-    dims = _mts_output_dimensions(combined)
+    common_cols = [c for c in ylt.columns if c in ylt_dialsup.columns]
+    dims = _mts_output_dimensions(ylt.select(common_cols))
+    sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
+    final_metrics = ["euws_override", "dialsup_gbp_forecast"]
 
-    wide = (
-        combined.with_columns(
-            pl.concat_str(
-                [
-                    pl.col(Col.metric),
-                    pl.col(Col.forecast_date).cast(pl.String).str.replace("-", "").str.slice(0, 6),
-                    pl.lit("loss"),
-                ],
-                separator="_",
-            ).alias("_wide_column")
-        )
-        .collect()
-        .pivot(
-            index=dims,
-            columns="_wide_column",
-            values=Col.loss,
-            aggregate_function="first",
-        )
-        .lazy()
+    combined = pl.concat(
+        [ylt.filter(pl.col(Col.metric) == "euws_override").select(sel),
+         ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(sel)],
+    ).with_columns(
+        pl.concat_str(
+            [pl.col(Col.metric), pl.col(Col.forecast_date).cast(pl.String).str.replace("-", "").str.slice(0, 6), pl.lit("loss")],
+            separator="_",
+        ).alias("_wide_column"),
+    )
+
+    wide = combined.pivot(
+        index=dims,
+        on="_wide_column",
+        values=Col.loss,
+        aggregate_function="first",
     )
 
     write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
@@ -1443,7 +1431,7 @@ def write_debug_frame(
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
     if isinstance(frame, pl.LazyFrame):
-        frame = frame.collect()
+        frame = frame.collect(no_optimization=True)
     frame.write_parquet(output_path)
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
@@ -1451,33 +1439,6 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
         frame.height,
         time.perf_counter() - started,
     )
-
-
-def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
-    debug_dir = output_root / "debug"
-
-    for prefix, stage in {
-        "seed": result.seeds,
-        "stg": result.staging,
-        "int": result.intermediate,
-        "mts": result.marts,
-    }.items():
-        for name, frame in stage.frames.items():
-            write_debug_frame(debug_dir, f"{prefix}_{name}", frame)
-
-
-def forecast_tag(value: object) -> str:
-    if hasattr(value, "strftime"):
-        return value.strftime("%Y%m")
-    return str(value).replace("-", "")[:6]
-
-
-def hisco_vendor_label(base_model: str) -> str:
-    if base_model == "verisk":
-        return "AIR"
-    if base_model == "risklink":
-        return "RMS"
-    raise ValueError(f"unknown base model: {base_model}")
 
 
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1490,7 +1451,10 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
             continue
         started = time.perf_counter()
         logger.info("collecting fanout=%s", name)
-        fanouts[name] = frame.collect() if isinstance(frame, pl.LazyFrame) else frame
+        if isinstance(frame, pl.LazyFrame):
+            fanouts[name] = frame.collect(no_optimization=True)
+        else:
+            fanouts[name] = frame
         logger.info(
             "collected fanout=%s rows=%d elapsed=%.2fs",
             name,
@@ -1537,6 +1501,32 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
                 ),
                 output_path,
             )
+
+
+def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
+    debug_dir = output_root / "debug"
+    for prefix, stage in {
+        "seed": result.seeds,
+        "stg": result.staging,
+        "int": result.intermediate,
+        "mts": result.marts,
+    }.items():
+        for name, frame in stage.frames.items():
+            write_debug_frame(debug_dir, f"{prefix}_{name}", frame)
+
+
+def forecast_tag(value: object) -> str:
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y%m")
+    return str(value).replace("-", "")[:6]
+
+
+def hisco_vendor_label(base_model: str) -> str:
+    if base_model == "verisk":
+        return "AIR"
+    if base_model == "risklink":
+        return "RMS"
+    raise ValueError(f"unknown base model: {base_model}")
 
 
 def run(
@@ -1608,43 +1598,54 @@ def run(
             .then(pl.lit("risklink"))
             .otherwise(pl.lit("verisk"))
         )
-        ylt = enriched_ylts.combined.with_columns(
+        ylt_original = enriched_ylts.combined.with_columns(
             base_model_expr.alias(Col.base_model),
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
-        intermediate_frames["ylt_original"] = ylt
+        intermediate_frames["ylt_original"] = ylt_original
 
-        ylt = apply_ep_blending_to_ylt(ylt, ep_blending_targets)
-        intermediate_frames["ylt_blending_applied"] = ylt
+        ylt_ranked = _add_rank_columns(ylt_original)
+        intermediate_frames["ylt_ranked"] = ylt_ranked
+        ylt_ranked = ylt_ranked.collect()
 
-        ylt_dialsup = calculate_dialsup(
-            ylt.filter(pl.col(Col.metric) == "original"),
-            verisk_events,
-            seeds,
-        )
+        ylt_blended = apply_ep_blending_to_ylt(ylt_ranked.lazy(), ep_blending_targets)
+        intermediate_frames["ylt_blending_applied"] = ylt_blended
+        ylt_blended = ylt_blended.collect()
+
+        ylt_dialsup = calculate_dialsup(ylt_original, verisk_events, seeds)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
+        ylt_dialsup = ylt_dialsup.collect()
 
-        ylt = apply_fx_to_ylt(ylt, seeds)
-        intermediate_frames["ylt_fx_applied"] = ylt
+        ylt_gbp = apply_fx_to_ylt(ylt_blended.lazy(), seeds)
+        intermediate_frames["ylt_fx_applied"] = ylt_gbp
+        ylt_gbp = ylt_gbp.collect()
 
-        ylt = apply_forecast_to_ylt(ylt, seeds)
-        intermediate_frames["ylt_forecast_applied"] = ylt
+        ylt_gbp_forecast = apply_forecast_to_ylt(ylt_gbp.lazy(), seeds)
+        intermediate_frames["ylt_forecast_applied"] = ylt_gbp_forecast
+        ylt_gbp_forecast = ylt_gbp_forecast.collect()
 
-        ylt = apply_euws_to_ylt(ylt, verisk_events, seeds)
-        intermediate_frames["ylt_euws_applied"] = ylt
+        ylt_euws = apply_euws_to_ylt(ylt_gbp_forecast.lazy(), verisk_events, seeds)
+        intermediate_frames["ylt_euws_applied"] = ylt_euws
+        ylt_euws = ylt_euws.collect()
 
-        ylt = apply_euws_overrides_to_ylt(ylt, seeds)
-        intermediate_frames["ylt_euws_override_applied"] = ylt
+        ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws.lazy(), seeds)
+        intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override
+        ylt_euws_override = ylt_euws_override.collect()
+
+        ylt = pl.concat(
+            [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
+            how="diagonal",
+        )
 
     with logged_phase("marts"):
         main_fanout = build_main_fanout(
-            ylt.filter(pl.col(Col.metric) == "euws_override"),
+            ylt.lazy().filter(pl.col(Col.metric) == "euws_override"),
             risklink_events,
         )
         mart_frames["main_fanout"] = main_fanout
 
         dialsup_fanout = build_dialsup_fanout(
-            ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+            ylt_dialsup.lazy().filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
             risklink_events,
         )
         mart_frames["dialsup_fanout"] = dialsup_fanout
