@@ -220,7 +220,11 @@ def test_run_rollup_log_file_writes_and_removes_handler(
     api.run_rollup(data_root, output_root, log_file=log_file)
 
     assert log_file.is_file()
-    assert "api log file line" in log_file.read_text(encoding="utf-8")
+    log_text = log_file.read_text(encoding="utf-8")
+    assert "start rollup data_root=" in log_text
+    assert "validation summary invalid_files=0 coverage_errors=0 is_valid=true" in log_text
+    assert "api log file line" in log_text
+    assert "done rollup output_root=" in log_text
     assert list(logging.getLogger().handlers) == before_handlers
 
 
@@ -237,6 +241,7 @@ def test_run_rollup_log_file_handler_removed_on_validation_failure(
         api.run_rollup(tmp_path / "data", tmp_path / "output", log_file=log_file)
 
     assert log_file.is_file()
+    assert "failed rollup elapsed=" in log_file.read_text(encoding="utf-8")
     assert list(logging.getLogger().handlers) == before_handlers
 
 

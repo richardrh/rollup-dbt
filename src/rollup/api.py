@@ -125,27 +125,42 @@ def run_rollup(
     with temporary_file_logging(log_file):
         data_root = Path(data_root)
         output_root = Path(output_root)
-        validation_bundle = _collect_validation(data_root)
-        validation = validation_bundle.result
-        if validation_callback is not None:
-            validation_callback(validation)
-        if validate:
-            validation.raise_for_errors()
-
-        run(
+        started = time.perf_counter()
+        logger.info(
+            "start rollup data_root=%s output_root=%s debug=%s validate=%s write_analysis=%s",
             data_root,
-            output_root=output_root,
-            debug=debug,
-            validation_inputs=validation_bundle.inputs,
+            output_root,
+            debug,
+            validate,
+            write_analysis,
         )
-        ep_report_path = write_ep_report(output_root) if write_analysis else None
-        return RollupRunResult(
-            data_root=data_root,
-            output_root=output_root,
-            validation=validation,
-            outputs=collect_output_paths(output_root, debug=debug),
-            ep_report_path=ep_report_path,
-        )
+        try:
+            validation_bundle = _collect_validation(data_root)
+            validation = validation_bundle.result
+            if validation_callback is not None:
+                validation_callback(validation)
+            if validate:
+                validation.raise_for_errors()
+
+            run(
+                data_root,
+                output_root=output_root,
+                debug=debug,
+                validation_inputs=validation_bundle.inputs,
+            )
+            ep_report_path = write_ep_report(output_root) if write_analysis else None
+            result = RollupRunResult(
+                data_root=data_root,
+                output_root=output_root,
+                validation=validation,
+                outputs=collect_output_paths(output_root, debug=debug),
+                ep_report_path=ep_report_path,
+            )
+        except Exception:
+            logger.exception("failed rollup elapsed=%.2fs", time.perf_counter() - started)
+            raise
+        logger.info("done rollup output_root=%s elapsed=%.2fs", output_root, time.perf_counter() - started)
+        return result
 
 
 def build_ep_report(output_root: str | Path = "output") -> Path:
@@ -208,7 +223,19 @@ def _collect_validation(data_root: str | Path = "data") -> _ValidationBundle:
         ylt_loss_report=ylt_loss_report,
         input_ylt_aal_report=input_ylt_aal_report,
     )
+    _log_validation_summary(result)
     return _ValidationBundle(inputs=inputs, result=result)
+
+
+def _log_validation_summary(result: RollupValidationResult) -> None:
+    invalid_count = result.validation_report.filter(~pl.col("valid")).height
+    coverage_error_count = result.coverage_report.filter(pl.col("severity") == "error").height
+    logger.info(
+        "validation summary invalid_files=%d coverage_errors=%d is_valid=%s",
+        invalid_count,
+        coverage_error_count,
+        str(result.is_valid).lower(),
+    )
 
 
 def _validation_report(inputs: PipelineValidationInputs) -> pl.DataFrame:
