@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import logging
+import time
 
 import polars as pl
 
 from rollup.analysis import write_ep_report
 from rollup.ep_summary_generator import generate_vendor_ep_summary
+from rollup.logging import temporary_file_logging
 from rollup.pipeline import (
     PipelineValidationInputs,
     empty_input_ylt_aal_by_lob_peril_summary,
@@ -16,6 +19,9 @@ from rollup.pipeline import (
     run,
     ylt_loss_validation_summary,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 VALIDATION_REPORT_FILENAMES = {
@@ -114,30 +120,32 @@ def run_rollup(
     validate: bool = True,
     write_analysis: bool = True,
     validation_callback: Callable[[RollupValidationResult], None] | None = None,
+    log_file: str | Path | None = None,
 ) -> RollupRunResult:
-    data_root = Path(data_root)
-    output_root = Path(output_root)
-    validation_bundle = _collect_validation(data_root)
-    validation = validation_bundle.result
-    if validation_callback is not None:
-        validation_callback(validation)
-    if validate:
-        validation.raise_for_errors()
+    with temporary_file_logging(log_file):
+        data_root = Path(data_root)
+        output_root = Path(output_root)
+        validation_bundle = _collect_validation(data_root)
+        validation = validation_bundle.result
+        if validation_callback is not None:
+            validation_callback(validation)
+        if validate:
+            validation.raise_for_errors()
 
-    run(
-        data_root,
-        output_root=output_root,
-        debug=debug,
-        validation_inputs=validation_bundle.inputs,
-    )
-    ep_report_path = write_ep_report(output_root) if write_analysis else None
-    return RollupRunResult(
-        data_root=data_root,
-        output_root=output_root,
-        validation=validation,
-        outputs=collect_output_paths(output_root, debug=debug),
-        ep_report_path=ep_report_path,
-    )
+        run(
+            data_root,
+            output_root=output_root,
+            debug=debug,
+            validation_inputs=validation_bundle.inputs,
+        )
+        ep_report_path = write_ep_report(output_root) if write_analysis else None
+        return RollupRunResult(
+            data_root=data_root,
+            output_root=output_root,
+            validation=validation,
+            outputs=collect_output_paths(output_root, debug=debug),
+            ep_report_path=ep_report_path,
+        )
 
 
 def build_ep_report(output_root: str | Path = "output") -> Path:
