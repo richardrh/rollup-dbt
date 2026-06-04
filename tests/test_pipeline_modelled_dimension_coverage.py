@@ -83,6 +83,7 @@ def _summary_seed_result() -> SeedValidationResult:
                     "peril": ["EQ", "WS", "FL"],
                     Col.region_peril_id: [101, 102, 103],
                     Col.selection_priority: [1, 1, 1],
+                    Col.is_dialsup: [1, 1, 1],
                 }
             ),
         },

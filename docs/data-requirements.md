@@ -157,6 +157,11 @@ numbers win. Missing priorities are filled as `99` during EP staging; schema tex
 uses `99` as the normal fallback priority, and some calling contexts treat the
 fallback/default as `99`/`100`.
 
+`is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
+candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
+alternatives should be `0`. The main pipeline ignores this flag and continues to
+use `selection_priority`.
+
 ### `data/seeds/vor/blending_factors.csv`
 
 VOR blend weights by `RegionPerilID` and `SubRegionPerilID`. The EP blend target
