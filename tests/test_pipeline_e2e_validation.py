@@ -413,7 +413,7 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
     ylt_original = result.intermediate.frames["ylt_original"].collect()
     assert ylt_original.filter(pl.col(Col.modelled_lob) == "NEW_LOB").height == 1_000
 
-    ylt_long = result.marts.frames["ylt_long"].collect()
+    ylt_long = result.marts.frames["ylt_long"]
     n_metrics = ylt_long.select(Col.metric).unique().height
     n_forecast = ylt_long.select(Col.forecast_date).unique().height
 
