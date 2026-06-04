@@ -11,7 +11,7 @@ outputs for downstream reporting.
 flowchart LR
   A[Source data] --> B[Validate & stage]
   B --> C[Process\nblending, financial factors]
-  B --> D[DIALSUP\nraw loss + FX + forecast]
+  B --> D[DIALSUP\nbase-model loss + FX + forecast]
   C --> E[Combined factors]
   D --> F[DIALSUP output]
   E --> G[Fanouts & validation]
@@ -75,9 +75,10 @@ the DIALSUP branch.
 ## DIALSUP
 
 The DIALSUP branch runs in parallel with the main pipeline. It takes
-Verisk raw losses (before blending and EUWS), applies FX conversion
-and forecast factors, and produces an independent loss stream. This
-output is used alongside the main pipeline results for reporting.
+base-model losses before blending and EUWS, applies FX conversion and
+forecast factors, and produces an independent loss stream. The base
+model is RiskLink for Europe_FL and UK_FL, and Verisk for other perils.
+This output is used alongside the main pipeline results for reporting.
 
 ## EUWS
 
@@ -106,10 +107,12 @@ metric, non-forecast-date, non-loss columns present in both the main
 and DIALSUP frames.
 
 **Fanouts**: mart-ready tables with standardised column names (event
-ID, year, currency, gross loss, event day) for the main and DIALSUP
-streams.
+ID, year, currency, gross loss, event day) for the final main metric
+and final DIALSUP metric.
 
-**Event validation**: a report comparing events present in both fanouts.
+**Event validation**: a report grouped by base model, metric, and
+forecast date. For each group it reports row count, missing model event
+IDs, and missing model event days.
 
 Normal runs write only final outputs. Use `uv run rollup run --debug`
 when you need intermediate parquet frames in `output/debug/`.
