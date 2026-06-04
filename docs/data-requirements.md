@@ -151,16 +151,18 @@ application.
 Peril lookup from GC/vendor `modelled_peril` values to rollup peril labels,
 region/peril labels, and `region_peril_id`.
 
-`selection_priority` chooses the preferred modelled peril variant when multiple
-modelled perils map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower
-numbers win. Missing priorities are filled as `99` during EP staging; schema text
-uses `99` as the normal fallback priority, and some calling contexts treat the
-fallback/default as `99`/`100`.
+`selection_priority` chooses the main pipeline's preferred modelled peril variant
+when multiple modelled perils map to the same vendor, `rollup_lob`, and
+`rollup_peril`. Lower numbers win. Missing priorities are filled as `99` during
+EP staging; schema text uses `99` as the normal fallback priority, and some
+calling contexts treat the fallback/default as `99`/`100`.
 
 `is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
 candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
-alternatives should be `0`. The main pipeline ignores this flag and continues to
-use `selection_priority`.
+alternatives should generally be `0` unless they are the only sensible base
+candidate. The main pipeline ignores this flag and continues to use
+`selection_priority`. DIALSUP output can differ from the main output when this
+flag selects a different source peril.
 
 ### `data/seeds/vor/blending_factors.csv`
 

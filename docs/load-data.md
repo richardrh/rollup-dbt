@@ -63,9 +63,10 @@ Check these before validating:
   metadata.
 - `data/seeds/business/perils.csv` must contain every EP `modelled_peril` and
   every YLT modelled peril. It maps to rollup peril, region/peril labels,
-  `region_peril_id`, `selection_priority`, and `is_dialsup`. Use
-  `is_dialsup = 1` for exactly one active base/least-adjusted DIALSUP candidate
-  per vendor, rollup LOB, and rollup peril; adjusted alternatives should be `0`.
+  `region_peril_id`, main-pipeline `selection_priority`, and DIALSUP-only
+  `is_dialsup`. Use `is_dialsup = 1` for exactly one active base/least-adjusted
+  DIALSUP candidate per vendor, rollup LOB, and rollup peril; adjusted
+  alternatives should generally be `0`.
 
 ## Step 4. Validate the drop
 
