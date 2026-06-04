@@ -1612,7 +1612,7 @@ def run(
         intermediate_frames["ylt_blending_applied"] = ylt_blended
         ylt_blended = ylt_blended.collect()
 
-        ylt_dialsup = calculate_dialsup(ylt_original, verisk_events, seeds)
+        ylt_dialsup = calculate_dialsup(ylt_ranked.lazy(), verisk_events, seeds)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
         ylt_dialsup = ylt_dialsup.collect()
 
