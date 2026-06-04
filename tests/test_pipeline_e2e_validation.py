@@ -11,11 +11,20 @@ from rollup.cli import validate_command
 from rollup.columns import Col, FanoutCol, RawCol
 from rollup.api import run_rollup
 from rollup.pipeline import (
+    EpSummaryValidationResult,
+    SeedValidationResult,
+    YltFrames,
+    YltValidationResult,
+    calculate_dialsup,
+    dialsup_peril_selection_report,
+    enrich_ylt_with_ep_summaries,
     load_validated_ep_summary_frames,
     load_validated_seed_frames,
     load_validated_ylt_frames,
     modelled_dimension_coverage_report,
+    normalize_ylt,
     run,
+    stage_ep_summaries,
     ylt_loss_validation_summary,
 )
 
@@ -60,6 +69,7 @@ def _write_seed_csvs(data_root: Path, *, modelled_lob: str, modelled_peril: str)
             "peril": ["EQ"],
             Col.region_peril_id: [205],
             Col.selection_priority: [1],
+            Col.is_dialsup: [1],
         }
     ).write_csv(data_root / "seeds" / "business" / "perils.csv")
 
@@ -254,6 +264,166 @@ def _assert_coverage_failure(
     assert failures.height == 1
     assert value == failures.item(0, "value")
     assert dimension == failures.item(0, "dimension")
+
+
+def _peril_selection_seed_result(*, is_dialsup: list[int]) -> SeedValidationResult:
+    return SeedValidationResult(
+        frames={
+            "lobs.csv": pl.DataFrame(
+                {
+                    "lob_id": [1],
+                    Col.modelled_lob: ["LOB_A"],
+                    Col.rollup_lob: ["ROLLUP_LOB"],
+                    "lob_type": ["test"],
+                    Col.cds_cat_class_name: ["Test Class"],
+                    Col.office: ["TestOffice"],
+                    Col.class_: ["TEST"],
+                    Col.currency: ["GBP"],
+                }
+            ),
+            "perils.csv": pl.DataFrame(
+                {
+                    Col.modelled_peril: ["PERIL_BASE", "PERIL_ADJ"],
+                    Col.rollup_peril: ["Test_WS", "Test_WS"],
+                    "region": ["Test", "Test"],
+                    "peril": ["WS", "WS"],
+                    Col.region_peril_id: [205, 205],
+                    Col.selection_priority: [2, 1],
+                    Col.is_dialsup: is_dialsup,
+                }
+            ),
+            "fx_rates.csv": pl.DataFrame(
+                {
+                    RawCol.currency_code: ["GBP"],
+                    Col.target_currency: ["GBP"],
+                    RawCol.rate_date: [date(2026, 1, 1)],
+                    RawCol.rate: [1.0],
+                }
+            ),
+            "forecast_factors.csv": pl.DataFrame(
+                {
+                    Col.class_: ["TEST"],
+                    Col.office: ["TestOffice"],
+                    "office_iso2": ["TT"],
+                    Col.forecast_date: [date(2026, 1, 1)],
+                    RawCol.factor: [1.0],
+                }
+            ),
+        },
+        report=pl.DataFrame({"valid": [True], "error": [None]}),
+    )
+
+
+def _peril_selection_ep_result() -> EpSummaryValidationResult:
+    return EpSummaryValidationResult(
+        frame=pl.DataFrame(
+            {
+                Col.vendor: ["verisk", "verisk"],
+                Col.analysis_id: ["PERIL_BASE", "PERIL_ADJ"],
+                Col.modelled_lob: ["LOB_A", "LOB_A"],
+                Col.modelled_peril: ["PERIL_BASE", "PERIL_ADJ"],
+                Col.ep_type: ["AAL", "AAL"],
+                Col.return_period: [0, 0],
+                Col.loss: [1.0, 1.0],
+            }
+        ).lazy(),
+        report=pl.DataFrame({"valid": [True], "error": [None]}),
+    )
+
+
+def test_main_selection_still_uses_lowest_selection_priority() -> None:
+    staged = stage_ep_summaries(
+        _peril_selection_ep_result(),
+        _peril_selection_seed_result(is_dialsup=[1, 0]),
+    )
+
+    assert staged.selected.select(Col.modelled_peril).unique().collect().to_series().to_list() == [
+        "PERIL_ADJ"
+    ]
+    assert staged.selected_dialsup.select(Col.modelled_peril).unique().collect().to_series().to_list() == [
+        "PERIL_BASE"
+    ]
+
+
+def test_dialsup_uses_is_dialsup_peril_instead_of_main_priority_selection() -> None:
+    seeds = _peril_selection_seed_result(is_dialsup=[1, 0])
+    staged = stage_ep_summaries(_peril_selection_ep_result(), seeds)
+    normalized = normalize_ylt(
+        YltValidationResult(
+            frames=YltFrames(
+                verisk=pl.DataFrame(
+                    {
+                        RawCol.Analysis: ["PERIL_BASE", "PERIL_ADJ"],
+                        RawCol.ExposureAttribute: ["LOB_A", "LOB_A"],
+                        RawCol.CatalogTypeCode: ["STC", "STC"],
+                        RawCol.EventID: [1, 2],
+                        RawCol.ModelCode: [1, 1],
+                        RawCol.YearID: [1, 1],
+                        RawCol.GroundUpLoss: [10.0, 99.0],
+                    }
+                ).lazy(),
+                risklink=pl.DataFrame(
+                    schema={
+                        RawCol.anlsid: pl.Int64,
+                        RawCol.yearid: pl.Int64,
+                        RawCol.eventid: pl.Int64,
+                        RawCol.loss: pl.Float64,
+                    }
+                ).lazy(),
+            ),
+            report=pl.DataFrame({"valid": [True], "error": [None]}),
+        )
+    )
+
+    main = enrich_ylt_with_ep_summaries(normalized, staged).combined.collect()
+    dialsup_selected = enrich_ylt_with_ep_summaries(
+        normalized,
+        staged,
+        use_dialsup_selection=True,
+    ).combined
+    dialsup = calculate_dialsup(
+        dialsup_selected.with_columns(
+            pl.lit("verisk").alias(Col.base_model),
+            pl.lit("original").alias(Col.metric),
+            pl.lit(1).cast(pl.Int64).alias(Col.rnk),
+            pl.lit(10_000.0).alias(Col.rp),
+            pl.lit(1000).alias(Col.rp_bucket),
+        ),
+        pl.DataFrame(
+            {
+                Col.event_id: [1, 2],
+                Col.year_id: [1, 1],
+                Col.model_code: [1, 1],
+                Col.model_event_id: [101, 102],
+                Col.event_day: [1, 1],
+            }
+        ).lazy(),
+        seeds,
+    ).collect()
+
+    assert main.select(Col.modelled_peril).unique().to_series().to_list() == ["PERIL_ADJ"]
+    assert dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(
+        Col.modelled_peril, Col.loss
+    ).rows() == [("PERIL_BASE", 10.0)]
+
+
+@pytest.mark.parametrize(
+    ("is_dialsup", "expected_count"),
+    [([0, 0], 0), ([1, 1], 2)],
+)
+def test_dialsup_selection_validation_requires_exactly_one_active_candidate(
+    is_dialsup: list[int],
+    expected_count: int,
+) -> None:
+    report = dialsup_peril_selection_report(
+        _peril_selection_seed_result(is_dialsup=is_dialsup),
+        _peril_selection_ep_result(),
+    )
+
+    assert report.height == 1
+    assert report.item(0, "dimension") == Col.is_dialsup
+    assert report.item(0, "count") == expected_count
+    assert "exactly one is_dialsup=1" in report.item(0, "error")
 
 
 def test_seed_schema_mismatch_fails_validation(tmp_path: Path) -> None:

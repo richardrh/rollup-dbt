@@ -380,12 +380,84 @@ def build_semantic_validation_report(
     ep_summaries: EpSummaryValidationResult,
     data_root: Path | str = "data",
 ) -> pl.DataFrame:
-    return modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
+    coverage = modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
+    structural_report = pl.concat(
+        [seeds.report, ylts.report, ep_summaries.report],
+        how="diagonal_relaxed",
+    )
+    if structural_report.filter(~pl.col("valid")).height:
+        return coverage
+    if coverage.filter(pl.col("severity") == "error").height:
+        return coverage
+    return pl.concat(
+        [coverage, dialsup_peril_selection_report(seeds, ep_summaries, data_root)],
+        how="vertical",
+    )
+
+
+def dialsup_peril_selection_report(
+    seeds: SeedValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    if "lobs.csv" not in seeds.frames or "perils.csv" not in seeds.frames:
+        return empty_modelled_dimension_coverage_report()
+
+    perils_frame = seeds.frames["perils.csv"]
+    if Col.is_dialsup not in perils_frame.columns:
+        return empty_modelled_dimension_coverage_report()
+
+    data_root = Path(data_root)
+    lobs = seeds.frames["lobs.csv"].lazy().select(Col.modelled_lob, Col.rollup_lob)
+    perils = perils_frame.lazy().select(
+        Col.modelled_peril,
+        Col.rollup_peril,
+        Col.is_dialsup,
+    )
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    invalid_groups = (
+        ep_summaries.frame.join(lobs, on=Col.modelled_lob, how="inner")
+        .join(perils, on=Col.modelled_peril, how="inner")
+        .select(*selection_keys, Col.modelled_peril, Col.is_dialsup)
+        .unique()
+        .group_by(selection_keys)
+        .agg(
+            pl.col(Col.is_dialsup).sum().cast(pl.Int64).alias("count"),
+            pl.col(Col.modelled_peril)
+            .filter(pl.col(Col.is_dialsup) == 1)
+            .sort()
+            .first()
+            .alias("value"),
+        )
+        .with_columns(pl.col("value").fill_null("<none>"))
+        .filter(pl.col("count") != 1)
+    )
+    report = _coverage_rows(
+        invalid_groups,
+        severity="error",
+        direction="invalid_seed_configuration",
+        source_group="ep_summaries",
+        dimension=Col.is_dialsup,
+        field=Col.is_dialsup,
+        path=data_root / "seeds" / "business" / "perils.csv",
+        message="Active vendor/rollup_lob/rollup_peril group must have exactly one is_dialsup=1 candidate in perils.csv.",
+    ).collect()
+    if report.is_empty():
+        return empty_modelled_dimension_coverage_report()
+    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
 
 
 def ensure_modelled_dimension_coverage(report: pl.DataFrame) -> None:
-    error_count = report.filter(pl.col("severity") == "error").height
+    error_report = report.filter(pl.col("severity") == "error")
+    error_count = error_report.height
     if error_count:
+        if "dimension" in error_report.columns and Col.is_dialsup in error_report.get_column(
+            "dimension"
+        ).to_list():
+            raise ValueError(
+                f"DIALSUP peril selection validation failed for {error_count} active group(s); "
+                "run `rollup validate` for details"
+            )
         raise ValueError(
             f"modelled LOB/peril coverage validation failed for {error_count} value(s); "
             "run `rollup validate` for details"
@@ -567,6 +639,7 @@ class EnrichedYltFrames:
 class StagedEpSummaries:
     enriched: pl.LazyFrame
     selected: pl.LazyFrame
+    selected_dialsup: pl.LazyFrame
 
 
 @dataclass(frozen=True)
@@ -629,7 +702,7 @@ def load_pipeline_validation_inputs(
     seeds = load_validated_seed_frames(data_root)
     ylts = load_validated_ylt_frames(data_root)
     ep_summaries = load_validated_ep_summary_frames(data_root)
-    coverage_report = modelled_dimension_coverage_report(
+    coverage_report = build_semantic_validation_report(
         seeds,
         ylts,
         ep_summaries,
@@ -677,8 +750,14 @@ def normalize_ylt(ylt: YltValidationResult) -> NormalizedYltFrames:
 def enrich_ylt_with_ep_summaries(
     normalized_ylt: NormalizedYltFrames,
     staged_ep_summaries: StagedEpSummaries,
+    *,
+    use_dialsup_selection: bool = False,
 ) -> EnrichedYltFrames:
-    ep_summary = staged_ep_summaries.selected
+    ep_summary = (
+        staged_ep_summaries.selected_dialsup
+        if use_dialsup_selection
+        else staged_ep_summaries.selected
+    )
 
     verisk_keys = (
         ep_summary.filter(pl.col(Col.vendor) == "verisk")
@@ -781,6 +860,7 @@ def stage_ep_summaries(
         "peril",
         Col.region_peril_id,
         Col.selection_priority,
+        Col.is_dialsup,
     )
 
     enriched = (
@@ -789,6 +869,26 @@ def stage_ep_summaries(
         .with_columns(pl.col(Col.selection_priority).fill_null(99))
     )
     selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    selected_modelled_perils = _select_modelled_perils_by_priority(enriched, selection_keys)
+    selected_dialsup_modelled_perils = _select_dialsup_modelled_perils(enriched, selection_keys)
+    selected = enriched.join(
+        selected_modelled_perils,
+        on=[*selection_keys, Col.modelled_peril],
+        how="inner",
+    )
+    selected_dialsup = enriched.join(
+        selected_dialsup_modelled_perils,
+        on=[*selection_keys, Col.modelled_peril],
+        how="inner",
+    )
+
+    return StagedEpSummaries(enriched=enriched, selected=selected, selected_dialsup=selected_dialsup)
+
+
+def _select_modelled_perils_by_priority(
+    enriched: pl.LazyFrame,
+    selection_keys: list[str],
+) -> pl.LazyFrame:
     selected_candidates = enriched.select(
         *selection_keys,
         Col.modelled_peril,
@@ -797,7 +897,7 @@ def stage_ep_summaries(
     selected_priorities = selected_candidates.group_by(selection_keys).agg(
         pl.col(Col.selection_priority).min()
     )
-    selected_modelled_perils = (
+    return (
         selected_candidates.join(
             selected_priorities,
             on=[*selection_keys, Col.selection_priority],
@@ -808,13 +908,17 @@ def stage_ep_summaries(
         .first()
         .select(*selection_keys, Col.modelled_peril)
     )
-    selected = enriched.join(
-        selected_modelled_perils,
-        on=[*selection_keys, Col.modelled_peril],
-        how="inner",
-    )
 
-    return StagedEpSummaries(enriched=enriched, selected=selected)
+
+def _select_dialsup_modelled_perils(
+    enriched: pl.LazyFrame,
+    selection_keys: list[str],
+) -> pl.LazyFrame:
+    return (
+        enriched.filter(pl.col(Col.is_dialsup) == 1)
+        .select(*selection_keys, Col.modelled_peril)
+        .unique()
+    )
 
 
 def _validation_has_blocking_errors(inputs: PipelineValidationInputs) -> bool:
@@ -1611,12 +1715,19 @@ def run(
         staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
         staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
         staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
+        staging_frames["ep_summaries_selected_dialsup"] = staged_ep_summaries.selected_dialsup
 
     with logged_phase("intermediate"):
         enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
+        enriched_ylts_dialsup = enrich_ylt_with_ep_summaries(
+            normalized_ylts,
+            staged_ep_summaries,
+            use_dialsup_selection=True,
+        )
         intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
         intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
         intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
+        intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
 
         joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
         intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
@@ -1652,7 +1763,18 @@ def run(
         _warn_row_drop("blending", ylt_ranked.height, ylt_blended.height)
         _log_checkpoint("ylt_blended", ylt_blended)
 
-        ylt_dialsup = calculate_dialsup(ylt_ranked.lazy(), verisk_events, seeds)
+        ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
+            base_model_expr.alias(Col.base_model),
+            pl.lit("original").alias(Col.metric),
+        ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
+        ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup)
+        intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
+        ylt_ranked_dialsup = ylt_ranked_dialsup.collect()
+        _log_checkpoint("ylt_original_dialsup", ylt_ranked_dialsup)
+        _log_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
+
+        ylt_dialsup = calculate_dialsup(ylt_ranked_dialsup.lazy(), verisk_events, seeds)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
         ylt_dialsup = ylt_dialsup.collect()
         _log_checkpoint("ylt_dialsup", ylt_dialsup)
