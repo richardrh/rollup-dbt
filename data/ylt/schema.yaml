@@ -7,6 +7,7 @@ datasets:
     glob: data/ylt/verisk/*.parquet
     format: parquet
     required: true
+    allow_extra_columns: true
     description: Raw AIR/Verisk YLT parquet exports with vendor wire column names.
     columns:
       - {
@@ -48,7 +49,7 @@ datasets:
       - {
           name: PerilSetCode,
           dtype: int64,
-          required: true,
+          required: false,
           description: Verisk peril set code.,
         }
       - {
@@ -60,19 +61,19 @@ datasets:
       - {
           name: GrossLoss,
           dtype: float64,
-          required: true,
+          required: false,
           description: Gross loss.,
         }
       - {
           name: NetOfPreCatLoss,
           dtype: float64,
-          required: true,
+          required: false,
           description: Net pre-cat loss.,
         }
       - {
           name: filename,
           dtype: string,
-          required: true,
+          required: false,
           description: Source file name.,
         }
 
@@ -81,6 +82,7 @@ datasets:
     glob: data/ylt/risklink/*.parquet
     format: parquet
     required: true
+    allow_extra_columns: true
     description: Raw RMS/RiskLink YLT parquet exports with vendor wire column names.
     columns:
       - {
@@ -98,7 +100,7 @@ datasets:
       - {
           name: p_value,
           dtype: float64,
-          required: true,
+          required: false,
           description: Probability value.,
         }
       - {
@@ -110,19 +112,19 @@ datasets:
       - {
           name: meanloss,
           dtype: float64,
-          required: true,
+          required: false,
           description: Mean loss.,
         }
       - {
           name: stddev,
           dtype: float64,
-          required: true,
+          required: false,
           description: Standard deviation.,
         }
       - {
           name: expvalue,
           dtype: float64,
-          required: true,
+          required: false,
           description: Expected value.,
         }
       - { name: loss, dtype: float64, required: true, description: Loss. }

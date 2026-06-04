@@ -24,6 +24,7 @@ or file group and defines its expected structure:
 | `required` | Whether validation should expect the dataset to be present. |
 | `description` | Human-readable purpose of the dataset. |
 | `columns` | Ordered list of expected columns. |
+| `allow_extra_columns` | Optional dataset policy. Defaults to `false`; raw vendor YLT datasets set it to `true`. |
 
 Each column entry defines:
 
@@ -49,8 +50,15 @@ The validation report flags contract failures such as:
 - missing scanned input areas or required files;
 - seed files with no matching schema;
 - missing required columns;
-- unexpected columns;
-- dtype mismatches.
+- unexpected columns when the dataset is strict;
+- dtype mismatches for required columns and for optional columns when present.
+
+Raw vendor YLT contracts are intentionally minimal and allow extra export
+columns. Seed CSVs and canonical EP summary CSVs remain strict by default. Verisk
+YLT file names are derived from parquet paths for validation reporting, so a
+row-level `filename` column is optional rather than required. RiskLink YLT only
+requires `anlsid`, `yearid`, `eventid`, and `loss`; `anlsid` must match RiskLink
+EP summary `analysis_id` values.
 
 Fix schema-validation failures before investigating modelled LOB/peril failures.
 After file-level schemas pass, validation runs anti-join checks against

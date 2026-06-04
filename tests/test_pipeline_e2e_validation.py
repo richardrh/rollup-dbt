@@ -168,11 +168,7 @@ def _write_verisk_ylt(
             RawCol.EventID: event_ids,
             RawCol.ModelCode: [1] * row_count,
             RawCol.YearID: [1] * row_count,
-            "PerilSetCode": [1] * row_count,
             RawCol.GroundUpLoss: [10.0] * row_count,
-            "GrossLoss": [10.0] * row_count,
-            "NetOfPreCatLoss": [10.0] * row_count,
-            "filename": ["new_lob.parquet"] * row_count,
         }
     ).write_parquet(output_dir / "new_lob.parquet")
 
@@ -184,11 +180,7 @@ def _write_risklink_ylt(data_root: Path) -> None:
         {
             RawCol.yearid: [1],
             RawCol.eventid: [1],
-            "p_value": [0.01],
             RawCol.anlsid: [9001],
-            "meanloss": [10.0],
-            "stddev": [0.0],
-            "expvalue": [10.0],
             RawCol.loss: [10.0],
         }
     ).write_parquet(output_dir / "risklink_ylt.parquet")
@@ -465,6 +457,21 @@ def test_ep_summary_schema_mismatch_fails_validation(tmp_path: Path) -> None:
     assert validate_command(data_root) == 1
 
 
+def test_seed_extra_column_still_fails_strict_validation(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(tmp_path)
+    pl.read_csv(data_root / "seeds" / "business" / "lobs.csv").with_columns(
+        pl.lit("unexpected").alias("extra_column")
+    ).write_csv(data_root / "seeds" / "business" / "lobs.csv")
+
+    report = load_validated_seed_frames(data_root).report.filter(
+        pl.col("filename") == "lobs.csv"
+    )
+
+    assert not report.item(0, "valid")
+    assert "unexpected columns" in report.item(0, "error")
+    assert "extra_column" in report.item(0, "error")
+
+
 def test_ylt_schema_mismatch_fails_validation(tmp_path: Path) -> None:
     data_root = _write_minimal_data_root(tmp_path)
     pl.read_parquet(data_root / "ylt" / "verisk" / "new_lob.parquet").with_columns(
@@ -479,6 +486,72 @@ def test_ylt_schema_mismatch_fails_validation(tmp_path: Path) -> None:
     assert "dtype mismatches" in report.item(0, "error")
     assert RawCol.EventID in report.item(0, "error")
     assert validate_command(data_root) == 1
+
+
+def test_raw_ylt_extra_columns_validate(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(tmp_path)
+    pl.read_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet").with_columns(
+        pl.lit("vendor diagnostic").alias("unused_vendor_column")
+    ).write_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet")
+
+    report = load_validated_ylt_frames(data_root).report.filter(
+        (pl.col("vendor") == "risklink") & (pl.col("filename") == "risklink_ylt.parquet")
+    )
+
+    assert report.item(0, "valid")
+    assert validate_command(data_root) == 0
+
+
+def test_optional_ylt_column_wrong_dtype_fails_when_present(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(tmp_path)
+    pl.read_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet").with_columns(
+        pl.lit("not-a-float").alias("p_value")
+    ).write_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet")
+
+    report = load_validated_ylt_frames(data_root).report.filter(
+        (pl.col("vendor") == "risklink") & (pl.col("filename") == "risklink_ylt.parquet")
+    )
+
+    assert not report.item(0, "valid")
+    assert "dtype mismatches" in report.item(0, "error")
+    assert "p_value" in report.item(0, "error")
+
+
+def test_minimal_raw_ylt_contracts_validate_and_run(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(tmp_path, verisk_row_count=1_000)
+
+    ylt_report = load_validated_ylt_frames(data_root).report
+
+    assert ylt_report.filter(~pl.col("valid")).is_empty()
+    assert validate_command(data_root) == 0
+    assert run(data_root, output_root=tmp_path / "output").marts.frames
+
+
+def test_risklink_ylt_analysis_id_missing_from_ep_summary_blocks_validation_and_run(
+    tmp_path: Path,
+) -> None:
+    data_root = _write_minimal_data_root(tmp_path)
+    pl.read_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet").with_columns(
+        pl.lit(9999).cast(pl.Int64).alias(RawCol.anlsid)
+    ).write_parquet(data_root / "ylt" / "risklink" / "risklink_ylt.parquet")
+
+    seeds = load_validated_seed_frames(data_root)
+    ylts = load_validated_ylt_frames(data_root)
+    ep_summaries = load_validated_ep_summary_frames(data_root)
+    from rollup.pipeline import build_semantic_validation_report
+
+    report = build_semantic_validation_report(seeds, ylts, ep_summaries, data_root)
+    failures = report.filter(
+        (pl.col("check_name") == "risklink_analysis_coverage")
+        & (pl.col("value") == "9999")
+    )
+
+    assert failures.height == 1
+    assert failures.item(0, "field") == RawCol.anlsid
+    assert "RiskLink YLT analysis id is missing" in failures.item(0, "error")
+    assert validate_command(data_root) == 1
+    with pytest.raises(ValueError, match="RiskLink YLT analysis id is missing"):
+        run(data_root)
 
 
 def test_ep_summary_unknown_lob_fails_semantic_validation(
