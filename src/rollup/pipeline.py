@@ -1137,13 +1137,21 @@ def apply_forecast_to_ylt(
         pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )
 
-    return (
+    forecasted = (
         gbp.join(forecast_dates, how="cross")
         .join(
             forecast_factors,
             on=[Col.class_, Col.office, Col.forecast_date],
             how="left",
         )
+    )
+    _log_defaulted_rows(
+        forecasted,
+        pl.col("_forecast_factor_raw").is_null(),
+        "forecast factor defaulted rows=%d",
+    )
+    return (
+        forecasted
         .with_columns(
             (pl.col(Col.loss) * pl.col("_forecast_factor_raw").fill_null(1.0)).alias(Col.loss),
             pl.lit("gbp_forecast").alias(Col.metric),
@@ -1164,13 +1172,21 @@ def apply_euws_to_ylt(
     )
 
     gbp_forecast_cols = gbp_forecast.collect_schema().names()
-    return (
+    joined = (
         gbp_forecast.join(
             verisk_events,
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
         )
         .join(euws_factors, on=[Col.model_event_id, Col.year_id], how="left")
+    )
+    _log_defaulted_rows(
+        joined,
+        (pl.col(Col.rollup_peril) == "Europe_WS") & pl.col("_euws_factor_raw_source").is_null(),
+        "euws factor defaulted rows=%d",
+    )
+    return (
+        joined
         .with_columns(
             pl.when(pl.col(Col.rollup_peril) == "Europe_WS")
             .then(pl.col("_euws_factor_raw_source").fill_null(1.0))
@@ -1264,6 +1280,11 @@ def calculate_dialsup(
         .with_columns(
             pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor"),
         )
+    )
+    _log_defaulted_rows(
+        base,
+        pl.col("_forecast_factor_raw").is_null(),
+        "dialsup forecast factor defaulted rows=%d",
     )
 
     output_cols = [c for c in base.collect_schema().names() if c not in ("_forecast_factor_raw", "_forecast_factor")]
@@ -1441,6 +1462,21 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
     )
 
 
+def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
+    logger.info("checkpoint=%s rows=%d", name, frame.height)
+
+
+def _warn_row_drop(name: str, before: int, after: int) -> None:
+    if after < before:
+        logger.warning("%s join dropped rows before=%d after=%d dropped=%d", name, before, after, before - after)
+
+
+def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
+    defaulted_rows = frame.select(condition.sum().alias("defaulted_rows")).collect().item()
+    if defaulted_rows > 0:
+        logger.warning(message, defaulted_rows)
+
+
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
     output_dir = output_root / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1607,30 +1643,40 @@ def run(
         ylt_ranked = _add_rank_columns(ylt_original)
         intermediate_frames["ylt_ranked"] = ylt_ranked
         ylt_ranked = ylt_ranked.collect()
+        _log_checkpoint("ylt_original", ylt_ranked)
+        _log_checkpoint("ylt_ranked", ylt_ranked)
 
         ylt_blended = apply_ep_blending_to_ylt(ylt_ranked.lazy(), ep_blending_targets)
         intermediate_frames["ylt_blending_applied"] = ylt_blended
         ylt_blended = ylt_blended.collect()
+        _warn_row_drop("blending", ylt_ranked.height, ylt_blended.height)
+        _log_checkpoint("ylt_blended", ylt_blended)
 
         ylt_dialsup = calculate_dialsup(ylt_ranked.lazy(), verisk_events, seeds)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
         ylt_dialsup = ylt_dialsup.collect()
+        _log_checkpoint("ylt_dialsup", ylt_dialsup)
 
         ylt_gbp = apply_fx_to_ylt(ylt_blended.lazy(), seeds)
         intermediate_frames["ylt_fx_applied"] = ylt_gbp
         ylt_gbp = ylt_gbp.collect()
+        _warn_row_drop("fx", ylt_blended.height, ylt_gbp.height)
+        _log_checkpoint("ylt_gbp", ylt_gbp)
 
         ylt_gbp_forecast = apply_forecast_to_ylt(ylt_gbp.lazy(), seeds)
         intermediate_frames["ylt_forecast_applied"] = ylt_gbp_forecast
         ylt_gbp_forecast = ylt_gbp_forecast.collect()
+        _log_checkpoint("ylt_gbp_forecast", ylt_gbp_forecast)
 
         ylt_euws = apply_euws_to_ylt(ylt_gbp_forecast.lazy(), verisk_events, seeds)
         intermediate_frames["ylt_euws_applied"] = ylt_euws
         ylt_euws = ylt_euws.collect()
+        _log_checkpoint("ylt_euws", ylt_euws)
 
         ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws.lazy(), seeds)
         intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override
         ylt_euws_override = ylt_euws_override.collect()
+        _log_checkpoint("ylt_euws_override", ylt_euws_override)
 
         ylt = pl.concat(
             [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],

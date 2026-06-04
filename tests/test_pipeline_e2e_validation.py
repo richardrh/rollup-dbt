@@ -9,6 +9,7 @@ import pytest
 
 from rollup.cli import validate_command
 from rollup.columns import Col, FanoutCol, RawCol
+from rollup.api import run_rollup
 from rollup.pipeline import (
     load_validated_ep_summary_frames,
     load_validated_seed_frames,
@@ -444,3 +445,29 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
     assert wide_mts.select(pl.col("dialsup_gbp_forecast_202601_loss").sum()).item() == pytest.approx(
         10_000.0
     )
+
+
+def test_run_rollup_log_file_includes_checkpoint_row_counts(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(
+        tmp_path,
+        modelled_lob="NEW_LOB",
+        modelled_peril="NEW_PERIL",
+        verisk_row_count=1_000,
+    )
+    output_root = tmp_path / "output"
+    log_file = tmp_path / "logs" / "run.log"
+
+    run_rollup(data_root, output_root, write_analysis=False, log_file=log_file)
+
+    log_text = log_file.read_text(encoding="utf-8")
+    for checkpoint in (
+        "ylt_original",
+        "ylt_ranked",
+        "ylt_blended",
+        "ylt_dialsup",
+        "ylt_gbp",
+        "ylt_gbp_forecast",
+        "ylt_euws",
+        "ylt_euws_override",
+    ):
+        assert f"checkpoint={checkpoint} rows=" in log_text
