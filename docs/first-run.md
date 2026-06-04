@@ -64,8 +64,10 @@ Check these files before validation:
 - `data/seeds/business/lobs.csv`: must contain every EP/YLT modelled LOB; maps
   to rollup LOB, class, office, currency, and CDS class metadata.
 - `data/seeds/business/perils.csv`: must contain every EP/YLT modelled peril;
-  maps to rollup peril, region/peril labels, `region_peril_id`, and
-  `selection_priority`.
+  maps to rollup peril, region/peril labels, `region_peril_id`, and main-pipeline
+  `selection_priority`. It also includes DIALSUP-only `is_dialsup`, which must
+  mark exactly one active base/least-adjusted DIALSUP candidate per vendor,
+  rollup LOB, and rollup peril.
 
 The anti-join validation only flags the reverse: input values missing from seed
 files. Adding a seed entry without matching data will not cause errors, but it

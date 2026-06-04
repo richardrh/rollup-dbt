@@ -41,10 +41,11 @@ validation fails.
 
 ## EP summaries
 
-EP summaries from each vendor are staged into a common format. For each
-vendor-rollup-peril combination, a single preferred modelled peril is
-selected. The summaries are then joined across Verisk and RiskLink
-vendors to produce a unified view of EP losses per return-period bucket.
+EP summaries from each vendor are staged into a common format. For each vendor,
+rollup LOB, and rollup peril group, the main pipeline selects one modelled peril
+by lowest `selection_priority`. This priority is only for the main pipeline. The
+summaries are then joined across Verisk and RiskLink vendors to produce a unified
+view of EP losses per return-period bucket.
 
 ## Blending
 
@@ -76,9 +77,21 @@ the DIALSUP branch.
 
 The DIALSUP branch runs in parallel with the main pipeline. It takes
 base-model losses before blending and EUWS, applies FX conversion and
-forecast factors, and produces an independent loss stream. The base
-model is RiskLink for Europe_FL and UK_FL, and Verisk for other perils.
-This output is used alongside the main pipeline results for reporting.
+forecast factors, and produces an independent loss stream.
+
+DIALSUP does not inherit the main pipeline's `selection_priority` winner.
+Instead, it uses the active candidate marked `is_dialsup = 1` in
+`perils.csv` for each vendor, rollup LOB, and rollup peril group. Validation
+fails if an active group has zero or multiple DIALSUP candidates. Mark the
+least-adjusted/base peril where possible; adjusted variants such as
+GC-adjusted, CVV, floor-area, PLA, or HD should generally be `0` unless an
+adjusted or HD row is the only sensible base candidate.
+
+Because DIALSUP can choose a different source peril from the main pipeline,
+DIALSUP row counts and wide-output density can differ from the main output and
+from earlier runs. The base model is RiskLink for Europe_FL and UK_FL, and
+Verisk for other perils. This output is used alongside the main pipeline results
+for reporting.
 
 ## EUWS
 
