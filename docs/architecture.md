@@ -8,19 +8,14 @@ outputs for downstream reporting.
 ## Data flow
 
 ```mermaid
-flowchart TD
-  A[Input data\nYLTs, EP summaries, seeds] --> B[Validate + stage]
-  B --> C[Blending\nEP-driven uplift factors]
-  B --> D[DIALSUP branch\nraw loss + FX + forecast]
-  C --> E[Financial factors\nFX, forecast, EUWS, overrides]
-  E --> F[Main fanout]
-  D --> G[DIALSUP fanout]
-  E --> H[Combined all-factors\nlong output]
-  D --> I[DIALSUP long output]
-  F --> J[Wide MTS output]
-  G --> J
-  F --> K[Event validation]
-  G --> K
+flowchart LR
+  A[Source data] --> B[Validate & stage]
+  B --> C[Process\nblending, financial factors]
+  B --> D[DIALSUP\nraw loss + FX + forecast]
+  C --> E[Combined factors]
+  D --> F[DIALSUP output]
+  E --> G[Fanouts & validation]
+  F --> G
 ```
 
 ## Pipeline phases
