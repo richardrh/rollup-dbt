@@ -76,26 +76,30 @@ def write_ep_report(output_root: Path | str = "output") -> Path:
 
 
 def _main_losses(path: Path) -> pl.LazyFrame:
-    return pl.scan_parquet(path).select(
+    return pl.scan_parquet(path).filter(
+        pl.col("metric") == "euws_override"
+    ).select(
         "forecast_date",
         "base_model",
         "rollup_lob",
         "rollup_peril",
         "year_id",
-        pl.lit("main").alias("metric"),
-        pl.col("original_ylt_loss_blended_gbp_forecast_euws").alias("loss"),
+        "metric",
+        "loss",
     )
 
 
 def _dialsup_losses(path: Path) -> pl.LazyFrame:
-    return pl.scan_parquet(path).select(
+    return pl.scan_parquet(path).filter(
+        pl.col("metric") == "dialsup_gbp_forecast"
+    ).select(
         "forecast_date",
         "base_model",
         "rollup_lob",
         "rollup_peril",
         "year_id",
-        pl.lit("dialsup").alias("metric"),
-        pl.col("dialsup_loss_gbp_forecast").alias("loss"),
+        "metric",
+        "loss",
     )
 
 

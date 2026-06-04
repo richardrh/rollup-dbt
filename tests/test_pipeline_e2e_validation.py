@@ -9,6 +9,7 @@ import pytest
 
 from rollup.cli import validate_command
 from rollup.columns import Col, FanoutCol, RawCol
+from rollup.api import run_rollup
 from rollup.pipeline import (
     load_validated_ep_summary_frames,
     load_validated_seed_frames,
@@ -410,11 +411,12 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
     output_root = tmp_path / "output"
     result = run(data_root, output_root=output_root, debug=True)
 
-    base_model = result.intermediate.frames["ylt_base_model"].collect()
-    assert base_model.filter(pl.col(Col.modelled_lob) == "NEW_LOB").height == 1_000
+    ylt_original = result.intermediate.frames["ylt_original"].collect()
+    assert ylt_original.filter(pl.col(Col.modelled_lob) == "NEW_LOB").height == 1_000
 
-    mart = result.marts.frames["ylt_combined_all_factors"].collect()
-    assert mart.filter(pl.col(Col.rollup_lob) == "NEW_LOB").height == 1_000
+    ylt_long = result.marts.frames["ylt_long"]
+    n_metrics = ylt_long.select(Col.metric).unique().height
+    n_forecast = ylt_long.select(Col.forecast_date).unique().height
 
     main_fanout = result.marts.frames["main_fanout"].collect()
     assert main_fanout.height == 1_000
@@ -423,7 +425,7 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
     )
 
     written_main_fanout = pl.read_parquet(
-        output_root / "marts" / "HiscoAIR_202601_main.parquet"
+        output_root / "marts" / "HiscoAIR_202601_euws_override.parquet"
     )
     assert written_main_fanout.height == 1_000
     assert written_main_fanout.select(
@@ -432,15 +434,40 @@ def test_new_lob_with_matching_ep_summary_and_verisk_ylt_runs_end_to_end(
 
     assert (output_root / "mts_tbl_ylt_combined_all_factors.parquet").is_file()
     assert (output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet").is_file()
-    assert (output_root / "debug" / "mts_ylt_combined_all_factors.parquet").is_file()
+    assert (output_root / "debug" / "mts_ylt_long.parquet").is_file()
 
     wide_mts = pl.read_parquet(output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
-    assert "main_202601_loss" in wide_mts.columns
-    assert "dialsup_202601_loss" in wide_mts.columns
-    assert wide_mts.height == mart.height
-    assert wide_mts.select(pl.col("main_202601_loss").sum()).item() == pytest.approx(
+    assert "euws_override_202601_loss" in wide_mts.columns
+    assert "dialsup_gbp_forecast_202601_loss" in wide_mts.columns
+    assert wide_mts.select(pl.col("euws_override_202601_loss").sum()).item() == pytest.approx(
         10_000.0
     )
-    assert wide_mts.select(pl.col("dialsup_202601_loss").sum()).item() == pytest.approx(
+    assert wide_mts.select(pl.col("dialsup_gbp_forecast_202601_loss").sum()).item() == pytest.approx(
         10_000.0
     )
+
+
+def test_run_rollup_log_file_includes_checkpoint_row_counts(tmp_path: Path) -> None:
+    data_root = _write_minimal_data_root(
+        tmp_path,
+        modelled_lob="NEW_LOB",
+        modelled_peril="NEW_PERIL",
+        verisk_row_count=1_000,
+    )
+    output_root = tmp_path / "output"
+    log_file = tmp_path / "logs" / "run.log"
+
+    run_rollup(data_root, output_root, write_analysis=False, log_file=log_file)
+
+    log_text = log_file.read_text(encoding="utf-8")
+    for checkpoint in (
+        "ylt_original",
+        "ylt_ranked",
+        "ylt_blended",
+        "ylt_dialsup",
+        "ylt_gbp",
+        "ylt_gbp_forecast",
+        "ylt_euws",
+        "ylt_euws_override",
+    ):
+        assert f"checkpoint={checkpoint} rows=" in log_text

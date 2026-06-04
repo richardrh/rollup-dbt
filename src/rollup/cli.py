@@ -28,6 +28,7 @@ from rollup.ep_summary_generator import (
     scan_ep_summary_csvs,
 )
 from rollup import resources as rollup_resources
+from rollup.logging import configure_console_logging
 from rollup.sql import check_sql_connection
 
 
@@ -67,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Console logging level.",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        help="Optional path to also write logs to a file.",
     )
     parser.add_argument(
         "--output-root",
@@ -172,14 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def configure_logging(log_level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S",
-        stream=sys.stdout,
-        force=True,
-    )
+def configure_logging(log_level: str, log_file: Path | None = None) -> None:
+    configure_console_logging(log_level, log_file=log_file)
 
 
 ValidationReports = RollupValidationResult
@@ -540,7 +540,7 @@ def generate_ep_summaries_command(
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, log_file=args.log_file)
     data_root = Path(args.data_root)
     output_root = Path(args.output_root)
     config_path = Path(args.config)

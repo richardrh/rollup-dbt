@@ -30,3 +30,15 @@ def test_programmatic_api_docs_include_dataiku_recipes() -> None:
     assert "run_rollup" in api_docs
     assert "report_dir" in api_docs
     assert "write_reports" in api_docs
+    assert "log_file" in api_docs
+    assert "temporary file" in api_docs
+
+
+def test_operating_modes_docs_explain_log_file_and_debug_controls() -> None:
+    operating_docs = (REPO_ROOT / "docs" / "operating-modes.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--log-file output/run.log" in operating_docs
+    assert "--debug" in operating_docs
+    assert "--log-level DEBUG" in operating_docs

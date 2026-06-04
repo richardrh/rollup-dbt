@@ -13,6 +13,7 @@ result = run_rollup(
     data_root="/path/to/data",
     output_root="/path/to/output",
     debug=False,
+    log_file="/path/to/output/run.log",
 )
 
 print(result.ep_report_path)
@@ -21,7 +22,9 @@ print(result.outputs.mart_files)
 ```
 
 `run_rollup` validates inputs, runs the pipeline, writes normal outputs, and
-writes `output/analysis/ep_report.csv` by default.
+writes `output/analysis/ep_report.csv` by default. If `log_file` is provided,
+the API writes run logs for that call and then removes/closes its temporary file
+handler so the host application or Dataiku logging setup is not polluted.
 
 ## Dataiku recipe: local managed folders
 

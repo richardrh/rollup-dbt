@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -191,6 +192,57 @@ def test_run_rollup_raises_before_running_when_validation_fails(
 
     with pytest.raises(api.RollupValidationError):
         api.run_rollup(tmp_path / "data", tmp_path / "output")
+
+
+def test_run_rollup_log_file_writes_and_removes_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    output_root = tmp_path / "output"
+    log_file = tmp_path / "logs" / "run.log"
+    inputs = _validation_inputs()
+    _patch_validation_helpers(monkeypatch, inputs)
+
+    def fake_run(*args, **kwargs) -> None:
+        output_root.mkdir(parents=True)
+        (output_root / "marts").mkdir()
+        (output_root / "mts_tbl_ylt_combined_all_factors.parquet").write_bytes(b"")
+        (output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet").write_bytes(b"")
+        (output_root / "mts_tbl_ylt_dialsup.parquet").write_bytes(b"")
+        (output_root / "mts_event_validation.parquet").write_bytes(b"")
+        logging.getLogger("rollup.test").info("api log file line")
+
+    monkeypatch.setattr(api, "run", fake_run)
+    monkeypatch.setattr(api, "write_ep_report", lambda output_root_arg: None)
+    before_handlers = list(logging.getLogger().handlers)
+
+    api.run_rollup(data_root, output_root, log_file=log_file)
+
+    assert log_file.is_file()
+    log_text = log_file.read_text(encoding="utf-8")
+    assert "start rollup data_root=" in log_text
+    assert "validation summary invalid_files=0 coverage_errors=0 is_valid=true" in log_text
+    assert "api log file line" in log_text
+    assert "done rollup output_root=" in log_text
+    assert list(logging.getLogger().handlers) == before_handlers
+
+
+def test_run_rollup_log_file_handler_removed_on_validation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _validation_inputs(valid=False)
+    _patch_validation_helpers(monkeypatch, inputs)
+    log_file = tmp_path / "run.log"
+    before_handlers = list(logging.getLogger().handlers)
+
+    with pytest.raises(api.RollupValidationError):
+        api.run_rollup(tmp_path / "data", tmp_path / "output", log_file=log_file)
+
+    assert log_file.is_file()
+    assert "failed rollup elapsed=" in log_file.read_text(encoding="utf-8")
+    assert list(logging.getLogger().handlers) == before_handlers
 
 
 def test_generate_ep_summary_delegates_without_prompts(
