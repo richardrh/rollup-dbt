@@ -51,6 +51,27 @@ class SeedValidationResult:
     report: pl.DataFrame
 
 
+@dataclass(frozen=True)
+class SchemaColumn:
+    name: str
+    dtype: pl.DataType
+    required: bool
+
+
+@dataclass(frozen=True)
+class SchemaContract:
+    columns: tuple[SchemaColumn, ...]
+    allow_extra_columns: bool = False
+
+    @property
+    def schema(self) -> pl.Schema:
+        return pl.Schema({column.name: column.dtype for column in self.columns})
+
+    @property
+    def required_schema(self) -> pl.Schema:
+        return pl.Schema({column.name: column.dtype for column in self.columns if column.required})
+
+
 def load_yaml_file_schemas(data_root: Path | str = "data") -> dict[str, pl.Schema]:
     data_root = Path(data_root)
     schemas: dict[str, pl.Schema] = {}
@@ -75,6 +96,35 @@ def load_yaml_file_schemas(data_root: Path | str = "data") -> dict[str, pl.Schem
     return schemas
 
 
+def load_yaml_file_schema_contracts(data_root: Path | str = "data") -> dict[str, SchemaContract]:
+    data_root = Path(data_root)
+    contracts: dict[str, SchemaContract] = {}
+
+    for schema_path in sorted(data_root.rglob("schema.yaml")):
+        with schema_path.open("r", encoding="utf-8") as file:
+            payload = yaml.safe_load(file) or {}
+
+        for dataset in (payload.get("datasets") or {}).values():
+            path = dataset.get("path")
+            if not path:
+                continue
+
+            filename = Path(path).name
+            contracts[filename] = SchemaContract(
+                columns=tuple(
+                    SchemaColumn(
+                        name=column["name"],
+                        dtype=_DTYPE_MAP[column["dtype"].lower()],
+                        required=column.get("required", True),
+                    )
+                    for column in dataset.get("columns") or []
+                ),
+                allow_extra_columns=dataset.get("allow_extra_columns", False),
+            )
+
+    return contracts
+
+
 def load_yaml_dataset_schemas(data_root: Path | str = "data") -> dict[str, pl.Schema]:
     data_root = Path(data_root)
     schemas: dict[str, pl.Schema] = {}
@@ -92,6 +142,30 @@ def load_yaml_dataset_schemas(data_root: Path | str = "data") -> dict[str, pl.Sc
             )
 
     return schemas
+
+
+def load_yaml_dataset_schema_contracts(data_root: Path | str = "data") -> dict[str, SchemaContract]:
+    data_root = Path(data_root)
+    contracts: dict[str, SchemaContract] = {}
+
+    for schema_path in sorted(data_root.rglob("schema.yaml")):
+        with schema_path.open("r", encoding="utf-8") as file:
+            payload = yaml.safe_load(file) or {}
+
+        for dataset_name, dataset in (payload.get("datasets") or {}).items():
+            contracts[dataset_name] = SchemaContract(
+                columns=tuple(
+                    SchemaColumn(
+                        name=column["name"],
+                        dtype=_DTYPE_MAP[column["dtype"].lower()],
+                        required=column.get("required", True),
+                    )
+                    for column in dataset.get("columns") or []
+                ),
+                allow_extra_columns=dataset.get("allow_extra_columns", False),
+            )
+
+    return contracts
 
 
 @dataclass(frozen=True)
@@ -114,22 +188,33 @@ class EpSummaryValidationResult:
 
 def validate_lazyframe_schema(
     frame: pl.LazyFrame,
-    expected_schema: pl.Schema,
+    expected_schema: pl.Schema | SchemaContract,
 ) -> list[str]:
     actual_schema = frame.collect_schema()
+    if isinstance(expected_schema, SchemaContract):
+        contract = expected_schema
+    else:
+        contract = SchemaContract(
+            columns=tuple(
+                SchemaColumn(name=column, dtype=dtype, required=True)
+                for column, dtype in expected_schema.items()
+            )
+        )
 
-    missing = sorted(set(expected_schema) - set(actual_schema))
-    extra = sorted(set(actual_schema) - set(expected_schema))
+    expected = contract.schema
+    required = contract.required_schema
+    missing = sorted(set(required) - set(actual_schema))
+    extra = sorted(set(actual_schema) - set(expected))
     mismatches = [
-        f"{column}: expected {expected_schema[column]}, got {actual_schema[column]}"
-        for column in expected_schema
-        if column in actual_schema and actual_schema[column] != expected_schema[column]
+        f"{column}: expected {expected[column]}, got {actual_schema[column]}"
+        for column in expected
+        if column in actual_schema and actual_schema[column] != expected[column]
     ]
 
     errors: list[str] = []
     if missing:
         errors.append(f"missing columns: {missing}")
-    if extra:
+    if extra and not contract.allow_extra_columns:
         errors.append(f"unexpected columns: {extra}")
     if mismatches:
         errors.append(f"dtype mismatches: {mismatches}")
@@ -139,7 +224,7 @@ def validate_lazyframe_schema(
 
 def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_dataset_schemas(data_root)
+    schemas = load_yaml_dataset_schema_contracts(data_root)
     vendor_specs = {
         "verisk": ("raw_verisk_ylt", data_root / "ylt" / "verisk"),
         "risklink": ("raw_risklink_ylt", data_root / "ylt" / "risklink"),
@@ -270,17 +355,19 @@ def _coverage_rows(
     field: str,
     path: Path,
     message: str,
+    check_name: str = "modelled_dimension_coverage",
 ) -> pl.LazyFrame:
     return missing_values.with_columns(
         pl.lit(None).cast(pl.String).alias("filename"),
         pl.lit(str(path)).alias("path"),
-        pl.lit("modelled_dimension_coverage").alias("check_name"),
+        pl.lit(check_name).alias("check_name"),
         pl.lit(severity).alias("severity"),
         pl.lit(False).alias("valid"),
         pl.lit(direction).alias("direction"),
         pl.lit(source_group).alias("source_group"),
         pl.lit(dimension).alias("dimension"),
         pl.lit(field).alias("field"),
+        pl.col("count").cast(pl.Int64).alias("count"),
         pl.col("count").cast(pl.Int64).alias("row_count"),
         pl.concat_str(
             [
@@ -374,6 +461,33 @@ def modelled_dimension_coverage_report(
     return report.sort(["severity", "direction", "source_group", "dimension", "value"])
 
 
+def risklink_analysis_coverage_report(
+    ylts: YltValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    data_root = Path(data_root)
+    risklink_ylt_analysis_ids = _unique_values(ylts.frames.risklink, RawCol.anlsid)
+    risklink_ep_analysis_ids = _unique_values(
+        ep_summaries.frame.filter(pl.col(Col.vendor) == "risklink"),
+        Col.analysis_id,
+    )
+    report = _coverage_rows(
+        risklink_ylt_analysis_ids.join(risklink_ep_analysis_ids, on="value", how="anti"),
+        severity="error",
+        direction="input_missing_from_ep_summary",
+        source_group="risklink_ylt",
+        dimension=Col.analysis_id,
+        field=RawCol.anlsid,
+        path=data_root / "ylt" / "risklink" / "*.parquet",
+        message="RiskLink YLT analysis id is missing from RiskLink EP summaries.",
+        check_name="risklink_analysis_coverage",
+    ).collect()
+    if report.is_empty():
+        return empty_modelled_dimension_coverage_report()
+    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
+
+
 def build_semantic_validation_report(
     seeds: SeedValidationResult,
     ylts: YltValidationResult,
@@ -389,8 +503,15 @@ def build_semantic_validation_report(
         return coverage
     if coverage.filter(pl.col("severity") == "error").height:
         return coverage
+    risklink_analysis_coverage = risklink_analysis_coverage_report(ylts, ep_summaries, data_root)
+    if risklink_analysis_coverage.filter(pl.col("severity") == "error").height:
+        return pl.concat([coverage, risklink_analysis_coverage], how="vertical")
     return pl.concat(
-        [coverage, dialsup_peril_selection_report(seeds, ep_summaries, data_root)],
+        [
+            coverage,
+            risklink_analysis_coverage,
+            dialsup_peril_selection_report(seeds, ep_summaries, data_root),
+        ],
         how="vertical",
     )
 
@@ -451,6 +572,15 @@ def ensure_modelled_dimension_coverage(report: pl.DataFrame) -> None:
     error_report = report.filter(pl.col("severity") == "error")
     error_count = error_report.height
     if error_count:
+        if (
+            "message" in error_report.columns
+            and "RiskLink YLT analysis id is missing from RiskLink EP summaries."
+            in error_report.get_column("message").to_list()
+        ):
+            raise ValueError(
+                f"RiskLink YLT analysis id is missing from RiskLink EP summaries. "
+                f"Failed for {error_count} value(s); run `rollup validate` for details"
+            )
         if "dimension" in error_report.columns and Col.is_dialsup in error_report.get_column(
             "dimension"
         ).to_list():
@@ -518,7 +648,7 @@ def load_validated_ep_summary_frames(
     data_root: Path | str = "data",
 ) -> EpSummaryValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_dataset_schemas(data_root)
+    schemas = load_yaml_dataset_schema_contracts(data_root)
     expected_schema = schemas["canonical_ep_summary"]
     folder = data_root / "ep_summaries"
     paths = sorted(folder.rglob("*.long.csv"))
@@ -539,11 +669,11 @@ def load_validated_ep_summary_frames(
             ),
         )
 
-    frame = pl.scan_csv(str(folder / "**" / "*.long.csv"), schema_overrides=expected_schema)
+    frame = pl.scan_csv(str(folder / "**" / "*.long.csv"), schema_overrides=expected_schema.schema)
     rows: list[dict[str, object]] = []
 
     for file_path in paths:
-        file_frame = pl.scan_csv(file_path, schema_overrides=expected_schema)
+        file_frame = pl.scan_csv(file_path, schema_overrides=expected_schema.schema)
         errors = validate_lazyframe_schema(file_frame, expected_schema)
         row_count = None
 
@@ -572,7 +702,7 @@ def pandera_schema_from_polars_schema(schema: pl.Schema) -> pa.DataFrameSchema:
 
 def load_validated_seed_frames(data_root: Path | str = "data") -> SeedValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_file_schemas(data_root)
+    schemas = load_yaml_file_schema_contracts(data_root)
 
     frames: dict[str, pl.DataFrame] = {}
     rows: list[dict[str, object]] = []
@@ -594,8 +724,11 @@ def load_validated_seed_frames(data_root: Path | str = "data") -> SeedValidation
             continue
 
         try:
-            frame = pl.read_csv(file_path, schema_overrides=expected_schema)
-            validated = pandera_schema_from_polars_schema(expected_schema).validate(frame)
+            frame = pl.read_csv(file_path, schema_overrides=expected_schema.schema)
+            errors = validate_lazyframe_schema(frame.lazy(), expected_schema)
+            if errors:
+                raise ValueError("; ".join(errors))
+            validated = frame
         except Exception as exc:
             rows.append(
                 {

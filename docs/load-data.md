@@ -56,6 +56,17 @@ for the detailed source and output tables.
 
 ## Step 3. Check seed lookups
 
+Raw YLT parquet files can be direct vendor extracts with harmless extra columns.
+Minimum required YLT columns are:
+
+- Verisk: `Analysis`, `ExposureAttribute`, `CatalogTypeCode`, `EventID`,
+  `ModelCode`, `YearID`, `GroundUpLoss`. Do not add a row-level `filename`
+  column just for validation; file names come from parquet paths.
+- RiskLink: `anlsid`, `yearid`, `eventid`, `loss`. `p_value`, `meanloss`,
+  `stddev`, and `expvalue` are optional if present in the export.
+
+RiskLink YLT `anlsid` values must match RiskLink EP summary `analysis_id` values.
+
 Check these before validating:
 
 - `data/seeds/business/lobs.csv` must contain every EP `modelled_lob` and every
@@ -80,5 +91,6 @@ Common failures:
 - EP `modelled_peril` is not in `perils.csv`.
 - Verisk YLT `ExposureAttribute` is not in `lobs.csv`.
 - Verisk YLT `Analysis` is not in `perils.csv`.
+- RiskLink YLT `anlsid` is not in the RiskLink EP summary `analysis_id` values.
 
 The anti-join report should be empty. Fix any rows before running the pipeline.

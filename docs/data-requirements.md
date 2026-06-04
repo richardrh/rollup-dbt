@@ -20,6 +20,18 @@ EP summaries used by the pipeline must be long CSVs with exactly:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
+Raw YLT parquet inputs may include extra vendor-export columns. Validation only
+requires the useful columns consumed by the pipeline:
+
+- Verisk: `Analysis`, `ExposureAttribute`, `CatalogTypeCode`, `EventID`,
+  `ModelCode`, `YearID`, `GroundUpLoss`. A row-level `filename` column is not
+  required; validation reports derive file names from parquet paths.
+- RiskLink: `anlsid`, `yearid`, `eventid`, `loss`. Diagnostic columns such as
+  `p_value`, `meanloss`, `stddev`, and `expvalue` are optional.
+
+Every RiskLink YLT `anlsid` must match a RiskLink EP summary `analysis_id` after
+string casting.
+
 ## Creating EP summary long CSVs from wide CSVs
 
 Use `rollup generate-ep-summaries` when an analyst or vendor gives you a wide
@@ -217,6 +229,10 @@ event day fields for RiskLink flood rows.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
 - Inputs must match their colocated `schema.yaml` contracts for required files,
   columns, and types.
+- Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
+  strict and should not contain unexpected columns.
+- Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
+  `analysis_id` values.
 - Seed entries without matching EP/YLT data do not produce anti-join errors and
   are silently ignored downstream.
 - Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking
