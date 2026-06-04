@@ -20,6 +20,19 @@ Inputs belong under `data/`. Generated outputs belong under root `output/`.
 | Verisk event catalogue | `data/seeds/validation/verisk_events.parquet` |
 | RiskLink flood event catalogue | `data/seeds/validation/risklink_flood22_model_events.parquet` |
 
+YLT loading is folder-based by vendor. Put one or more parquet files directly in
+the active vendor folder:
+
+- Verisk: `data/ylt/verisk/*.parquet`
+- RiskLink: `data/ylt/risklink/*.parquet`
+
+Every direct child file ending `.parquet` in those folders is validated and
+loaded. There is no required YLT filename convention beyond the `.parquet`
+extension and correct vendor folder, but use clear names so operators can trace
+validation messages back to source extracts. Do not leave inactive, draft, or test
+parquet files in these active folders because they will be included. Parquet files
+inside subdirectories are ignored by the current glob.
+
 ## Step 2. Convert EP summary CSVs if needed
 
 The pipeline needs these `.long.csv` files:

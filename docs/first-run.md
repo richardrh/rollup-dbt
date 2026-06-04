@@ -20,6 +20,10 @@ Generated outputs land in root `output/`; do not put analyst inputs there.
 
 YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
 the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
+You can provide one or more YLT parquet files per vendor. The pipeline loads every
+direct `*.parquet` file in `data/ylt/verisk/` and `data/ylt/risklink/`; there is
+no required filename pattern beyond the extension. Use clear names, and do not
+place inactive/test parquet files in those folders. Subdirectories are ignored.
 
 EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
 The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and

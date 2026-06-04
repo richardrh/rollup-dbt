@@ -14,6 +14,13 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
 | Seeds | `data/seeds/**` |
 
+YLT contracts support multiple parquet files per vendor. The loader reads all
+direct `*.parquet` files in `data/ylt/verisk/` and `data/ylt/risklink/`; each
+vendor folder must contain at least one matching parquet file. File names do not
+need to follow a naming convention, but meaningful names are recommended for
+operator traceability. Keep inactive/test parquet files out of these active
+folders because they will be loaded. Subdirectories are not scanned.
+
 EP summaries used by the pipeline must be long CSVs with exactly:
 
 ```text
