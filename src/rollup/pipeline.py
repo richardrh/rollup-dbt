@@ -1667,6 +1667,13 @@ def run(
         ylts = validation_inputs.ylts
         ep_summaries = validation_inputs.ep_summaries
         coverage_report = validation_inputs.coverage_report
+        logger.info(
+            "validation summary seed_files=%d ylt_files=%d ep_summary_files=%d coverage_errors=%d",
+            seeds.report.height,
+            ylts.report.height,
+            ep_summaries.report.height,
+            coverage_report.filter(pl.col("severity") == "error").height,
+        )
 
     with logged_phase("staging"):
         for filename, frame in seeds.frames.items():
@@ -1690,6 +1697,11 @@ def run(
         staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
         staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
         staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
+        logger.info(
+            "staging summary seed_frames=%d staging_frames=%d",
+            len(seed_frames),
+            len(staging_frames),
+        )
 
     with logged_phase("intermediate"):
         enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
@@ -1725,6 +1737,7 @@ def run(
 
         ylt_euws_override_applied = apply_euws_overrides_to_ylt(ylt_euws_applied, seeds)
         intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override_applied
+        logger.info("intermediate summary frames=%d", len(intermediate_frames))
 
     with logged_phase("marts"):
         main_fanout = build_main_fanout(ylt_euws_override_applied, risklink_events)

@@ -43,6 +43,7 @@ dev = [
     "pymssql>=2.3.0",
     "testcontainers>=4.13.0",
     "build>=1.5.0",
+    "hypothesis>=6.155.2",
 ]
 
 [tool.uv]
