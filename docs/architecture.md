@@ -59,6 +59,8 @@ corresponding to its bucket.
 This produces the main blended loss stream and also feeds rank
 information downstream for the wide output.
 
+For calculation details, see the [calculation reference](calculation-reference.md).
+
 ## FX
 
 The blended loss (in the YLT's original currency) is converted to GBP
