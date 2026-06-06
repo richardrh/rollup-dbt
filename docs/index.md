@@ -13,8 +13,8 @@ uv run rollup validate        # check inputs before a run
 uv run rollup run             # write normal outputs and analysis/ep_report.csv
 uv run rollup run --debug     # also write intermediate frames to output/debug/
 uv run rollup analyze         # write output/analysis/ep_report.csv
-uv run rollup docs            # start these docs in the background
-uv run rollup docs --foreground  # serve docs in the current terminal
+uv run rollup docs            # serve these docs locally
+uv run rollup docs --host localhost --port 4322
 ```
 
 ## Inputs and outputs
@@ -30,9 +30,10 @@ uv run rollup docs --foreground  # serve docs in the current terminal
 - Debug frames are written to `output/debug/` only when `--debug` is used.
 
 Start with [Quickstart](first-run.md). On Windows, use the
-[Windows install guide](windows-install.md) first to install `uv` and build a
-local environment. Then use [Loading your data](load-data.md) for exact file
-locations. If a YLT arrives as CSV, see [Utilities](utilities.md) for the DuckDB
-CSV-to-Parquet command. For reference details, see the
-[data-flow architecture](architecture.md), [schema contracts](schema-contracts.md),
-and [seed files](data-requirements.md#seed-files).
+[Windows install guide](windows-install.md) first. Use [Loading your data](load-data.md)
+for exact file locations and [EP summaries](ep-summaries.md) when converting wide
+vendor CSVs to `.long.csv` inputs. If a YLT arrives as CSV, see
+[Utilities](utilities.md) for the DuckDB CSV-to-Parquet command.
+
+For reference details, see the [data-flow architecture](architecture.md),
+[schema contracts](schema-contracts.md), and [seed files](data-requirements.md#seed-files).

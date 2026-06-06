@@ -31,31 +31,26 @@ Required EP summary columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-Need to convert a vendor/source EP summary CSV to `.long.csv`?
-
-1. Put the source CSV in `data/ep_summaries/<vendor>/`.
-2. Run one of these commands:
+Need to convert a vendor/source EP summary CSV to `.long.csv`? Put the source CSV
+in `data/ep_summaries/<vendor>/`, then run either the interactive converter or a
+specific non-interactive conversion:
 
 ```bash
 uv run rollup generate-ep-summaries
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-If you are using the standalone analyst bundle, run the bundled executable
-instead of `uv run rollup`:
+With the standalone analyst bundle, run the bundled executable instead of
+`uv run rollup`:
 
 ```bash
 dist/rollup/rollup generate-ep-summaries
 dist/rollup/rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-3. Check the output file:
-   - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
-   - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
-4. Continue to Step 3 and validate.
-
-For required source columns and output columns, see
-[Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs).
+Check that the converter wrote the expected `.long.csv`, then continue to Step 3
+and validate. For source columns, aliases, and examples, see
+[EP summaries](ep-summaries.md).
 
 ## Step 2. Check seed lookups
 
