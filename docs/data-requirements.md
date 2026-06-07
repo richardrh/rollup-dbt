@@ -14,11 +14,30 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
 | Seeds | `data/seeds/**` |
 
+YLT contracts support multiple parquet files per vendor. The loader reads all
+direct `*.parquet` files in `data/ylt/verisk/` and `data/ylt/risklink/`; each
+vendor folder must contain at least one matching parquet file. File names do not
+need to follow a naming convention, but meaningful names are recommended for
+operator traceability. Keep inactive/test parquet files out of these active
+folders because they will be loaded. Subdirectories are not scanned.
+
 EP summaries used by the pipeline must be long CSVs with exactly:
 
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
+
+Raw YLT parquet inputs may include extra vendor-export columns. Validation only
+requires the useful columns consumed by the pipeline:
+
+- Verisk: `Analysis`, `ExposureAttribute`, `CatalogTypeCode`, `EventID`,
+  `ModelCode`, `YearID`, `GroundUpLoss`. A row-level `filename` column is not
+  required; validation reports derive file names from parquet paths.
+- RiskLink: `anlsid`, `yearid`, `eventid`, `loss`. Diagnostic columns such as
+  `p_value`, `meanloss`, `stddev`, and `expvalue` are optional.
+
+Every RiskLink YLT `anlsid` must match a RiskLink EP summary `analysis_id` after
+string casting.
 
 ## Creating EP summary long CSVs from wide CSVs
 
@@ -217,6 +236,10 @@ event day fields for RiskLink flood rows.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
 - Inputs must match their colocated `schema.yaml` contracts for required files,
   columns, and types.
+- Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
+  strict and should not contain unexpected columns.
+- Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
+  `analysis_id` values.
 - Seed entries without matching EP/YLT data do not produce anti-join errors and
   are silently ignored downstream.
 - Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking

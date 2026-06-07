@@ -124,6 +124,8 @@ The report contains 2,100 rows (typical) with columns:
 
 - [Data requirements](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs) —
   full reference for the wide-to-long converter
+- [Calculation reference](calculation-reference.md) — how EP summaries are
+  selected, joined, and used for blending
 - [Adding LOBs and perils](adding-lobs-perils.md) — how to register new LOBs
   and perils in the business seed files
 - [Operating modes](operating-modes.md) — running the pipeline and analysis

@@ -34,5 +34,5 @@ Start with [Quickstart](first-run.md). On Windows, use the
 local environment. Then use [Loading your data](load-data.md) for exact file
 locations. If a YLT arrives as CSV, see [Utilities](utilities.md) for the DuckDB
 CSV-to-Parquet command. For reference details, see the
-[data-flow architecture](architecture.md), [schema contracts](schema-contracts.md),
-and [seed files](data-requirements.md#seed-files).
+[data-flow architecture](architecture.md), [calculation reference](calculation-reference.md),
+[schema contracts](schema-contracts.md), and [seed files](data-requirements.md#seed-files).
