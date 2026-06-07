@@ -21,12 +21,30 @@ rollup run
 
 ```bash
 uv run rollup run
+uv run rollup --log-file output/run.log run
 ```
 
 Writes mart fanouts to `output/marts/`, wide/report parquets to `output/`, and
 `output/analysis/ep_report.csv`. The wide combined-all-factors parquet is
 `output/mts_tbl_ylt_combined_all_factors_wide.parquet` with forecast loss
-columns such as `main_YYYYMM_loss` and `dialsup_YYYYMM_loss`.
+columns such as `euws_override_YYYYMM_loss` and
+`dialsup_gbp_forecast_YYYYMM_loss`.
+
+Use global `--log-file` before the subcommand to keep an operational run log
+while still printing the same logs to the console/stdout. Parent directories are
+created automatically:
+
+```bash
+uv run rollup --log-file output/run.log run
+uv run rollup --log-file output/validate.log validate
+```
+
+Logging and debug output are separate controls:
+
+- `--debug` on `rollup run` writes intermediate parquet frames under
+  `output/debug/` for data inspection.
+- `--log-level DEBUG` increases log verbosity.
+- `--log-file output/run.log` writes logs to a file as well as stdout.
 
 ## SQL Server check and push
 
@@ -60,7 +78,7 @@ one CSV per validation table under the chosen directory.
 uv run rollup run --debug
 ```
 
-Also writes stage frames to `output/debug/` with prefixes:
+Writes stage frames to `output/debug/` with prefixes:
 
 - `seed_*`
 - `stg_*`

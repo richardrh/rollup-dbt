@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,25 @@ def test_parser_accepts_global_config_before_sql_check() -> None:
 
     assert args.command == "sql-check"
     assert args.config == Path("custom.toml")
+
+
+def test_parser_accepts_global_log_file() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["--log-file", "output/run.log", "run"])
+
+    assert args.command == "run"
+    assert args.log_file == Path("output/run.log")
+
+
+def test_configure_logging_writes_to_log_file(tmp_path: Path) -> None:
+    log_file = tmp_path / "logs" / "run.log"
+
+    cli.configure_logging("INFO", log_file=log_file)
+    logging.getLogger("rollup.test").info("expected log line")
+
+    assert log_file.is_file()
+    assert "expected log line" in log_file.read_text(encoding="utf-8")
 
 
 def test_parser_accepts_test_sql_alias_with_config() -> None:

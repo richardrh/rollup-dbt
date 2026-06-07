@@ -14,11 +14,30 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
 | Seeds | `data/seeds/**` |
 
+YLT contracts support multiple parquet files per vendor. The loader reads all
+direct `*.parquet` files in `data/ylt/verisk/` and `data/ylt/risklink/`; each
+vendor folder must contain at least one matching parquet file. File names do not
+need to follow a naming convention, but meaningful names are recommended for
+operator traceability. Keep inactive/test parquet files out of these active
+folders because they will be loaded. Subdirectories are not scanned.
+
 EP summaries used by the pipeline must be long CSVs with exactly:
 
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
+
+Raw YLT parquet inputs may include extra vendor-export columns. Validation only
+requires the useful columns consumed by the pipeline:
+
+- Verisk: `Analysis`, `ExposureAttribute`, `CatalogTypeCode`, `EventID`,
+  `ModelCode`, `YearID`, `GroundUpLoss`. A row-level `filename` column is not
+  required; validation reports derive file names from parquet paths.
+- RiskLink: `anlsid`, `yearid`, `eventid`, `loss`. Diagnostic columns such as
+  `p_value`, `meanloss`, `stddev`, and `expvalue` are optional.
+
+Every RiskLink YLT `anlsid` must match a RiskLink EP summary `analysis_id` after
+string casting.
 
 ## Creating EP summary long CSVs from wide CSVs
 
@@ -151,11 +170,18 @@ application.
 Peril lookup from GC/vendor `modelled_peril` values to rollup peril labels,
 region/peril labels, and `region_peril_id`.
 
-`selection_priority` chooses the preferred modelled peril variant when multiple
-modelled perils map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower
-numbers win. Missing priorities are filled as `99` during EP staging; schema text
-uses `99` as the normal fallback priority, and some calling contexts treat the
-fallback/default as `99`/`100`.
+`selection_priority` chooses the main pipeline's preferred modelled peril variant
+when multiple modelled perils map to the same vendor, `rollup_lob`, and
+`rollup_peril`. Lower numbers win. Missing priorities are filled as `99` during
+EP staging; schema text uses `99` as the normal fallback priority, and some
+calling contexts treat the fallback/default as `99`/`100`.
+
+`is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
+candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
+alternatives should generally be `0` unless they are the only sensible base
+candidate. The main pipeline ignores this flag and continues to use
+`selection_priority`. DIALSUP output can differ from the main output when this
+flag selects a different source peril.
 
 ### `data/seeds/vor/blending_factors.csv`
 
@@ -210,6 +236,10 @@ event day fields for RiskLink flood rows.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
 - Inputs must match their colocated `schema.yaml` contracts for required files,
   columns, and types.
+- Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
+  strict and should not contain unexpected columns.
+- Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
+  `analysis_id` values.
 - Seed entries without matching EP/YLT data do not produce anti-join errors and
   are silently ignored downstream.
 - Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking

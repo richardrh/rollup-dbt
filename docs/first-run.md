@@ -20,6 +20,10 @@ Generated outputs land in root `output/`; do not put analyst inputs there.
 
 YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
 the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
+You can provide one or more YLT parquet files per vendor. The pipeline loads every
+direct `*.parquet` file in `data/ylt/verisk/` and `data/ylt/risklink/`; there is
+no required filename pattern beyond the extension. Use clear names, and do not
+place inactive/test parquet files in those folders. Subdirectories are ignored.
 
 EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
 The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
@@ -59,8 +63,14 @@ Check these files before validation:
 - `data/seeds/business/lobs.csv`: must contain every EP/YLT modelled LOB; maps
   to rollup LOB, class, office, currency, and CDS class metadata.
 - `data/seeds/business/perils.csv`: must contain every EP/YLT modelled peril;
-  maps to rollup peril, region/peril labels, `region_peril_id`, and
-  `selection_priority`.
+  maps to rollup peril, region/peril labels, `region_peril_id`, and main-pipeline
+  `selection_priority`. It also includes DIALSUP-only `is_dialsup`, which must
+  mark exactly one active base/least-adjusted DIALSUP candidate per vendor,
+  rollup LOB, and rollup peril.
+
+The anti-join validation only flags the reverse: input values missing from seed
+files. Adding a seed entry without matching data will not cause errors, but it
+will also not be used by the pipeline.
 
 The anti-join validation only flags the reverse: input values missing from seed
 files. Adding a seed entry without matching data will not cause errors, but it

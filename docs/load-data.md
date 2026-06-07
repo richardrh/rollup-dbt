@@ -20,6 +20,19 @@ Inputs belong under `data/`. Generated outputs belong under root `output/`.
 | Verisk event catalogue | `data/seeds/validation/verisk_events.parquet` |
 | RiskLink flood event catalogue | `data/seeds/validation/risklink_flood22_model_events.parquet` |
 
+YLT loading is folder-based by vendor. Put one or more parquet files directly in
+the active vendor folder:
+
+- Verisk: `data/ylt/verisk/*.parquet`
+- RiskLink: `data/ylt/risklink/*.parquet`
+
+Every direct child file ending `.parquet` in those folders is validated and
+loaded. There is no required YLT filename convention beyond the `.parquet`
+extension and correct vendor folder, but use clear names so operators can trace
+validation messages back to source extracts. Do not leave inactive, draft, or test
+parquet files in these active folders because they will be included. Parquet files
+inside subdirectories are ignored by the current glob.
+
 ## Step 2. Convert EP summary CSVs if needed
 
 The pipeline needs these `.long.csv` files:
@@ -56,6 +69,17 @@ for the detailed source and output tables.
 
 ## Step 3. Check seed lookups
 
+Raw YLT parquet files can be direct vendor extracts with harmless extra columns.
+Minimum required YLT columns are:
+
+- Verisk: `Analysis`, `ExposureAttribute`, `CatalogTypeCode`, `EventID`,
+  `ModelCode`, `YearID`, `GroundUpLoss`. Do not add a row-level `filename`
+  column just for validation; file names come from parquet paths.
+- RiskLink: `anlsid`, `yearid`, `eventid`, `loss`. `p_value`, `meanloss`,
+  `stddev`, and `expvalue` are optional if present in the export.
+
+RiskLink YLT `anlsid` values must match RiskLink EP summary `analysis_id` values.
+
 Check these before validating:
 
 - `data/seeds/business/lobs.csv` must contain every EP `modelled_lob` and every
@@ -63,7 +87,10 @@ Check these before validating:
   metadata.
 - `data/seeds/business/perils.csv` must contain every EP `modelled_peril` and
   every YLT modelled peril. It maps to rollup peril, region/peril labels,
-  `region_peril_id`, and `selection_priority`.
+  `region_peril_id`, main-pipeline `selection_priority`, and DIALSUP-only
+  `is_dialsup`. Use `is_dialsup = 1` for exactly one active base/least-adjusted
+  DIALSUP candidate per vendor, rollup LOB, and rollup peril; adjusted
+  alternatives should generally be `0`.
 
 ## Step 4. Validate the drop
 
@@ -77,5 +104,6 @@ Common failures:
 - EP `modelled_peril` is not in `perils.csv`.
 - Verisk YLT `ExposureAttribute` is not in `lobs.csv`.
 - Verisk YLT `Analysis` is not in `perils.csv`.
+- RiskLink YLT `anlsid` is not in the RiskLink EP summary `analysis_id` values.
 
 The anti-join report should be empty. Fix any rows before running the pipeline.

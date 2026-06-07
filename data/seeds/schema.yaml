@@ -101,6 +101,12 @@ datasets:
           required: true,
           description: Priority for selecting one modelled peril per vendor, rollup LOB, and rollup peril. Lower values win; 99 means fallback.,
         }
+      - {
+          name: is_dialsup,
+          dtype: int64,
+          required: true,
+          description: DIALSUP peril-selection flag. Exactly one active candidate per vendor, rollup LOB, and rollup peril must be 1; adjusted alternatives should be 0.,
+        }
 
   blending_factors:
     role: source

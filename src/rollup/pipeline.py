@@ -51,6 +51,27 @@ class SeedValidationResult:
     report: pl.DataFrame
 
 
+@dataclass(frozen=True)
+class SchemaColumn:
+    name: str
+    dtype: pl.DataType
+    required: bool
+
+
+@dataclass(frozen=True)
+class SchemaContract:
+    columns: tuple[SchemaColumn, ...]
+    allow_extra_columns: bool = False
+
+    @property
+    def schema(self) -> pl.Schema:
+        return pl.Schema({column.name: column.dtype for column in self.columns})
+
+    @property
+    def required_schema(self) -> pl.Schema:
+        return pl.Schema({column.name: column.dtype for column in self.columns if column.required})
+
+
 def load_yaml_file_schemas(data_root: Path | str = "data") -> dict[str, pl.Schema]:
     data_root = Path(data_root)
     schemas: dict[str, pl.Schema] = {}
@@ -75,6 +96,35 @@ def load_yaml_file_schemas(data_root: Path | str = "data") -> dict[str, pl.Schem
     return schemas
 
 
+def load_yaml_file_schema_contracts(data_root: Path | str = "data") -> dict[str, SchemaContract]:
+    data_root = Path(data_root)
+    contracts: dict[str, SchemaContract] = {}
+
+    for schema_path in sorted(data_root.rglob("schema.yaml")):
+        with schema_path.open("r", encoding="utf-8") as file:
+            payload = yaml.safe_load(file) or {}
+
+        for dataset in (payload.get("datasets") or {}).values():
+            path = dataset.get("path")
+            if not path:
+                continue
+
+            filename = Path(path).name
+            contracts[filename] = SchemaContract(
+                columns=tuple(
+                    SchemaColumn(
+                        name=column["name"],
+                        dtype=_DTYPE_MAP[column["dtype"].lower()],
+                        required=column.get("required", True),
+                    )
+                    for column in dataset.get("columns") or []
+                ),
+                allow_extra_columns=dataset.get("allow_extra_columns", False),
+            )
+
+    return contracts
+
+
 def load_yaml_dataset_schemas(data_root: Path | str = "data") -> dict[str, pl.Schema]:
     data_root = Path(data_root)
     schemas: dict[str, pl.Schema] = {}
@@ -92,6 +142,30 @@ def load_yaml_dataset_schemas(data_root: Path | str = "data") -> dict[str, pl.Sc
             )
 
     return schemas
+
+
+def load_yaml_dataset_schema_contracts(data_root: Path | str = "data") -> dict[str, SchemaContract]:
+    data_root = Path(data_root)
+    contracts: dict[str, SchemaContract] = {}
+
+    for schema_path in sorted(data_root.rglob("schema.yaml")):
+        with schema_path.open("r", encoding="utf-8") as file:
+            payload = yaml.safe_load(file) or {}
+
+        for dataset_name, dataset in (payload.get("datasets") or {}).items():
+            contracts[dataset_name] = SchemaContract(
+                columns=tuple(
+                    SchemaColumn(
+                        name=column["name"],
+                        dtype=_DTYPE_MAP[column["dtype"].lower()],
+                        required=column.get("required", True),
+                    )
+                    for column in dataset.get("columns") or []
+                ),
+                allow_extra_columns=dataset.get("allow_extra_columns", False),
+            )
+
+    return contracts
 
 
 @dataclass(frozen=True)
@@ -114,22 +188,33 @@ class EpSummaryValidationResult:
 
 def validate_lazyframe_schema(
     frame: pl.LazyFrame,
-    expected_schema: pl.Schema,
+    expected_schema: pl.Schema | SchemaContract,
 ) -> list[str]:
     actual_schema = frame.collect_schema()
+    if isinstance(expected_schema, SchemaContract):
+        contract = expected_schema
+    else:
+        contract = SchemaContract(
+            columns=tuple(
+                SchemaColumn(name=column, dtype=dtype, required=True)
+                for column, dtype in expected_schema.items()
+            )
+        )
 
-    missing = sorted(set(expected_schema) - set(actual_schema))
-    extra = sorted(set(actual_schema) - set(expected_schema))
+    expected = contract.schema
+    required = contract.required_schema
+    missing = sorted(set(required) - set(actual_schema))
+    extra = sorted(set(actual_schema) - set(expected))
     mismatches = [
-        f"{column}: expected {expected_schema[column]}, got {actual_schema[column]}"
-        for column in expected_schema
-        if column in actual_schema and actual_schema[column] != expected_schema[column]
+        f"{column}: expected {expected[column]}, got {actual_schema[column]}"
+        for column in expected
+        if column in actual_schema and actual_schema[column] != expected[column]
     ]
 
     errors: list[str] = []
     if missing:
         errors.append(f"missing columns: {missing}")
-    if extra:
+    if extra and not contract.allow_extra_columns:
         errors.append(f"unexpected columns: {extra}")
     if mismatches:
         errors.append(f"dtype mismatches: {mismatches}")
@@ -139,7 +224,7 @@ def validate_lazyframe_schema(
 
 def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_dataset_schemas(data_root)
+    schemas = load_yaml_dataset_schema_contracts(data_root)
     vendor_specs = {
         "verisk": ("raw_verisk_ylt", data_root / "ylt" / "verisk"),
         "risklink": ("raw_risklink_ylt", data_root / "ylt" / "risklink"),
@@ -270,17 +355,19 @@ def _coverage_rows(
     field: str,
     path: Path,
     message: str,
+    check_name: str = "modelled_dimension_coverage",
 ) -> pl.LazyFrame:
     return missing_values.with_columns(
         pl.lit(None).cast(pl.String).alias("filename"),
         pl.lit(str(path)).alias("path"),
-        pl.lit("modelled_dimension_coverage").alias("check_name"),
+        pl.lit(check_name).alias("check_name"),
         pl.lit(severity).alias("severity"),
         pl.lit(False).alias("valid"),
         pl.lit(direction).alias("direction"),
         pl.lit(source_group).alias("source_group"),
         pl.lit(dimension).alias("dimension"),
         pl.lit(field).alias("field"),
+        pl.col("count").cast(pl.Int64).alias("count"),
         pl.col("count").cast(pl.Int64).alias("row_count"),
         pl.concat_str(
             [
@@ -374,18 +461,133 @@ def modelled_dimension_coverage_report(
     return report.sort(["severity", "direction", "source_group", "dimension", "value"])
 
 
+def risklink_analysis_coverage_report(
+    ylts: YltValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    data_root = Path(data_root)
+    risklink_ylt_analysis_ids = _unique_values(ylts.frames.risklink, RawCol.anlsid)
+    risklink_ep_analysis_ids = _unique_values(
+        ep_summaries.frame.filter(pl.col(Col.vendor) == "risklink"),
+        Col.analysis_id,
+    )
+    report = _coverage_rows(
+        risklink_ylt_analysis_ids.join(risklink_ep_analysis_ids, on="value", how="anti"),
+        severity="error",
+        direction="input_missing_from_ep_summary",
+        source_group="risklink_ylt",
+        dimension=Col.analysis_id,
+        field=RawCol.anlsid,
+        path=data_root / "ylt" / "risklink" / "*.parquet",
+        message="RiskLink YLT analysis id is missing from RiskLink EP summaries.",
+        check_name="risklink_analysis_coverage",
+    ).collect()
+    if report.is_empty():
+        return empty_modelled_dimension_coverage_report()
+    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
+
+
 def build_semantic_validation_report(
     seeds: SeedValidationResult,
     ylts: YltValidationResult,
     ep_summaries: EpSummaryValidationResult,
     data_root: Path | str = "data",
 ) -> pl.DataFrame:
-    return modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
+    coverage = modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
+    structural_report = pl.concat(
+        [seeds.report, ylts.report, ep_summaries.report],
+        how="diagonal_relaxed",
+    )
+    if structural_report.filter(~pl.col("valid")).height:
+        return coverage
+    if coverage.filter(pl.col("severity") == "error").height:
+        return coverage
+    risklink_analysis_coverage = risklink_analysis_coverage_report(ylts, ep_summaries, data_root)
+    if risklink_analysis_coverage.filter(pl.col("severity") == "error").height:
+        return pl.concat([coverage, risklink_analysis_coverage], how="vertical")
+    return pl.concat(
+        [
+            coverage,
+            risklink_analysis_coverage,
+            dialsup_peril_selection_report(seeds, ep_summaries, data_root),
+        ],
+        how="vertical",
+    )
+
+
+def dialsup_peril_selection_report(
+    seeds: SeedValidationResult,
+    ep_summaries: EpSummaryValidationResult,
+    data_root: Path | str = "data",
+) -> pl.DataFrame:
+    if "lobs.csv" not in seeds.frames or "perils.csv" not in seeds.frames:
+        return empty_modelled_dimension_coverage_report()
+
+    perils_frame = seeds.frames["perils.csv"]
+    if Col.is_dialsup not in perils_frame.columns:
+        return empty_modelled_dimension_coverage_report()
+
+    data_root = Path(data_root)
+    lobs = seeds.frames["lobs.csv"].lazy().select(Col.modelled_lob, Col.rollup_lob)
+    perils = perils_frame.lazy().select(
+        Col.modelled_peril,
+        Col.rollup_peril,
+        Col.is_dialsup,
+    )
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    invalid_groups = (
+        ep_summaries.frame.join(lobs, on=Col.modelled_lob, how="inner")
+        .join(perils, on=Col.modelled_peril, how="inner")
+        .select(*selection_keys, Col.modelled_peril, Col.is_dialsup)
+        .unique()
+        .group_by(selection_keys)
+        .agg(
+            pl.col(Col.is_dialsup).sum().cast(pl.Int64).alias("count"),
+            pl.col(Col.modelled_peril)
+            .filter(pl.col(Col.is_dialsup) == 1)
+            .sort()
+            .first()
+            .alias("value"),
+        )
+        .with_columns(pl.col("value").fill_null("<none>"))
+        .filter(pl.col("count") != 1)
+    )
+    report = _coverage_rows(
+        invalid_groups,
+        severity="error",
+        direction="invalid_seed_configuration",
+        source_group="ep_summaries",
+        dimension=Col.is_dialsup,
+        field=Col.is_dialsup,
+        path=data_root / "seeds" / "business" / "perils.csv",
+        message="Active vendor/rollup_lob/rollup_peril group must have exactly one is_dialsup=1 candidate in perils.csv.",
+    ).collect()
+    if report.is_empty():
+        return empty_modelled_dimension_coverage_report()
+    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
 
 
 def ensure_modelled_dimension_coverage(report: pl.DataFrame) -> None:
-    error_count = report.filter(pl.col("severity") == "error").height
+    error_report = report.filter(pl.col("severity") == "error")
+    error_count = error_report.height
     if error_count:
+        if (
+            "message" in error_report.columns
+            and "RiskLink YLT analysis id is missing from RiskLink EP summaries."
+            in error_report.get_column("message").to_list()
+        ):
+            raise ValueError(
+                f"RiskLink YLT analysis id is missing from RiskLink EP summaries. "
+                f"Failed for {error_count} value(s); run `rollup validate` for details"
+            )
+        if "dimension" in error_report.columns and Col.is_dialsup in error_report.get_column(
+            "dimension"
+        ).to_list():
+            raise ValueError(
+                f"DIALSUP peril selection validation failed for {error_count} active group(s); "
+                "run `rollup validate` for details"
+            )
         raise ValueError(
             f"modelled LOB/peril coverage validation failed for {error_count} value(s); "
             "run `rollup validate` for details"
@@ -446,7 +648,7 @@ def load_validated_ep_summary_frames(
     data_root: Path | str = "data",
 ) -> EpSummaryValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_dataset_schemas(data_root)
+    schemas = load_yaml_dataset_schema_contracts(data_root)
     expected_schema = schemas["canonical_ep_summary"]
     folder = data_root / "ep_summaries"
     paths = sorted(folder.rglob("*.long.csv"))
@@ -467,11 +669,11 @@ def load_validated_ep_summary_frames(
             ),
         )
 
-    frame = pl.scan_csv(str(folder / "**" / "*.long.csv"), schema_overrides=expected_schema)
+    frame = pl.scan_csv(str(folder / "**" / "*.long.csv"), schema_overrides=expected_schema.schema)
     rows: list[dict[str, object]] = []
 
     for file_path in paths:
-        file_frame = pl.scan_csv(file_path, schema_overrides=expected_schema)
+        file_frame = pl.scan_csv(file_path, schema_overrides=expected_schema.schema)
         errors = validate_lazyframe_schema(file_frame, expected_schema)
         row_count = None
 
@@ -500,7 +702,7 @@ def pandera_schema_from_polars_schema(schema: pl.Schema) -> pa.DataFrameSchema:
 
 def load_validated_seed_frames(data_root: Path | str = "data") -> SeedValidationResult:
     data_root = Path(data_root)
-    schemas = load_yaml_file_schemas(data_root)
+    schemas = load_yaml_file_schema_contracts(data_root)
 
     frames: dict[str, pl.DataFrame] = {}
     rows: list[dict[str, object]] = []
@@ -522,8 +724,11 @@ def load_validated_seed_frames(data_root: Path | str = "data") -> SeedValidation
             continue
 
         try:
-            frame = pl.read_csv(file_path, schema_overrides=expected_schema)
-            validated = pandera_schema_from_polars_schema(expected_schema).validate(frame)
+            frame = pl.read_csv(file_path, schema_overrides=expected_schema.schema)
+            errors = validate_lazyframe_schema(frame.lazy(), expected_schema)
+            if errors:
+                raise ValueError("; ".join(errors))
+            validated = frame
         except Exception as exc:
             rows.append(
                 {
@@ -567,6 +772,7 @@ class EnrichedYltFrames:
 class StagedEpSummaries:
     enriched: pl.LazyFrame
     selected: pl.LazyFrame
+    selected_dialsup: pl.LazyFrame
 
 
 @dataclass(frozen=True)
@@ -629,7 +835,7 @@ def load_pipeline_validation_inputs(
     seeds = load_validated_seed_frames(data_root)
     ylts = load_validated_ylt_frames(data_root)
     ep_summaries = load_validated_ep_summary_frames(data_root)
-    coverage_report = modelled_dimension_coverage_report(
+    coverage_report = build_semantic_validation_report(
         seeds,
         ylts,
         ep_summaries,
@@ -677,8 +883,14 @@ def normalize_ylt(ylt: YltValidationResult) -> NormalizedYltFrames:
 def enrich_ylt_with_ep_summaries(
     normalized_ylt: NormalizedYltFrames,
     staged_ep_summaries: StagedEpSummaries,
+    *,
+    use_dialsup_selection: bool = False,
 ) -> EnrichedYltFrames:
-    ep_summary = staged_ep_summaries.selected
+    ep_summary = (
+        staged_ep_summaries.selected_dialsup
+        if use_dialsup_selection
+        else staged_ep_summaries.selected
+    )
 
     verisk_keys = (
         ep_summary.filter(pl.col(Col.vendor) == "verisk")
@@ -781,6 +993,7 @@ def stage_ep_summaries(
         "peril",
         Col.region_peril_id,
         Col.selection_priority,
+        Col.is_dialsup,
     )
 
     enriched = (
@@ -789,6 +1002,26 @@ def stage_ep_summaries(
         .with_columns(pl.col(Col.selection_priority).fill_null(99))
     )
     selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    selected_modelled_perils = _select_modelled_perils_by_priority(enriched, selection_keys)
+    selected_dialsup_modelled_perils = _select_dialsup_modelled_perils(enriched, selection_keys)
+    selected = enriched.join(
+        selected_modelled_perils,
+        on=[*selection_keys, Col.modelled_peril],
+        how="inner",
+    )
+    selected_dialsup = enriched.join(
+        selected_dialsup_modelled_perils,
+        on=[*selection_keys, Col.modelled_peril],
+        how="inner",
+    )
+
+    return StagedEpSummaries(enriched=enriched, selected=selected, selected_dialsup=selected_dialsup)
+
+
+def _select_modelled_perils_by_priority(
+    enriched: pl.LazyFrame,
+    selection_keys: list[str],
+) -> pl.LazyFrame:
     selected_candidates = enriched.select(
         *selection_keys,
         Col.modelled_peril,
@@ -797,7 +1030,7 @@ def stage_ep_summaries(
     selected_priorities = selected_candidates.group_by(selection_keys).agg(
         pl.col(Col.selection_priority).min()
     )
-    selected_modelled_perils = (
+    return (
         selected_candidates.join(
             selected_priorities,
             on=[*selection_keys, Col.selection_priority],
@@ -808,13 +1041,17 @@ def stage_ep_summaries(
         .first()
         .select(*selection_keys, Col.modelled_peril)
     )
-    selected = enriched.join(
-        selected_modelled_perils,
-        on=[*selection_keys, Col.modelled_peril],
-        how="inner",
-    )
 
-    return StagedEpSummaries(enriched=enriched, selected=selected)
+
+def _select_dialsup_modelled_perils(
+    enriched: pl.LazyFrame,
+    selection_keys: list[str],
+) -> pl.LazyFrame:
+    return (
+        enriched.filter(pl.col(Col.is_dialsup) == 1)
+        .select(*selection_keys, Col.modelled_peril)
+        .unique()
+    )
 
 
 def _validation_has_blocking_errors(inputs: PipelineValidationInputs) -> bool:
@@ -1036,44 +1273,32 @@ def calculate_ep_blending_targets(
     )
 
 
+def _add_rank_columns(ylt: pl.LazyFrame) -> pl.LazyFrame:
+    return ylt.with_columns(
+        pl.col(Col.loss)
+        .rank(method="ordinal", descending=True)
+        .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
+        .cast(pl.Int64)
+        .alias(Col.rnk)
+    ).with_columns(
+        pl.when(pl.col(Col.vendor) == "risklink")
+        .then(100_000.0 / pl.col(Col.rnk))
+        .otherwise(10_000.0 / pl.col(Col.rnk))
+        .alias(Col.rp)
+    ).with_columns(
+        pl.when(pl.col(Col.rp) < 200)
+        .then(pl.lit(0))
+        .when(pl.col(Col.rp) < 1000)
+        .then(pl.lit(200))
+        .otherwise(pl.lit(1000))
+        .alias(Col.rp_bucket)
+    )
+
+
 def apply_ep_blending_to_ylt(
-    enriched_ylts: EnrichedYltFrames,
+    ylt: pl.LazyFrame,
     ep_blending_targets: EpBlendingTargets,
-) -> dict[str, pl.LazyFrame]:
-    base_model_expr = (
-        pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
-        .then(pl.lit("risklink"))
-        .otherwise(pl.lit("verisk"))
-    )
-    base_model_only = (
-        enriched_ylts.combined.with_columns(base_model_expr.alias(Col.base_model))
-        .filter(pl.col(Col.vendor) == pl.col(Col.base_model))
-    )
-
-    ranked = (
-        base_model_only.with_columns(
-            pl.col(Col.loss)
-            .rank(method="ordinal", descending=True)
-            .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
-            .cast(pl.Int64)
-            .alias(Col.rnk)
-        )
-        .with_columns(
-            pl.when(pl.col(Col.vendor) == "risklink")
-            .then(100_000.0 / pl.col(Col.rnk))
-            .otherwise(10_000.0 / pl.col(Col.rnk))
-            .alias(Col.rp)
-        )
-        .with_columns(
-            pl.when(pl.col(Col.rp) < 200)
-            .then(pl.lit(0))
-            .when(pl.col(Col.rp) < 1000)
-            .then(pl.lit(200))
-            .otherwise(pl.lit(1000))
-            .alias(Col.rp_bucket),
-        )
-    )
-
+) -> pl.LazyFrame:
     factors = ep_blending_targets.blended.select(
         Col.rollup_lob,
         Col.rollup_peril,
@@ -1088,8 +1313,9 @@ def apply_ep_blending_to_ylt(
         Col.uplift_factor_on_base_model,
     )
 
-    blended = (
-        ranked.join(
+    ylt_cols = ylt.collect_schema().names()
+    return (
+        ylt.join(
             factors,
             on=[
                 Col.rollup_lob,
@@ -1101,22 +1327,15 @@ def apply_ep_blending_to_ylt(
             how="inner",
         )
         .with_columns(
-            pl.col(Col.loss).alias(Col.original_ylt_loss),
-            (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias(
-                Col.original_ylt_loss_blended
-            ),
+            (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias(Col.loss),
+            pl.lit("blended").alias(Col.metric),
         )
+        .select(ylt_cols)
     )
-
-    return {
-        "ylt_base_model": base_model_only,
-        "ylt_ranked_bucketed": ranked,
-        "ylt_blending_applied": blended,
-    }
 
 
 def apply_fx_to_ylt(
-    blended_ylt: pl.LazyFrame,
+    blended: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     fx_rates = (
@@ -1131,15 +1350,19 @@ def apply_fx_to_ylt(
         )
     )
 
-    return blended_ylt.join(fx_rates, on=Col.currency, how="inner").with_columns(
-        (
-            pl.col(Col.original_ylt_loss_blended) * pl.col(Col.fx_rate)
-        ).alias(Col.original_ylt_loss_blended_gbp)
+    blended_cols = blended.collect_schema().names()
+    return (
+        blended.join(fx_rates, on=Col.currency, how="inner")
+        .with_columns(
+            (pl.col(Col.loss) * pl.col(Col.fx_rate)).alias(Col.loss),
+            pl.lit("gbp").alias(Col.metric),
+        )
+        .select([*blended_cols, Col.target_currency])
     )
 
 
 def apply_forecast_to_ylt(
-    fx_ylt: pl.LazyFrame,
+    gbp: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     forecast_factors = seeds.frames["forecast_factors.csv"].lazy()
@@ -1148,98 +1371,113 @@ def apply_forecast_to_ylt(
         Col.class_,
         Col.office,
         Col.forecast_date,
-        pl.col(RawCol.factor).alias(Col.forecast_factor_raw),
+        pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )
 
-    return (
-        fx_ylt.join(forecast_dates, how="cross")
+    forecasted = (
+        gbp.join(forecast_dates, how="cross")
         .join(
             forecast_factors,
             on=[Col.class_, Col.office, Col.forecast_date],
             how="left",
         )
+    )
+    _log_defaulted_rows(
+        forecasted,
+        pl.col("_forecast_factor_raw").is_null(),
+        "forecast factor defaulted rows=%d",
+    )
+    return (
+        forecasted
         .with_columns(
-            pl.col(Col.forecast_factor_raw)
-            .fill_null(1.0)
-            .alias(Col.forecast_factor),
-            (
-                pl.col(Col.original_ylt_loss_blended_gbp)
-                * pl.col(Col.forecast_factor_raw).fill_null(1.0)
-            ).alias(Col.original_ylt_loss_blended_gbp_forecast)
+            (pl.col(Col.loss) * pl.col("_forecast_factor_raw").fill_null(1.0)).alias(Col.loss),
+            pl.lit("gbp_forecast").alias(Col.metric),
         )
-        .drop(Col.forecast_factor_raw)
+        .drop("_forecast_factor_raw")
     )
 
 
 def apply_euws_to_ylt(
-    forecast_ylt: pl.LazyFrame,
+    gbp_forecast: pl.LazyFrame,
     verisk_events: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     euws_factors = seeds.frames["euws_rate_factors.csv"].lazy().select(
         Col.model_event_id,
         pl.col(RawCol.occ_year).alias(Col.year_id),
-        pl.col(RawCol.factor).alias(Col.euws_factor_raw_source),
+        pl.col(RawCol.factor).alias("_euws_factor_raw_source"),
     )
 
-    return (
-        forecast_ylt.join(
+    gbp_forecast_cols = gbp_forecast.collect_schema().names()
+    joined = (
+        gbp_forecast.join(
             verisk_events,
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
         )
         .join(euws_factors, on=[Col.model_event_id, Col.year_id], how="left")
+    )
+    _log_defaulted_rows(
+        joined,
+        (pl.col(Col.rollup_peril) == "Europe_WS") & pl.col("_euws_factor_raw_source").is_null(),
+        "euws factor defaulted rows=%d",
+    )
+    return (
+        joined
         .with_columns(
             pl.when(pl.col(Col.rollup_peril) == "Europe_WS")
-            .then(pl.col(Col.euws_factor_raw_source).fill_null(1.0))
+            .then(pl.col("_euws_factor_raw_source").fill_null(1.0))
             .otherwise(pl.lit(1.0))
-            .alias(Col.euws_factor_raw)
+            .alias("_euws_factor_raw")
         )
         .with_columns(
-            (
-                pl.col(Col.original_ylt_loss_blended_gbp_forecast)
-                * pl.col(Col.euws_factor_raw)
-            ).alias(Col.original_ylt_loss_blended_gbp_forecast_euws_raw)
+            pl.col(Col.loss).alias("_gbp_forecast_loss"),
+            (pl.col(Col.loss) * pl.col("_euws_factor_raw")).alias(Col.loss),
+            pl.lit("euws").alias(Col.metric),
         )
-        .drop(Col.euws_factor_raw_source)
+        .drop("_euws_factor_raw_source")
+        .select([*gbp_forecast_cols, "_euws_factor_raw", "_gbp_forecast_loss", Col.model_event_id, Col.event_day])
     )
 
 
 def apply_euws_overrides_to_ylt(
-    euws_ylt: pl.LazyFrame,
+    euws: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     overrides = seeds.frames["euws_rank_overrides.csv"].lazy().select(
         Col.rollup_lob,
-        pl.col(RawCol.max_rank).alias(Col.euws_override_max_rank),
-        pl.col(RawCol.factor).alias(Col.euws_override_factor),
+        pl.col(RawCol.max_rank).alias("_euws_override_max_rank"),
+        pl.col(RawCol.factor).alias("_euws_override_factor"),
     )
+    euws_cols = euws.collect_schema().names()
     override_condition = (
-        pl.col(Col.euws_override_factor).is_not_null()
-        & (pl.col(Col.rnk) <= pl.col(Col.euws_override_max_rank))
-        & (pl.col(Col.euws_factor_raw) == 0)
+        pl.col("_euws_override_factor").is_not_null()
+        & (pl.col(Col.rnk) <= pl.col("_euws_override_max_rank"))
+        & (pl.col("_euws_factor_raw") == 0)
     )
 
     return (
-        euws_ylt.join(overrides, on=Col.rollup_lob, how="left")
+        euws.join(overrides, on=Col.rollup_lob, how="left")
         .with_columns(
-            override_condition.alias(Col.euws_override_applied),
             pl.when(override_condition)
-            .then(pl.col(Col.euws_override_factor))
-            .otherwise(pl.col(Col.euws_factor_raw))
-            .alias(Col.euws_factor),
+            .then(pl.col("_euws_override_factor"))
+            .otherwise(pl.col("_euws_factor_raw"))
+            .alias("_euws_factor")
         )
         .with_columns(
-            (
-                pl.col(Col.original_ylt_loss_blended_gbp_forecast)
-                * pl.col(Col.euws_factor)
-            ).alias(Col.original_ylt_loss_blended_gbp_forecast_euws)
+            pl.when(override_condition)
+            .then(pl.col("_gbp_forecast_loss") * pl.col("_euws_override_factor"))
+            .otherwise(pl.col(Col.loss))
+            .alias(Col.loss),
+            pl.lit("euws_override").alias(Col.metric),
         )
+        .drop("_euws_override_max_rank", "_euws_override_factor", "_euws_factor")
+        .select(euws_cols)
     )
 
 
 def calculate_dialsup(
-    base_model_ylt: pl.LazyFrame,
+    ylt: pl.LazyFrame,
     verisk_events: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
@@ -1260,11 +1498,11 @@ def calculate_dialsup(
         Col.class_,
         Col.office,
         Col.forecast_date,
-        pl.col(RawCol.factor).alias(Col.forecast_factor_raw),
+        pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )
 
-    return (
-        base_model_ylt.join(
+    base = (
+        ylt.join(
             verisk_events,
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
@@ -1277,23 +1515,32 @@ def calculate_dialsup(
             how="left",
         )
         .with_columns(
-            pl.col(Col.loss).alias(Col.dialsup_original_ylt_loss),
-            pl.col(Col.forecast_factor_raw)
-            .fill_null(1.0)
-            .alias(Col.forecast_factor),
+            pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor"),
         )
-        .with_columns(
-            (pl.col(Col.dialsup_original_ylt_loss) * pl.col(Col.fx_rate)).alias(
-                Col.dialsup_loss_gbp
-            )
-        )
-        .with_columns(
-            (pl.col(Col.dialsup_loss_gbp) * pl.col(Col.forecast_factor)).alias(
-                Col.dialsup_loss_gbp_forecast
-            )
-        )
-        .drop(Col.forecast_factor_raw)
     )
+    _log_defaulted_rows(
+        base,
+        pl.col("_forecast_factor_raw").is_null(),
+        "dialsup forecast factor defaulted rows=%d",
+    )
+
+    output_cols = [c for c in base.collect_schema().names() if c not in ("_forecast_factor_raw", "_forecast_factor")]
+
+    dialsup_original = base.with_columns(
+        pl.lit("dialsup_original").alias(Col.metric),
+    ).select(output_cols)
+
+    dialsup_gbp = base.with_columns(
+        (pl.col(Col.loss) * pl.col(Col.fx_rate)).alias(Col.loss),
+        pl.lit("dialsup_gbp").alias(Col.metric),
+    ).select(output_cols)
+
+    dialsup_gbp_forecast = base.with_columns(
+        (pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col("_forecast_factor")).alias(Col.loss),
+        pl.lit("dialsup_gbp_forecast").alias(Col.metric),
+    ).select(output_cols)
+
+    return pl.concat([dialsup_original, dialsup_gbp, dialsup_gbp_forecast])
 
 
 def enrich_risklink_event_days(
@@ -1315,7 +1562,7 @@ def build_main_fanout(
     return ylt.select(
         Col.forecast_date,
         Col.base_model,
-        pl.lit("main").alias(Col.metric),
+        pl.col(Col.metric),
         pl.when(pl.col(Col.base_model) == "risklink")
         .then(pl.col(Col.event_id))
         .otherwise(pl.col(Col.model_event_id))
@@ -1324,7 +1571,7 @@ def build_main_fanout(
         pl.col(Col.year_id).cast(pl.Int64).alias(FanoutCol.ModelYear),
         pl.col(Col.target_currency).alias(FanoutCol.CurrencyCode),
         pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelYOA),
-        pl.col(Col.original_ylt_loss_blended_gbp_forecast_euws)
+        pl.col(Col.loss)
         .cast(pl.Float64)
         .alias(FanoutCol.ModelGrossLoss),
         pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelInwardsReinstatement),
@@ -1345,7 +1592,7 @@ def build_dialsup_fanout(
     return ylt.select(
         Col.forecast_date,
         Col.base_model,
-        pl.lit("dialsup").alias(Col.metric),
+        pl.col(Col.metric),
         pl.when(pl.col(Col.base_model) == "risklink")
         .then(pl.col(Col.event_id))
         .otherwise(pl.col(Col.model_event_id))
@@ -1354,7 +1601,7 @@ def build_dialsup_fanout(
         pl.col(Col.year_id).cast(pl.Int64).alias(FanoutCol.ModelYear),
         pl.col(Col.target_currency).alias(FanoutCol.CurrencyCode),
         pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelYOA),
-        pl.col(Col.dialsup_loss_gbp_forecast)
+        pl.col(Col.loss)
         .cast(pl.Float64)
         .alias(FanoutCol.ModelGrossLoss),
         pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelInwardsReinstatement),
@@ -1388,147 +1635,44 @@ def build_event_validation_report(
     return pl.concat(reports, how="vertical")
 
 
-def build_ylt_combined_all_factors(ylt: pl.LazyFrame) -> pl.LazyFrame:
-    return ylt.select(
-        Col.rp,
-        Col.rp_bucket,
-        Col.rnk,
-        Col.vendor,
-        Col.region_peril_id,
-        Col.rollup_peril,
-        Col.rollup_lob,
-        Col.cds_cat_class_name,
-        Col.model_code,
-        Col.year_id,
-        Col.event_id,
-        Col.loss,
-        Col.base_model,
-        Col.uplift_factor_on_base_model,
-        Col.forecast_date,
-        Col.forecast_factor,
-        Col.target_currency,
-        Col.fx_rate,
-        Col.original_ylt_loss,
-        Col.original_ylt_loss_blended,
-        Col.original_ylt_loss_blended_gbp,
-        Col.original_ylt_loss_blended_gbp_forecast,
-        Col.model_event_id,
-        Col.event_day,
-        Col.euws_factor_raw,
-        Col.euws_factor,
-        Col.euws_override_applied,
-        Col.original_ylt_loss_blended_gbp_forecast_euws,
-    )
+def _mts_output_dimensions(frame: pl.DataFrame | pl.LazyFrame) -> list[str]:
+    return [
+        col for col in frame.columns
+        if col not in (Col.metric, Col.forecast_date, Col.loss)
+        and not col.startswith("_")
+    ]
 
 
-def build_ylt_dialsup_wide(ylt: pl.LazyFrame) -> pl.LazyFrame:
-    return ylt.select(
-        Col.vendor,
-        Col.region_peril_id,
-        Col.rollup_peril,
-        Col.rollup_lob,
-        Col.cds_cat_class_name,
-        Col.model_code,
-        Col.year_id,
-        Col.event_id,
-        Col.loss,
-        Col.base_model,
-        Col.forecast_date,
-        Col.forecast_factor,
-        Col.target_currency,
-        Col.fx_rate,
-        Col.model_event_id,
-        Col.event_day,
-        Col.dialsup_original_ylt_loss,
-        Col.dialsup_loss_gbp,
-        Col.dialsup_loss_gbp_forecast,
-    )
+def _write_combined_outputs(
+    output_root: Path,
+    ylt: pl.DataFrame,
+    ylt_dialsup: pl.DataFrame,
+) -> None:
+    write_parquet_with_log(ylt, output_root / "mts_tbl_ylt_combined_all_factors.parquet")
+    write_parquet_with_log(ylt_dialsup, output_root / "mts_tbl_ylt_dialsup.parquet")
 
+    common_cols = [c for c in ylt.columns if c in ylt_dialsup.columns]
+    dims = _mts_output_dimensions(ylt.select(common_cols))
+    sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
 
-MTS_WIDE_DIMENSIONS = [
-    Col.vendor,
-    Col.base_model,
-    Col.region_peril_id,
-    Col.rollup_peril,
-    Col.rollup_lob,
-    Col.cds_cat_class_name,
-    Col.model_code,
-    Col.year_id,
-    Col.event_id,
-    Col.model_event_id,
-    Col.event_day,
-    Col.target_currency,
-]
-
-
-def build_ylt_combined_all_factors_wide(
-    main_ylt: pl.DataFrame | pl.LazyFrame,
-    dialsup_ylt: pl.DataFrame | pl.LazyFrame,
-) -> pl.DataFrame:
-    main_losses = _mts_wide_metric_losses(
-        main_ylt,
-        metric="main",
-        loss_column=Col.original_ylt_loss_blended_gbp_forecast_euws,
-    )
-    dialsup_losses = _mts_wide_metric_losses(
-        dialsup_ylt,
-        metric="dialsup",
-        loss_column=Col.dialsup_loss_gbp_forecast,
-    )
-    long_losses = pl.concat([main_losses, dialsup_losses], how="vertical")
-    if long_losses.is_empty():
-        return pl.DataFrame(schema={column: pl.Null for column in MTS_WIDE_DIMENSIONS})
-
-    long_losses = (
-        long_losses.sort(
-            [*MTS_WIDE_DIMENSIONS, Col.forecast_date, "metric", "loss"],
-            nulls_last=True,
-        )
-        .with_columns(
-            (pl.col("loss").cum_count().over([*MTS_WIDE_DIMENSIONS, "wide_column"]) - 1)
-            .cast(pl.Int64)
-            .alias("row_ordinal")
-        )
-    )
-    wide = long_losses.pivot(
-        index=[*MTS_WIDE_DIMENSIONS, "row_ordinal"],
-        on="wide_column",
-        values="loss",
-        aggregate_function="first",
-    )
-    loss_columns = sorted(
-        column for column in wide.columns if column not in {*MTS_WIDE_DIMENSIONS, "row_ordinal"}
-    )
-
-    return wide.select(*MTS_WIDE_DIMENSIONS, "row_ordinal", *loss_columns).sort(
-        [*MTS_WIDE_DIMENSIONS, "row_ordinal"],
-        nulls_last=True,
-    )
-
-
-def _mts_wide_metric_losses(
-    ylt: pl.DataFrame | pl.LazyFrame,
-    *,
-    metric: str,
-    loss_column: str,
-) -> pl.DataFrame:
-    if isinstance(ylt, pl.LazyFrame):
-        ylt = ylt.collect()
-    return ylt.select(
-        *MTS_WIDE_DIMENSIONS,
-        Col.forecast_date,
-        pl.lit(metric).alias("metric"),
-        pl.col(loss_column).cast(pl.Float64).alias("loss"),
+    combined = pl.concat(
+        [ylt.filter(pl.col(Col.metric) == "euws_override").select(sel),
+         ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(sel)],
     ).with_columns(
         pl.concat_str(
-            [
-                pl.col("metric"),
-                pl.col(Col.forecast_date).map_elements(forecast_tag, return_dtype=pl.String),
-                pl.lit("loss"),
-            ],
+            [pl.col(Col.metric), pl.col(Col.forecast_date).cast(pl.String).str.replace("-", "").str.slice(0, 6), pl.lit("loss")],
             separator="_",
-        ).alias("wide_column")
+        ).alias("_wide_column"),
     )
+
+    wide = combined.pivot(
+        index=dims,
+        on="_wide_column",
+        values=Col.loss,
+        aggregate_function="first",
+    )
+
+    write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
 
 def write_debug_frame(
@@ -1544,7 +1688,7 @@ def write_debug_frame(
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
     if isinstance(frame, pl.LazyFrame):
-        frame = frame.collect()
+        frame = frame.collect(no_optimization=True)
     frame.write_parquet(output_path)
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
@@ -1554,31 +1698,19 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
     )
 
 
-def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
-    debug_dir = output_root / "debug"
-
-    for prefix, stage in {
-        "seed": result.seeds,
-        "stg": result.staging,
-        "int": result.intermediate,
-        "mts": result.marts,
-    }.items():
-        for name, frame in stage.frames.items():
-            write_debug_frame(debug_dir, f"{prefix}_{name}", frame)
+def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
+    logger.info("checkpoint=%s rows=%d", name, frame.height)
 
 
-def forecast_tag(value: object) -> str:
-    if hasattr(value, "strftime"):
-        return value.strftime("%Y%m")
-    return str(value).replace("-", "")[:6]
+def _warn_row_drop(name: str, before: int, after: int) -> None:
+    if after < before:
+        logger.warning("%s join dropped rows before=%d after=%d dropped=%d", name, before, after, before - after)
 
 
-def hisco_vendor_label(base_model: str) -> str:
-    if base_model == "verisk":
-        return "AIR"
-    if base_model == "risklink":
-        return "RMS"
-    raise ValueError(f"unknown base model: {base_model}")
+def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
+    defaulted_rows = frame.select(condition.sum().alias("defaulted_rows")).collect().item()
+    if defaulted_rows > 0:
+        logger.warning(message, defaulted_rows)
 
 
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1591,7 +1723,10 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
             continue
         started = time.perf_counter()
         logger.info("collecting fanout=%s", name)
-        fanouts[name] = frame.collect() if isinstance(frame, pl.LazyFrame) else frame
+        if isinstance(frame, pl.LazyFrame):
+            fanouts[name] = frame.collect(no_optimization=True)
+        else:
+            fanouts[name] = frame
         logger.info(
             "collected fanout=%s rows=%d elapsed=%.2fs",
             name,
@@ -1599,14 +1734,10 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
             time.perf_counter() - started,
         )
 
-    for filename, frame_name in {
-        "mts_tbl_ylt_combined_all_factors.parquet": "ylt_combined_all_factors",
-        "mts_tbl_ylt_combined_all_factors_wide.parquet": "ylt_combined_all_factors_wide",
-        "mts_tbl_ylt_dialsup.parquet": "ylt_dialsup_wide",
-    }.items():
-        frame = result.marts.frames.get(frame_name)
-        if frame is not None:
-            write_parquet_with_log(frame, output_root / filename)
+    ylt_long = result.marts.frames.get("ylt_long")
+    ylt_dialsup = result.marts.frames.get("ylt_dialsup")
+    if ylt_long is not None and ylt_dialsup is not None:
+        _write_combined_outputs(output_root, ylt_long, ylt_dialsup)
 
     if fanouts:
         write_parquet_with_log(
@@ -1642,6 +1773,32 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
                 ),
                 output_path,
             )
+
+
+def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
+    debug_dir = output_root / "debug"
+    for prefix, stage in {
+        "seed": result.seeds,
+        "stg": result.staging,
+        "int": result.intermediate,
+        "mts": result.marts,
+    }.items():
+        for name, frame in stage.frames.items():
+            write_debug_frame(debug_dir, f"{prefix}_{name}", frame)
+
+
+def forecast_tag(value: object) -> str:
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y%m")
+    return str(value).replace("-", "")[:6]
+
+
+def hisco_vendor_label(base_model: str) -> str:
+    if base_model == "verisk":
+        return "AIR"
+    if base_model == "risklink":
+        return "RMS"
+    raise ValueError(f"unknown base model: {base_model}")
 
 
 def run(
@@ -1697,6 +1854,7 @@ def run(
         staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
         staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
         staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
+        staging_frames["ep_summaries_selected_dialsup"] = staged_ep_summaries.selected_dialsup
         logger.info(
             "staging summary seed_frames=%d staging_frames=%d",
             len(seed_frames),
@@ -1705,9 +1863,15 @@ def run(
 
     with logged_phase("intermediate"):
         enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
+        enriched_ylts_dialsup = enrich_ylt_with_ep_summaries(
+            normalized_ylts,
+            staged_ep_summaries,
+            use_dialsup_selection=True,
+        )
         intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
         intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
         intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
+        intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
 
         joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
         intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
@@ -1720,44 +1884,91 @@ def run(
         intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
         intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
 
-        ylt_blending_frames = apply_ep_blending_to_ylt(enriched_ylts, ep_blending_targets)
-        intermediate_frames.update(ylt_blending_frames)
+        base_model_expr = (
+            pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
+            .then(pl.lit("risklink"))
+            .otherwise(pl.lit("verisk"))
+        )
+        ylt_original = enriched_ylts.combined.with_columns(
+            base_model_expr.alias(Col.base_model),
+            pl.lit("original").alias(Col.metric),
+        ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        intermediate_frames["ylt_original"] = ylt_original
 
-        ylt_dialsup = calculate_dialsup(ylt_blending_frames["ylt_base_model"], verisk_events, seeds)
+        ylt_ranked = _add_rank_columns(ylt_original)
+        intermediate_frames["ylt_ranked"] = ylt_ranked
+        ylt_ranked = ylt_ranked.collect()
+        _log_checkpoint("ylt_original", ylt_ranked)
+        _log_checkpoint("ylt_ranked", ylt_ranked)
+
+        ylt_blended = apply_ep_blending_to_ylt(ylt_ranked.lazy(), ep_blending_targets)
+        intermediate_frames["ylt_blending_applied"] = ylt_blended
+        ylt_blended = ylt_blended.collect()
+        _warn_row_drop("blending", ylt_ranked.height, ylt_blended.height)
+        _log_checkpoint("ylt_blended", ylt_blended)
+
+        ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
+            base_model_expr.alias(Col.base_model),
+            pl.lit("original").alias(Col.metric),
+        ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
+        ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup)
+        intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
+        ylt_ranked_dialsup = ylt_ranked_dialsup.collect()
+        _log_checkpoint("ylt_original_dialsup", ylt_ranked_dialsup)
+        _log_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
+
+        ylt_dialsup = calculate_dialsup(ylt_ranked_dialsup.lazy(), verisk_events, seeds)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
+        ylt_dialsup = ylt_dialsup.collect()
+        _log_checkpoint("ylt_dialsup", ylt_dialsup)
 
-        ylt_fx_applied = apply_fx_to_ylt(ylt_blending_frames["ylt_blending_applied"], seeds)
-        intermediate_frames["ylt_fx_applied"] = ylt_fx_applied
+        ylt_gbp = apply_fx_to_ylt(ylt_blended.lazy(), seeds)
+        intermediate_frames["ylt_fx_applied"] = ylt_gbp
+        ylt_gbp = ylt_gbp.collect()
+        _warn_row_drop("fx", ylt_blended.height, ylt_gbp.height)
+        _log_checkpoint("ylt_gbp", ylt_gbp)
 
-        ylt_forecast_applied = apply_forecast_to_ylt(ylt_fx_applied, seeds)
-        intermediate_frames["ylt_forecast_applied"] = ylt_forecast_applied
+        ylt_gbp_forecast = apply_forecast_to_ylt(ylt_gbp.lazy(), seeds)
+        intermediate_frames["ylt_forecast_applied"] = ylt_gbp_forecast
+        ylt_gbp_forecast = ylt_gbp_forecast.collect()
+        _log_checkpoint("ylt_gbp_forecast", ylt_gbp_forecast)
 
-        ylt_euws_applied = apply_euws_to_ylt(ylt_forecast_applied, verisk_events, seeds)
-        intermediate_frames["ylt_euws_applied"] = ylt_euws_applied
+        ylt_euws = apply_euws_to_ylt(ylt_gbp_forecast.lazy(), verisk_events, seeds)
+        intermediate_frames["ylt_euws_applied"] = ylt_euws
+        ylt_euws = ylt_euws.collect()
+        _log_checkpoint("ylt_euws", ylt_euws)
 
-        ylt_euws_override_applied = apply_euws_overrides_to_ylt(ylt_euws_applied, seeds)
-        intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override_applied
+        ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws.lazy(), seeds)
+        intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override
+        ylt_euws_override = ylt_euws_override.collect()
+        _log_checkpoint("ylt_euws_override", ylt_euws_override)
+
+        ylt = pl.concat(
+            [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
+            how="diagonal",
+        )
         logger.info("intermediate summary frames=%d", len(intermediate_frames))
 
     with logged_phase("marts"):
-        main_fanout = build_main_fanout(ylt_euws_override_applied, risklink_events)
+        main_fanout = build_main_fanout(
+            ylt.lazy().filter(pl.col(Col.metric) == "euws_override"),
+            risklink_events,
+        )
         mart_frames["main_fanout"] = main_fanout
 
-        dialsup_fanout = build_dialsup_fanout(ylt_dialsup, risklink_events)
+        dialsup_fanout = build_dialsup_fanout(
+            ylt_dialsup.lazy().filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+            risklink_events,
+        )
         mart_frames["dialsup_fanout"] = dialsup_fanout
 
         mart_frames["event_validation"] = build_event_validation_report(
             main_fanout,
             dialsup_fanout,
         )
-        mart_frames["ylt_combined_all_factors"] = build_ylt_combined_all_factors(
-            ylt_euws_override_applied,
-        )
-        mart_frames["ylt_dialsup_wide"] = build_ylt_dialsup_wide(ylt_dialsup)
-        mart_frames["ylt_combined_all_factors_wide"] = build_ylt_combined_all_factors_wide(
-            mart_frames["ylt_combined_all_factors"],
-            mart_frames["ylt_dialsup_wide"],
-        )
+        mart_frames["ylt_long"] = ylt
+        mart_frames["ylt_dialsup"] = ylt_dialsup
 
     result = PipelineRunResult(
         seeds=PipelineStage(seed_frames),

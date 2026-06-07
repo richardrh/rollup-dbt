@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import polars as pl
 import pytest
@@ -10,12 +12,11 @@ from hypothesis import strategies as st
 from rollup.columns import Col, RawCol
 from rollup.pipeline import (
     EpSummaryValidationResult,
-    MTS_WIDE_DIMENSIONS,
     PipelineValidationInputs,
     SeedValidationResult,
     YltFrames,
     YltValidationResult,
-    build_ylt_combined_all_factors_wide,
+    _write_combined_outputs,
     input_ylt_aal_by_lob_peril_summary,
     modelled_dimension_coverage_report,
 )
@@ -159,7 +160,7 @@ def test_fuzz_input_ylt_aal_is_additive_and_ignores_unmapped_rows(
 @settings(max_examples=25, deadline=None)
 @given(losses=st.lists(small_loss, min_size=1, max_size=10))
 def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
-    frame = pl.DataFrame(
+    ylt = pl.DataFrame(
         {
             Col.vendor: ["verisk"] * len(losses),
             Col.base_model: ["verisk"] * len(losses),
@@ -173,13 +174,17 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
             Col.model_event_id: list(range(1, len(losses) + 1)),
             Col.event_day: [1] * len(losses),
             Col.target_currency: ["GBP"] * len(losses),
+            Col.metric: ["euws_override"] * len(losses),
             Col.forecast_date: [date(2026, 1, 1)] * len(losses),
-            Col.original_ylt_loss_blended_gbp_forecast_euws: losses,
-            Col.dialsup_loss_gbp_forecast: losses,
+            Col.loss: losses,
         }
     )
+    dialsup = ylt.with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
 
-    wide = build_ylt_combined_all_factors_wide(frame, frame)
-    loss_columns = [column for column in wide.columns if column not in {*MTS_WIDE_DIMENSIONS, "row_ordinal"}]
+    with TemporaryDirectory() as temp_dir:
+        _write_combined_outputs(Path(temp_dir), ylt, dialsup)
+        wide = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
+    loss_columns = ["euws_override_202601_loss", "dialsup_gbp_forecast_202601_loss"]
+    assert set(loss_columns).issubset(wide.columns)
     assert wide.select(pl.sum_horizontal(*loss_columns).sum()).item() == pytest.approx(sum(losses) * 2)

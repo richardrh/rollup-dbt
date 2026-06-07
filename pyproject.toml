@@ -24,6 +24,8 @@ dependencies = [
     "ruff>=0.15.13",
 ]
 
+[project.scripts]
+rollup = "rollup.cli:main"
 
 [tool.setuptools.package-dir]
 "" = "src"
