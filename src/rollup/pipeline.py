@@ -8,7 +8,15 @@ import logging
 import polars as pl
 
 from rollup.config import RollupConfig, load_config
-from rollup.intermediate import apply_adjustments, build_dialsup, build_enriched_ylt, build_metric_long
+from rollup.intermediate import (
+    apply_blending,
+    apply_euws,
+    apply_forecast,
+    apply_fx,
+    build_dialsup,
+    build_enriched_ylt,
+    build_metric_long,
+)
 from rollup.marts import write_marts, write_stage_frames
 from rollup.staging import StagingFrames, load_sources, normalize_ylt, stage_ep_summaries
 
@@ -40,8 +48,11 @@ def run(
     normalized = normalize_ylt(sources)
     staged_ep = stage_ep_summaries(sources)
     enriched = build_enriched_ylt(normalized, staged_ep)
-    adjusted = apply_adjustments(enriched, sources)
-    combined = build_metric_long(adjusted)
+    blended = apply_blending(enriched, sources.blending)
+    fx_applied = apply_fx(blended, sources.fx_rates)
+    forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
+    euws_applied = apply_euws(forecast_applied, sources.euws_factors)
+    combined = build_metric_long(euws_applied)
     dialsup = build_dialsup(combined)
 
     stage_paths = (
@@ -54,7 +65,13 @@ def run(
         *write_stage_frames(
             output_root,
             config.outputs.intermediate_dir,
-            {"enriched_ylt": enriched, "adjusted_ylt": adjusted},
+            {
+                "enriched_ylt": enriched,
+                "blended_ylt": blended,
+                "fx_applied_ylt": fx_applied,
+                "forecast_applied_ylt": forecast_applied,
+                "euws_applied_ylt": euws_applied,
+            },
             config,
         ),
     )

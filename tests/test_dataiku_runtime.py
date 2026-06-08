@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import polars as pl
 import pytest
@@ -30,7 +31,6 @@ def test_transform_modules_are_split_into_packages() -> None:
         "rollup.staging.normalize_ylt": "normalize_ylt",
         "rollup.staging.stage_ep_summaries": "stage_ep_summaries",
         "rollup.intermediate.build_enriched_ylt": "build_enriched_ylt",
-        "rollup.intermediate.apply_adjustments": "apply_adjustments",
         "rollup.intermediate.apply_blending": "apply_blending",
         "rollup.intermediate.apply_fx": "apply_fx",
         "rollup.intermediate.apply_forecast": "apply_forecast",
@@ -56,6 +56,79 @@ def test_schema_guard_catches_missing_required_column() -> None:
 
     with pytest.raises(SchemaGuardError, match="missing columns"):
         require_columns(frame, pl.Schema({"present": pl.Int64, "missing": pl.String}))
+
+
+def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from rollup import pipeline
+
+    calls: list[tuple[str, object]] = []
+    stage_outputs: dict[str, tuple[str, ...]] = {}
+    sources = SimpleNamespace(
+        verisk_ylt="verisk_ylt",
+        risklink_ylt="risklink_ylt",
+        ep_summaries="ep_summaries",
+        lobs="lobs",
+        perils="perils",
+        blending="blending",
+        fx_rates="fx_rates",
+        forecast_factors="forecast_factors",
+        euws_factors="euws_factors",
+    )
+    config = SimpleNamespace(
+        outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
+    )
+
+    def record(name: str, result: str):
+        def transform(*args: object) -> str:
+            calls.append((name, args))
+            return result
+
+        return transform
+
+    def write_stage_frames(
+        output_root: Path,
+        section: str,
+        frames: dict[str, object],
+        config: object,
+    ) -> tuple[Path, ...]:
+        stage_outputs[section] = tuple(frames)
+        return tuple(output_root / section / f"{name}.parquet" for name in frames)
+
+    monkeypatch.setattr(pipeline, "load_sources", record("load_sources", sources))
+    monkeypatch.setattr(pipeline, "normalize_ylt", record("normalize_ylt", "normalized"))
+    monkeypatch.setattr(pipeline, "stage_ep_summaries", record("stage_ep_summaries", "staged_ep"))
+    monkeypatch.setattr(pipeline, "build_enriched_ylt", record("build_enriched_ylt", "enriched"))
+    monkeypatch.setattr(pipeline, "apply_blending", record("apply_blending", "blended"))
+    monkeypatch.setattr(pipeline, "apply_fx", record("apply_fx", "fx_applied"))
+    monkeypatch.setattr(pipeline, "apply_forecast", record("apply_forecast", "forecast_applied"))
+    monkeypatch.setattr(pipeline, "apply_euws", record("apply_euws", "euws_applied"))
+    monkeypatch.setattr(pipeline, "build_metric_long", record("build_metric_long", "combined"))
+    monkeypatch.setattr(pipeline, "build_dialsup", record("build_dialsup", "dialsup"))
+    monkeypatch.setattr(pipeline, "write_stage_frames", write_stage_frames)
+    monkeypatch.setattr(pipeline, "write_marts", record("write_marts", {}))
+
+    pipeline.run(tmp_path / "data", output_root=tmp_path / "output", config=config)
+
+    assert calls == [
+        ("load_sources", (tmp_path / "data",)),
+        ("normalize_ylt", (sources,)),
+        ("stage_ep_summaries", (sources,)),
+        ("build_enriched_ylt", ("normalized", "staged_ep")),
+        ("apply_blending", ("enriched", "blending")),
+        ("apply_fx", ("blended", "fx_rates")),
+        ("apply_forecast", ("fx_applied", "forecast_factors")),
+        ("apply_euws", ("forecast_applied", "euws_factors")),
+        ("build_metric_long", ("euws_applied",)),
+        ("build_dialsup", ("combined",)),
+        ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
+    ]
+    assert stage_outputs["intermediate"] == (
+        "enriched_ylt",
+        "blended_ylt",
+        "fx_applied_ylt",
+        "forecast_applied_ylt",
+        "euws_applied_ylt",
+    )
 
 
 def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) -> None:
@@ -103,7 +176,13 @@ write_stage_outputs = true
 
     assert result.outputs.stage_dir == output_root / "stages"
     assert (output_root / "stages" / "staging" / "normalized_ylt.parquet").is_file()
-    assert (output_root / "stages" / "intermediate" / "adjusted_ylt.parquet").is_file()
+    intermediate_stage = output_root / "stages" / "intermediate"
+    assert (intermediate_stage / "enriched_ylt.parquet").is_file()
+    assert (intermediate_stage / "blended_ylt.parquet").is_file()
+    assert (intermediate_stage / "fx_applied_ylt.parquet").is_file()
+    assert (intermediate_stage / "forecast_applied_ylt.parquet").is_file()
+    assert (intermediate_stage / "euws_applied_ylt.parquet").is_file()
+    assert not (intermediate_stage / "adjusted_ylt.parquet").exists()
     assert result.outputs.mts_combined.is_file()
     assert result.outputs.mts_wide.is_file()
     assert result.outputs.mts_dialsup.is_file()
