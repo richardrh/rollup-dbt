@@ -1,9 +1,9 @@
-name: Rollup Verisk YLT CSV-equivalent validation
+name: Rollup Verisk YLT schema validation
 version: "1.0"
 
-# Validnator is CSV-only today. This validates a Verisk CSV extract with the
-# same required columns as the parquet YLT consumed by rollup; it does not
-# validate parquet files directly.
+# Retained for validnator CLI compatibility with CSV extracts. Programmatic
+# parquet/Dataiku validation supplies a Polars DataFrame via Pipeline.run_with_df,
+# so the input loader settings below are ignored in that mode.
 input:
   type: csv
   mode: raw_strings
@@ -12,7 +12,7 @@ rules:
   - code: VERISK_YLT_SCHEMA
     name: Verisk YLT required columns and types
     level: error
-    message: "Verisk YLT CSV export must contain columns equivalent to the parquet input expected by rollup"
+    message: "Verisk YLT input must contain the parquet schema columns expected by rollup"
     checks:
       - type: schema_matches
         mode: castable

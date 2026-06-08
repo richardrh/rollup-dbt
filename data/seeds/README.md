@@ -1,10 +1,10 @@
 # data/seeds
 
-Seed inputs are CSV files described by `data/seeds/schema.yaml`. Upstream/dev
-CSV validation uses validnator configs colocated with each seed section.
-Validnator validates one CSV input at a time, so sections containing multiple
-schemas use multiple clearly named `validnator-*.yml` files rather than one YAML
-that would require unrelated columns in a single file.
+Seed inputs are described by `data/seeds/schema.yaml`. Most seed files are CSVs;
+validation catalogues are parquet. Upstream/dev CSV validation uses validnator
+configs colocated with each seed section. Sections containing multiple schemas
+use multiple clearly named `validnator-*.yml` files rather than one YAML that
+would require unrelated columns in a single file.
 
 Business seeds:
 
@@ -30,16 +30,41 @@ Validation catalogues:
 - `validation/risklink_flood22_model_events.parquet`: RiskLink flood occurrence
   dates used to derive event-day values.
 
-There is no validnator config under `validation/` because these catalogue inputs
-are parquet files and validnator currently validates CSV files only.
+Parquet catalogue schema rules live beside those files under `validation/`:
 
-Validnator examples:
+- `validation/validnator-verisk-events.yml`
+- `validation/validnator-risklink-flood-events.yml`
+
+Validnator CSV CLI examples:
 
 ```bash
 uv run validnator validate -p data/seeds/business/validnator-lobs.yml -i data/seeds/business/lobs.csv -o validation-output/lobs
 uv run validnator validate -p data/seeds/business/validnator-perils.yml -i data/seeds/business/perils.csv -o validation-output/perils
 uv run validnator validate -p data/seeds/vor/validnator-fx-rates.yml -i data/seeds/vor/fx_rates.csv -o validation-output/fx-rates
 uv run validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
+```
+
+For parquet catalogues, load the file and run validnator against the DataFrame:
+
+```python
+from pathlib import Path
+
+import polars as pl
+from validnator.config import ValidationConfig
+from validnator.pipeline import Pipeline
+
+parquet_path = Path("data/seeds/validation/verisk_events.parquet")
+config_path = Path("data/seeds/validation/validnator-verisk-events.yml")
+
+pipeline = Pipeline.from_config(
+    ValidationConfig(
+        input_file=parquet_path,
+        output_dir=Path("validation-output/verisk-events"),
+        pipeline_config_file=config_path,
+    )
+)
+df = pl.read_parquet(parquet_path)
+results = pipeline.run_with_df(df)
 ```
 
 EP summaries under `data/ep_summaries/**/*.long.csv`, including

@@ -1,0 +1,38 @@
+name: Rollup RiskLink flood event catalogue schema validation
+version: "1.0"
+
+rules:
+  - code: RISKLINK_FLOOD_EVENTS_SCHEMA
+    name: RiskLink flood event catalogue required columns and types
+    level: error
+    message: "risklink_flood22_model_events.parquet must contain the event catalogue columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          ModelEventID: int64
+          RegionPerilID: int64
+          ModelOccurrenceDate: date
+
+  - code: RISKLINK_FLOOD_EVENTS_REQUIRED_VALUES
+    name: RiskLink flood event catalogue required values
+    level: error
+    message: "RiskLink flood event catalogue fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - ModelEventID
+          - RegionPerilID
+          - ModelOccurrenceDate
+
+  - code: RISKLINK_FLOOD_EVENTS_NON_NEGATIVE_IDS
+    name: RiskLink flood event catalogue non-negative identifiers
+    level: error
+    message: "RiskLink flood event catalogue identifiers must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - ModelEventID
+          - RegionPerilID
+        min: 0
