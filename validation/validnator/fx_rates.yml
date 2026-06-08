@@ -1,0 +1,38 @@
+name: Rollup FX rates seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: FX_RATES_SCHEMA
+    name: FX rates required columns and types
+    level: error
+    message: "fx_rates.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          currency_code: string
+          rate: float64
+
+  - code: FX_RATES_REQUIRED_VALUES
+    name: FX rates required values
+    level: error
+    message: "FX rate fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - currency_code
+          - rate
+
+  - code: FX_RATES_POSITIVE_RATE
+    name: FX rates positive rate
+    column: rate
+    level: error
+    message: "rate must be greater than or equal to 0"
+    checks:
+      - type: valid_range
+        min: 0

@@ -1,0 +1,40 @@
+name: Rollup EUWS rate factors seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: EUWS_RATE_FACTORS_SCHEMA
+    name: EUWS rate factors required columns and types
+    level: error
+    message: "euws_rate_factors.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          event_id: int64
+          factor: float64
+
+  - code: EUWS_RATE_FACTORS_REQUIRED_VALUES
+    name: EUWS rate factors required values
+    level: error
+    message: "EUWS factor fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - event_id
+          - factor
+
+  - code: EUWS_RATE_FACTORS_NON_NEGATIVE_VALUES
+    name: EUWS rate factors non-negative values
+    level: error
+    message: "event_id and factor must be greater than or equal to 0"
+    checks:
+      - type: valid_range
+        columns:
+          - event_id
+          - factor
+        min: 0

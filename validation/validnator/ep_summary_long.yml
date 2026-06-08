@@ -1,0 +1,73 @@
+name: Rollup EP summary long CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: EP_SUMMARY_SCHEMA
+    name: EP summary required columns and types
+    level: error
+    message: "EP summary CSV must contain the required long-format columns with castable types"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          vendor: string
+          analysis_id: string
+          modelled_lob: string
+          modelled_peril: string
+          ep_type: string
+          return_period: int64
+          loss: float64
+
+  - code: EP_SUMMARY_REQUIRED_VALUES
+    name: EP summary required values
+    level: error
+    message: "EP summary key fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - vendor
+          - analysis_id
+          - modelled_lob
+          - modelled_peril
+          - ep_type
+          - return_period
+          - loss
+
+  - code: EP_SUMMARY_VENDOR
+    name: EP summary vendor values
+    column: vendor
+    level: error
+    message: "vendor must be verisk or risklink"
+    checks:
+      - type: valid_values
+        values:
+          - verisk
+          - risklink
+
+  - code: EP_SUMMARY_EP_TYPE
+    name: EP summary EP type values
+    column: ep_type
+    level: error
+    message: "ep_type must be AAL, AEP, or OEP"
+    checks:
+      - type: valid_values
+        values:
+          - AAL
+          - AEP
+          - OEP
+
+  - code: EP_SUMMARY_NON_NEGATIVE_NUMBERS
+    name: EP summary non-negative numeric fields
+    level: error
+    message: "return_period and loss must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - return_period
+          - loss
+        min: 0

@@ -1,0 +1,46 @@
+name: Rollup RiskLink YLT CSV-equivalent validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: RISKLINK_YLT_SCHEMA
+    name: RiskLink YLT required columns and types
+    level: error
+    message: "RiskLink YLT CSV export must contain columns equivalent to the parquet input expected by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          anlsid: int64
+          yearid: int64
+          eventid: int64
+          loss: float64
+
+  - code: RISKLINK_YLT_REQUIRED_VALUES
+    name: RiskLink YLT required values
+    level: error
+    message: "RiskLink YLT required fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - anlsid
+          - yearid
+          - eventid
+          - loss
+
+  - code: RISKLINK_YLT_NON_NEGATIVE_VALUES
+    name: RiskLink YLT non-negative numeric values
+    level: error
+    message: "RiskLink YLT identifiers, years, and losses must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - anlsid
+          - yearid
+          - eventid
+          - loss
+        min: 0

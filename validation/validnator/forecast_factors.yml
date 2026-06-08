@@ -1,0 +1,42 @@
+name: Rollup forecast factors seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: FORECAST_FACTORS_SCHEMA
+    name: Forecast factors required columns and types
+    level: error
+    message: "forecast_factors.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          class: string
+          office: string
+          forecast_date: string
+          factor: float64
+
+  - code: FORECAST_FACTORS_REQUIRED_VALUES
+    name: Forecast factors required values
+    level: error
+    message: "Forecast factor fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - class
+          - office
+          - forecast_date
+          - factor
+
+  - code: FORECAST_FACTORS_NON_NEGATIVE_FACTOR
+    name: Forecast factors non-negative factor
+    column: factor
+    level: error
+    message: "factor must be greater than or equal to 0"
+    checks:
+      - type: valid_range
+        min: 0

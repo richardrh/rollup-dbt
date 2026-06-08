@@ -1,0 +1,52 @@
+name: Rollup Verisk YLT CSV-equivalent validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: VERISK_YLT_SCHEMA
+    name: Verisk YLT required columns and types
+    level: error
+    message: "Verisk YLT CSV export must contain columns equivalent to the parquet input expected by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          Analysis: string
+          ExposureAttribute: string
+          CatalogTypeCode: string
+          EventID: int64
+          ModelCode: int64
+          YearID: int64
+          GroundUpLoss: float64
+
+  - code: VERISK_YLT_REQUIRED_VALUES
+    name: Verisk YLT required values
+    level: error
+    message: "Verisk YLT required fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - Analysis
+          - ExposureAttribute
+          - CatalogTypeCode
+          - EventID
+          - ModelCode
+          - YearID
+          - GroundUpLoss
+
+  - code: VERISK_YLT_NON_NEGATIVE_VALUES
+    name: Verisk YLT non-negative numeric values
+    level: error
+    message: "Verisk YLT identifiers, years, and losses must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - EventID
+          - ModelCode
+          - YearID
+          - GroundUpLoss
+        min: 0
