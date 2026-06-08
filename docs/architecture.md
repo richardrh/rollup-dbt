@@ -8,15 +8,57 @@ outputs for downstream reporting.
 ## Data flow
 
 ```mermaid
-flowchart LR
-  A[Source data] --> B[Validate & stage]
-  B --> C[Process\nblending, financial factors]
-  B --> D[DIALSUP\nbase-model loss + FX + forecast]
-  C --> E[Combined factors]
-  D --> F[DIALSUP output]
-  E --> G[Fanouts & validation]
-  F --> G
+flowchart TD
+  A[Analyst drops inputs under data/] --> B[Schemas and validation]
+  B --> C[Seed lookups\nlobs.csv, perils.csv, VOR factors, validation catalogues]
+  B --> D[EP summary staging\nenrich and select preferred peril]
+  B --> E[YLT normalization\nVerisk and RiskLink]
+  C --> D
+  C --> E
+  D --> F[EP join and blending targets\nAAL, OEP 200, OEP 1000]
+  E --> G[YLT enrichment\nLOB, peril, class, office, currency]
+  F --> H[Base-model YLT\nselection, rank, blending, uplift]
+  G --> H
+  H --> I[FX, forecast, EUWS factors\nand EUWS overrides]
+  H -.->|pre-blending\nbase-model YLT| J[DIALSUP branch\nFX + forecast only]
+  I --> K[Main mart fanout]
+  J --> L[DIALSUP mart fanout]
+  I --> O[mts_tbl_ylt_combined_all_factors]
+  J --> P[mts_tbl_ylt_dialsup]
+  K --> M[Wide MTS outputs]
+  L --> M
+  K --> N[mts_event_validation]
+  L --> N
+  M --> Q[EP analysis report]
 ```
+
+## Pipeline phases
+
+| Phase | What happens | Debug prefix |
+| --- | --- | --- |
+| Seed + validation | Read seed files, event catalogues, YLTs, and EP summaries; report schema and lookup coverage issues. | `seed_*` |
+| Staging | Normalize YLT formats and stage EP summaries with LOB/peril enrichment, main peril selection, and DIALSUP peril selection. | `stg_*` |
+| Intermediate | Join EP vendors, calculate blend targets, enrich YLT rows, apply blending, FX, forecast, EUWS, EUWS overrides, and build DIALSUP. | `int_*` |
+| Marts | Build main/DIALSUP fanouts, long all-factor outputs, event validation, and wide MTS outputs. | `mts_*` |
+
+## Pipeline transforms
+
+| # | Step | Function | Output shape |
+| --- | --- | --- | --- |
+| 1 | Normalize YLT | `normalize_ylt` | Vendor-specific YLT columns become canonical `vendor`, `modelled_lob`, `modelled_peril`, `loss`, `year_id`, and `event_id` columns. |
+| 2 | Stage EP summaries | `stage_ep_summaries` | EP summaries are enriched with LOB/peril seeds and split into main `selection_priority` and DIALSUP `is_dialsup` selections. |
+| 3 | Join EP vendors | `join_ep_summaries` | Verisk and RiskLink EP summaries are aggregated at `(rollup_lob, rollup_peril, region_peril_id, ep_type, return_period)` grain. |
+| 4 | Calculate blend targets | `calculate_ep_blending_targets` | Blend weights produce `target_loss`, `base_model`, `base_model_loss`, and clamped `uplift_factor_on_base_model`. |
+| 5 | Enrich YLT | `enrich_ylt_with_ep_summaries` | YLT rows receive rollup LOB/peril, class, office, currency, and region/peril metadata. |
+| 6 | Rank base-model YLT | `_add_rank_columns` | Base-model rows receive `rnk`, `rp`, and `rp_bucket` for blending. |
+| 7 | Blend YLT | `apply_ep_blending_to_ylt` | `loss` is uplifted and `metric` becomes `blended`. |
+| 8 | Apply FX | `apply_fx_to_ylt` | `loss` is converted to GBP, `target_currency` is attached, and `metric` becomes `gbp`. |
+| 9 | Apply forecast | `apply_forecast_to_ylt` | Rows are cross-joined to forecast dates, missing factors default to `1.0`, and `metric` becomes `gbp_forecast`. |
+| 10 | Apply EUWS | `apply_euws_to_ylt` | Europe Windstorm factors are applied, model event fields are attached, and `metric` becomes `euws`. |
+| 11 | Apply EUWS overrides | `apply_euws_overrides_to_ylt` | Configured zero-factor overrides are applied and `metric` becomes `euws_override`. |
+| 12 | Build DIALSUP | `calculate_dialsup` | DIALSUP emits `dialsup_original`, `dialsup_gbp`, and `dialsup_gbp_forecast` metrics. |
+| 13 | Build fanouts | `build_main_fanout`, `build_dialsup_fanout` | Final main and DIALSUP metrics are shaped into mart-ready fanout columns. |
+| 14 | Write combined outputs | `_write_combined_outputs` | Long all-factor main and DIALSUP parquets are written, then final metrics are pivoted to wide forecast-date columns. |
 
 ## Data
 
@@ -111,8 +153,8 @@ loss.
 ## Outputs
 
 **Long output** (`mts_tbl_ylt_combined_all_factors.parquet`): one row
-per (event × forecast_date), with columns for each intermediate loss
-stage and the contributing factor values.
+per metric and event/forecast-date combination, with `metric`, `loss`,
+and the available contributing factor columns.
 
 **Wide output** (`mts_tbl_ylt_combined_all_factors_wide.parquet`): the
 long data pivoted so each forecast date becomes a separate column per

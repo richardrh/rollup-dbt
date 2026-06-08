@@ -49,6 +49,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_ep_summary_generator.py",
         "test_generate_ep_summaries_cli.py",
         "test_pipeline_e2e_validation.py",
+        "test_pipeline_fuzz.py",
         "test_pipeline_modelled_dimension_coverage.py",
         "test_pipeline_schema_yaml.py",
         "test_pyinstaller_build_config.py",

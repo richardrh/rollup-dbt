@@ -182,6 +182,20 @@ def configure_logging(log_level: str, log_file: Path | None = None) -> None:
     configure_console_logging(log_level, log_file=log_file)
 
 
+def add_file_logging(output_root: Path) -> Path:
+    output_root.mkdir(parents=True, exist_ok=True)
+    log_path = output_root / "rollup.log"
+    handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "%Y-%m-%dT%H:%M:%S",
+        )
+    )
+    logging.getLogger().addHandler(handler)
+    return log_path
+
+
 ValidationReports = RollupValidationResult
 
 
@@ -236,6 +250,8 @@ def run_command(
     output_root: Path,
     debug: bool = False,
 ) -> int:
+    log_path = add_file_logging(output_root)
+    logging.info("writing log=%s", log_path)
     try:
         result = run_rollup(
             data_root,

@@ -1654,7 +1654,6 @@ def _write_combined_outputs(
     common_cols = [c for c in ylt.columns if c in ylt_dialsup.columns]
     dims = _mts_output_dimensions(ylt.select(common_cols))
     sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
-    final_metrics = ["euws_override", "dialsup_gbp_forecast"]
 
     combined = pl.concat(
         [ylt.filter(pl.col(Col.metric) == "euws_override").select(sel),
@@ -1825,6 +1824,13 @@ def run(
         ylts = validation_inputs.ylts
         ep_summaries = validation_inputs.ep_summaries
         coverage_report = validation_inputs.coverage_report
+        logger.info(
+            "validation summary seed_files=%d ylt_files=%d ep_summary_files=%d coverage_errors=%d",
+            seeds.report.height,
+            ylts.report.height,
+            ep_summaries.report.height,
+            coverage_report.filter(pl.col("severity") == "error").height,
+        )
 
     with logged_phase("staging"):
         for filename, frame in seeds.frames.items():
@@ -1849,6 +1855,11 @@ def run(
         staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
         staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
         staging_frames["ep_summaries_selected_dialsup"] = staged_ep_summaries.selected_dialsup
+        logger.info(
+            "staging summary seed_frames=%d staging_frames=%d",
+            len(seed_frames),
+            len(staging_frames),
+        )
 
     with logged_phase("intermediate"):
         enriched_ylts = enrich_ylt_with_ep_summaries(normalized_ylts, staged_ep_summaries)
@@ -1937,6 +1948,7 @@ def run(
             [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
             how="diagonal",
         )
+        logger.info("intermediate summary frames=%d", len(intermediate_frames))
 
     with logged_phase("marts"):
         main_fanout = build_main_fanout(
