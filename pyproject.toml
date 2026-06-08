@@ -9,23 +9,23 @@ description = "Retail rollup pipeliner"
 readme = "README.md"
 requires-python = "==3.13.*"
 authors = [ { name = "Richard Hampton" } ]
+
+
+
 dependencies = [
     "argcomplete>=3.0",
-    "duckdb>=1.4.4",
     "tomli-w>=1.2.0",
     "polars>=1.20.0",
-    "pandas>=2.3.0",
     "pandera[polars]>=0.27.0",
     "pyarrow>=22.0.0",
     "pyyaml>=6.0",
-    "sqlalchemy>=2.0",
     "pyodbc",
-    "mypy>=2.1.0",
-    "ruff>=0.15.13",
+
 ]
 
 [project.scripts]
 rollup = "rollup.cli:main"
+build = "scripts.build"
 
 [tool.setuptools.package-dir]
 "" = "src"
@@ -41,10 +41,9 @@ build = [
 dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
-    "pytest-xdist>=3.8.0",
-    "pymssql>=2.3.0",
-    "testcontainers>=4.13.0",
-    "build>=1.5.0",
+    "mypy>=2.1.0",
+    "ruff>=0.15.13",
+   "build>=1.5.0",
 ]
 
 [tool.uv]

@@ -6,61 +6,15 @@ from pathlib import Path
 import logging
 import time
 
-import polars as pl
 
 from rollup.analysis import write_ep_report
 from rollup.ep_summary_generator import generate_vendor_ep_summary
 from rollup.logging import temporary_file_logging
 from rollup.pipeline import (
-    PipelineValidationInputs,
-    empty_input_ylt_aal_by_lob_peril_summary,
-    input_ylt_aal_by_lob_peril_summary,
-    load_pipeline_validation_inputs,
     run,
-    ylt_loss_validation_summary,
-)
-
+    )
 
 logger = logging.getLogger(__name__)
-
-
-VALIDATION_REPORT_FILENAMES = {
-    "validation_report.csv": "validation_report",
-    "modelled_lob_peril_anti_join_report.csv": "coverage_report",
-    "ylt_loss_validation_summary.csv": "ylt_loss_report",
-    "input_ylt_aal_by_lob_peril_summary.csv": "input_ylt_aal_report",
-}
-
-
-@dataclass(frozen=True)
-class RollupValidationResult:
-    data_root: Path
-    is_valid: bool
-    validation_report: pl.DataFrame
-    coverage_report: pl.DataFrame
-    ylt_loss_report: pl.DataFrame
-    input_ylt_aal_report: pl.DataFrame
-
-    def raise_for_errors(self) -> None:
-        if not self.is_valid:
-            raise RollupValidationError(self)
-
-    def report_frames(self) -> dict[str, pl.DataFrame]:
-        return {
-            filename: getattr(self, attribute_name)
-            for filename, attribute_name in VALIDATION_REPORT_FILENAMES.items()
-        }
-
-    def write_reports(self, report_dir: str | Path) -> dict[str, Path]:
-        report_dir = Path(report_dir)
-        report_dir.mkdir(parents=True, exist_ok=True)
-        written_paths: dict[str, Path] = {}
-        for filename, frame in self.report_frames().items():
-            output_path = report_dir / filename
-            frame.write_csv(output_path)
-            written_paths[filename] = output_path
-        return written_paths
-
 
 @dataclass(frozen=True)
 class RollupOutputPaths:
@@ -77,40 +31,8 @@ class RollupOutputPaths:
 class RollupRunResult:
     data_root: Path
     output_root: Path
-    validation: RollupValidationResult
     outputs: RollupOutputPaths
     ep_report_path: Path | None
-
-
-class RollupValidationError(ValueError):
-    def __init__(self, validation: RollupValidationResult) -> None:
-        self.validation = validation
-        invalid_count = validation.validation_report.filter(~pl.col("valid")).height
-        coverage_error_count = validation.coverage_report.filter(
-            pl.col("severity") == "error"
-        ).height
-        super().__init__(
-            "Rollup input validation failed "
-            f"({invalid_count} invalid file(s), {coverage_error_count} coverage error(s))"
-        )
-
-
-@dataclass(frozen=True)
-class _ValidationBundle:
-    inputs: PipelineValidationInputs
-    result: RollupValidationResult
-
-
-def validate_rollup_inputs(
-    data_root: str | Path = "data",
-    *,
-    report_dir: str | Path | None = None,
-) -> RollupValidationResult:
-    result = _collect_validation(data_root).result
-    if report_dir is not None:
-        result.write_reports(report_dir)
-    return result
-
 
 def run_rollup(
     data_root: str | Path = "data",
@@ -199,58 +121,3 @@ def collect_output_paths(
         debug_dir=output_root / "debug" if debug else None,
     )
 
-
-def _collect_validation(data_root: str | Path = "data") -> _ValidationBundle:
-    data_root = Path(data_root)
-    inputs = load_pipeline_validation_inputs(data_root)
-    validation_report = _validation_report(inputs)
-    try:
-        ylt_loss_report = ylt_loss_validation_summary(data_root)
-    except Exception as exc:
-        ylt_loss_report = pl.DataFrame(
-            [{"valid": False, "error": f"YLT loss validation summary failed: {exc}"}]
-        )
-    try:
-        input_ylt_aal_report = input_ylt_aal_by_lob_peril_summary(inputs)
-    except Exception:
-        input_ylt_aal_report = empty_input_ylt_aal_by_lob_peril_summary()
-
-    result = RollupValidationResult(
-        data_root=data_root,
-        is_valid=_is_valid(validation_report, inputs.coverage_report),
-        validation_report=validation_report,
-        coverage_report=inputs.coverage_report,
-        ylt_loss_report=ylt_loss_report,
-        input_ylt_aal_report=input_ylt_aal_report,
-    )
-    _log_validation_summary(result)
-    return _ValidationBundle(inputs=inputs, result=result)
-
-
-def _log_validation_summary(result: RollupValidationResult) -> None:
-    invalid_count = result.validation_report.filter(~pl.col("valid")).height
-    coverage_error_count = result.coverage_report.filter(pl.col("severity") == "error").height
-    logger.info(
-        "validation summary invalid_files=%d coverage_errors=%d is_valid=%s",
-        invalid_count,
-        coverage_error_count,
-        str(result.is_valid).lower(),
-    )
-
-
-def _validation_report(inputs: PipelineValidationInputs) -> pl.DataFrame:
-    report_parts = [
-        inputs.seeds.report.with_columns(pl.lit("seeds").alias("source_group")),
-        inputs.ylts.report.with_columns(pl.lit("ylt").alias("source_group")),
-        inputs.ep_summaries.report.with_columns(pl.lit("ep_summaries").alias("source_group")),
-    ]
-    return pl.concat(
-        [part.with_columns(pl.col("error").cast(pl.String)) for part in report_parts],
-        how="diagonal",
-    )
-
-
-def _is_valid(validation_report: pl.DataFrame, coverage_report: pl.DataFrame) -> bool:
-    invalid_count = validation_report.filter(~pl.col("valid")).height
-    coverage_error_count = coverage_report.filter(pl.col("severity") == "error").height
-    return invalid_count == 0 and coverage_error_count == 0
