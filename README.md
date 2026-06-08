@@ -4,20 +4,14 @@ Catastrophe rollup pipeline that reads analyst-supplied seed data, vendor YLT
 parquets, and EP summary CSVs from `data/`, then writes mart/report outputs to
 root `output/`.
 
-Active code lives in `src/rollup/`. The CLI entrypoint is
-`rollup = "rollup.cli:main"`.
+Active code lives in `src/rollup/`. The CLI implementation is in
+`src/rollup/cli.py`.
 
-## Run docs
+## Serve docs locally
 
 ```bash
 uv run rollup docs
 uv run rollup docs --host localhost --port 4322
-```
-
-OR
-
-```bash
-uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
 ```
 
 Built bundle:

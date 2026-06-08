@@ -13,19 +13,13 @@ authors = [ { name = "Richard Hampton" } ]
 
 
 dependencies = [
-    "argcomplete>=3.0",
     "tomli-w>=1.2.0",
     "polars>=1.20.0",
-    "pandera[polars]>=0.27.0",
     "pyarrow>=22.0.0",
     "pyyaml>=6.0",
     "pyodbc",
 
 ]
-
-[project.scripts]
-rollup = "rollup.cli:main"
-build = "scripts.build"
 
 [tool.setuptools.package-dir]
 "" = "src"
@@ -43,11 +37,15 @@ dev = [
     "pytest>=9.0.2",
     "mypy>=2.1.0",
     "ruff>=0.15.13",
-   "build>=1.5.0",
+    "build>=1.5.0",
+    "validnator",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.uv.sources]
+validnator = { path = "../../dev/validnator", editable = true }
 
 
 [tool.hatch.build.targets.wheel]
@@ -60,3 +58,6 @@ markers = [
     "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
     "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
 ]
+
+[tool.ruff]
+exclude = ["jan-rollup", "utils", "scripts/build.py"]
