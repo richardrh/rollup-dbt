@@ -1,12 +1,8 @@
 name: Rollup RiskLink YLT schema validation
 version: "1.0"
 
-# Retained for validnator CLI compatibility with CSV extracts. Programmatic
-# parquet/Dataiku validation supplies a Polars DataFrame via Pipeline.run_with_df,
-# so the input loader settings below are ignored in that mode.
-input:
-  type: csv
-  mode: raw_strings
+# DataFrame/parquet config: load parquet into Polars/Dataiku and validate with
+# Pipeline.run_with_df(df). Add a separate CSV config/input block for CSV extracts.
 
 rules:
   - code: RISKLINK_YLT_SCHEMA
@@ -15,7 +11,7 @@ rules:
     message: "RiskLink YLT input must contain the parquet schema columns expected by rollup"
     checks:
       - type: schema_matches
-        mode: castable
+        mode: strict
         allow_extra_columns: true
         columns:
           anlsid: int64

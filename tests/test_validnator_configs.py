@@ -12,6 +12,22 @@ from validnator.pipeline_config import PipelineConfig
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CENTRAL_VALIDNATOR_DIR = REPO_ROOT / "validation" / "validnator"
+CSV_CONFIGS = {
+    Path("data/ep_summaries/validnator.yml"),
+    Path("data/seeds/adjustments/validnator.yml"),
+    Path("data/seeds/business/validnator-lobs.yml"),
+    Path("data/seeds/business/validnator-perils.yml"),
+    Path("data/seeds/vor/validnator-blending-factors.yml"),
+    Path("data/seeds/vor/validnator-euws-rate-factors.yml"),
+    Path("data/seeds/vor/validnator-forecast-factors.yml"),
+    Path("data/seeds/vor/validnator-fx-rates.yml"),
+}
+PARQUET_DF_CONFIGS = {
+    Path("data/seeds/validation/validnator-risklink-flood-events.yml"),
+    Path("data/seeds/validation/validnator-verisk-events.yml"),
+    Path("data/ylt/validnator-risklink.yml"),
+    Path("data/ylt/validnator-verisk.yml"),
+}
 
 
 def _validnator_configs() -> list[Path]:
@@ -19,20 +35,7 @@ def _validnator_configs() -> list[Path]:
 
 
 def test_validnator_pipeline_configs_exist() -> None:
-    expected = {
-        Path("data/ep_summaries/validnator.yml"),
-        Path("data/seeds/adjustments/validnator.yml"),
-        Path("data/seeds/business/validnator-lobs.yml"),
-        Path("data/seeds/business/validnator-perils.yml"),
-        Path("data/seeds/vor/validnator-blending-factors.yml"),
-        Path("data/seeds/vor/validnator-euws-rate-factors.yml"),
-        Path("data/seeds/vor/validnator-forecast-factors.yml"),
-        Path("data/seeds/vor/validnator-fx-rates.yml"),
-        Path("data/seeds/validation/validnator-risklink-flood-events.yml"),
-        Path("data/seeds/validation/validnator-verisk-events.yml"),
-        Path("data/ylt/validnator-risklink.yml"),
-        Path("data/ylt/validnator-verisk.yml"),
-    }
+    expected = CSV_CONFIGS | PARQUET_DF_CONFIGS
 
     assert {path.relative_to(REPO_ROOT) for path in _validnator_configs()} == expected
 
@@ -44,21 +47,70 @@ def test_validnator_pipeline_configs_are_not_centralized() -> None:
 def test_validnator_pipeline_configs_parse_with_pyyaml_and_validnator() -> None:
     for config_path in _validnator_configs():
         raw_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        raw_input = raw_config.get("input")
-        if raw_input is not None:
-            assert raw_input["type"] == "csv"
-            assert raw_input["mode"] in {"infer_types", "raw_strings"}
-
         config = PipelineConfig.from_yaml(config_path)
 
+        assert isinstance(raw_config, dict)
         assert config.name
-        assert config.input.input_type == "csv"
-        assert config.input.mode in {"infer_types", "raw_strings"}
         assert config.schema_gate
+
+
+def test_csv_validnator_configs_use_raw_string_input() -> None:
+    expected_input = {"type": "csv", "mode": "raw_strings"}
+
+    for config_path in sorted(CSV_CONFIGS):
+        raw_config = yaml.safe_load((REPO_ROOT / config_path).read_text(encoding="utf-8"))
+        config = PipelineConfig.from_yaml(REPO_ROOT / config_path)
+
+        assert raw_config["input"] == expected_input
+        assert config.input.input_type == "csv"
+        assert config.input.mode == "raw_strings"
+
+
+def test_parquet_dataframe_validnator_configs_do_not_use_csv_raw_strings_input() -> None:
+    misleading_input = {"type": "csv", "mode": "raw_strings"}
+
+    for config_path in sorted(PARQUET_DF_CONFIGS):
+        raw_config = yaml.safe_load((REPO_ROOT / config_path).read_text(encoding="utf-8"))
+
+        assert "input" not in raw_config
+        assert raw_config.get("input") != misleading_input
+
+
+def test_parquet_dataframe_validnator_schema_modes_match_typed_dataframes() -> None:
+    expected_modes = {
+        Path("data/seeds/validation/validnator-risklink-flood-events.yml"): "castable",
+        Path("data/seeds/validation/validnator-verisk-events.yml"): "strict",
+        Path("data/ylt/validnator-risklink.yml"): "strict",
+        Path("data/ylt/validnator-verisk.yml"): "strict",
+    }
+
+    for config_path, expected_mode in expected_modes.items():
+        raw_config = yaml.safe_load((REPO_ROOT / config_path).read_text(encoding="utf-8"))
+        schema_checks = [
+            check
+            for rule in raw_config["rules"]
+            for check in rule["checks"]
+            if check["type"] == "schema_matches"
+        ]
+
+        assert schema_checks
+        assert {check["mode"] for check in schema_checks} == {expected_mode}
 
 
 def test_parquet_validnator_configs_accept_current_catalogue_schemas(tmp_path: Path) -> None:
     cases = [
+        (
+            DATA_DIR / "ylt" / "validnator-verisk.yml",
+            DATA_DIR / "ylt" / "verisk" / "air_ylt_c1.parquet",
+        ),
+        (
+            DATA_DIR / "ylt" / "validnator-verisk.yml",
+            DATA_DIR / "ylt" / "verisk" / "air_ylt_c2.parquet",
+        ),
+        (
+            DATA_DIR / "ylt" / "validnator-risklink.yml",
+            DATA_DIR / "ylt" / "risklink" / "risklink_ylt.parquet",
+        ),
         (
             DATA_DIR / "seeds" / "validation" / "validnator-verisk-events.yml",
             DATA_DIR / "seeds" / "validation" / "verisk_events.parquet",

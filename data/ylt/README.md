@@ -1,28 +1,15 @@
 # data/ylt
 
 Rollup reads production YLT inputs as parquet from the vendor subfolders.
-The YAML files in this folder describe the expected vendor YLT schema and can be
-used in two ways.
-
-## CSV extract validation with the validnator CLI
-
-The local validnator CLI input loader accepts CSV inputs, so keep CLI examples to
-CSV extracts. Use the vendor-specific config that matches the extract being
-validated:
-
-```bash
-uv run validnator validate -p data/ylt/validnator-verisk.yml -i exports/verisk_ylt.csv -o validation-output/verisk-ylt
-uv run validnator validate -p data/ylt/validnator-risklink.yml -i exports/risklink_ylt.csv -o validation-output/risklink-ylt
-```
-
-The `input:` blocks in these YAMLs are retained for that CSV CLI path. They are
-not used when a Polars DataFrame is supplied programmatically.
+The YAML files in this folder describe the expected vendor YLT schema for typed
+Polars/Dataiku DataFrames loaded from parquet.
 
 ## Parquet validation from Polars/Dataiku DataFrames
 
-Validnator also supports already-loaded DataFrames. For parquet YLT files, load
-the file with Polars (or receive the equivalent Dataiku DataFrame converted to
-Polars) and call `Pipeline.run_with_df(df)`:
+Load parquet with Polars (or receive the equivalent Dataiku DataFrame converted
+to Polars) and call `Pipeline.run_with_df(df)`. The YAMLs intentionally omit an
+`input:` block because the DataFrame is supplied programmatically rather than
+loaded by the validnator CSV input loader:
 
 ```python
 from pathlib import Path
@@ -31,7 +18,7 @@ import polars as pl
 from validnator.config import ValidationConfig
 from validnator.pipeline import Pipeline
 
-parquet_path = Path("data/ylt/verisk/example.parquet")
+parquet_path = Path("data/ylt/verisk/air_ylt_c1.parquet")
 config_path = Path("data/ylt/validnator-verisk.yml")
 
 pipeline = Pipeline.from_config(
@@ -46,5 +33,24 @@ results = pipeline.run_with_df(df)
 ```
 
 Use `data/ylt/validnator-verisk.yml` for Verisk YLT DataFrames and
-`data/ylt/validnator-risklink.yml` for RiskLink YLT DataFrames. Both configs are
-input-format neutral schema rules for the parquet columns rollup consumes.
+`data/ylt/validnator-risklink.yml` for RiskLink YLT DataFrames. Both configs use
+strict schema matching for the required parquet columns while allowing extra
+vendor columns that rollup does not consume.
+
+## CSV extract validation
+
+The local validnator CLI input loader accepts CSV inputs. These parquet/DataFrame
+YAMLs do not declare CSV raw-string loading, so only use the CLI with a separate
+CSV-oriented config that includes:
+
+```yaml
+input:
+  type: csv
+  mode: raw_strings
+```
+
+Example once such a CSV config exists:
+
+```bash
+uv run validnator validate -p path/to/verisk-ylt-csv-validnator.yml -i exports/verisk_ylt.csv -o validation-output/verisk-ylt-csv
+```

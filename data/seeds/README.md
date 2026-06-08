@@ -1,10 +1,17 @@
 # data/seeds
 
 Seed inputs are described by `data/seeds/schema.yaml`. Most seed files are CSVs;
-validation catalogues are parquet. Upstream/dev CSV validation uses validnator
-configs colocated with each seed section. Sections containing multiple schemas
-use multiple clearly named `validnator-*.yml` files rather than one YAML that
-would require unrelated columns in a single file.
+validation catalogues are parquet. CSV validation and parquet/DataFrame
+validation use different validnator modes:
+
+- CSV configs include `input: {type: csv, mode: raw_strings}` so validnator reads
+  raw strings and checks whether values are castable to the expected types.
+- Parquet catalogue configs omit `input:` and validate typed Polars/Dataiku
+  DataFrames loaded with `pl.read_parquet(...)` via `Pipeline.run_with_df(df)`.
+
+Configs are colocated with each seed section. Sections containing multiple
+schemas use multiple clearly named `validnator-*.yml` files rather than one YAML
+that would require unrelated columns in a single file.
 
 Business seeds:
 
@@ -30,12 +37,13 @@ Validation catalogues:
 - `validation/risklink_flood22_model_events.parquet`: RiskLink flood occurrence
   dates used to derive event-day values.
 
-Parquet catalogue schema rules live beside those files under `validation/`:
+Parquet catalogue DataFrame schema rules live beside those files under
+`validation/`:
 
 - `validation/validnator-verisk-events.yml`
 - `validation/validnator-risklink-flood-events.yml`
 
-Validnator CSV CLI examples:
+Validnator CSV raw-string CLI examples:
 
 ```bash
 uv run validnator validate -p data/seeds/business/validnator-lobs.yml -i data/seeds/business/lobs.csv -o validation-output/lobs

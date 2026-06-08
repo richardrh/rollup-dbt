@@ -1,6 +1,11 @@
 name: Rollup RiskLink flood event catalogue schema validation
 version: "1.0"
 
+# DataFrame/parquet config: load parquet into Polars/Dataiku and validate with
+# Pipeline.run_with_df(df). Add a separate CSV config/input block for CSV extracts.
+# The current parquet stores ModelOccurrenceDate as Polars datetime, so the
+# schema gate keeps castable mode for the rollup date derivation.
+
 rules:
   - code: RISKLINK_FLOOD_EVENTS_SCHEMA
     name: RiskLink flood event catalogue required columns and types
