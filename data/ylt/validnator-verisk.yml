@@ -1,6 +1,9 @@
 name: Rollup Verisk YLT CSV-equivalent validation
 version: "1.0"
 
+# Validnator is CSV-only today. This validates a Verisk CSV extract with the
+# same required columns as the parquet YLT consumed by rollup; it does not
+# validate parquet files directly.
 input:
   type: csv
   mode: raw_strings

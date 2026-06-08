@@ -15,10 +15,13 @@ rules:
         mode: castable
         allow_extra_columns: true
         columns:
+          lob_id: int64
           modelled_lob: string
           rollup_lob: string
-          class: string
+          lob_type: string
+          cds_cat_class_name: string
           office: string
+          class: string
           currency: string
 
   - code: LOBS_REQUIRED_VALUES
@@ -28,8 +31,20 @@ rules:
     checks:
       - type: not_null
         columns:
+          - lob_id
           - modelled_lob
           - rollup_lob
-          - class
+          - lob_type
+          - cds_cat_class_name
           - office
+          - class
           - currency
+
+  - code: LOBS_NON_NEGATIVE_ID
+    name: LOB seed non-negative identifier
+    column: lob_id
+    level: error
+    message: "lob_id must be non-negative"
+    checks:
+      - type: valid_range
+        min: 0

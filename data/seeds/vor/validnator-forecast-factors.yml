@@ -17,6 +17,7 @@ rules:
         columns:
           class: string
           office: string
+          office_iso2: string
           forecast_date: string
           factor: float64
 
@@ -29,6 +30,7 @@ rules:
         columns:
           - class
           - office
+          - office_iso2
           - forecast_date
           - factor
 

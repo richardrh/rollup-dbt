@@ -1,6 +1,10 @@
 # data/seeds
 
-Seed inputs are CSV files validated against `data/seeds/schema.yaml`.
+Seed inputs are CSV files described by `data/seeds/schema.yaml`. Upstream/dev
+CSV validation uses validnator configs colocated with each seed section.
+Validnator validates one CSV input at a time, so sections containing multiple
+schemas use multiple clearly named `validnator-*.yml` files rather than one YAML
+that would require unrelated columns in a single file.
 
 Business seeds:
 
@@ -25,6 +29,18 @@ Validation catalogues:
   days.
 - `validation/risklink_flood22_model_events.parquet`: RiskLink flood occurrence
   dates used to derive event-day values.
+
+There is no validnator config under `validation/` because these catalogue inputs
+are parquet files and validnator currently validates CSV files only.
+
+Validnator examples:
+
+```bash
+uv run validnator validate -p data/seeds/business/validnator-lobs.yml -i data/seeds/business/lobs.csv -o validation-output/lobs
+uv run validnator validate -p data/seeds/business/validnator-perils.yml -i data/seeds/business/perils.csv -o validation-output/perils
+uv run validnator validate -p data/seeds/vor/validnator-fx-rates.yml -i data/seeds/vor/fx_rates.csv -o validation-output/fx-rates
+uv run validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
+```
 
 EP summaries under `data/ep_summaries/**/*.long.csv`, including
 `data/ep_summaries/risklink/rms_ep_summary.long.csv` and

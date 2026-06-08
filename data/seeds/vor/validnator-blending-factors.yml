@@ -15,9 +15,15 @@ rules:
         mode: castable
         allow_extra_columns: true
         columns:
+          id: int64
+          BlendSetID: int64
           RegionPerilID: int64
+          RegionPeril: string
+          SubRegionPerilID: string
           AIRBlend: float64
           RMSBlend: float64
+          KatRiskBlend: float64
+          DateCreated: string
 
   - code: BLENDING_FACTORS_REQUIRED_VALUES
     name: Blending factors required values
@@ -26,21 +32,31 @@ rules:
     checks:
       - type: not_null
         columns:
+          - id
+          - BlendSetID
           - RegionPerilID
+          - RegionPeril
+          - SubRegionPerilID
           - AIRBlend
           - RMSBlend
+          - KatRiskBlend
+          - DateCreated
 
   - code: BLENDING_FACTORS_RANGES
     name: Blending factors ranges
     level: error
-    message: "RegionPerilID must be non-negative and blend weights must be between 0 and 1"
+    message: "IDs must be non-negative and blend weights must be between 0 and 1"
     checks:
       - type: valid_range
-        column: RegionPerilID
+        columns:
+          - id
+          - BlendSetID
+          - RegionPerilID
         min: 0
       - type: valid_range
         columns:
           - AIRBlend
           - RMSBlend
+          - KatRiskBlend
         min: 0
         max: 1

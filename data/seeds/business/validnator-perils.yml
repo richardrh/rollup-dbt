@@ -17,6 +17,8 @@ rules:
         columns:
           modelled_peril: string
           rollup_peril: string
+          region: string
+          peril: string
           region_peril_id: int64
           selection_priority: int64
           is_dialsup: int64
@@ -30,6 +32,8 @@ rules:
         columns:
           - modelled_peril
           - rollup_peril
+          - region
+          - peril
           - region_peril_id
           - selection_priority
           - is_dialsup

@@ -15,7 +15,8 @@ rules:
         mode: castable
         allow_extra_columns: true
         columns:
-          event_id: int64
+          model_event_id: int64
+          occ_year: int64
           factor: float64
 
   - code: EUWS_RATE_FACTORS_REQUIRED_VALUES
@@ -25,16 +26,18 @@ rules:
     checks:
       - type: not_null
         columns:
-          - event_id
+          - model_event_id
+          - occ_year
           - factor
 
   - code: EUWS_RATE_FACTORS_NON_NEGATIVE_VALUES
     name: EUWS rate factors non-negative values
     level: error
-    message: "event_id and factor must be greater than or equal to 0"
+    message: "model_event_id, occ_year, and factor must be greater than or equal to 0"
     checks:
       - type: valid_range
         columns:
-          - event_id
+          - model_event_id
+          - occ_year
           - factor
         min: 0

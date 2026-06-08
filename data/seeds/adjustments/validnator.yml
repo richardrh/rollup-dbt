@@ -1,0 +1,42 @@
+name: Rollup EUWS rank overrides seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: EUWS_RANK_OVERRIDES_SCHEMA
+    name: EUWS rank overrides required columns and types
+    level: error
+    message: "euws_rank_overrides.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: true
+        columns:
+          rollup_lob: string
+          max_rank: int64
+          factor: float64
+
+  - code: EUWS_RANK_OVERRIDES_REQUIRED_VALUES
+    name: EUWS rank overrides required values
+    level: error
+    message: "EUWS rank override fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - rollup_lob
+          - max_rank
+          - factor
+
+  - code: EUWS_RANK_OVERRIDES_NON_NEGATIVE_VALUES
+    name: EUWS rank overrides non-negative values
+    level: error
+    message: "max_rank and factor must be greater than or equal to 0"
+    checks:
+      - type: valid_range
+        columns:
+          - max_rank
+          - factor
+        min: 0

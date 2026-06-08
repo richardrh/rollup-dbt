@@ -16,6 +16,8 @@ rules:
         allow_extra_columns: true
         columns:
           currency_code: string
+          target_currency: string
+          rate_date: string
           rate: float64
 
   - code: FX_RATES_REQUIRED_VALUES
@@ -26,6 +28,8 @@ rules:
       - type: not_null
         columns:
           - currency_code
+          - target_currency
+          - rate_date
           - rate
 
   - code: FX_RATES_POSITIVE_RATE
