@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 import logging
 import time
 
+import polars as pl
 
 from rollup.analysis import write_ep_report
+from rollup.config import RollupConfig, load_config
 from rollup.ep_summary_generator import generate_vendor_ep_summary
 from rollup.logging import temporary_file_logging
-from rollup.pipeline import (
-    run,
-    )
+from rollup.pipeline import run
+from rollup.staging import load_sources
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RollupOutputPaths:
@@ -24,7 +26,7 @@ class RollupOutputPaths:
     event_validation: Path
     marts_dir: Path
     mart_files: tuple[Path, ...]
-    debug_dir: Path | None = None
+    stage_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -34,11 +36,31 @@ class RollupRunResult:
     outputs: RollupOutputPaths
     ep_report_path: Path | None
 
+
+@dataclass(frozen=True)
+class RollupValidationResult:
+    data_root: Path
+    is_valid: bool
+    validation_report: pl.DataFrame
+
+    def raise_for_errors(self) -> None:
+        if not self.is_valid:
+            raise RollupValidationError(self)
+
+
+class RollupValidationError(ValueError):
+    def __init__(self, validation: RollupValidationResult) -> None:
+        self.validation = validation
+        errors = validation.validation_report.filter(~pl.col("valid"))
+        super().__init__(f"rollup input validation failed with {errors.height} error(s)")
+
+
 def run_rollup(
     data_root: str | Path = "data",
     output_root: str | Path = "output",
     *,
-    debug: bool = False,
+    config_path: str | Path | None = None,
+    config: RollupConfig | None = None,
     validate: bool = True,
     write_analysis: bool = True,
     validation_callback: Callable[[RollupValidationResult], None] | None = None,
@@ -47,46 +69,40 @@ def run_rollup(
     with temporary_file_logging(log_file):
         data_root = Path(data_root)
         output_root = Path(output_root)
+        config = config or load_config(config_path)
         started = time.perf_counter()
-        logger.info(
-            "start rollup data_root=%s output_root=%s debug=%s validate=%s write_analysis=%s",
-            data_root,
-            output_root,
-            debug,
-            validate,
-            write_analysis,
-        )
-        try:
-            validation_bundle = _collect_validation(data_root)
-            validation = validation_bundle.result
-            if validation_callback is not None:
-                validation_callback(validation)
-            if validate:
-                validation.raise_for_errors()
-
-            run(
-                data_root,
-                output_root=output_root,
-                debug=debug,
-                validation_inputs=validation_bundle.inputs,
-            )
-            ep_report_path = write_ep_report(output_root) if write_analysis else None
-            result = RollupRunResult(
-                data_root=data_root,
-                output_root=output_root,
-                validation=validation,
-                outputs=collect_output_paths(output_root, debug=debug),
-                ep_report_path=ep_report_path,
-            )
-        except Exception:
-            logger.exception("failed rollup elapsed=%.2fs", time.perf_counter() - started)
-            raise
+        logger.info("start rollup data_root=%s output_root=%s", data_root, output_root)
+        validation = validate_rollup_inputs(data_root)
+        if validation_callback is not None:
+            validation_callback(validation)
+        if validate:
+            validation.raise_for_errors()
+        run(data_root, output_root=output_root, config=config)
+        ep_report_path = write_ep_report(output_root, config=config) if write_analysis else None
         logger.info("done rollup output_root=%s elapsed=%.2fs", output_root, time.perf_counter() - started)
-        return result
+        return RollupRunResult(
+            data_root=data_root,
+            output_root=output_root,
+            outputs=collect_output_paths(output_root, config=config),
+            ep_report_path=ep_report_path,
+        )
 
 
-def build_ep_report(output_root: str | Path = "output") -> Path:
-    return write_ep_report(output_root)
+def validate_rollup_inputs(data_root: str | Path = "data") -> RollupValidationResult:
+    data_root = Path(data_root)
+    try:
+        load_sources(data_root)
+    except Exception as exc:
+        report = pl.DataFrame(
+            [{"source_group": "runtime_schema_guard", "valid": False, "error": str(exc)}]
+        )
+        return RollupValidationResult(data_root=data_root, is_valid=False, validation_report=report)
+    report = pl.DataFrame([{"source_group": "runtime_schema_guard", "valid": True, "error": None}])
+    return RollupValidationResult(data_root=data_root, is_valid=True, validation_report=report)
+
+
+def build_ep_report(output_root: str | Path = "output", *, config_path: str | Path | None = None) -> Path:
+    return write_ep_report(output_root, config_path=config_path)
 
 
 def generate_ep_summary(
@@ -96,28 +112,23 @@ def generate_ep_summary(
     *,
     status_callback: Callable[[str], None] | None = None,
 ) -> Path:
-    return generate_vendor_ep_summary(
-        data_root,
-        vendor,
-        csv_path,
-        status_callback=status_callback,
-    )
+    return generate_vendor_ep_summary(data_root, vendor, csv_path, status_callback=status_callback)
 
 
 def collect_output_paths(
     output_root: str | Path = "output",
     *,
-    debug: bool = False,
+    config: RollupConfig | None = None,
 ) -> RollupOutputPaths:
+    config = config or load_config()
     output_root = Path(output_root)
-    marts_dir = output_root / "marts"
+    marts_dir = config.outputs.marts_path(output_root)
     return RollupOutputPaths(
-        mts_combined=output_root / "mts_tbl_ylt_combined_all_factors.parquet",
-        mts_wide=output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet",
-        mts_dialsup=output_root / "mts_tbl_ylt_dialsup.parquet",
-        event_validation=output_root / "mts_event_validation.parquet",
+        mts_combined=marts_dir / config.outputs.combined_file,
+        mts_wide=marts_dir / config.outputs.wide_file,
+        mts_dialsup=marts_dir / config.outputs.dialsup_file,
+        event_validation=marts_dir / config.outputs.event_validation_file,
         marts_dir=marts_dir,
-        mart_files=tuple(sorted(marts_dir.glob("*.parquet"))),
-        debug_dir=output_root / "debug" if debug else None,
+        mart_files=tuple(sorted(marts_dir.glob("*.parquet"))) if marts_dir.exists() else (),
+        stage_dir=output_root / config.outputs.stage_output_dir if config.outputs.write_stage_outputs else None,
     )
-
