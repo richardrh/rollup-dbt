@@ -13,3 +13,9 @@ blending factors are tested with a fixed blending factor test file etc.
 file locations for the test suite to work? 
 - we see dotted around 10_000 hard coded for verisk and 100_000 hard coded for risklink
 these are now in the config file.
+- the test suite will need to be much lighter as we are now removing the cli option
+and the idea is to run the pipeline on dataiku.
+- how do we also potentially do one single .collect then do fanouts, it looks 
+like in this branch we are actually calling .collect on each frame. not sure if this is
+necessary, at least unless we want debug mode. i wonder if there is a way to .collect
+but still do all the debug output?
