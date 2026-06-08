@@ -223,6 +223,12 @@ def validate_lazyframe_schema(
 
 
 def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationResult:
+    # FIX: This whole validation logic is messed up and needs to be better. 
+    # i.e. let's read a schema file, get the schema and match against the parquets
+    # in the schema file's specified directory.
+    # that removes hard coding the directory, as we already have it in the schema.
+    # OR we can make better use of pandera which should give a cleaner api
+    # to creating validations.
     data_root = Path(data_root)
     schemas = load_yaml_dataset_schema_contracts(data_root)
     vendor_specs = {
@@ -283,6 +289,8 @@ def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationRe
 
 def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
     data_root = Path(data_root)
+    # FIX: wantthis to not hardcode the data root / file path, loss columns and the 
+    # divosor number
     vendor_specs = {
         "verisk": (data_root / "ylt" / "verisk", RawCol.GroundUpLoss, 10_000),
         "risklink": (data_root / "ylt" / "risklink", RawCol.loss, 100_000),
