@@ -104,58 +104,6 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     )
 
 
-def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
-    verisk = frames.verisk_ylt.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
-        pl.lit("verisk").alias(Col.vendor),
-        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.analysis_id),
-        pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
-        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
-        pl.col(RawCol.ModelCode).cast(pl.Int64).alias(Col.model_code),
-        pl.col(RawCol.YearID).cast(pl.Int64).alias(Col.year_id),
-        pl.col(RawCol.EventID).cast(pl.Int64).alias(Col.event_id),
-        pl.col(RawCol.GroundUpLoss).cast(pl.Float64).alias(Col.loss),
-    )
-    risklink = frames.risklink_ylt.select(
-        pl.lit("risklink").alias(Col.vendor),
-        pl.col(RawCol.anlsid).cast(pl.String).alias(Col.analysis_id),
-        pl.lit(None).cast(pl.String).alias(Col.modelled_lob),
-        pl.lit(None).cast(pl.String).alias(Col.modelled_peril),
-        pl.lit(None).cast(pl.Int64).alias(Col.model_code),
-        pl.col(RawCol.yearid).cast(pl.Int64).alias(Col.year_id),
-        pl.col(RawCol.eventid).cast(pl.Int64).alias(Col.event_id),
-        pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
-    )
-    return pl.concat([verisk, risklink], how="vertical")
-
-
-def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
-    lobs = frames.lobs.lazy().select(
-        Col.modelled_lob,
-        Col.rollup_lob,
-        pl.col(Col.class_).cast(pl.String),
-        pl.col(Col.office).cast(pl.String),
-        pl.col(Col.currency).cast(pl.String),
-    )
-    perils = frames.perils.lazy().select(
-        Col.modelled_peril,
-        Col.rollup_peril,
-        pl.col(Col.region_peril_id).cast(pl.Int64),
-        pl.col(Col.selection_priority).cast(pl.Int64),
-        pl.col(Col.is_dialsup).cast(pl.Int64),
-    )
-    return (
-        frames.ep_summaries.lazy()
-        .with_columns(
-            pl.col(Col.vendor).cast(pl.String).str.to_lowercase(),
-            pl.col(Col.analysis_id).cast(pl.String),
-            pl.col(Col.return_period).cast(pl.Int64),
-            pl.col(Col.loss).cast(pl.Float64),
-        )
-        .join(lobs, on=Col.modelled_lob, how="left")
-        .join(perils, on=Col.modelled_peril, how="left")
-    )
-
-
 def _scan_parquet_folder(folder: Path) -> pl.LazyFrame:
     paths = sorted(folder.glob("*.parquet"))
     if not paths:

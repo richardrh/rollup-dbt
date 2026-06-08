@@ -26,7 +26,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rollup"]
+include = ["rollup", "rollup.*"]
 
 [dependency-groups]
 build = [

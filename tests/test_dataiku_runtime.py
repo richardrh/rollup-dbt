@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import polars as pl
@@ -14,9 +15,40 @@ def test_import_surface() -> None:
     import rollup
     from rollup.api import run_rollup as api_run_rollup
     from rollup.pipeline import run
+    from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
 
     assert rollup.run_rollup is api_run_rollup
     assert callable(run)
+    assert callable(load_sources)
+    assert callable(normalize_ylt)
+    assert callable(stage_ep_summaries)
+
+
+def test_transform_modules_are_split_into_packages() -> None:
+    expected_members = {
+        "rollup.staging.load_sources": "load_sources",
+        "rollup.staging.normalize_ylt": "normalize_ylt",
+        "rollup.staging.stage_ep_summaries": "stage_ep_summaries",
+        "rollup.intermediate.build_enriched_ylt": "build_enriched_ylt",
+        "rollup.intermediate.apply_adjustments": "apply_adjustments",
+        "rollup.intermediate.apply_blending": "apply_blending",
+        "rollup.intermediate.apply_fx": "apply_fx",
+        "rollup.intermediate.apply_forecast": "apply_forecast",
+        "rollup.intermediate.apply_euws": "apply_euws",
+        "rollup.intermediate.build_metric_long": "build_metric_long",
+        "rollup.intermediate.build_dialsup": "build_dialsup",
+        "rollup.marts.write_stage_frames": "write_stage_frames",
+        "rollup.marts.write_marts": "write_marts",
+        "rollup.marts.write_parquet": "write_parquet",
+        "rollup.marts.wide": "wide",
+        "rollup.marts.event_validation": "event_validation",
+        "rollup.marts.fanouts": "write_fanouts",
+    }
+
+    for module_name, member_name in expected_members.items():
+        module = importlib.import_module(module_name)
+
+        assert callable(getattr(module, member_name))
 
 
 def test_schema_guard_catches_missing_required_column() -> None:
