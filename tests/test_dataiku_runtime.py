@@ -51,6 +51,79 @@ def test_transform_modules_are_split_into_packages() -> None:
         assert callable(getattr(module, member_name))
 
 
+def test_transform_modules_expose_polars_schema_contracts() -> None:
+    expected_schemas = {
+        "rollup.staging.load_sources": (
+            "VERISK_YLT_SCHEMA",
+            "RISKLINK_YLT_SCHEMA",
+            "EP_SUMMARY_SCHEMA",
+            "LOBS_SCHEMA",
+            "PERILS_SCHEMA",
+        ),
+        "rollup.staging.normalize_ylt": (
+            "NORMALIZE_VERISK_INPUT_SCHEMA",
+            "NORMALIZE_RISKLINK_INPUT_SCHEMA",
+            "NORMALIZED_YLT_SCHEMA",
+            "NORMALIZE_YLT_OUTPUT_SCHEMA",
+        ),
+        "rollup.staging.stage_ep_summaries": (
+            "STAGED_EP_SUMMARIES_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_OUTPUT_SCHEMA",
+        ),
+        "rollup.intermediate.build_enriched_ylt": (
+            "ENRICHED_YLT_INPUT_SCHEMA",
+            "ENRICHED_EP_INPUT_SCHEMA",
+            "ENRICHED_YLT_OUTPUT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_blending": (
+            "BLENDING_INPUT_SCHEMA",
+            "BLENDING_FACTORS_SCHEMA",
+            "BLENDED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_fx": (
+            "FX_INPUT_SCHEMA",
+            "FX_RATES_SCHEMA",
+            "FX_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_forecast": (
+            "FORECAST_INPUT_SCHEMA",
+            "FORECAST_FACTORS_SCHEMA",
+            "FORECAST_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_euws": (
+            "EUWS_INPUT_SCHEMA",
+            "EUWS_FACTORS_SCHEMA",
+            "EUWS_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.build_metric_long": (
+            "METRIC_LONG_INPUT_SCHEMA",
+            "METRIC_LONG_SCHEMA",
+        ),
+        "rollup.intermediate.build_dialsup": (
+            "DIALSUP_INPUT_SCHEMA",
+            "DIALSUP_SCHEMA",
+        ),
+        "rollup.marts.event_validation": (
+            "EVENT_VALIDATION_INPUT_SCHEMA",
+            "EVENT_VALIDATION_SCHEMA",
+        ),
+        "rollup.marts.fanouts": ("FANOUT_INPUT_SCHEMA", "FANOUT_SCHEMA"),
+        "rollup.marts.wide": ("WIDE_INPUT_SCHEMA", "WIDE_OUTPUT_SCHEMA"),
+        "rollup.marts.write_marts": (
+            "COMBINED_MART_INPUT_SCHEMA",
+            "DIALSUP_MART_INPUT_SCHEMA",
+        ),
+    }
+
+    for module_name, schema_names in expected_schemas.items():
+        module = importlib.import_module(module_name)
+
+        for schema_name in schema_names:
+            assert isinstance(getattr(module, schema_name), pl.Schema)
+
+
 def test_schema_guard_catches_missing_required_column() -> None:
     frame = pl.DataFrame({"present": [1]})
 
@@ -156,6 +229,18 @@ combined_file = "combined.parquet"
 
 
 def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> None:
+    from rollup.intermediate.apply_blending import BLENDED_YLT_SCHEMA
+    from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.apply_forecast import FORECAST_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.apply_fx import FX_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.build_dialsup import DIALSUP_SCHEMA
+    from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
+    from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
+    from rollup.marts.event_validation import EVENT_VALIDATION_SCHEMA
+    from rollup.marts.wide import WIDE_OUTPUT_SCHEMA
+    from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
+    from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
+
     data_root = _write_tiny_input(tmp_path)
     output_root = tmp_path / "output"
     config_path = tmp_path / "rollup.toml"
@@ -175,13 +260,21 @@ write_stage_outputs = true
     result = run_rollup(data_root, output_root, config_path=config_path)
 
     assert result.outputs.stage_dir == output_root / "stages"
-    assert (output_root / "stages" / "staging" / "normalized_ylt.parquet").is_file()
+    normalized_ylt_path = output_root / "stages" / "staging" / "normalized_ylt.parquet"
+    staged_ep_path = output_root / "stages" / "staging" / "staged_ep_summaries.parquet"
+    assert normalized_ylt_path.is_file()
+    assert staged_ep_path.is_file()
     intermediate_stage = output_root / "stages" / "intermediate"
-    assert (intermediate_stage / "enriched_ylt.parquet").is_file()
-    assert (intermediate_stage / "blended_ylt.parquet").is_file()
-    assert (intermediate_stage / "fx_applied_ylt.parquet").is_file()
-    assert (intermediate_stage / "forecast_applied_ylt.parquet").is_file()
-    assert (intermediate_stage / "euws_applied_ylt.parquet").is_file()
+    enriched_ylt_path = intermediate_stage / "enriched_ylt.parquet"
+    blended_ylt_path = intermediate_stage / "blended_ylt.parquet"
+    fx_applied_ylt_path = intermediate_stage / "fx_applied_ylt.parquet"
+    forecast_applied_ylt_path = intermediate_stage / "forecast_applied_ylt.parquet"
+    euws_applied_ylt_path = intermediate_stage / "euws_applied_ylt.parquet"
+    assert enriched_ylt_path.is_file()
+    assert blended_ylt_path.is_file()
+    assert fx_applied_ylt_path.is_file()
+    assert forecast_applied_ylt_path.is_file()
+    assert euws_applied_ylt_path.is_file()
     assert not (intermediate_stage / "adjusted_ylt.parquet").exists()
     assert result.outputs.mts_combined.is_file()
     assert result.outputs.mts_wide.is_file()
@@ -194,6 +287,18 @@ write_stage_outputs = true
     assert set(report["return_period"].to_list()) == {0, 2}
     aal = report.filter((pl.col("ep_type") == "AAL") & (pl.col("base_model") == "verisk"))
     assert aal.filter(pl.col("metric") == "euws_override")["loss"].to_list() == [15.0]
+
+    require_columns(pl.read_parquet(normalized_ylt_path), NORMALIZED_YLT_SCHEMA)
+    require_columns(pl.read_parquet(staged_ep_path), STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
+    require_columns(pl.read_parquet(enriched_ylt_path), ENRICHED_YLT_OUTPUT_SCHEMA)
+    require_columns(pl.read_parquet(blended_ylt_path), BLENDED_YLT_SCHEMA)
+    require_columns(pl.read_parquet(fx_applied_ylt_path), FX_APPLIED_YLT_SCHEMA)
+    require_columns(pl.read_parquet(forecast_applied_ylt_path), FORECAST_APPLIED_YLT_SCHEMA)
+    require_columns(pl.read_parquet(euws_applied_ylt_path), EUWS_APPLIED_YLT_SCHEMA)
+    require_columns(pl.read_parquet(result.outputs.mts_combined), METRIC_LONG_SCHEMA)
+    require_columns(pl.read_parquet(result.outputs.mts_wide), WIDE_OUTPUT_SCHEMA)
+    require_columns(pl.read_parquet(result.outputs.mts_dialsup), DIALSUP_SCHEMA)
+    require_columns(pl.read_parquet(result.outputs.event_validation), EVENT_VALIDATION_SCHEMA)
 
 
 def _write_tiny_input(tmp_path: Path) -> Path:

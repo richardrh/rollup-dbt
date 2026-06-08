@@ -5,9 +5,16 @@ from pathlib import Path
 import polars as pl
 
 from rollup.config import RollupConfig
+from rollup.intermediate.build_dialsup import DIALSUP_SCHEMA
+from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
 from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
+from rollup.schemas import require_columns
+
+
+COMBINED_MART_INPUT_SCHEMA = METRIC_LONG_SCHEMA
+DIALSUP_MART_INPUT_SCHEMA = DIALSUP_SCHEMA
 
 
 def write_marts(
@@ -16,6 +23,9 @@ def write_marts(
     dialsup: pl.LazyFrame,
     config: RollupConfig,
 ) -> dict[str, Path | tuple[Path, ...]]:
+    require_columns(combined, COMBINED_MART_INPUT_SCHEMA)
+    require_columns(dialsup, DIALSUP_MART_INPUT_SCHEMA)
+
     marts_dir = config.outputs.marts_path(output_root)
     marts_dir.mkdir(parents=True, exist_ok=True)
     combined_path = marts_dir / config.outputs.combined_file

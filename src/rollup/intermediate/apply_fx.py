@@ -3,17 +3,52 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col, RawCol
+from rollup.intermediate.apply_blending import BLENDED_YLT_SCHEMA
+from rollup.schemas import require_columns
+
+
+FX_INPUT_SCHEMA = BLENDED_YLT_SCHEMA
+FX_RATES_SCHEMA = pl.Schema(
+    {
+        Col.currency: pl.String,
+        RawCol.rate: pl.Float64,
+    }
+)
+RAW_FX_RATES_SCHEMA = pl.Schema(
+    {
+        RawCol.currency_code: pl.String,
+        RawCol.rate: pl.Float64,
+    }
+)
+FX_APPLIED_YLT_SCHEMA = pl.Schema(
+    {
+        **FX_INPUT_SCHEMA,
+        Col.fx_rate: pl.Float64,
+        "gbp_loss": pl.Float64,
+    }
+)
 
 
 def apply_fx(frame: pl.LazyFrame, fx_rates: pl.DataFrame) -> pl.LazyFrame:
+    require_columns(frame, FX_INPUT_SCHEMA)
+
     if fx_rates.is_empty():
-        return frame.with_columns(pl.lit(1.0).alias(Col.fx_rate), pl.col("blended_loss").alias("gbp_loss"))
+        applied = frame.with_columns(
+            pl.lit(1.0).alias(Col.fx_rate),
+            pl.col("blended_loss").alias("gbp_loss"),
+        )
+        require_columns(applied, FX_APPLIED_YLT_SCHEMA)
+        return applied
     columns = fx_rates.columns
     currency_col = RawCol.currency_code if RawCol.currency_code in columns else Col.currency
+    rates_schema = RAW_FX_RATES_SCHEMA if RawCol.currency_code in columns else FX_RATES_SCHEMA
+    require_columns(fx_rates, rates_schema, check_dtypes=False)
     rates = fx_rates.lazy().select(
         pl.col(currency_col).cast(pl.String).alias(Col.currency),
         pl.col(RawCol.rate).cast(pl.Float64).alias(Col.fx_rate),
     ).unique(Col.currency, keep="last")
-    return frame.join(rates, on=Col.currency, how="left").with_columns(
+    applied = frame.join(rates, on=Col.currency, how="left").with_columns(
         pl.col(Col.fx_rate).fill_null(1.0),
     ).with_columns((pl.col("blended_loss") * pl.col(Col.fx_rate)).alias("gbp_loss"))
+    require_columns(applied, FX_APPLIED_YLT_SCHEMA)
+    return applied
