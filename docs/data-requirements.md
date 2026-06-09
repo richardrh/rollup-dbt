@@ -1,8 +1,8 @@
 # Data requirements
 
-Inputs live under `data/`. Generated files live under root `output/`.
-Schema contracts for required files, columns, and dtypes live in colocated
-`schema.yaml` files; see [Schema contracts](schema-contracts.md).
+Inputs live under `data/`. Generated files live under `output/`. The runtime
+validates source availability plus required schema/nullability for the main
+inputs before running calculations.
 
 ## Required analyst inputs
 
@@ -10,9 +10,26 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | --- | --- |
 | Verisk YLT parquet | `data/ylt/verisk/*.parquet` |
 | RiskLink YLT parquet | `data/ylt/risklink/*.parquet` |
-| Verisk EP summary | `data/ep_summaries/verisk/verisk_ep_summary.long.csv` |
-| RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
+| EP summary long CSVs | `data/ep_summaries/**/*.long.csv` |
 | Seeds | `data/seeds/**` |
+
+Expected layout:
+
+```text
+data/
+  ylt/verisk/*.parquet
+  ylt/risklink/*.parquet
+  ep_summaries/**/*.long.csv
+  seeds/business/lobs.csv
+  seeds/business/perils.csv
+  seeds/vor/blending_factors.csv
+  seeds/vor/fx_rates.csv
+  seeds/vor/forecast_factors.csv
+  seeds/vor/euws_rate_factors.csv
+  seeds/adjustments/euws_rank_overrides.csv
+  seeds/validation/verisk_events.parquet
+  seeds/validation/risklink_flood22_model_events.parquet
+```
 
 YLT contracts support multiple parquet files per vendor. The loader reads all
 direct `*.parquet` files in `data/ylt/verisk/` and `data/ylt/risklink/`; each
@@ -85,7 +102,7 @@ Output paths are fixed by vendor:
 ### Step 4. Validate
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 ### Source wide CSV format
@@ -152,9 +169,8 @@ CSV files used by validation and the pipeline.
 
 Seed schema contracts are defined in `data/seeds/schema.yaml`; see
 [Schema contracts](schema-contracts.md) for how these YAML files anchor required
-columns and validation. `uv run rollup validate` reports schema issues and runs
-anti-join validation for LOB/peril coverage. The anti-join report should be
-empty before running the pipeline.
+columns and validation. `validate_rollup_inputs("data")` and the CLI run command
+report schema issues before calculations start.
 
 ### `data/seeds/business/lobs.csv`
 
@@ -176,10 +192,8 @@ when multiple modelled perils map to the same vendor, `rollup_lob`, and
 EP staging; schema text uses `99` as the normal fallback priority, and some
 calling contexts treat the fallback/default as `99`/`100`.
 
-`is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
-candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
-alternatives should generally be `0` unless they are the only sensible base
-candidate. The main pipeline ignores this flag and continues to use
+`is_dialsup` is the independent DIALSUP peril-selection flag and is preserved at
+rollup peril level. The main pipeline ignores this flag and continues to use
 `selection_priority`. DIALSUP output can differ from the main output when this
 flag selects a different source peril.
 
@@ -194,11 +208,9 @@ Europe Flood `RegionPerilID` `216` is special-cased to use
 
 ### `data/seeds/vor/fx_rates.csv`
 
-FX lookup from source currency to target currency. The pipeline filters this file
-to GBP targets and joins by source currency to produce GBP losses.
-
-Missing FX rows are not defaulted: the join is inner, so rows without a GBP FX
-rate are dropped rather than carried forward with `1.0`.
+FX lookup from source currency to target currency. The target currency is
+explicit and defaults to `GBP`. A non-empty FX seed must include the requested
+target currency. Missing non-target rates fail rather than silently defaulting.
 
 ### `data/seeds/vor/forecast_factors.csv`
 
@@ -242,5 +254,6 @@ event day fields for RiskLink flood rows.
   `analysis_id` values.
 - Seed entries without matching EP/YLT data do not produce anti-join errors and
   are silently ignored downstream.
-- Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking
+- Run `validate_rollup_inputs("data")` or a no-output-analysis smoke run; treat
+  validation failures as blocking
   input or lookup errors.

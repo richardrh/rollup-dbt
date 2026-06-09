@@ -37,7 +37,7 @@ Each column entry defines:
 
 ## How validation uses the contracts
 
-`uv run rollup validate` reads the colocated schema files before deeper data
+`validate_rollup_inputs("data")` reads the colocated schema files before deeper data
 checks. The schema files are the source of truth for:
 
 - seed CSV filenames and columns discovered from `data/seeds/schema.yaml`;

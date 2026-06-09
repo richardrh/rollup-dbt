@@ -109,7 +109,7 @@ different row counts or sparser wide-output values than the main output.
 After editing either file, run:
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 The validation report includes a **Modelled LOB/peril anti-join check** that

@@ -95,7 +95,7 @@ Check these before validating:
 ## Step 4. Validate the drop
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 Common failures:

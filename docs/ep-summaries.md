@@ -76,7 +76,7 @@ data/ep_summaries/risklink/rms_ep_summary.long.csv
 ### Step 4. Validate
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 The validation step checks that all EP summary LOBs and perils exist in the
@@ -98,11 +98,11 @@ The pipeline stages, enriches, and blends EP summaries during the run:
 ## Pipeline outputs
 
 The final EP report is written to `output/analysis/ep_report.csv` by both
-`rollup run` and `rollup analyze`:
+`run_rollup(..., write_analysis=True)` or a normal CLI run:
 
 ```bash
 uv run rollup run       # full pipeline — includes EP report
-uv run rollup analyze   # EP report only from existing outputs
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP
 ```
 
 The report contains 2,100 rows (typical) with columns:
