@@ -11,13 +11,13 @@ from rollup.columns import Col, RawCol
 
 VERISK_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        RawCol.Analysis: pa.Column(pl.String, nullable=True),
-        RawCol.ExposureAttribute: pa.Column(pl.String, nullable=True),
-        RawCol.CatalogTypeCode: pa.Column(pl.String, nullable=True),
-        RawCol.EventID: pa.Column(pl.Int64, nullable=True),
-        RawCol.ModelCode: pa.Column(pl.Int64, nullable=True),
-        RawCol.YearID: pa.Column(pl.Int64, nullable=True),
-        RawCol.GroundUpLoss: pa.Column(pl.Float64, nullable=True),
+        RawCol.Analysis: pa.Column(pl.String, nullable=False),
+        RawCol.ExposureAttribute: pa.Column(pl.String, nullable=False),
+        RawCol.CatalogTypeCode: pa.Column(pl.String, nullable=False),
+        RawCol.EventID: pa.Column(pl.Int64, nullable=False),
+        RawCol.ModelCode: pa.Column(pl.Int64, nullable=False),
+        RawCol.YearID: pa.Column(pl.Int64, nullable=False),
+        RawCol.GroundUpLoss: pa.Column(pl.Float64, nullable=False),
     },
     strict=False,
 )
@@ -34,35 +34,35 @@ RISKLINK_YLT_SCHEMA = pa.DataFrameSchema(
 
 EP_SUMMARY_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pa.Column(pl.String, nullable=True),
-        Col.analysis_id: pa.Column(pl.String, nullable=True),
-        Col.modelled_lob: pa.Column(pl.String, nullable=True),
-        Col.modelled_peril: pa.Column(pl.String, nullable=True),
-        Col.ep_type: pa.Column(pl.String, nullable=True),
-        Col.return_period: pa.Column(pl.Int64, nullable=True),
-        Col.loss: pa.Column(pl.Float64, nullable=True),
+        Col.vendor: pa.Column(pl.String, nullable=False),
+        Col.analysis_id: pa.Column(pl.String, nullable=False),
+        Col.modelled_lob: pa.Column(pl.String, nullable=False),
+        Col.modelled_peril: pa.Column(pl.String, nullable=False),
+        Col.ep_type: pa.Column(pl.String, nullable=False),
+        Col.return_period: pa.Column(pl.Int64, nullable=False),
+        Col.loss: pa.Column(pl.Float64, nullable=False),
     },
     strict=False,
 )
 
 LOBS_SCHEMA = pa.DataFrameSchema(
     {
-        Col.modelled_lob: pa.Column(pl.String, nullable=True),
-        Col.rollup_lob: pa.Column(pl.String, nullable=True),
-        Col.class_: pa.Column(pl.String, nullable=True),
-        Col.office: pa.Column(pl.String, nullable=True),
-        Col.currency: pa.Column(pl.String, nullable=True),
+        Col.modelled_lob: pa.Column(pl.String, nullable=False),
+        Col.rollup_lob: pa.Column(pl.String, nullable=False),
+        Col.class_: pa.Column(pl.String, nullable=False),
+        Col.office: pa.Column(pl.String, nullable=False),
+        Col.currency: pa.Column(pl.String, nullable=False),
     },
     strict=False,
 )
 
 PERILS_SCHEMA = pa.DataFrameSchema(
     {
-        Col.modelled_peril: pa.Column(pl.String, nullable=True),
-        Col.rollup_peril: pa.Column(pl.String, nullable=True),
-        Col.region_peril_id: pa.Column(pl.Int64, nullable=True),
-        Col.selection_priority: pa.Column(pl.Int64, nullable=True),
-        Col.is_dialsup: pa.Column(pl.Int64, nullable=True),
+        Col.modelled_peril: pa.Column(pl.String, nullable=False),
+        Col.rollup_peril: pa.Column(pl.String, nullable=False),
+        Col.region_peril_id: pa.Column(pl.Int64, nullable=False),
+        Col.selection_priority: pa.Column(pl.Int64, nullable=False),
+        Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
     },
     strict=False,
 )

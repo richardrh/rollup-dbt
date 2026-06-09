@@ -168,6 +168,25 @@ def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
         load_sources(data_root)
 
 
+def test_verisk_ylt_schema_rejects_null_required_values() -> None:
+    from rollup.staging.load_sources import VERISK_YLT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "Analysis": ["EQ", "EQ"],
+            "ExposureAttribute": ["Fine Art", "Fine Art"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [1, None],
+            "ModelCode": [7, 7],
+            "YearID": [1, 2],
+            "GroundUpLoss": [10.0, 20.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'EventID' contains null values"):
+        VERISK_YLT_SCHEMA.validate(frame)
+
+
 def test_risklink_ylt_schema_rejects_null_required_values(tmp_path: Path) -> None:
     from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA
 
@@ -184,6 +203,59 @@ def test_risklink_ylt_schema_rejects_null_required_values(tmp_path: Path) -> Non
 
     with pytest.raises(SchemaError, match="non-nullable column 'eventid' contains null values"):
         RISKLINK_YLT_SCHEMA.validate(pl.read_parquet(risklink_path))
+
+
+def test_ep_summary_schema_rejects_null_required_values() -> None:
+    from rollup.staging.load_sources import EP_SUMMARY_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", "Fine Art"],
+            "modelled_peril": ["EQ", "EQ"],
+            "ep_type": ["AAL", None],
+            "return_period": [0, 0],
+            "loss": [1.0, 1.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'ep_type' contains null values"):
+        EP_SUMMARY_SCHEMA.validate(frame)
+
+
+def test_lobs_schema_rejects_null_required_lookup_values() -> None:
+    from rollup.staging.load_sources import LOBS_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "modelled_lob": ["Fine Art", "Casualty"],
+            "rollup_lob": ["Fine Art", "Casualty"],
+            "class": ["ART", None],
+            "office": ["London", "London"],
+            "currency": ["GBP", "GBP"],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'class' contains null values"):
+        LOBS_SCHEMA.validate(frame)
+
+
+def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
+    from rollup.staging.load_sources import PERILS_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "modelled_peril": ["EQ", "WS"],
+            "rollup_peril": ["Earthquake", "Windstorm"],
+            "region_peril_id": [205, 150],
+            "selection_priority": [1, 2],
+            "is_dialsup": [1, None],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'is_dialsup' contains null values"):
+        PERILS_SCHEMA.validate(frame)
 
 
 def test_euws_factor_schema_accepts_integer_seed_factors() -> None:
