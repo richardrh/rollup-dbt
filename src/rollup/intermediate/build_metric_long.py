@@ -83,7 +83,7 @@ def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> p
         Col.is_dialsup,
         Col.loss,
         "blended_loss",
-        "gbp_loss",
+        "fx_loss",
         "forecast_loss",
         "euws_loss",
     )
@@ -102,7 +102,7 @@ def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> p
             base.select(
                 *metric_columns,
                 pl.lit(loss_blended_fx_metric(target_currency)).alias(Col.metric),
-                pl.col("gbp_loss").cast(pl.Float64).alias(Col.loss),
+                pl.col("fx_loss").cast(pl.Float64).alias(Col.loss),
             ),
             base.select(
                 *metric_columns,

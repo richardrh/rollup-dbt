@@ -32,7 +32,7 @@ def test_apply_fx_uses_configured_target_currency_rates() -> None:
 
     result = apply_fx(frame.lazy(), rates, "GBP").collect().sort(Col.currency)
 
-    assert result.select(Col.currency, Col.fx_rate, "gbp_loss", Col.target_currency).rows() == [
+    assert result.select(Col.currency, Col.fx_rate, "fx_loss", Col.target_currency).rows() == [
         ("EUR", 0.88, 88.0, "GBP"),
         ("GBP", 1.0, 100.0, "GBP"),
     ]
@@ -50,7 +50,33 @@ def test_apply_fx_uses_identity_for_missing_same_currency_rate() -> None:
 
     result = apply_fx(frame.lazy(), rates, "GBP").collect()
 
-    assert result.select(Col.fx_rate, "gbp_loss", Col.target_currency).rows() == [(1.0, 50.0, "GBP")]
+    assert result.select(Col.fx_rate, "fx_loss", Col.target_currency).rows() == [(1.0, 50.0, "GBP")]
+
+
+def test_apply_fx_requires_target_currency_for_non_empty_usd_rates() -> None:
+    frame = blended_frame([{Col.currency: "EUR", "blended_loss": 100.0}])
+    rates = pl.DataFrame(
+        {
+            "currency_code": ["EUR"],
+            "rate": [1.1],
+        }
+    )
+
+    with pytest.raises(ValueError, match="FX rates must include target_currency column"):
+        apply_fx(frame.lazy(), rates, "USD")
+
+
+def test_apply_fx_requires_target_currency_for_non_empty_gbp_rates() -> None:
+    frame = blended_frame([{Col.currency: "EUR", "blended_loss": 100.0}])
+    rates = pl.DataFrame(
+        {
+            "currency_code": ["EUR"],
+            "rate": [0.88],
+        }
+    )
+
+    with pytest.raises(ValueError, match="FX rates must include target_currency column"):
+        apply_fx(frame.lazy(), rates, "GBP")
 
 
 def test_apply_fx_raises_clear_error_for_missing_non_target_rate() -> None:
@@ -71,7 +97,7 @@ def test_build_metric_long_uses_default_gbp_lineage_metric_names() -> None:
     adjusted = blended_frame([{Col.currency: "GBP", "blended_loss": 10.0}]).with_columns(
         pl.lit(1.0).alias(Col.fx_rate),
         pl.lit("GBP").alias(Col.target_currency),
-        pl.lit(10.0).alias("gbp_loss"),
+        pl.lit(10.0).alias("fx_loss"),
         pl.lit("2026-01-01").alias(Col.forecast_date),
         pl.lit(1.0).alias(Col.forecast_factor),
         pl.lit(10.0).alias("forecast_loss"),

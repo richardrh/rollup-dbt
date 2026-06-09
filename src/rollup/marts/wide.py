@@ -23,12 +23,6 @@ WIDE_OUTPUT_SCHEMA = pa.DataFrameSchema(
     strict=False,
 )
 
-WIDE_METRICS = (
-    loss_blended_fx_forecast_euws_override_metric("GBP"),
-    loss_dialsup_fx_forecast_metric("GBP"),
-)
-
-
 def wide(frame: pl.DataFrame | pl.LazyFrame, target_currency: str = "GBP") -> pl.DataFrame | pl.LazyFrame:
     WIDE_INPUT_SCHEMA.validate(frame)
     metrics = (

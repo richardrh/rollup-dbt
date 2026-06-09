@@ -35,7 +35,7 @@ def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.La
         return frame.with_columns(
             pl.lit("base").alias(Col.forecast_date),
             pl.lit(1.0).alias(Col.forecast_factor),
-            pl.col("gbp_loss").alias("forecast_loss"),
+            pl.col("fx_loss").alias("forecast_loss"),
         )
     FORECAST_FACTORS_SCHEMA.validate(forecast_factors)
     factors = forecast_factors.lazy().select(
@@ -47,5 +47,5 @@ def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.La
     applied = frame.join(factors, on=[Col.class_, Col.office], how="left").with_columns(
         pl.col(Col.forecast_date).fill_null("base"),
         pl.col(Col.forecast_factor).fill_null(1.0),
-    ).with_columns((pl.col("gbp_loss") * pl.col(Col.forecast_factor)).alias("forecast_loss"))
+    ).with_columns((pl.col("fx_loss") * pl.col(Col.forecast_factor)).alias("forecast_loss"))
     return applied
