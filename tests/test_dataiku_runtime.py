@@ -452,7 +452,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("normalize_ylt", (sources,)),
         ("stage_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
-        ("apply_blending", ("enriched", "blending")),
+        ("apply_blending", ("enriched", "staged_ep", "blending")),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_euws", ("forecast_applied", "euws_factors")),
@@ -607,18 +607,18 @@ def _write_ylt(data_root: Path) -> None:
 
 
 def _write_ep_summaries(data_root: Path) -> None:
-    for vendor, analysis_id in {"verisk": "EQ", "risklink": "9001"}.items():
+    for vendor, analysis_id, oep_loss in [("verisk", "EQ", 100.0), ("risklink", "9001", 0.0)]:
         folder = data_root / "ep_summaries" / vendor
         folder.mkdir(parents=True)
         pl.DataFrame(
             {
-                "vendor": [vendor],
-                "analysis_id": [analysis_id],
-                "modelled_lob": ["Fine Art"],
-                "modelled_peril": ["EQ"],
-                "ep_type": ["AAL"],
-                "return_period": [0],
-                "loss": [1.0],
+                "vendor": [vendor, vendor],
+                "analysis_id": [analysis_id, analysis_id],
+                "modelled_lob": ["Fine Art", "Fine Art"],
+                "modelled_peril": ["EQ", "EQ"],
+                "ep_type": ["AAL", "OEP"],
+                "return_period": [0, 1000],
+                "loss": [1.0, oep_loss],
             }
         ).write_csv(folder / f"{vendor}.long.csv")
 

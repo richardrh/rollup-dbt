@@ -46,7 +46,7 @@ def run(
     normalized = normalize_ylt(sources)
     staged_ep = stage_ep_summaries(sources)
     enriched = build_enriched_ylt(normalized, staged_ep)
-    blended = apply_blending(enriched, sources.blending)
+    blended = apply_blending(enriched, staged_ep, sources.blending)
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
     euws_applied = apply_euws(forecast_applied, sources.euws_factors)
