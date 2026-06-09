@@ -8,7 +8,12 @@ from rollup import cli
 from rollup.api import RollupOutputPaths, RollupRunResult
 
 
-def test_cli_run_uses_local_defaults(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_run_uses_local_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
     calls: dict[str, object] = {}
 
     def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
@@ -49,8 +54,9 @@ def test_cli_run_uses_local_defaults(monkeypatch: pytest.MonkeyPatch, capsys: py
     }
     summary = capsys.readouterr().out
     assert "Rollup complete" in summary
-    assert "combined mart: output/marts/combined.parquet" in summary
-    assert "analysis report: output/analysis/ep_report.csv" in summary
+    assert f"combined mart: {(tmp_path / 'output' / 'marts' / 'combined.parquet')}" in summary
+    assert f"analysis report: {(tmp_path / 'output' / 'analysis' / 'ep_report.csv')} (missing)" in summary
+    assert "WARNING: analysis report missing:" in summary
 
 
 def test_cli_run_applies_overrides_without_rewriting_config(
@@ -138,6 +144,74 @@ combined_file = "custom-combined.parquet"
     summary = capsys.readouterr().out
     assert "analysis report: (disabled)" in summary
     assert "stage outputs: (disabled)" in summary
+
+
+def test_success_summary_reports_output_paths_and_counts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_root = tmp_path / "data"
+    output_root = tmp_path / "output"
+    marts_dir = output_root / "marts"
+    analysis_report = output_root / "analysis" / "ep_report.csv"
+    staging_dir = output_root / "stages" / "staging"
+    intermediate_dir = output_root / "stages" / "intermediate"
+    log_file = output_root / "rollup.log"
+
+    data_root.mkdir()
+    marts_dir.mkdir(parents=True)
+    analysis_report.parent.mkdir(parents=True)
+    staging_dir.mkdir(parents=True)
+    intermediate_dir.mkdir(parents=True)
+    log_file.touch()
+    analysis_report.touch()
+    for parquet_path in (
+        marts_dir / "combined.parquet",
+        marts_dir / "wide.parquet",
+        marts_dir / "dialsup.parquet",
+        marts_dir / "event-validation.parquet",
+        staging_dir / "staging-one.parquet",
+        staging_dir / "staging-two.parquet",
+        intermediate_dir / "intermediate.parquet",
+    ):
+        parquet_path.touch()
+
+    cli.print_success_summary(
+        rollup_result(data_root, output_root, ep_report_path=analysis_report),
+        log_file,
+    )
+
+    summary = capsys.readouterr().out
+    assert f"output root: {output_root} (exists)" in summary
+    assert f"log file: {log_file} (exists)" in summary
+    assert f"marts dir: {marts_dir} (exists, 4 parquet files)" in summary
+    assert f"analysis report: {analysis_report} (exists)" in summary
+    assert f"stage outputs: {output_root / 'stages'} (exists)" in summary
+    assert f"staging: {staging_dir} (2 parquet files)" in summary
+    assert f"intermediate: {intermediate_dir} (1 parquet file)" in summary
+    assert "WARNING:" not in summary
+
+
+def test_success_summary_warns_when_enabled_outputs_are_missing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_root = tmp_path / "output"
+    analysis_report = output_root / "analysis" / "ep_report.csv"
+    stage_dir = output_root / "stages"
+
+    cli.print_success_summary(
+        rollup_result(tmp_path / "data", output_root, ep_report_path=analysis_report),
+        output_root / "rollup.log",
+    )
+
+    summary = capsys.readouterr().out
+    assert f"analysis report: {analysis_report} (missing)" in summary
+    assert f"stage outputs: {stage_dir} (missing)" in summary
+    assert f"staging: {stage_dir / 'staging'} (0 parquet files)" in summary
+    assert f"intermediate: {stage_dir / 'intermediate'} (0 parquet files)" in summary
+    assert "WARNING: analysis report missing:" in summary
+    assert "WARNING: stage outputs incomplete: staging directory missing, intermediate directory missing" in summary
 
 
 def rollup_result(

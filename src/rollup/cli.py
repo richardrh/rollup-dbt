@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from collections.abc import Sequence
 
 from rollup.api import RollupRunResult, run_rollup
 from rollup.config import RollupConfig, load_config
@@ -66,17 +66,81 @@ def stage_output_config(config_path: Path | None) -> RollupConfig:
 
 
 def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
+    marts_dir = result.outputs.marts_dir
+    mart_count = _parquet_count(marts_dir)
+
     print("Rollup complete")
-    print(f"  data root: {result.data_root}")
-    print(f"  output root: {result.output_root}")
-    print(f"  log file: {log_file}")
-    print(f"  marts dir: {result.outputs.marts_dir}")
-    print(f"  combined mart: {result.outputs.mts_combined}")
-    print(f"  wide mart: {result.outputs.mts_wide}")
-    print(f"  dialsup mart: {result.outputs.mts_dialsup}")
-    print(f"  event validation: {result.outputs.event_validation}")
-    print(f"  analysis report: {result.ep_report_path or '(disabled)'}")
-    print(f"  stage outputs: {result.outputs.stage_dir or '(disabled)'}")
+    print(f"  data root: {_display_path(result.data_root)}")
+    print(f"  output root: {_display_path(result.output_root)} ({_exists_status(result.output_root)})")
+    print(f"  log file: {_display_path(log_file)} ({_exists_status(log_file)})")
+    print(f"  marts dir: {_display_path(marts_dir)} ({_exists_status(marts_dir)}, {_parquet_label(mart_count)})")
+    print(f"  combined mart: {_display_path(result.outputs.mts_combined)}")
+    print(f"  wide mart: {_display_path(result.outputs.mts_wide)}")
+    print(f"  dialsup mart: {_display_path(result.outputs.mts_dialsup)}")
+    print(f"  event validation: {_display_path(result.outputs.event_validation)}")
+    _print_analysis_summary(result.ep_report_path)
+    _print_stage_summary(result.outputs.stage_dir)
+
+
+def _print_analysis_summary(ep_report_path: Path | None) -> None:
+    if ep_report_path is None:
+        print("  analysis report: (disabled)")
+        return
+
+    status = "exists" if ep_report_path.is_file() else "missing"
+    print(f"  analysis report: {_display_path(ep_report_path)} ({status})")
+    if status == "missing":
+        print(f"  WARNING: analysis report missing: {_display_path(ep_report_path)}")
+
+
+def _print_stage_summary(stage_dir: Path | None) -> None:
+    if stage_dir is None:
+        print("  stage outputs: (disabled)")
+        return
+
+    staging_dir = stage_dir / "staging"
+    intermediate_dir = stage_dir / "intermediate"
+    staging_count = _parquet_count(staging_dir)
+    intermediate_count = _parquet_count(intermediate_dir)
+
+    print(f"  stage outputs: {_display_path(stage_dir)} ({_exists_status(stage_dir)})")
+    print(f"    staging: {_display_path(staging_dir)} ({_parquet_label(staging_count)})")
+    print(f"    intermediate: {_display_path(intermediate_dir)} ({_parquet_label(intermediate_count)})")
+
+    warnings = _stage_warnings("staging", staging_dir, staging_count) + _stage_warnings(
+        "intermediate",
+        intermediate_dir,
+        intermediate_count,
+    )
+    if warnings:
+        print(f"  WARNING: stage outputs incomplete: {', '.join(warnings)}")
+
+
+def _stage_warnings(name: str, directory: Path, parquet_count: int) -> list[str]:
+    if not directory.exists():
+        return [f"{name} directory missing"]
+    if parquet_count == 0:
+        return [f"{name} parquet files missing"]
+    return []
+
+
+def _display_path(path: Path) -> str:
+    return str(path.expanduser().resolve(strict=False))
+
+
+def _exists_status(path: Path) -> str:
+    return "exists" if path.exists() else "missing"
+
+
+def _parquet_count(directory: Path) -> int:
+    if not directory.exists():
+        return 0
+    return sum(1 for path in directory.glob("*.parquet") if path.is_file())
+
+
+def _parquet_label(count: int) -> str:
+    suffix = "file" if count == 1 else "files"
+    return f"{count} parquet {suffix}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
