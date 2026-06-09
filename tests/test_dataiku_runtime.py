@@ -530,6 +530,8 @@ return_periods = [2]
 
 [outputs]
 write_stage_outputs = true
+write_duckdb = true
+duckdb_file = "rollup.duckdb"
 """.strip(),
         encoding="utf-8",
     )
@@ -557,6 +559,8 @@ write_stage_outputs = true
     assert result.outputs.mts_wide.is_file()
     assert result.outputs.mts_dialsup.is_file()
     assert result.outputs.event_validation.is_file()
+    assert result.outputs.duckdb_file == output_root / "rollup.duckdb"
+    assert result.outputs.duckdb_file.is_file()
     assert result.ep_report_path == output_root / "analysis" / "ep_report.csv"
     assert result.ep_report_path.is_file()
 
