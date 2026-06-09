@@ -67,6 +67,11 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
             "seed_verisk_events",
             data_root / "seeds" / "validation" / "verisk_events.parquet",
         )
+        create_optional_parquet_table(
+            connection,
+            "seed_risklink_flood22_model_events",
+            data_root / "seeds" / "validation" / "risklink_flood22_model_events.parquet",
+        )
     finally:
         connection.close()
     return db_path

@@ -42,6 +42,7 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
             "seed_fx_rates",
             "seed_lobs",
             "seed_perils",
+            "seed_risklink_flood22_model_events",
             "seed_verisk_events",
         }
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
@@ -49,6 +50,7 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
         assert row_count(connection, "input_ylt_risklink") == 1
         assert row_count(connection, "input_ep_summaries") == 2
         assert row_count(connection, "seed_blending_factors") == 1
+        assert row_count(connection, "seed_risklink_flood22_model_events") == 1
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
@@ -87,4 +89,7 @@ def write_input_files(data_root: Path) -> None:
     )
     pl.DataFrame({"EventID": [101], "ModelID": [7], "Event": [1]}).write_parquet(
         validation / "verisk_events.parquet"
+    )
+    pl.DataFrame({"EventID": [202], "Event": [2], "Peril": ["Flood"]}).write_parquet(
+        validation / "risklink_flood22_model_events.parquet"
     )
