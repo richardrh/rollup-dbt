@@ -8,7 +8,6 @@ import pytest
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.intermediate.build_dialsup import build_dialsup
 from rollup.marts.write_marts import write_marts
 from rollup.metric_names import (
     LOSS_ORIGINAL_YLT,
@@ -38,7 +37,7 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
 
     monkeypatch.setattr(pl.LazyFrame, "collect", guarded_collect)
 
-    paths = write_marts(tmp_path, combined, build_dialsup(combined), RollupConfig())
+    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
     monkeypatch.undo()
 
     combined_out = pl.read_parquet(paths["combined"])
@@ -73,7 +72,7 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
 def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
     combined = combined_metric_frame().lazy()
 
-    paths = write_marts(tmp_path, combined, build_dialsup(combined), RollupConfig())
+    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
 
     row_counts = {
         name: pl.scan_parquet(path).select(pl.len()).collect().item()
@@ -113,3 +112,27 @@ def combined_metric_frame() -> pl.DataFrame:
         {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FINAL_MAIN_METRIC, Col.loss: 25.0},
     ]
     return pl.DataFrame(rows)
+
+
+def dialsup_metric_frame() -> pl.DataFrame:
+    base = {
+        Col.vendor: "verisk",
+        Col.base_model: "verisk",
+        Col.analysis_id: "EQ",
+        Col.modelled_lob: "Fine Art",
+        Col.modelled_peril: "EQ",
+        Col.rollup_lob: "Fine Art",
+        Col.rollup_peril: "Earthquake",
+        Col.region_peril_id: 205,
+        Col.class_: "ART",
+        Col.office: "London",
+        Col.currency: "GBP",
+        Col.target_currency: "GBP",
+        Col.year_id: 1,
+        Col.event_id: 1,
+        Col.forecast_date: "2026-01-01",
+        Col.is_dialsup: 1,
+        Col.metric: DIALSUP_METRIC,
+        Col.loss: 10.0,
+    }
+    return pl.DataFrame([base])
