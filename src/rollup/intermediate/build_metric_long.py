@@ -34,6 +34,24 @@ METRIC_LONG_SCHEMA = pl.Schema(
 def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
     require_columns(adjusted, METRIC_LONG_INPUT_SCHEMA)
 
+    metric_columns = [
+        Col.vendor,
+        Col.base_model,
+        Col.analysis_id,
+        Col.modelled_lob,
+        Col.modelled_peril,
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        Col.class_,
+        Col.office,
+        Col.currency,
+        Col.year_id,
+        Col.event_id,
+        Col.forecast_date,
+        Col.is_dialsup,
+    ]
+
     base = adjusted.select(
         Col.vendor,
         pl.col(Col.vendor).alias(Col.base_model),
@@ -58,35 +76,33 @@ def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
     )
     metric_long = pl.concat(
         [
-            _metric(base, Col.loss, "original_ylt_loss"),
-            _metric(base, "blended_loss", "blended"),
-            _metric(base, "gbp_loss", "gbp"),
-            _metric(base, "forecast_loss", "forecast"),
-            _metric(base, "euws_loss", "euws_override"),
+            base.select(
+                *metric_columns,
+                pl.lit("original_ylt_loss").alias(Col.metric),
+                pl.col(Col.loss).cast(pl.Float64).alias(Col.loss),
+            ),
+            base.select(
+                *metric_columns,
+                pl.lit("blended").alias(Col.metric),
+                pl.col("blended_loss").cast(pl.Float64).alias(Col.loss),
+            ),
+            base.select(
+                *metric_columns,
+                pl.lit("gbp").alias(Col.metric),
+                pl.col("gbp_loss").cast(pl.Float64).alias(Col.loss),
+            ),
+            base.select(
+                *metric_columns,
+                pl.lit("forecast").alias(Col.metric),
+                pl.col("forecast_loss").cast(pl.Float64).alias(Col.loss),
+            ),
+            base.select(
+                *metric_columns,
+                pl.lit("euws_override").alias(Col.metric),
+                pl.col("euws_loss").cast(pl.Float64).alias(Col.loss),
+            ),
         ],
         how="vertical",
     )
     require_columns(metric_long, METRIC_LONG_SCHEMA)
     return metric_long
-
-
-def _metric(frame: pl.LazyFrame, source_col: str, metric: str) -> pl.LazyFrame:
-    return frame.select(
-        Col.vendor,
-        Col.base_model,
-        Col.analysis_id,
-        Col.modelled_lob,
-        Col.modelled_peril,
-        Col.rollup_lob,
-        Col.rollup_peril,
-        Col.region_peril_id,
-        Col.class_,
-        Col.office,
-        Col.currency,
-        Col.year_id,
-        Col.event_id,
-        Col.forecast_date,
-        Col.is_dialsup,
-        pl.lit(metric).alias(Col.metric),
-        pl.col(source_col).cast(pl.Float64).alias(Col.loss),
-    )

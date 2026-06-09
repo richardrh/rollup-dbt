@@ -78,17 +78,17 @@ class StagingFrames:
 
 def load_sources(data_root: str | Path) -> StagingFrames:
     data_root = Path(data_root)
-    verisk_ylt = _scan_parquet_folder(data_root / "ylt" / "verisk")
-    risklink_ylt = _scan_parquet_folder(data_root / "ylt" / "risklink")
+    verisk_ylt = scan_parquet_folder(data_root / "ylt" / "verisk")
+    risklink_ylt = scan_parquet_folder(data_root / "ylt" / "risklink")
     require_columns(verisk_ylt, VERISK_YLT_SCHEMA, check_dtypes=False)
     require_columns(risklink_ylt, RISKLINK_YLT_SCHEMA, check_dtypes=False)
 
-    ep_summaries = _read_ep_summaries(data_root)
+    ep_summaries = read_ep_summaries(data_root)
     require_columns(ep_summaries, EP_SUMMARY_SCHEMA, check_dtypes=False)
 
-    lobs = _read_seed_csv(data_root, "lobs.csv")
+    lobs = read_seed_csv(data_root, "lobs.csv")
     require_columns(lobs, LOBS_SCHEMA, check_dtypes=False)
-    perils = _read_seed_csv(data_root, "perils.csv")
+    perils = read_seed_csv(data_root, "perils.csv")
     require_columns(perils, PERILS_SCHEMA, check_dtypes=False)
 
     return StagingFrames(
@@ -97,38 +97,38 @@ def load_sources(data_root: str | Path) -> StagingFrames:
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,
-        blending=_read_optional_seed(data_root, ("blending_factors.csv", "blending_weights.csv")),
-        fx_rates=_read_optional_seed(data_root, ("fx_rates.csv",)),
-        forecast_factors=_read_optional_seed(data_root, ("forecast_factors.csv",)),
-        euws_factors=_read_optional_seed(data_root, ("euws_rate_factors.csv",)),
+        blending=read_optional_seed(data_root, ("blending_factors.csv", "blending_weights.csv")),
+        fx_rates=read_optional_seed(data_root, ("fx_rates.csv",)),
+        forecast_factors=read_optional_seed(data_root, ("forecast_factors.csv",)),
+        euws_factors=read_optional_seed(data_root, ("euws_rate_factors.csv",)),
     )
 
 
-def _scan_parquet_folder(folder: Path) -> pl.LazyFrame:
+def scan_parquet_folder(folder: Path) -> pl.LazyFrame:
     paths = sorted(folder.glob("*.parquet"))
     if not paths:
         raise FileNotFoundError(f"no parquet files found in {folder}")
     return pl.scan_parquet(str(folder / "*.parquet"))
 
 
-def _read_ep_summaries(data_root: Path) -> pl.DataFrame:
+def read_ep_summaries(data_root: Path) -> pl.DataFrame:
     paths = sorted((data_root / "ep_summaries").rglob("*.long.csv"))
     if not paths:
         raise FileNotFoundError(f"no EP summary .long.csv files found in {data_root / 'ep_summaries'}")
     return pl.concat([pl.read_csv(path) for path in paths], how="diagonal_relaxed")
 
 
-def _read_seed_csv(data_root: Path, filename: str) -> pl.DataFrame:
+def read_seed_csv(data_root: Path, filename: str) -> pl.DataFrame:
     paths = sorted((data_root / "seeds").rglob(filename), key=lambda path: (len(path.parts), str(path)))
     if not paths:
         raise FileNotFoundError(f"seed file not found: {filename}")
     return pl.read_csv(paths[0])
 
 
-def _read_optional_seed(data_root: Path, filenames: tuple[str, ...]) -> pl.DataFrame:
+def read_optional_seed(data_root: Path, filenames: tuple[str, ...]) -> pl.DataFrame:
     for filename in filenames:
         try:
-            return _read_seed_csv(data_root, filename)
+            return read_seed_csv(data_root, filename)
         except FileNotFoundError:
             continue
     return pl.DataFrame()

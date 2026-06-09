@@ -5,8 +5,6 @@ from pathlib import Path
 
 import logging
 
-import polars as pl
-
 from rollup.config import RollupConfig, load_config
 from rollup.intermediate import (
     apply_blending,
@@ -18,7 +16,7 @@ from rollup.intermediate import (
     build_metric_long,
 )
 from rollup.marts import write_marts, write_stage_frames
-from rollup.staging import StagingFrames, load_sources, normalize_ylt, stage_ep_summaries
+from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +57,15 @@ def run(
         *write_stage_frames(
             output_root,
             config.outputs.staging_dir,
-            _staging_outputs(sources, normalized, staged_ep),
+            {
+                "verisk_ylt": sources.verisk_ylt,
+                "risklink_ylt": sources.risklink_ylt,
+                "ep_summaries": sources.ep_summaries,
+                "lobs": sources.lobs,
+                "perils": sources.perils,
+                "normalized_ylt": normalized,
+                "staged_ep_summaries": staged_ep,
+            },
             config,
         ),
         *write_stage_frames(
@@ -83,19 +89,3 @@ def run(
         stage_paths=stage_paths,
         mart_paths=mart_paths,
     )
-
-
-def _staging_outputs(
-    sources: StagingFrames,
-    normalized: pl.LazyFrame,
-    staged_ep: pl.LazyFrame,
-) -> dict[str, pl.DataFrame | pl.LazyFrame]:
-    return {
-        "verisk_ylt": sources.verisk_ylt,
-        "risklink_ylt": sources.risklink_ylt,
-        "ep_summaries": sources.ep_summaries,
-        "lobs": sources.lobs,
-        "perils": sources.perils,
-        "normalized_ylt": normalized,
-        "staged_ep_summaries": staged_ep,
-    }

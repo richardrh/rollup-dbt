@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -122,6 +123,28 @@ def test_transform_modules_expose_polars_schema_contracts() -> None:
 
         for schema_name in schema_names:
             assert isinstance(getattr(module, schema_name), pl.Schema)
+
+
+def test_query_path_modules_do_not_define_private_helpers() -> None:
+    rollup_root = Path(__file__).parents[1] / "src" / "rollup"
+    query_paths = [
+        rollup_root / "analysis.py",
+        rollup_root / "pipeline.py",
+        *sorted((rollup_root / "staging").glob("*.py")),
+        *sorted((rollup_root / "intermediate").glob("*.py")),
+        *sorted((rollup_root / "marts").glob("*.py")),
+    ]
+    violations: list[str] = []
+
+    for path in query_paths:
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("_"):
+                violations.append(f"{path.relative_to(rollup_root.parent)}:{node.lineno} {node.name}")
+
+    assert violations == []
 
 
 def test_schema_guard_catches_missing_required_column() -> None:

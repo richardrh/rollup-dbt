@@ -16,16 +16,16 @@ def build_ep_report(
 ) -> pl.DataFrame:
     config = config or load_config(config_path)
     output_root = Path(output_root)
-    losses = _losses(output_root, config).with_columns(
+    losses = load_analysis_losses(output_root, config).with_columns(
         pl.col(Col.base_model)
         .replace_strict(config.analysis.simulation_counts, return_dtype=pl.Int64)
         .alias("n_simulations")
     )
-    aal = _build_aal(losses)
+    aal = build_aal(losses)
     ep = pl.concat(
         [
-            _build_ranked_ep(losses, ep_type="AEP", aggregation="sum", config=config),
-            _build_ranked_ep(losses, ep_type="OEP", aggregation="max", config=config),
+            build_ranked_ep(losses, ep_type="AEP", aggregation="sum", config=config),
+            build_ranked_ep(losses, ep_type="OEP", aggregation="max", config=config),
         ],
         how="vertical",
     )
@@ -54,7 +54,7 @@ def write_ep_report(
     return output_path
 
 
-def _losses(output_root: Path, config: RollupConfig) -> pl.LazyFrame:
+def load_analysis_losses(output_root: Path, config: RollupConfig) -> pl.LazyFrame:
     marts = config.outputs.marts_path(output_root)
     main = pl.scan_parquet(marts / config.outputs.combined_file).filter(
         pl.col(Col.metric) == "euws_override"
@@ -66,7 +66,7 @@ def _losses(output_root: Path, config: RollupConfig) -> pl.LazyFrame:
     return main
 
 
-def _build_aal(losses: pl.LazyFrame) -> pl.DataFrame:
+def build_aal(losses: pl.LazyFrame) -> pl.DataFrame:
     keys = [Col.forecast_date, Col.metric, Col.base_model, Col.rollup_lob, Col.rollup_peril]
     return losses.group_by(keys).agg(
         pl.col(Col.loss).sum().alias("total_loss"),
@@ -77,10 +77,10 @@ def _build_aal(losses: pl.LazyFrame) -> pl.DataFrame:
         pl.lit(0).cast(pl.Int64).alias("rank"),
         pl.lit(0.0).alias(Col.rp),
         (pl.col("total_loss") / pl.col("n_simulations")).alias(Col.loss),
-    ).select(_REPORT_COLUMNS).collect()
+    ).select(REPORT_COLUMNS).collect()
 
 
-def _build_ranked_ep(
+def build_ranked_ep(
     losses: pl.LazyFrame,
     *,
     ep_type: str,
@@ -89,22 +89,22 @@ def _build_ranked_ep(
 ) -> pl.DataFrame:
     keys = [Col.forecast_date, Col.metric, Col.base_model, Col.rollup_lob, Col.rollup_peril]
     annual = losses.group_by(*keys, Col.year_id).agg(
-        _aggregation_expr(aggregation).alias(Col.loss),
+        aggregation_expr(aggregation).alias(Col.loss),
         pl.col("n_simulations").first().alias("n_simulations"),
     )
     ranked = annual.with_columns(
         pl.col(Col.loss).rank(method="ordinal", descending=True).over(keys).cast(pl.Int64).alias("rank")
     )
-    targets = _target_ranks(config)
+    targets = target_ranks(config)
     key_targets = losses.select(*keys, "n_simulations").unique().join(targets, on=Col.base_model)
     return key_targets.join(ranked.select(*keys, "rank", Col.loss), on=[*keys, "rank"], how="left").with_columns(
         pl.lit(ep_type).alias(Col.ep_type),
         (pl.col("n_simulations") / pl.col("rank")).alias(Col.rp),
         pl.col(Col.loss).fill_null(0.0),
-    ).select(_REPORT_COLUMNS).collect()
+    ).select(REPORT_COLUMNS).collect()
 
 
-def _aggregation_expr(aggregation: str) -> pl.Expr:
+def aggregation_expr(aggregation: str) -> pl.Expr:
     if aggregation == "sum":
         return pl.col(Col.loss).sum()
     if aggregation == "max":
@@ -112,7 +112,7 @@ def _aggregation_expr(aggregation: str) -> pl.Expr:
     raise ValueError(f"unknown aggregation: {aggregation}")
 
 
-def _target_ranks(config: RollupConfig) -> pl.LazyFrame:
+def target_ranks(config: RollupConfig) -> pl.LazyFrame:
     rows = [
         {
             Col.base_model: base_model,
@@ -125,7 +125,7 @@ def _target_ranks(config: RollupConfig) -> pl.LazyFrame:
     return pl.DataFrame(rows).lazy()
 
 
-_REPORT_COLUMNS = [
+REPORT_COLUMNS = [
     Col.forecast_date,
     Col.metric,
     Col.ep_type,
