@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 from rollup.columns import Col
+from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
 from rollup.intermediate.build_metric_long import build_metric_long
 from rollup.metric_names import (
@@ -91,6 +92,36 @@ def test_apply_fx_raises_clear_error_for_missing_non_target_rate() -> None:
 
     with pytest.raises(ValueError, match="missing FX rates for currencies EUR targeting GBP"):
         apply_fx(frame.lazy(), rates, "GBP")
+
+
+def test_apply_forecast_cross_joins_dates_and_defaults_missing_class_office_factor() -> None:
+    frame = blended_frame(
+        [
+            {
+                Col.class_: "FA",
+                Col.office: "UK",
+                Col.fx_rate: 1.0,
+                Col.target_currency: "GBP",
+                "fx_loss": 100.0,
+            }
+        ]
+    )
+    forecast_factors = pl.DataFrame(
+        {
+            Col.class_: ["PROP", "PROP", "PROP"],
+            Col.office: ["US", "US", "US"],
+            Col.forecast_date: ["2026-01-01", "2026-07-01", "2026-12-31"],
+            "factor": [1.1, 1.2, 1.3],
+        }
+    )
+
+    result = apply_forecast(frame.lazy(), forecast_factors).collect().sort(Col.forecast_date)
+
+    assert result.select(Col.forecast_date, Col.forecast_factor, "forecast_loss").rows() == [
+        ("2026-01-01", 1.0, 100.0),
+        ("2026-07-01", 1.0, 100.0),
+        ("2026-12-31", 1.0, 100.0),
+    ]
 
 
 def test_build_metric_long_uses_default_gbp_lineage_metric_names() -> None:

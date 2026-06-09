@@ -44,8 +44,12 @@ def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.La
         pl.col(Col.forecast_date).cast(pl.String),
         pl.col(RawCol.factor).cast(pl.Float64).alias(Col.forecast_factor),
     )
-    applied = frame.join(factors, on=[Col.class_, Col.office], how="left").with_columns(
-        pl.col(Col.forecast_date).fill_null("base"),
+    forecast_dates = factors.select(Col.forecast_date).unique()
+    applied = frame.join(forecast_dates, how="cross").join(
+        factors,
+        on=[Col.class_, Col.office, Col.forecast_date],
+        how="left",
+    ).with_columns(
         pl.col(Col.forecast_factor).fill_null(1.0),
     ).with_columns((pl.col("fx_loss") * pl.col(Col.forecast_factor)).alias("forecast_loss"))
     return applied
