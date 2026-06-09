@@ -388,6 +388,7 @@ def test_euws_factor_schema_accepts_integer_seed_factors() -> None:
     factors = pl.DataFrame(
         {
             "model_event_id": [410024195],
+            "occ_year": [2026],
             "factor": [1],
         }
     )
@@ -403,6 +404,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     sources = SimpleNamespace(
         verisk_ylt="verisk_ylt",
         risklink_ylt="risklink_ylt",
+        verisk_events="verisk_events",
         ep_summaries="ep_summaries",
         lobs="lobs",
         perils="perils",
@@ -410,6 +412,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         fx_rates="fx_rates",
         forecast_factors="forecast_factors",
         euws_factors="euws_factors",
+        euws_overrides="euws_overrides",
     )
     config = SimpleNamespace(
         outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
@@ -455,7 +458,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("apply_blending", ("enriched", "staged_ep", "blending")),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
-        ("apply_euws", ("forecast_applied", "euws_factors")),
+        ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
         ("build_metric_long", ("euws_applied", "GBP")),
         ("build_dialsup", ("euws_applied", "GBP")),
         ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
@@ -713,7 +716,19 @@ def _write_seeds(data_root: Path) -> None:
     ).write_csv(seeds / "forecast_factors.csv")
     pl.DataFrame(
         {
-            "event_id": [1, 2],
+            "model_event_id": [101, 102],
+            "occ_year": [1, 2],
             "factor": [1.0, 1.0],
         }
     ).write_csv(seeds / "euws_rate_factors.csv")
+    validation = seeds / "validation"
+    validation.mkdir()
+    pl.DataFrame(
+        {
+            "EventID": [101, 102],
+            "ModelID": [7, 7],
+            "Event": [1, 2],
+            "Year": [1, 2],
+            "Day": [10, 20],
+        }
+    ).write_parquet(validation / "verisk_events.parquet")

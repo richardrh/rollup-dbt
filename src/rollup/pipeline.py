@@ -49,7 +49,12 @@ def run(
     blended = apply_blending(enriched, staged_ep, sources.blending)
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
-    euws_applied = apply_euws(forecast_applied, sources.euws_factors)
+    euws_applied = apply_euws(
+        forecast_applied,
+        sources.verisk_events,
+        sources.euws_factors,
+        sources.euws_overrides,
+    )
     combined = build_metric_long(euws_applied, config.fx.target_currency)
     dialsup = build_dialsup(euws_applied, config.fx.target_currency)
 

@@ -126,6 +126,7 @@ def staging_frames(
     return StagingFrames(
         verisk_ylt=empty_lazy,
         risklink_ylt=empty_lazy,
+        verisk_events=empty_lazy,
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,
@@ -133,4 +134,5 @@ def staging_frames(
         fx_rates=pl.DataFrame(),
         forecast_factors=pl.DataFrame(),
         euws_factors=pl.DataFrame(),
+        euws_overrides=pl.DataFrame(),
     )

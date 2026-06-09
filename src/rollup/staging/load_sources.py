@@ -82,11 +82,31 @@ PERILS_SCHEMA = pa.DataFrameSchema(
     strict=False,
 )
 
+VERISK_EVENTS_RAW_SCHEMA = pa.DataFrameSchema(
+    {
+        RawCol.EventID: pa.Column(pl.Int64, nullable=True),
+        RawCol.ModelID: pa.Column(pl.Int64, nullable=True),
+        RawCol.Event: pa.Column(pl.Int64, nullable=True),
+        RawCol.Year: pa.Column(pl.Int64, nullable=True),
+        RawCol.Day: pa.Column(pl.Int64, nullable=True),
+    },
+    strict=False,
+)
+EUWS_OVERRIDES_SCHEMA = pa.DataFrameSchema(
+    {
+        Col.rollup_lob: pa.Column(pl.String, nullable=True),
+        RawCol.max_rank: pa.Column(pl.Int64, nullable=True, coerce=True),
+        RawCol.factor: pa.Column(pl.Float64, nullable=True, coerce=True),
+    },
+    strict=False,
+)
+
 
 @dataclass(frozen=True)
 class StagingFrames:
     verisk_ylt: pl.LazyFrame
     risklink_ylt: pl.LazyFrame
+    verisk_events: pl.LazyFrame
     ep_summaries: pl.DataFrame
     lobs: pl.DataFrame
     perils: pl.DataFrame
@@ -94,6 +114,7 @@ class StagingFrames:
     fx_rates: pl.DataFrame
     forecast_factors: pl.DataFrame
     euws_factors: pl.DataFrame
+    euws_overrides: pl.DataFrame
 
 
 def load_sources(data_root: str | Path) -> StagingFrames:
@@ -116,6 +137,7 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     return StagingFrames(
         verisk_ylt=verisk_ylt,
         risklink_ylt=risklink_ylt,
+        verisk_events=load_verisk_events(data_root),
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,
@@ -123,6 +145,7 @@ def load_sources(data_root: str | Path) -> StagingFrames:
         fx_rates=read_optional_seed(data_root, ("fx_rates.csv",)),
         forecast_factors=read_optional_seed(data_root, ("forecast_factors.csv",)),
         euws_factors=read_optional_seed(data_root, ("euws_rate_factors.csv",)),
+        euws_overrides=read_optional_adjustment(data_root, "euws_rank_overrides.csv"),
     )
 
 
@@ -172,3 +195,44 @@ def read_optional_seed(data_root: Path, filenames: tuple[str, ...]) -> pl.DataFr
         except FileNotFoundError:
             continue
     return pl.DataFrame()
+
+
+def load_verisk_events(data_root: Path) -> pl.LazyFrame:
+    path = data_root / "seeds" / "validation" / "verisk_events.parquet"
+    if not path.exists():
+        if path.parent.exists():
+            raise FileNotFoundError(f"seed file not found: {path.relative_to(data_root)}")
+        return empty_verisk_events()
+    events = pl.scan_parquet(path)
+    VERISK_EVENTS_RAW_SCHEMA.validate(events)
+    return events.select(
+        pl.col(RawCol.EventID).alias(Col.model_event_id),
+        pl.col(RawCol.ModelID).alias(Col.model_code),
+        pl.col(RawCol.Event).alias(Col.event_id),
+        pl.col(RawCol.Year).alias(Col.year_id),
+        pl.col(RawCol.Day).alias(Col.event_day),
+    )
+
+
+def read_optional_adjustment(data_root: Path, filename: str) -> pl.DataFrame:
+    path = data_root / "seeds" / "adjustments" / filename
+    if not path.exists():
+        if path.parent.exists():
+            raise FileNotFoundError(f"seed file not found: {path.relative_to(data_root)}")
+        return pl.DataFrame()
+    frame = pl.read_csv(path)
+    if filename == "euws_rank_overrides.csv":
+        EUWS_OVERRIDES_SCHEMA.validate(frame)
+    return frame
+
+
+def empty_verisk_events() -> pl.LazyFrame:
+    return pl.DataFrame(
+        schema={
+            Col.model_event_id: pl.Int64,
+            Col.model_code: pl.Int64,
+            Col.event_id: pl.Int64,
+            Col.year_id: pl.Int64,
+            Col.event_day: pl.Int64,
+        }
+    ).lazy()
