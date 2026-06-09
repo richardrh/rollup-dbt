@@ -6,18 +6,23 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
+from rollup.metric_names import loss_blended_fx_forecast_euws_override_metric
 from rollup.marts.write_parquet import write_parquet
 
 
 FANOUT_INPUT_SCHEMA = METRIC_LONG_SCHEMA
 
 
-def write_fanouts(marts_dir: Path, frame: pl.DataFrame | pl.LazyFrame) -> tuple[Path, ...]:
+def write_fanouts(
+    marts_dir: Path,
+    frame: pl.DataFrame | pl.LazyFrame,
+    target_currency: str = "GBP",
+) -> tuple[Path, ...]:
     FANOUT_INPUT_SCHEMA.validate(frame)
 
     paths: list[Path] = []
     source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
-    main = source.filter(pl.col(Col.metric) == "euws_override")
+    main = source.filter(pl.col(Col.metric) == loss_blended_fx_forecast_euws_override_metric(target_currency))
     keys = main.select(Col.base_model, Col.forecast_date).unique().sort(Col.base_model, Col.forecast_date).collect()
     if keys.is_empty():
         return ()

@@ -11,6 +11,7 @@ import pytest
 
 from rollup.api import run_rollup, validate_rollup_inputs
 from rollup.config import load_config
+from rollup.metric_names import loss_blended_fx_forecast_euws_override_metric
 
 
 def assert_schema_validates(frame: pl.DataFrame, schema: object) -> None:
@@ -412,6 +413,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     )
     config = SimpleNamespace(
         outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
+        fx=SimpleNamespace(target_currency="GBP"),
     )
 
     def record(name: str, result: str):
@@ -451,11 +453,11 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("stage_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
         ("apply_blending", ("enriched", "blending")),
-        ("apply_fx", ("blended", "fx_rates")),
+        ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_euws", ("forecast_applied", "euws_factors")),
-        ("build_metric_long", ("euws_applied",)),
-        ("build_dialsup", ("combined",)),
+        ("build_metric_long", ("euws_applied", "GBP")),
+        ("build_dialsup", ("combined", "GBP")),
         ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
     ]
     assert stage_outputs["intermediate"] == (
@@ -479,6 +481,9 @@ return_periods = [2]
 [outputs]
 write_stage_outputs = false
 combined_file = "combined.parquet"
+
+[fx]
+target_currency = "usd"
 """.strip(),
         encoding="utf-8",
     )
@@ -489,6 +494,7 @@ combined_file = "combined.parquet"
     assert config.analysis.return_periods == (2,)
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.combined_file == "combined.parquet"
+    assert config.fx.target_currency == "USD"
 
 
 def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> None:
@@ -549,7 +555,9 @@ write_stage_outputs = true
     report = pl.read_csv(result.ep_report_path)
     assert set(report["return_period"].to_list()) == {0, 2}
     aal = report.filter((pl.col("ep_type") == "AAL") & (pl.col("base_model") == "verisk"))
-    assert aal.filter(pl.col("metric") == "euws_override")["loss"].to_list() == [15.0]
+    assert aal.filter(pl.col("metric") == loss_blended_fx_forecast_euws_override_metric("GBP"))[
+        "loss"
+    ].to_list() == [15.0]
 
     assert_schema_validates(pl.read_parquet(normalized_ylt_path), NORMALIZED_YLT_SCHEMA)
     assert_schema_validates(pl.read_parquet(staged_ep_path), STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
@@ -646,6 +654,7 @@ def _write_seeds(data_root: Path) -> None:
     pl.DataFrame(
         {
             "currency_code": ["GBP"],
+            "target_currency": ["GBP"],
             "rate": [1.0],
         }
     ).write_csv(seeds / "fx_rates.csv")

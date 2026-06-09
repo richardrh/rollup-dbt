@@ -12,6 +12,7 @@ from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
 from rollup.marts.write_parquet import write_parquet
+from rollup.metric_names import loss_blended_fx_forecast_euws_override_metric
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +29,27 @@ def write_marts(
     wide_path = marts_dir / config.outputs.wide_file
     dialsup_path = marts_dir / config.outputs.dialsup_file
     event_validation_path = marts_dir / config.outputs.event_validation_file
+    target_currency = config.fx.target_currency
+    final_main_metric = loss_blended_fx_forecast_euws_override_metric(target_currency)
 
     logger.info("writing combined mart path=%s", combined_path)
     write_parquet(combined, combined_path)
 
     combined_scan = pl.scan_parquet(combined_path)
-    dialsup_scan_source = build_dialsup(combined_scan)
+    dialsup_scan_source = build_dialsup(combined_scan, target_currency)
     logger.info("writing dialsup mart path=%s", dialsup_path)
     write_parquet(dialsup_scan_source, dialsup_path)
 
     dialsup_scan = pl.scan_parquet(dialsup_path)
-    final_main = combined_scan.filter(pl.col(Col.metric) == "euws_override")
+    final_main = combined_scan.filter(pl.col(Col.metric) == final_main_metric)
     final_metrics = pl.concat([final_main, dialsup_scan], how="diagonal_relaxed")
 
     logger.info("writing operational wide mart path=%s", wide_path)
-    write_parquet(wide(final_metrics), wide_path)
+    write_parquet(wide(final_metrics, target_currency), wide_path)
     logger.info("writing event validation mart path=%s", event_validation_path)
     write_parquet(event_validation(final_metrics), event_validation_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
-    fanout_paths = write_fanouts(marts_dir, final_main)
+    fanout_paths = write_fanouts(marts_dir, final_main, target_currency)
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {

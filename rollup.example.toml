@@ -15,3 +15,6 @@ wide_file = "mts_tbl_ylt_combined_all_factors_wide.parquet"
 dialsup_file = "mts_tbl_ylt_dialsup.parquet"
 event_validation_file = "mts_event_validation.parquet"
 ep_report_file = "ep_report.csv"
+
+[fx]
+target_currency = "GBP"

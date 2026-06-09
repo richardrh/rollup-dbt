@@ -5,6 +5,14 @@ import pandera.polars as pa
 
 from rollup.columns import Col
 from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
+from rollup.metric_names import (
+    LOSS_BLENDED,
+    LOSS_ORIGINAL_YLT,
+    loss_blended_fx_forecast_euws_override_metric,
+    loss_blended_fx_forecast_metric,
+    loss_blended_fx_metric,
+    normalize_target_currency,
+)
 
 
 METRIC_LONG_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
@@ -21,6 +29,7 @@ METRIC_LONG_SCHEMA = pa.DataFrameSchema(
         Col.class_: pa.Column(pl.String, nullable=True),
         Col.office: pa.Column(pl.String, nullable=True),
         Col.currency: pa.Column(pl.String, nullable=True),
+        Col.target_currency: pa.Column(pl.String, nullable=True),
         Col.year_id: pa.Column(pl.Int64, nullable=True),
         Col.event_id: pa.Column(pl.Int64, nullable=True),
         Col.forecast_date: pa.Column(pl.String, nullable=True),
@@ -32,8 +41,9 @@ METRIC_LONG_SCHEMA = pa.DataFrameSchema(
 )
 
 
-def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
+def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> pl.LazyFrame:
     METRIC_LONG_INPUT_SCHEMA.validate(adjusted)
+    target_currency = normalize_target_currency(target_currency)
 
     metric_columns = [
         Col.vendor,
@@ -47,6 +57,7 @@ def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
         Col.class_,
         Col.office,
         Col.currency,
+        Col.target_currency,
         Col.year_id,
         Col.event_id,
         Col.forecast_date,
@@ -65,6 +76,7 @@ def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
         Col.class_,
         Col.office,
         Col.currency,
+        Col.target_currency,
         Col.year_id,
         Col.event_id,
         Col.forecast_date,
@@ -79,27 +91,27 @@ def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
         [
             base.select(
                 *metric_columns,
-                pl.lit("original_ylt_loss").alias(Col.metric),
+                pl.lit(LOSS_ORIGINAL_YLT).alias(Col.metric),
                 pl.col(Col.loss).cast(pl.Float64).alias(Col.loss),
             ),
             base.select(
                 *metric_columns,
-                pl.lit("blended").alias(Col.metric),
+                pl.lit(LOSS_BLENDED).alias(Col.metric),
                 pl.col("blended_loss").cast(pl.Float64).alias(Col.loss),
             ),
             base.select(
                 *metric_columns,
-                pl.lit("gbp").alias(Col.metric),
+                pl.lit(loss_blended_fx_metric(target_currency)).alias(Col.metric),
                 pl.col("gbp_loss").cast(pl.Float64).alias(Col.loss),
             ),
             base.select(
                 *metric_columns,
-                pl.lit("forecast").alias(Col.metric),
+                pl.lit(loss_blended_fx_forecast_metric(target_currency)).alias(Col.metric),
                 pl.col("forecast_loss").cast(pl.Float64).alias(Col.loss),
             ),
             base.select(
                 *metric_columns,
-                pl.lit("euws_override").alias(Col.metric),
+                pl.lit(loss_blended_fx_forecast_euws_override_metric(target_currency)).alias(Col.metric),
                 pl.col("euws_loss").cast(pl.Float64).alias(Col.loss),
             ),
         ],

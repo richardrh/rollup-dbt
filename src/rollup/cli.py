@@ -20,6 +20,7 @@ def build_parser() -> ArgumentParser:
     run_parser.add_argument("--config-path", type=Path, default=None)
     run_parser.add_argument("--no-analysis", action="store_false", dest="write_analysis")
     run_parser.add_argument("--no-stage-outputs", action="store_true")
+    run_parser.add_argument("--target-currency", type=str.upper, default=None)
     run_parser.add_argument(
         "--log-level",
         type=str.upper,
@@ -34,7 +35,7 @@ def build_parser() -> ArgumentParser:
 
 def run_command(args: Namespace) -> int:
     log_file = args.log_file or args.output_root / "rollup.log"
-    config = stage_output_config(args.config_path) if args.no_stage_outputs else None
+    config = override_config(args)
     configure_console_logging(args.log_level, log_file=log_file)
     result = run_rollup(
         args.data_root,
@@ -46,6 +47,17 @@ def run_command(args: Namespace) -> int:
     )
     print_success_summary(result, log_file)
     return 0
+
+
+def override_config(args: Namespace) -> RollupConfig | None:
+    if not args.no_stage_outputs and args.target_currency is None:
+        return None
+    config = load_config(args.config_path)
+    if args.no_stage_outputs:
+        config = replace(config, outputs=replace(config.outputs, write_stage_outputs=False))
+    if args.target_currency is not None:
+        config = replace(config, fx=replace(config.fx, target_currency=args.target_currency))
+    return config
 
 
 def stage_output_config(config_path: Path | None) -> RollupConfig:

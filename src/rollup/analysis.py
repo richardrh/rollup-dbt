@@ -6,6 +6,7 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.config import RollupConfig, load_config
+from rollup.metric_names import loss_blended_fx_forecast_euws_override_metric
 
 
 def build_ep_report(
@@ -56,8 +57,9 @@ def write_ep_report(
 
 def load_analysis_losses(output_root: Path, config: RollupConfig) -> pl.LazyFrame:
     marts = config.outputs.marts_path(output_root)
+    final_main_metric = loss_blended_fx_forecast_euws_override_metric(config.fx.target_currency)
     main = pl.scan_parquet(marts / config.outputs.combined_file).filter(
-        pl.col(Col.metric) == "euws_override"
+        pl.col(Col.metric) == final_main_metric
     )
     dialsup_path = marts / config.outputs.dialsup_file
     if dialsup_path.exists():

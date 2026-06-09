@@ -10,6 +10,17 @@ from rollup.columns import Col
 from rollup.config import RollupConfig
 from rollup.intermediate.build_dialsup import build_dialsup
 from rollup.marts.write_marts import write_marts
+from rollup.metric_names import (
+    LOSS_ORIGINAL_YLT,
+    loss_blended_fx_forecast_euws_override_metric,
+    loss_blended_fx_forecast_metric,
+    loss_dialsup_fx_forecast_metric,
+)
+
+
+FINAL_MAIN_METRIC = loss_blended_fx_forecast_euws_override_metric("GBP")
+DIALSUP_METRIC = loss_dialsup_fx_forecast_metric("GBP")
+FORECAST_METRIC = loss_blended_fx_forecast_metric("GBP")
 
 
 def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
@@ -36,14 +47,14 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     validation_out = pl.read_parquet(paths["event_validation"])
 
     assert combined_out.height == 5
-    assert dialsup_out.select(Col.metric).unique().to_series().to_list() == ["dialsup_gbp_forecast"]
+    assert dialsup_out.select(Col.metric).unique().to_series().to_list() == [DIALSUP_METRIC]
     assert dialsup_out.select(Col.event_id, Col.loss).rows() == [(1, 10.0)]
-    assert set(wide_out.columns) >= {"euws_override", "dialsup_gbp_forecast"}
-    assert "original_ylt_loss" not in wide_out.columns
+    assert set(wide_out.columns) >= {FINAL_MAIN_METRIC, DIALSUP_METRIC, Col.target_currency}
+    assert LOSS_ORIGINAL_YLT not in wide_out.columns
     assert wide_out.sort(Col.event_id).select(
         Col.event_id,
-        "euws_override",
-        "dialsup_gbp_forecast",
+        FINAL_MAIN_METRIC,
+        DIALSUP_METRIC,
     ).rows() == [(1, 15.0, 10.0), (2, 25.0, None)]
     assert validation_out.sort(Col.event_id).select(
         Col.base_model,
@@ -54,7 +65,9 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     fanouts = paths["fanouts"]
     assert isinstance(fanouts, tuple)
     assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
-    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == ["euws_override"]
+    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
+        FINAL_MAIN_METRIC
+    ]
 
 
 def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
@@ -89,13 +102,14 @@ def combined_metric_frame() -> pl.DataFrame:
         Col.class_: "ART",
         Col.office: "London",
         Col.currency: "GBP",
+        Col.target_currency: "GBP",
         Col.forecast_date: "2026-01-01",
     }
     rows = [
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: "forecast", Col.loss: 10.0},
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: "euws_override", Col.loss: 15.0},
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: "original_ylt_loss", Col.loss: 5.0},
-        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: "forecast", Col.loss: 20.0},
-        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: "euws_override", Col.loss: 25.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FORECAST_METRIC, Col.loss: 10.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FINAL_MAIN_METRIC, Col.loss: 15.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: LOSS_ORIGINAL_YLT, Col.loss: 5.0},
+        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FORECAST_METRIC, Col.loss: 20.0},
+        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FINAL_MAIN_METRIC, Col.loss: 25.0},
     ]
     return pl.DataFrame(rows)

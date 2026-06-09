@@ -110,6 +110,8 @@ combined_file = "custom-combined.parquet"
                 str(config_path),
                 "--no-analysis",
                 "--no-stage-outputs",
+                "--target-currency",
+                "usd",
                 "--log-level",
                 "debug",
                 "--log-file",
@@ -131,6 +133,7 @@ combined_file = "custom-combined.parquet"
     assert config is not None
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.combined_file == "custom-combined.parquet"
+    assert config.fx.target_currency == "USD"
     assert "write_stage_outputs = true" in config_path.read_text(encoding="utf-8")
     summary = capsys.readouterr().out
     assert "analysis report: (disabled)" in summary
