@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 import pandera.polars as pa
 
 from rollup.columns import Col
 from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
-from rollup.metric_names import (
-    LOSS_BLENDED,
-    LOSS_ORIGINAL_YLT,
-    loss_blended_fx_forecast_euws_override_metric,
-    loss_blended_fx_forecast_metric,
-    loss_blended_fx_metric,
-    normalize_target_currency,
-)
+
+
+@dataclass(frozen=True)
+class MetricSpec:
+    name: str
+    loss_column: str
 
 
 METRIC_LONG_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
@@ -43,7 +43,6 @@ METRIC_LONG_SCHEMA = pa.DataFrameSchema(
 
 def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> pl.LazyFrame:
     METRIC_LONG_INPUT_SCHEMA.validate(adjusted)
-    target_currency = normalize_target_currency(target_currency)
 
     metric_columns = [
         Col.vendor,
@@ -91,30 +90,34 @@ def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> p
         [
             base.select(
                 *metric_columns,
-                pl.lit(LOSS_ORIGINAL_YLT).alias(Col.metric),
-                pl.col(Col.loss).cast(pl.Float64).alias(Col.loss),
-            ),
-            base.select(
-                *metric_columns,
-                pl.lit(LOSS_BLENDED).alias(Col.metric),
-                pl.col("blended_loss").cast(pl.Float64).alias(Col.loss),
-            ),
-            base.select(
-                *metric_columns,
-                pl.lit(loss_blended_fx_metric(target_currency)).alias(Col.metric),
-                pl.col("fx_loss").cast(pl.Float64).alias(Col.loss),
-            ),
-            base.select(
-                *metric_columns,
-                pl.lit(loss_blended_fx_forecast_metric(target_currency)).alias(Col.metric),
-                pl.col("forecast_loss").cast(pl.Float64).alias(Col.loss),
-            ),
-            base.select(
-                *metric_columns,
-                pl.lit(loss_blended_fx_forecast_euws_override_metric(target_currency)).alias(Col.metric),
-                pl.col("euws_loss").cast(pl.Float64).alias(Col.loss),
-            ),
+                pl.lit(spec.name).alias(Col.metric),
+                pl.col(spec.loss_column).cast(pl.Float64).alias(Col.loss),
+            )
+            for spec in metric_specs(target_currency)
         ],
         how="vertical",
     )
     return metric_long
+
+
+def metric_specs(target_currency: str) -> tuple[MetricSpec, ...]:
+    tag = _target_currency_tag(target_currency)
+    return (
+        MetricSpec("loss_original_ylt", Col.loss),
+        MetricSpec("loss_blended", "blended_loss"),
+        MetricSpec(f"loss_blended_fx_{tag}", "fx_loss"),
+        MetricSpec(f"loss_blended_fx_{tag}_forecast", "forecast_loss"),
+        MetricSpec(f"loss_blended_fx_{tag}_forecast_euws_override", "euws_loss"),
+    )
+
+
+def forecast_metric(target_currency: str) -> str:
+    return f"loss_blended_fx_{_target_currency_tag(target_currency)}_forecast"
+
+
+def final_main_metric(target_currency: str) -> str:
+    return f"{forecast_metric(target_currency)}_euws_override"
+
+
+def _target_currency_tag(target_currency: str) -> str:
+    return str(target_currency).upper().lower()

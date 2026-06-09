@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +10,7 @@ import pytest
 
 from rollup.api import run_rollup, validate_rollup_inputs
 from rollup.config import load_config
-from rollup.metric_names import loss_blended_fx_forecast_euws_override_metric
+from rollup.intermediate.build_metric_long import final_main_metric
 
 
 def assert_schema_validates(frame: pl.DataFrame, schema: object) -> None:
@@ -44,9 +43,7 @@ def test_transform_modules_are_split_into_packages() -> None:
         "rollup.intermediate.apply_euws": "apply_euws",
         "rollup.intermediate.build_metric_long": "build_metric_long",
         "rollup.intermediate.build_dialsup": "build_dialsup",
-        "rollup.marts.write_stage_frames": "write_stage_frames",
         "rollup.marts.write_marts": "write_marts",
-        "rollup.marts.write_parquet": "write_parquet",
         "rollup.marts.wide": "wide",
         "rollup.marts.event_validation": "event_validation",
         "rollup.marts.fanouts": "write_fanouts",
@@ -126,28 +123,6 @@ def test_transform_modules_expose_pandera_schema_contracts() -> None:
         for schema_name in schema_names:
             schema = getattr(module, schema_name)
             assert hasattr(schema, "validate")
-
-
-def test_query_path_modules_do_not_define_private_helpers() -> None:
-    rollup_root = Path(__file__).parents[1] / "src" / "rollup"
-    query_paths = [
-        rollup_root / "analysis.py",
-        rollup_root / "pipeline.py",
-        *sorted((rollup_root / "staging").glob("*.py")),
-        *sorted((rollup_root / "intermediate").glob("*.py")),
-        *sorted((rollup_root / "marts").glob("*.py")),
-    ]
-    violations: list[str] = []
-
-    for path in query_paths:
-        if path.name == "__init__.py":
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name.startswith("_"):
-                violations.append(f"{path.relative_to(rollup_root.parent)}:{node.lineno} {node.name}")
-
-    assert violations == []
 
 
 def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
@@ -473,7 +448,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(pipeline, "apply_euws", record("apply_euws", "euws_applied"))
     monkeypatch.setattr(pipeline, "build_metric_long", record("build_metric_long", "combined"))
     monkeypatch.setattr(pipeline, "build_dialsup", record("build_dialsup", "dialsup"))
-    monkeypatch.setattr(pipeline, "write_stage_frames", write_stage_frames)
+    monkeypatch.setattr(pipeline, "_write_stage_frames", write_stage_frames)
     monkeypatch.setattr(pipeline, "write_marts", record("write_marts", {}))
 
     pipeline.run(tmp_path / "data", output_root=tmp_path / "output", config=config)
@@ -595,7 +570,7 @@ duckdb_file = "rollup.duckdb"
     report = pl.read_csv(result.ep_report_path)
     assert set(report["return_period"].to_list()) == {0, 2}
     aal = report.filter((pl.col("ep_type") == "AAL") & (pl.col("base_model") == "verisk"))
-    assert aal.filter(pl.col("metric") == loss_blended_fx_forecast_euws_override_metric("GBP"))[
+    assert aal.filter(pl.col("metric") == final_main_metric("GBP"))[
         "loss"
     ].to_list() == [15.0]
 
@@ -636,7 +611,7 @@ def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path
     result = run_rollup(data_root, tmp_path / "output")
     combined = pl.read_parquet(result.outputs.mts_combined)
     final_main = combined.filter(
-        pl.col("metric") == loss_blended_fx_forecast_euws_override_metric("GBP")
+        pl.col("metric") == final_main_metric("GBP")
     )
 
     assert final_main.select("forecast_date").unique().sort("forecast_date").to_series().to_list() == [

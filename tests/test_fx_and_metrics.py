@@ -7,16 +7,8 @@ from rollup.columns import Col, RawCol
 from rollup.intermediate.apply_euws import apply_euws
 from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
-from rollup.intermediate.build_dialsup import build_dialsup
-from rollup.intermediate.build_metric_long import build_metric_long
-from rollup.metric_names import (
-    LOSS_BLENDED,
-    LOSS_ORIGINAL_YLT,
-    loss_blended_fx_forecast_euws_override_metric,
-    loss_blended_fx_forecast_metric,
-    loss_blended_fx_metric,
-    loss_dialsup_fx_forecast_metric,
-)
+from rollup.intermediate.build_dialsup import build_dialsup, dialsup_metric
+from rollup.intermediate.build_metric_long import build_metric_long, metric_specs
 
 
 def test_apply_fx_uses_configured_target_currency_rates() -> None:
@@ -235,13 +227,7 @@ def test_build_metric_long_uses_default_gbp_lineage_metric_names() -> None:
 
     metrics = build_metric_long(adjusted.lazy()).collect().select(Col.metric).to_series().to_list()
 
-    assert metrics == [
-        LOSS_ORIGINAL_YLT,
-        LOSS_BLENDED,
-        loss_blended_fx_metric("GBP"),
-        loss_blended_fx_forecast_metric("GBP"),
-        loss_blended_fx_forecast_euws_override_metric("GBP"),
-    ]
+    assert metrics == [spec.name for spec in metric_specs("GBP")]
 
 
 def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
@@ -270,7 +256,7 @@ def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
     result = build_dialsup(adjusted.lazy()).collect()
 
     assert result.select(Col.metric, Col.loss).rows() == [
-        (loss_dialsup_fx_forecast_metric("GBP"), 600.0)
+        (dialsup_metric("GBP"), 600.0)
     ]
 
 

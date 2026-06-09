@@ -82,11 +82,6 @@ def override_config(args: Namespace) -> RollupConfig | None:
     return config
 
 
-def stage_output_config(config_path: Path | None) -> RollupConfig:
-    config = load_config(config_path)
-    return replace(config, outputs=replace(config.outputs, write_stage_outputs=False))
-
-
 def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
     marts_dir = result.outputs.marts_dir
     mart_count = _parquet_count(marts_dir)

@@ -13,8 +13,8 @@ second when you need stage outputs and `analysis/ep_report.csv`.
 ## Development notes
 
 - Keep runtime changes behind the public API in `rollup.api`.
-- Add new stage outputs through `write_stage_frames` only when they help local
-  inspection; Dataiku users should not need them for normal operation.
+- Add new stage outputs in the pipeline only when they help local inspection;
+  Dataiku users should not need them for normal operation.
 - Update [Runtime guide](runtime.md), [Calculation reference](calculation-reference.md),
   and [Data requirements](data-requirements.md) whenever output contracts,
   metric names, config keys, or required inputs change.

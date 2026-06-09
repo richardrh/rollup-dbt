@@ -5,7 +5,6 @@ import polars as pl
 from rollup.columns import Col
 from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
 from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
-from rollup.metric_names import loss_dialsup_fx_forecast_metric
 
 
 DIALSUP_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
@@ -32,8 +31,12 @@ def build_dialsup(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> pl.La
         Col.event_id,
         Col.forecast_date,
         Col.is_dialsup,
-        pl.lit(loss_dialsup_fx_forecast_metric(target_currency)).alias(Col.metric),
+        pl.lit(dialsup_metric(target_currency)).alias(Col.metric),
         (pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col(Col.forecast_factor))
         .cast(pl.Float64)
         .alias(Col.loss),
     )
+
+
+def dialsup_metric(target_currency: str) -> str:
+    return f"loss_dialsup_fx_{str(target_currency).upper().lower()}_forecast"

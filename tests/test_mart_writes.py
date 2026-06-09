@@ -8,19 +8,16 @@ import pytest
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
+from rollup.intermediate.build_dialsup import dialsup_metric
+from rollup.intermediate.build_metric_long import final_main_metric, forecast_metric, metric_specs
 from rollup.marts.wide import wide_column_name
 from rollup.marts.write_marts import write_marts
-from rollup.metric_names import (
-    LOSS_ORIGINAL_YLT,
-    loss_blended_fx_forecast_euws_override_metric,
-    loss_blended_fx_forecast_metric,
-    loss_dialsup_fx_forecast_metric,
-)
 
 
-FINAL_MAIN_METRIC = loss_blended_fx_forecast_euws_override_metric("GBP")
-DIALSUP_METRIC = loss_dialsup_fx_forecast_metric("GBP")
-FORECAST_METRIC = loss_blended_fx_forecast_metric("GBP")
+ORIGINAL_METRIC = metric_specs("GBP")[0].name
+FINAL_MAIN_METRIC = final_main_metric("GBP")
+DIALSUP_METRIC = dialsup_metric("GBP")
+FORECAST_METRIC = forecast_metric("GBP")
 
 
 def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
@@ -51,7 +48,7 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     assert dialsup_out.select(Col.event_id, Col.loss).rows() == [(1, 10.0)]
     forecast_column = wide_column_name(FORECAST_METRIC, "2026-01-01")
     final_column = wide_column_name(FINAL_MAIN_METRIC, "2026-01-01")
-    original_column = wide_column_name(LOSS_ORIGINAL_YLT, "2026-01-01")
+    original_column = wide_column_name(ORIGINAL_METRIC, "2026-01-01")
     dialsup_column = wide_column_name(DIALSUP_METRIC, "2026-01-01")
     assert Col.metric not in wide_out.columns
     assert Col.forecast_date not in wide_out.columns
@@ -66,7 +63,7 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     for metric, column in [
         (FORECAST_METRIC, forecast_column),
         (FINAL_MAIN_METRIC, final_column),
-        (LOSS_ORIGINAL_YLT, original_column),
+        (ORIGINAL_METRIC, original_column),
     ]:
         combined_sum = combined_out.filter(
             (pl.col(Col.metric) == metric) & (pl.col(Col.forecast_date) == "2026-01-01")
@@ -125,7 +122,7 @@ def combined_metric_frame() -> pl.DataFrame:
     rows = [
         {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FORECAST_METRIC, Col.loss: 10.0},
         {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FINAL_MAIN_METRIC, Col.loss: 15.0},
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: LOSS_ORIGINAL_YLT, Col.loss: 5.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: ORIGINAL_METRIC, Col.loss: 5.0},
         {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FORECAST_METRIC, Col.loss: 20.0},
         {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FINAL_MAIN_METRIC, Col.loss: 25.0},
     ]

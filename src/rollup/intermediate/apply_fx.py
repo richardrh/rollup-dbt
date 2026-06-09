@@ -5,7 +5,6 @@ import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
 from rollup.intermediate.apply_blending import BLENDED_YLT_SCHEMA
-from rollup.metric_names import normalize_target_currency
 
 
 FX_SOURCE_CURRENCY = "__fx_source_currency"
@@ -41,7 +40,7 @@ FX_APPLIED_YLT_SCHEMA = pa.DataFrameSchema(
 
 def apply_fx(frame: pl.LazyFrame, fx_rates: pl.DataFrame, target_currency: str = "GBP") -> pl.LazyFrame:
     FX_INPUT_SCHEMA.validate(frame)
-    target_currency = normalize_target_currency(target_currency)
+    target_currency = _normalize_target_currency(target_currency)
     source_currencies = collect_source_currencies(frame)
 
     if fx_rates.is_empty():
@@ -108,3 +107,7 @@ def validate_missing_fx_rates(
     if missing:
         missing_list = ", ".join(missing)
         raise ValueError(f"missing FX rates for currencies {missing_list} targeting {target_currency}")
+
+
+def _normalize_target_currency(target_currency: str) -> str:
+    return str(target_currency).upper()

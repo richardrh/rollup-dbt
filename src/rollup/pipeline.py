@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import logging
+import polars as pl
 
 from rollup.config import RollupConfig, load_config
 from rollup.intermediate import (
@@ -15,7 +16,7 @@ from rollup.intermediate import (
     build_enriched_ylt,
     build_metric_long,
 )
-from rollup.marts import write_marts, write_stage_frames
+from rollup.marts import write_marts
 from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ def run(
     dialsup = build_dialsup(euws_applied, config.fx.target_currency)
 
     stage_paths = (
-        *write_stage_frames(
+        *_write_stage_frames(
             output_root,
             config.outputs.staging_dir,
             {
@@ -73,7 +74,7 @@ def run(
             },
             config,
         ),
-        *write_stage_frames(
+        *_write_stage_frames(
             output_root,
             config.outputs.intermediate_dir,
             {
@@ -94,3 +95,29 @@ def run(
         stage_paths=stage_paths,
         mart_paths=mart_paths,
     )
+
+
+def _write_stage_frames(
+    output_root: Path,
+    section: str,
+    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    config: RollupConfig,
+) -> tuple[Path, ...]:
+    if not config.outputs.write_stage_outputs:
+        return ()
+    base = output_root / config.outputs.stage_output_dir / section
+    base.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for name, frame in frames.items():
+        path = base / f"{name}.parquet"
+        _write_parquet(frame, path)
+        paths.append(path)
+    return tuple(paths)
+
+
+def _write_parquet(frame: pl.DataFrame | pl.LazyFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(frame, pl.LazyFrame):
+        frame.sink_parquet(path, mkdir=True)
+        return
+    frame.write_parquet(path)
