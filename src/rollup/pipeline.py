@@ -51,7 +51,7 @@ def run(
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
     euws_applied = apply_euws(forecast_applied, sources.euws_factors)
     combined = build_metric_long(euws_applied, config.fx.target_currency)
-    dialsup = build_dialsup(combined, config.fx.target_currency)
+    dialsup = build_dialsup(euws_applied, config.fx.target_currency)
 
     stage_paths = (
         *write_stage_frames(

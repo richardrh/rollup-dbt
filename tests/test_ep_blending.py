@@ -36,7 +36,7 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
                 Col.rollup_peril: ["UK_WS", "UK_WS"],
                 Col.region_peril_id: [216, 216],
                 Col.selection_priority: [2, 1],
-                Col.is_dialsup: [0, 1],
+                Col.is_dialsup: [1, 0],
             }
         ),
     )

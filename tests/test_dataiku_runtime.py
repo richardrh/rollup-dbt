@@ -457,7 +457,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_euws", ("forecast_applied", "euws_factors")),
         ("build_metric_long", ("euws_applied", "GBP")),
-        ("build_dialsup", ("combined", "GBP")),
+        ("build_dialsup", ("euws_applied", "GBP")),
         ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
     ]
     assert stage_outputs["intermediate"] == (
@@ -605,6 +605,12 @@ def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path
         "2026-12-31",
     ]
     assert final_main.select("forecast_date", "loss").group_by("forecast_date").sum().sort("forecast_date").rows() == [
+        ("2026-01-01", 30.0),
+        ("2026-07-01", 30.0),
+        ("2026-12-31", 30.0),
+    ]
+    dialsup = pl.read_parquet(result.outputs.mts_dialsup)
+    assert dialsup.group_by("forecast_date").agg(pl.col("loss").sum()).sort("forecast_date").rows() == [
         ("2026-01-01", 30.0),
         ("2026-07-01", 30.0),
         ("2026-12-31", 30.0),

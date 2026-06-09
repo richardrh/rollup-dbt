@@ -6,6 +6,7 @@ import pytest
 from rollup.columns import Col
 from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
+from rollup.intermediate.build_dialsup import build_dialsup
 from rollup.intermediate.build_metric_long import build_metric_long
 from rollup.metric_names import (
     LOSS_BLENDED,
@@ -13,6 +14,7 @@ from rollup.metric_names import (
     loss_blended_fx_forecast_euws_override_metric,
     loss_blended_fx_forecast_metric,
     loss_blended_fx_metric,
+    loss_dialsup_fx_forecast_metric,
 )
 
 
@@ -144,6 +146,32 @@ def test_build_metric_long_uses_default_gbp_lineage_metric_names() -> None:
         loss_blended_fx_metric("GBP"),
         loss_blended_fx_forecast_metric("GBP"),
         loss_blended_fx_forecast_euws_override_metric("GBP"),
+    ]
+
+
+def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
+    adjusted = blended_frame(
+        [
+            {
+                Col.loss: 100.0,
+                "blended_loss": 10.0,
+                Col.fx_rate: 2.0,
+                Col.target_currency: "GBP",
+                "fx_loss": 20.0,
+                Col.forecast_date: "2026-01-01",
+                Col.forecast_factor: 3.0,
+                "forecast_loss": 30.0,
+                Col.euws_factor: 1.0,
+                "euws_loss": 30.0,
+                Col.is_dialsup: 1,
+            }
+        ]
+    )
+
+    result = build_dialsup(adjusted.lazy()).collect()
+
+    assert result.select(Col.metric, Col.loss).rows() == [
+        (loss_dialsup_fx_forecast_metric("GBP"), 600.0)
     ]
 
 

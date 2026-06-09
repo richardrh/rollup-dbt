@@ -7,7 +7,6 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.intermediate.build_dialsup import build_dialsup
 from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
@@ -36,9 +35,8 @@ def write_marts(
     write_parquet(combined, combined_path)
 
     combined_scan = pl.scan_parquet(combined_path)
-    dialsup_scan_source = build_dialsup(combined_scan, target_currency)
     logger.info("writing dialsup mart path=%s", dialsup_path)
-    write_parquet(dialsup_scan_source, dialsup_path)
+    write_parquet(dialsup, dialsup_path)
 
     dialsup_scan = pl.scan_parquet(dialsup_path)
     final_main = combined_scan.filter(pl.col(Col.metric) == final_main_metric)
