@@ -572,6 +572,45 @@ write_stage_outputs = true
     assert_schema_validates(pl.read_parquet(result.outputs.event_validation), EVENT_VALIDATION_SCHEMA)
 
 
+def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path: Path) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    seeds = data_root / "seeds"
+    pl.DataFrame(
+        {
+            "modelled_lob": ["Fine Art"],
+            "rollup_lob": ["HIC_FA_UK"],
+            "class": ["FA"],
+            "office": ["UK"],
+            "currency": ["GBP"],
+        }
+    ).write_csv(seeds / "lobs.csv")
+    pl.DataFrame(
+        {
+            "class": ["PROP", "PROP", "PROP"],
+            "office": ["US", "US", "US"],
+            "forecast_date": ["2026-01-01", "2026-07-01", "2026-12-31"],
+            "factor": [1.1, 1.2, 1.3],
+        }
+    ).write_csv(seeds / "forecast_factors.csv")
+
+    result = run_rollup(data_root, tmp_path / "output")
+    combined = pl.read_parquet(result.outputs.mts_combined)
+    final_main = combined.filter(
+        pl.col("metric") == loss_blended_fx_forecast_euws_override_metric("GBP")
+    )
+
+    assert final_main.select("forecast_date").unique().sort("forecast_date").to_series().to_list() == [
+        "2026-01-01",
+        "2026-07-01",
+        "2026-12-31",
+    ]
+    assert final_main.select("forecast_date", "loss").group_by("forecast_date").sum().sort("forecast_date").rows() == [
+        ("2026-01-01", 30.0),
+        ("2026-07-01", 30.0),
+        ("2026-12-31", 30.0),
+    ]
+
+
 def _write_tiny_input(tmp_path: Path) -> Path:
     data_root = tmp_path / "data"
     _write_ylt(data_root)
