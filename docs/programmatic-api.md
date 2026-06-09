@@ -29,7 +29,6 @@ from rollup.api import run_rollup
 result = run_rollup(
     data_root="data",
     output_root="output",
-    validate=True,
     write_analysis=True,
     log_file="output/rollup.log",
 )
@@ -43,13 +42,13 @@ Parameters commonly used by callers:
 | `output_root` | `"output"` | Output root. |
 | `config_path` | `None` | Optional TOML path; defaults to `rollup.local.toml` when no config object is passed. |
 | `config` | `None` | Optional `RollupConfig` object. Takes precedence over `config_path`. |
-| `validate` | `True` | Raise on expected validation failures before calculation. |
 | `write_analysis` | `True` | Write `analysis/ep_report.csv`. |
 | `validation_callback` | `None` | Optional callback receiving the validation result. |
 | `log_file` | `None` | Optional log path. CLI supplies `<output-root>/rollup.log` by default. |
 
-`run_rollup` returns `RollupRunResult` with `data_root`, `output_root`, output
-paths, and optional `ep_report_path`.
+`run_rollup` always validates and raises `RollupValidationError` on expected
+input failures before calculations. It returns `RollupRunResult` with
+`data_root`, `output_root`, output paths, and optional `ep_report_path`.
 
 ## Config object example
 
@@ -63,3 +62,16 @@ config = replace(config, outputs=replace(config.outputs, write_duckdb=True))
 
 run_rollup("data", "output", config=config)
 ```
+
+## EP summary conversion
+
+```python
+from rollup.api import write_ep_summary, write_ep_summaries
+
+write_ep_summary("data", "verisk", "data/ep_summaries/verisk/verisk_clean.csv")
+write_ep_summaries("data")
+```
+
+These functions write canonical `.long.csv` files and return the output paths.
+Use `build_ep_summary_from_wide_csv(...)` from `rollup.ep_summary_generator` when
+you only need the in-memory DataFrame transformation.

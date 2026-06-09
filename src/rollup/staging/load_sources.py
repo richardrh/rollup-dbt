@@ -9,6 +9,14 @@ import pandera.polars as pa
 from rollup.columns import Col, RawCol
 
 
+def required(dtype: pl.DataType) -> pa.Column:
+    return pa.Column(dtype, nullable=False, coerce=True)
+
+
+def strict_schema(columns: dict[str, pa.Column]) -> pa.DataFrameSchema:
+    return pa.DataFrameSchema(columns, strict=True)
+
+
 VERISK_YLT_SCHEMA = pa.DataFrameSchema(
     {
         RawCol.Analysis: pa.Column(pl.String, nullable=False),
@@ -47,39 +55,80 @@ RISKLINK_YLT_REQUIRED_COLUMNS = (
     RawCol.loss,
 )
 
-EP_SUMMARY_SCHEMA = pa.DataFrameSchema(
+EP_SUMMARY_SCHEMA = strict_schema(
     {
-        Col.vendor: pa.Column(pl.String, nullable=False),
-        Col.analysis_id: pa.Column(pl.String, nullable=False),
-        Col.modelled_lob: pa.Column(pl.String, nullable=False),
-        Col.modelled_peril: pa.Column(pl.String, nullable=False),
-        Col.ep_type: pa.Column(pl.String, nullable=False),
-        Col.return_period: pa.Column(pl.Int64, nullable=False),
-        Col.loss: pa.Column(pl.Float64, nullable=False),
-    },
-    strict=False,
+        Col.vendor: required(pl.String),
+        Col.analysis_id: required(pl.String),
+        Col.modelled_lob: required(pl.String),
+        Col.modelled_peril: required(pl.String),
+        Col.ep_type: required(pl.String),
+        Col.return_period: required(pl.Int64),
+        Col.loss: required(pl.Float64),
+    }
 )
 
-LOBS_SCHEMA = pa.DataFrameSchema(
+LOBS_SCHEMA = strict_schema(
     {
-        Col.modelled_lob: pa.Column(pl.String, nullable=False),
-        Col.rollup_lob: pa.Column(pl.String, nullable=False),
-        Col.class_: pa.Column(pl.String, nullable=False),
-        Col.office: pa.Column(pl.String, nullable=False),
-        Col.currency: pa.Column(pl.String, nullable=False),
-    },
-    strict=False,
+        "lob_id": required(pl.Int64),
+        Col.modelled_lob: required(pl.String),
+        Col.rollup_lob: required(pl.String),
+        "lob_type": required(pl.String),
+        Col.cds_cat_class_name: required(pl.String),
+        Col.office: required(pl.String),
+        Col.class_: required(pl.String),
+        Col.currency: required(pl.String),
+    }
 )
 
-PERILS_SCHEMA = pa.DataFrameSchema(
+PERILS_SCHEMA = strict_schema(
     {
-        Col.modelled_peril: pa.Column(pl.String, nullable=False),
-        Col.rollup_peril: pa.Column(pl.String, nullable=False),
-        Col.region_peril_id: pa.Column(pl.Int64, nullable=False),
-        Col.selection_priority: pa.Column(pl.Int64, nullable=False),
-        Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
-    },
-    strict=False,
+        Col.modelled_peril: required(pl.String),
+        Col.rollup_peril: required(pl.String),
+        "region": required(pl.String),
+        "peril": required(pl.String),
+        Col.region_peril_id: required(pl.Int64),
+        Col.selection_priority: required(pl.Int64),
+        Col.is_dialsup: required(pl.Int64),
+    }
+)
+
+BLENDING_FACTORS_SEED_SCHEMA = strict_schema(
+    {
+        "id": required(pl.Int64),
+        "BlendSetID": required(pl.Int64),
+        RawCol.RegionPerilID: required(pl.Int64),
+        "RegionPeril": required(pl.String),
+        RawCol.SubRegionPerilID: required(pl.String),
+        RawCol.SubRegionPeril: pa.Column(pl.String, nullable=True, coerce=True),
+        RawCol.AIRBlend: required(pl.Float64),
+        RawCol.RMSBlend: required(pl.Float64),
+        "KatRiskBlend": required(pl.Float64),
+        "DateCreated": required(pl.String),
+    }
+)
+FX_RATES_SEED_SCHEMA = strict_schema(
+    {
+        RawCol.currency_code: required(pl.String),
+        Col.target_currency: required(pl.String),
+        RawCol.rate_date: required(pl.String),
+        RawCol.rate: required(pl.Float64),
+    }
+)
+FORECAST_FACTORS_SEED_SCHEMA = strict_schema(
+    {
+        Col.class_: required(pl.String),
+        Col.office: required(pl.String),
+        "office_iso2": required(pl.String),
+        Col.forecast_date: required(pl.String),
+        RawCol.factor: required(pl.Float64),
+    }
+)
+EUWS_FACTORS_SEED_SCHEMA = strict_schema(
+    {
+        Col.model_event_id: required(pl.Int64),
+        RawCol.occ_year: required(pl.Int64),
+        RawCol.factor: required(pl.Float64),
+    }
 )
 
 VERISK_EVENTS_RAW_SCHEMA = pa.DataFrameSchema(
@@ -92,13 +141,12 @@ VERISK_EVENTS_RAW_SCHEMA = pa.DataFrameSchema(
     },
     strict=False,
 )
-EUWS_OVERRIDES_SCHEMA = pa.DataFrameSchema(
+EUWS_OVERRIDES_SCHEMA = strict_schema(
     {
-        Col.rollup_lob: pa.Column(pl.String, nullable=True),
-        RawCol.max_rank: pa.Column(pl.Int64, nullable=True, coerce=True),
-        RawCol.factor: pa.Column(pl.Float64, nullable=True, coerce=True),
-    },
-    strict=False,
+        Col.rollup_lob: required(pl.String),
+        RawCol.max_rank: required(pl.Int64),
+        RawCol.factor: required(pl.Float64),
+    }
 )
 
 
@@ -128,7 +176,9 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     VERISK_YLT_SCHEMA.validate(verisk_ylt)
     RISKLINK_YLT_SCHEMA.validate(risklink_ylt)
     validate_lazy_required_nulls(verisk_ylt, "verisk_ylt", VERISK_YLT_REQUIRED_COLUMNS)
-    validate_lazy_required_nulls(risklink_ylt, "risklink_ylt", RISKLINK_YLT_REQUIRED_COLUMNS)
+    validate_lazy_required_nulls(
+        risklink_ylt, "risklink_ylt", RISKLINK_YLT_REQUIRED_COLUMNS
+    )
 
     ep_summaries = read_ep_summaries(data_root)
     EP_SUMMARY_SCHEMA.validate(ep_summaries)
@@ -137,6 +187,19 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     LOBS_SCHEMA.validate(lobs)
     perils = read_seed_csv(data_root, "perils.csv")
     PERILS_SCHEMA.validate(perils)
+    blending = read_optional_seed(
+        data_root,
+        ("blending_factors.csv", "blending_weights.csv"),
+        BLENDING_FACTORS_SEED_SCHEMA,
+    )
+    fx_rates = read_optional_seed(data_root, ("fx_rates.csv",), FX_RATES_SEED_SCHEMA)
+    forecast_factors = read_optional_seed(
+        data_root, ("forecast_factors.csv",), FORECAST_FACTORS_SEED_SCHEMA
+    )
+    euws_factors = read_optional_seed(
+        data_root, ("euws_rate_factors.csv",), EUWS_FACTORS_SEED_SCHEMA
+    )
+    euws_overrides = read_optional_adjustment(data_root, "euws_rank_overrides.csv")
 
     return StagingFrames(
         verisk_ylt=verisk_ylt,
@@ -145,11 +208,11 @@ def load_sources(data_root: str | Path) -> StagingFrames:
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,
-        blending=read_optional_seed(data_root, ("blending_factors.csv", "blending_weights.csv")),
-        fx_rates=read_optional_seed(data_root, ("fx_rates.csv",)),
-        forecast_factors=read_optional_seed(data_root, ("forecast_factors.csv",)),
-        euws_factors=read_optional_seed(data_root, ("euws_rate_factors.csv",)),
-        euws_overrides=read_optional_adjustment(data_root, "euws_rank_overrides.csv"),
+        blending=blending,
+        fx_rates=fx_rates,
+        forecast_factors=forecast_factors,
+        euws_factors=euws_factors,
+        euws_overrides=euws_overrides,
     )
 
 
@@ -181,21 +244,33 @@ def validate_lazy_required_nulls(
 def read_ep_summaries(data_root: Path) -> pl.DataFrame:
     paths = sorted((data_root / "ep_summaries").rglob("*.long.csv"))
     if not paths:
-        raise FileNotFoundError(f"no EP summary .long.csv files found in {data_root / 'ep_summaries'}")
+        raise FileNotFoundError(
+            f"no EP summary .long.csv files found in {data_root / 'ep_summaries'}"
+        )
     return pl.concat([pl.read_csv(path) for path in paths], how="diagonal_relaxed")
 
 
 def read_seed_csv(data_root: Path, filename: str) -> pl.DataFrame:
-    paths = sorted((data_root / "seeds").rglob(filename), key=lambda path: (len(path.parts), str(path)))
+    paths = sorted(
+        (data_root / "seeds").rglob(filename),
+        key=lambda path: (len(path.parts), str(path)),
+    )
     if not paths:
         raise FileNotFoundError(f"seed file not found: {filename}")
     return pl.read_csv(paths[0])
 
 
-def read_optional_seed(data_root: Path, filenames: tuple[str, ...]) -> pl.DataFrame:
+def read_optional_seed(
+    data_root: Path,
+    filenames: tuple[str, ...],
+    schema: pa.DataFrameSchema | None = None,
+) -> pl.DataFrame:
     for filename in filenames:
         try:
-            return read_seed_csv(data_root, filename)
+            frame = read_seed_csv(data_root, filename)
+            if schema is not None:
+                schema.validate(frame)
+            return frame
         except FileNotFoundError:
             continue
     return pl.DataFrame()
@@ -205,7 +280,9 @@ def load_verisk_events(data_root: Path) -> pl.LazyFrame:
     path = data_root / "seeds" / "validation" / "verisk_events.parquet"
     if not path.exists():
         if path.parent.exists():
-            raise FileNotFoundError(f"seed file not found: {path.relative_to(data_root)}")
+            raise FileNotFoundError(
+                f"seed file not found: {path.relative_to(data_root)}"
+            )
         return empty_verisk_events()
     events = pl.scan_parquet(path)
     VERISK_EVENTS_RAW_SCHEMA.validate(events)
@@ -222,7 +299,9 @@ def read_optional_adjustment(data_root: Path, filename: str) -> pl.DataFrame:
     path = data_root / "seeds" / "adjustments" / filename
     if not path.exists():
         if path.parent.exists():
-            raise FileNotFoundError(f"seed file not found: {path.relative_to(data_root)}")
+            raise FileNotFoundError(
+                f"seed file not found: {path.relative_to(data_root)}"
+            )
         return pl.DataFrame()
     frame = pl.read_csv(path)
     if filename == "euws_rank_overrides.csv":

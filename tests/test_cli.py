@@ -6,7 +6,12 @@ import polars as pl
 import pytest
 
 from rollup import cli
-from rollup.api import RollupOutputPaths, RollupRunResult, RollupValidationError, RollupValidationResult
+from rollup.api import (
+    RollupOutputPaths,
+    RollupRunResult,
+    RollupValidationError,
+    RollupValidationResult,
+)
 
 
 def test_cli_run_uses_local_defaults(
@@ -17,7 +22,9 @@ def test_cli_run_uses_local_defaults(
     monkeypatch.chdir(tmp_path)
     calls: dict[str, object] = {}
 
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         calls["logging"] = (log_level, log_file)
 
     def run_rollup(
@@ -37,7 +44,11 @@ def test_cli_run_uses_local_defaults(
             "write_analysis": write_analysis,
             "log_file": log_file,
         }
-        return rollup_result(data_root, output_root, ep_report_path=output_root / "analysis" / "ep_report.csv")
+        return rollup_result(
+            data_root,
+            output_root,
+            ep_report_path=output_root / "analysis" / "ep_report.csv",
+        )
 
     monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
     monkeypatch.setattr(cli, "run_rollup", run_rollup)
@@ -55,8 +66,14 @@ def test_cli_run_uses_local_defaults(
     }
     summary = capsys.readouterr().out
     assert "Rollup complete" in summary
-    assert f"combined mart: {(tmp_path / 'output' / 'marts' / 'combined.parquet')}" in summary
-    assert f"analysis report: {(tmp_path / 'output' / 'analysis' / 'ep_report.csv')} (missing)" in summary
+    assert (
+        f"combined mart: {(tmp_path / 'output' / 'marts' / 'combined.parquet')}"
+        in summary
+    )
+    assert (
+        f"analysis report: {(tmp_path / 'output' / 'analysis' / 'ep_report.csv')} (missing)"
+        in summary
+    )
     assert "WARNING: analysis report missing:" in summary
 
 
@@ -77,7 +94,9 @@ combined_file = "custom-combined.parquet"
     log_file = tmp_path / "logs" / "rollup.log"
     calls: dict[str, object] = {}
 
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         calls["logging"] = (log_level, log_file)
 
     def run_rollup(
@@ -97,7 +116,9 @@ combined_file = "custom-combined.parquet"
             "write_analysis": write_analysis,
             "log_file": log_file,
         }
-        return rollup_result(data_root, output_root, ep_report_path=None, stage_dir=None)
+        return rollup_result(
+            data_root, output_root, ep_report_path=None, stage_dir=None
+        )
 
     monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
     monkeypatch.setattr(cli, "run_rollup", run_rollup)
@@ -154,7 +175,9 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
 ) -> None:
     calls: dict[str, object] = {}
 
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         calls["logging"] = (log_level, log_file)
 
     def run_rollup(
@@ -174,7 +197,12 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
             "write_analysis": write_analysis,
             "log_file": log_file,
         }
-        return rollup_result(data_root, output_root, ep_report_path=None, duckdb_file=output_root / "rollup.duckdb")
+        return rollup_result(
+            data_root,
+            output_root,
+            ep_report_path=None,
+            duckdb_file=output_root / "rollup.duckdb",
+        )
 
     monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
     monkeypatch.setattr(cli, "run_rollup", run_rollup)
@@ -190,7 +218,9 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
     assert config.outputs.write_duckdb is True
     assert config.outputs.duckdb_file is None
     assert run_call["config_path"] is None
-    assert f"duckdb: {output_root / 'rollup.duckdb'} (missing)" in capsys.readouterr().out
+    assert (
+        f"duckdb: {output_root / 'rollup.duckdb'} (missing)" in capsys.readouterr().out
+    )
 
 
 def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
@@ -200,7 +230,9 @@ def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
 ) -> None:
     calls: dict[str, object] = {}
 
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         calls["logging"] = (log_level, log_file)
 
     def run_rollup(
@@ -213,7 +245,9 @@ def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
         log_file: Path,
     ) -> RollupRunResult:
         calls["run"] = {"config": config, "config_path": config_path}
-        return rollup_result(data_root, output_root, ep_report_path=None, duckdb_file=duckdb_file)
+        return rollup_result(
+            data_root, output_root, ep_report_path=None, duckdb_file=duckdb_file
+        )
 
     monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
     monkeypatch.setattr(cli, "run_rollup", run_rollup)
@@ -236,7 +270,9 @@ def test_cli_run_validation_failure_prints_details_without_traceback(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         return None
 
     def run_rollup(
@@ -258,7 +294,9 @@ def test_cli_run_validation_failure_prints_details_without_traceback(
             ]
         )
         raise RollupValidationError(
-            RollupValidationResult(data_root=tmp_path / "data", is_valid=False, validation_report=report)
+            RollupValidationResult(
+                data_root=tmp_path / "data", is_valid=False, validation_report=report
+            )
         )
 
     monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
@@ -278,7 +316,9 @@ def test_cli_run_unexpected_error_propagates_without_validation_message(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+    def configure_console_logging(
+        log_level: str, *, log_file: Path | None = None
+    ) -> None:
         return None
 
     def run_rollup(
@@ -300,6 +340,80 @@ def test_cli_run_unexpected_error_propagates_without_validation_message(
 
     captured = capsys.readouterr()
     assert "Input validation failed" not in captured.err
+
+
+def test_cli_generate_ep_summaries_scans_all_vendors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_paths = [
+        tmp_path / "data" / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
+    ]
+    calls: dict[str, object] = {}
+
+    def write_ep_summaries(data_root: Path) -> list[Path]:
+        calls["data_root"] = data_root
+        return output_paths
+
+    monkeypatch.setattr(cli, "write_ep_summaries", write_ep_summaries)
+
+    assert (
+        cli.main(["generate-ep-summaries", "--data-root", str(tmp_path / "data")]) == 0
+    )
+
+    assert calls == {"data_root": tmp_path / "data"}
+    summary = capsys.readouterr().out
+    assert "EP summary generation complete" in summary
+    assert f"wrote: {output_paths[0]}" in summary
+
+
+def test_cli_generate_ep_summaries_specific_vendor_and_csv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_root = tmp_path / "data"
+    output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
+    calls: dict[str, object] = {}
+
+    def write_ep_summary(data_root_arg: Path, vendor: str, csv_path: Path) -> Path:
+        calls["generate"] = (data_root_arg, vendor, csv_path)
+        return output_path
+
+    monkeypatch.setattr(cli, "write_ep_summary", write_ep_summary)
+
+    assert (
+        cli.main(
+            [
+                "generate-ep-summaries",
+                "--data-root",
+                str(data_root),
+                "--vendor",
+                "verisk",
+                "--csv",
+                "nested/verisk_clean.csv",
+            ]
+        )
+        == 0
+    )
+
+    assert calls == {
+        "generate": (
+            data_root,
+            "verisk",
+            data_root / "ep_summaries" / "verisk" / "nested" / "verisk_clean.csv",
+        )
+    }
+    assert f"wrote: {output_path}" in capsys.readouterr().out
+
+
+def test_cli_generate_ep_summaries_requires_vendor_and_csv_together(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["generate-ep-summaries", "--vendor", "verisk"]) == 1
+
+    assert "--vendor and --csv must be passed together" in capsys.readouterr().err
 
 
 def test_success_summary_reports_output_paths_and_counts(
@@ -367,7 +481,10 @@ def test_success_summary_warns_when_enabled_outputs_are_missing(
     assert f"staging: {stage_dir / 'staging'} (0 parquet files)" in summary
     assert f"intermediate: {stage_dir / 'intermediate'} (0 parquet files)" in summary
     assert "WARNING: analysis report missing:" in summary
-    assert "WARNING: stage outputs incomplete: staging directory missing, intermediate directory missing" in summary
+    assert (
+        "WARNING: stage outputs incomplete: staging directory missing, intermediate directory missing"
+        in summary
+    )
 
 
 def rollup_result(

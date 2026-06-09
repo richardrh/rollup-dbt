@@ -281,8 +281,11 @@ def test_lobs_schema_rejects_null_required_lookup_values() -> None:
 
     frame = pl.DataFrame(
         {
+            "lob_id": [1, 2],
             "modelled_lob": ["Fine Art", "Casualty"],
             "rollup_lob": ["Fine Art", "Casualty"],
+            "lob_type": ["property", "casualty"],
+            "cds_cat_class_name": ["ART", "CAS"],
             "class": ["ART", None],
             "office": ["London", "London"],
             "currency": ["GBP", "GBP"],
@@ -300,6 +303,8 @@ def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
         {
             "modelled_peril": ["EQ", "WS"],
             "rollup_peril": ["Earthquake", "Windstorm"],
+            "region": ["US", "Europe"],
+            "peril": ["EQ", "WS"],
             "region_peril_id": [205, 150],
             "selection_priority": [1, 2],
             "is_dialsup": [1, None],
@@ -592,8 +597,11 @@ def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path
     seeds = data_root / "seeds"
     pl.DataFrame(
         {
+            "lob_id": [1],
             "modelled_lob": ["Fine Art"],
             "rollup_lob": ["HIC_FA_UK"],
+            "lob_type": ["property"],
+            "cds_cat_class_name": ["FA"],
             "class": ["FA"],
             "office": ["UK"],
             "currency": ["GBP"],
@@ -603,6 +611,7 @@ def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path
         {
             "class": ["PROP", "PROP", "PROP"],
             "office": ["US", "US", "US"],
+            "office_iso2": ["US", "US", "US"],
             "forecast_date": ["2026-01-01", "2026-07-01", "2026-12-31"],
             "factor": [1.1, 1.2, 1.3],
         }
@@ -688,8 +697,11 @@ def _write_seeds(data_root: Path) -> None:
     seeds.mkdir(parents=True)
     pl.DataFrame(
         {
+            "lob_id": [1],
             "modelled_lob": ["Fine Art"],
             "rollup_lob": ["Fine Art"],
+            "lob_type": ["property"],
+            "cds_cat_class_name": ["ART"],
             "class": ["ART"],
             "office": ["London"],
             "currency": ["GBP"],
@@ -699,6 +711,8 @@ def _write_seeds(data_root: Path) -> None:
         {
             "modelled_peril": ["EQ"],
             "rollup_peril": ["Earthquake"],
+            "region": ["US"],
+            "peril": ["EQ"],
             "region_peril_id": [205],
             "selection_priority": [1],
             "is_dialsup": [1],
@@ -706,15 +720,23 @@ def _write_seeds(data_root: Path) -> None:
     ).write_csv(seeds / "perils.csv")
     pl.DataFrame(
         {
+            "id": [1],
+            "BlendSetID": [1],
             "RegionPerilID": [205],
+            "RegionPeril": ["US_EQ"],
+            "SubRegionPerilID": ["205"],
+            "SubRegionPeril": ["US_EQ"],
             "AIRBlend": [1.0],
             "RMSBlend": [0.5],
+            "KatRiskBlend": [0.0],
+            "DateCreated": ["2026-01-01"],
         }
     ).write_csv(seeds / "blending_factors.csv")
     pl.DataFrame(
         {
             "currency_code": ["GBP"],
             "target_currency": ["GBP"],
+            "rate_date": ["2026-01-01"],
             "rate": [1.0],
         }
     ).write_csv(seeds / "fx_rates.csv")
@@ -722,6 +744,7 @@ def _write_seeds(data_root: Path) -> None:
         {
             "class": ["ART"],
             "office": ["London"],
+            "office_iso2": ["GB"],
             "forecast_date": ["2026-01-01"],
             "factor": [1.0],
         }

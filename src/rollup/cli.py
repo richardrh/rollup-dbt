@@ -7,8 +7,15 @@ from pathlib import Path
 import logging
 import sys
 
-from rollup.api import RollupRunResult, RollupValidationError, run_rollup
+from rollup.api import (
+    RollupRunResult,
+    RollupValidationError,
+    run_rollup,
+    write_ep_summaries,
+    write_ep_summary,
+)
 from rollup.config import RollupConfig, load_config
+from rollup.ep_summary_generator import ep_summary_vendor_names
 from rollup.logging import configure_console_logging
 
 logger = logging.getLogger(__name__)
@@ -22,11 +29,17 @@ def build_parser() -> ArgumentParser:
     run_parser.add_argument("--data-root", type=Path, default=Path("data"))
     run_parser.add_argument("--output-root", type=Path, default=Path("output"))
     run_parser.add_argument("--config-path", type=Path, default=None)
-    run_parser.add_argument("--no-analysis", action="store_false", dest="write_analysis")
+    run_parser.add_argument(
+        "--no-analysis", action="store_false", dest="write_analysis"
+    )
     run_parser.add_argument("--no-stage-outputs", action="store_true")
     run_parser.add_argument("--target-currency", type=str.upper, default=None)
-    run_parser.add_argument("--duckdb", action="store_true", help="write a DuckDB export")
-    run_parser.add_argument("--duckdb-file", type=Path, default=None, help="DuckDB output file path")
+    run_parser.add_argument(
+        "--duckdb", action="store_true", help="write a DuckDB export"
+    )
+    run_parser.add_argument(
+        "--duckdb-file", type=Path, default=None, help="DuckDB output file path"
+    )
     run_parser.add_argument(
         "--log-level",
         type=str.upper,
@@ -35,6 +48,20 @@ def build_parser() -> ArgumentParser:
     )
     run_parser.add_argument("--log-file", type=Path, default=None)
     run_parser.set_defaults(func=run_command, write_analysis=True)
+
+    ep_parser = subparsers.add_parser(
+        "generate-ep-summaries",
+        help="convert wide vendor EP summary CSVs to canonical long CSVs",
+    )
+    ep_parser.add_argument("--data-root", type=Path, default=Path("data"))
+    ep_parser.add_argument("--vendor", choices=ep_summary_vendor_names(), default=None)
+    ep_parser.add_argument(
+        "--csv",
+        type=Path,
+        default=None,
+        help="source wide CSV; relative paths resolve inside the vendor folder",
+    )
+    ep_parser.set_defaults(func=generate_ep_summaries_command)
 
     return parser
 
@@ -61,6 +88,34 @@ def run_command(args: Namespace) -> int:
     return 0
 
 
+def generate_ep_summaries_command(args: Namespace) -> int:
+    try:
+        if args.vendor is None and args.csv is None:
+            output_paths = write_ep_summaries(args.data_root)
+        elif args.vendor is not None and args.csv is not None:
+            csv_path = resolve_ep_summary_csv_path(
+                args.data_root, args.vendor, args.csv
+            )
+            output_paths = [write_ep_summary(args.data_root, args.vendor, csv_path)]
+        else:
+            raise ValueError("--vendor and --csv must be passed together")
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error("EP summary generation failed: %s", exc)
+        print(f"EP summary generation failed: {exc}", file=sys.stderr)
+        return 1
+
+    print("EP summary generation complete")
+    for output_path in output_paths:
+        print(f"  wrote: {_display_path(output_path)}")
+    return 0
+
+
+def resolve_ep_summary_csv_path(data_root: Path, vendor: str, csv_path: Path) -> Path:
+    if csv_path.is_absolute():
+        return csv_path
+    return data_root / "ep_summaries" / vendor / csv_path
+
+
 def override_config(args: Namespace) -> RollupConfig | None:
     if (
         not args.no_stage_outputs
@@ -71,14 +126,21 @@ def override_config(args: Namespace) -> RollupConfig | None:
         return None
     config = load_config(args.config_path)
     if args.no_stage_outputs:
-        config = replace(config, outputs=replace(config.outputs, write_stage_outputs=False))
+        config = replace(
+            config, outputs=replace(config.outputs, write_stage_outputs=False)
+        )
     if args.target_currency is not None:
-        config = replace(config, fx=replace(config.fx, target_currency=args.target_currency))
+        config = replace(
+            config, fx=replace(config.fx, target_currency=args.target_currency)
+        )
     if args.duckdb or args.duckdb_file is not None:
         duckdb_file = config.outputs.duckdb_file
         if args.duckdb_file is not None:
             duckdb_file = str(args.duckdb_file.expanduser().resolve(strict=False))
-        config = replace(config, outputs=replace(config.outputs, write_duckdb=True, duckdb_file=duckdb_file))
+        config = replace(
+            config,
+            outputs=replace(config.outputs, write_duckdb=True, duckdb_file=duckdb_file),
+        )
     return config
 
 
@@ -88,9 +150,13 @@ def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
 
     print("Rollup complete")
     print(f"  data root: {_display_path(result.data_root)}")
-    print(f"  output root: {_display_path(result.output_root)} ({_exists_status(result.output_root)})")
+    print(
+        f"  output root: {_display_path(result.output_root)} ({_exists_status(result.output_root)})"
+    )
     print(f"  log file: {_display_path(log_file)} ({_exists_status(log_file)})")
-    print(f"  marts dir: {_display_path(marts_dir)} ({_exists_status(marts_dir)}, {_parquet_label(mart_count)})")
+    print(
+        f"  marts dir: {_display_path(marts_dir)} ({_exists_status(marts_dir)}, {_parquet_label(mart_count)})"
+    )
     print(f"  combined mart: {_display_path(result.outputs.mts_combined)}")
     print(f"  wide mart: {_display_path(result.outputs.mts_wide)}")
     print(f"  dialsup mart: {_display_path(result.outputs.mts_dialsup)}")
@@ -146,8 +212,12 @@ def _print_stage_summary(stage_dir: Path | None) -> None:
     intermediate_count = _parquet_count(intermediate_dir)
 
     print(f"  stage outputs: {_display_path(stage_dir)} ({_exists_status(stage_dir)})")
-    print(f"    staging: {_display_path(staging_dir)} ({_parquet_label(staging_count)})")
-    print(f"    intermediate: {_display_path(intermediate_dir)} ({_parquet_label(intermediate_count)})")
+    print(
+        f"    staging: {_display_path(staging_dir)} ({_parquet_label(staging_count)})"
+    )
+    print(
+        f"    intermediate: {_display_path(intermediate_dir)} ({_parquet_label(intermediate_count)})"
+    )
 
     warnings = _stage_warnings("staging", staging_dir, staging_count) + _stage_warnings(
         "intermediate",

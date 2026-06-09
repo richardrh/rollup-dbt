@@ -5,5 +5,5 @@ adjustments input is `euws_rank_overrides.csv`, validated by the folder-level
 config because this section currently has one CSV schema.
 
 ```bash
-uv run validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
+validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
 ```

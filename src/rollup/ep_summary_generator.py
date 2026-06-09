@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -138,22 +137,17 @@ def build_ep_summary_from_wide_csv(csv_path: Path | str, vendor: str) -> pl.Data
     )
 
 
-def generate_vendor_ep_summary(
+def write_vendor_ep_summary(
     data_root: Path | str,
     vendor: str,
     csv_path: Path | str,
-    status_callback: Callable[[str], None] | None = None,
 ) -> Path:
     config = get_ep_summary_vendor_config(vendor)
-    if status_callback is not None:
-        status_callback("Reading CSV...")
     frame = build_ep_summary_from_wide_csv(csv_path, vendor)
-    if status_callback is not None:
-        status_callback("Writing canonical long CSV...")
     return _write_ep_summary(frame, config.output_path(data_root))
 
 
-def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
+def write_ep_summaries(data_root: Path | str = "data") -> list[Path]:
     data_root = Path(data_root)
     output_paths: list[Path] = []
     for vendor in EP_SUMMARY_VENDOR_CONFIGS:
@@ -162,7 +156,13 @@ def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
             raise FileNotFoundError(
                 f"No source CSV files found in {get_ep_summary_vendor_config(vendor).source_dir(data_root)}."
             )
-        output_paths.append(generate_vendor_ep_summary(data_root, vendor, source_files[0]))
+        if len(source_files) > 1:
+            candidates = ", ".join(str(path) for path in source_files)
+            raise ValueError(
+                f"Multiple source CSV files found for {vendor}: {candidates}. "
+                "Pass --vendor and --csv to select one file explicitly."
+            )
+        output_paths.append(write_vendor_ep_summary(data_root, vendor, source_files[0]))
     return output_paths
 
 
@@ -188,10 +188,14 @@ def _apply_source_aliases(frame: pl.DataFrame) -> pl.DataFrame:
 
 
 def _validate_required_columns(frame: pl.DataFrame, csv_path: Path) -> None:
-    missing_columns = [column for column in REQUIRED_SOURCE_COLUMNS if column not in frame.columns]
+    missing_columns = [
+        column for column in REQUIRED_SOURCE_COLUMNS if column not in frame.columns
+    ]
     if missing_columns:
         missing = ", ".join(missing_columns)
-        raise ValueError(f"{csv_path} is missing required EP summary columns: {missing}")
+        raise ValueError(
+            f"{csv_path} is missing required EP summary columns: {missing}"
+        )
 
 
 def _metric_columns(columns: list[str]) -> list[str]:

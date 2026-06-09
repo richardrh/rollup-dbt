@@ -21,6 +21,9 @@ dependencies = [
     "pandera[polars]>=0.31.1",
 ]
 
+[project.scripts]
+rollup = "rollup.__main__:main"
+
 [tool.setuptools.package-dir]
 "" = "src"
 
@@ -38,14 +41,10 @@ dev = [
     "mypy>=2.1.0",
     "ruff>=0.15.13",
     "build>=1.5.0",
-    "validnator",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
-
-[tool.uv.sources]
-validnator = { path = "../../dev/validnator", editable = true }
 
 
 [tool.hatch.build.targets.wheel]

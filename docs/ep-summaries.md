@@ -52,16 +52,17 @@ data/ep_summaries/risklink/risklink_clean.csv
 
 ### Step 2. Run the converter
 
-Interactive — picks up all unmatched source CSVs:
+Scan mode — converts one source wide CSV per configured vendor:
 
 ```bash
 uv run rollup generate-ep-summaries
 ```
 
-Non-interactive — for a specific vendor and file:
+Explicit selection — required when a vendor folder contains multiple source wide
+CSVs:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 ### Step 3. Verify the output
@@ -79,8 +80,25 @@ data/ep_summaries/risklink/rms_ep_summary.long.csv
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
-The validation step checks that all EP summary LOBs and perils exist in the
-business seed files. Fix any anti-join failures before running the pipeline.
+The runtime validation step checks strict EP summary columns and required values
+before running calculations.
+
+To validate just the long EP summary CSV shape and value constraints with
+Validnator, run the colocated pipeline config from an environment that provides
+Validnator:
+
+```bash
+validnator validate \
+  -p data/ep_summaries/validnator.yml \
+  -i data/ep_summaries/verisk/verisk_ep_summary.long.csv \
+  -o validation-output/ep-summary
+```
+
+The `-o` directory receives the Validnator output files for that input. Use a
+separate output directory per vendor/file when validating multiple EP summaries.
+The source files for this check are
+[`data/ep_summaries/validnator.yml`](../data/ep_summaries/validnator.yml) and
+[`data/ep_summaries/README.md`](../data/ep_summaries/README.md).
 
 ## How the pipeline uses EP summaries
 
@@ -101,7 +119,7 @@ The final EP report is written to `output/analysis/ep_report.csv` by both
 `run_rollup(..., write_analysis=True)` or a normal CLI run:
 
 ```bash
-uv run rollup run       # full pipeline — includes EP report
+uv run rollup run       # full pipeline, includes EP report when installed as a script
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP
 ```
 

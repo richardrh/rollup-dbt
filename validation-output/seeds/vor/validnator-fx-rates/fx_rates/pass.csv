@@ -1,0 +1,7 @@
+error_codes,warn_codes,validation_bucket,error_messages,warn_messages,currency_code,target_currency,rate_date,rate
+"","",pass,"","",GBP,GBP,2026-01-01,1.0
+"","",pass,"","",EUR,GBP,2026-01-01,0.88
+"","",pass,"","",USD,GBP,2026-01-01,0.80
+"","",pass,"","",GBP,USD,2026-01-01,1.25
+"","",pass,"","",EUR,USD,2026-01-01,1.10
+"","",pass,"","",USD,USD,2026-01-01,1.0

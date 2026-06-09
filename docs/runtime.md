@@ -24,7 +24,9 @@ flowchart TD
   calculation stages, optional DuckDB export, and optional analysis report
   generation.
 - `validate_rollup_inputs(data_root)` checks source availability and required
-  schemas/nullability for the main inputs without writing outputs.
+  schemas/nullability for the main inputs without writing outputs. Runtime
+  validation uses hard-coded Pandera schemas; colocated YAML/Validnator configs
+  are for external validation callers.
 
 ### CLI examples
 
@@ -32,6 +34,7 @@ flowchart TD
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --duckdb
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 Logs default to `<output-root>/rollup.log`, unless `--log-file` is supplied. The

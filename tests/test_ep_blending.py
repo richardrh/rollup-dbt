@@ -23,8 +23,11 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
         ),
         lobs=pl.DataFrame(
             {
+                "lob_id": [1],
                 Col.modelled_lob: ["ML"],
                 Col.rollup_lob: ["RL"],
+                "lob_type": ["property"],
+                Col.cds_cat_class_name: ["FA"],
                 Col.class_: ["FA"],
                 Col.office: ["UK"],
                 Col.currency: ["GBP"],
@@ -34,6 +37,8 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
             {
                 Col.modelled_peril: ["HIGH", "LOW"],
                 Col.rollup_peril: ["UK_WS", "UK_WS"],
+                "region": ["UK", "UK"],
+                "peril": ["WS", "WS"],
                 Col.region_peril_id: [216, 216],
                 Col.selection_priority: [2, 1],
                 Col.is_dialsup: [1, 0],
@@ -43,7 +48,9 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
 
     result = stage_ep_summaries(frames).collect().sort([Col.vendor, Col.loss])
 
-    assert result.select(Col.vendor, Col.modelled_peril, Col.selection_priority, Col.is_dialsup).rows() == [
+    assert result.select(
+        Col.vendor, Col.modelled_peril, Col.selection_priority, Col.is_dialsup
+    ).rows() == [
         ("risklink", "LOW", 1, 1),
         ("verisk", "LOW", 1, 1),
     ]
@@ -80,9 +87,19 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
         }
     )
 
-    result = apply_blending(enriched.lazy(), staged_ep.lazy(), blending).collect().sort(Col.loss)
+    result = (
+        apply_blending(enriched.lazy(), staged_ep.lazy(), blending)
+        .collect()
+        .sort(Col.loss)
+    )
 
-    assert result.select(Col.vendor, Col.base_model, Col.rp_bucket, Col.uplift_factor_on_base_model, "blended_loss").rows() == [
+    assert result.select(
+        Col.vendor,
+        Col.base_model,
+        Col.rp_bucket,
+        Col.uplift_factor_on_base_model,
+        "blended_loss",
+    ).rows() == [
         ("risklink", "risklink", 1000, 2.0, 50.0),
         ("risklink", "risklink", 1000, 2.0, 100.0),
     ]
@@ -90,7 +107,10 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
 
 def enriched_ylt_frame() -> pl.DataFrame:
     rows = []
-    for vendor, analysis_id, losses in [("verisk", "V", [10.0]), ("risklink", "R", [25.0, 50.0])]:
+    for vendor, analysis_id, losses in [
+        ("verisk", "V", [10.0]),
+        ("risklink", "R", [25.0, 50.0]),
+    ]:
         for event_id, loss in enumerate(losses, start=1):
             rows.append(
                 {

@@ -97,7 +97,7 @@ def calculate_ep_blending_targets(
     if RawCol.SubRegionPerilID in columns:
         weights = weights.filter(
             (pl.col(region_col) != 216)
-            | (pl.col(RawCol.SubRegionPerilID) == "216b")
+            | (pl.col(RawCol.SubRegionPerilID).cast(pl.String) == "216b")
         ).sort(RawCol.SubRegionPerilID)
     weights = weights.group_by(region_col).first().select(
         pl.col(region_col).cast(pl.Int64).alias(Col.region_peril_id),

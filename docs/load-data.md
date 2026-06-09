@@ -55,14 +55,17 @@ If you have a vendor/source CSV instead:
 uv run rollup generate-ep-summaries
 ```
 
-Or run without prompts:
+Or select one source file explicitly:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 3. Check the generated `.long.csv` file listed above.
 4. Run validation in Step 4.
+
+If a vendor folder contains multiple source wide CSVs, the scan command fails and
+asks you to choose with `--vendor` and `--csv` instead of guessing.
 
 See [Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs)
 for the detailed source and output tables.
@@ -106,4 +109,4 @@ Common failures:
 - Verisk YLT `Analysis` is not in `perils.csv`.
 - RiskLink YLT `anlsid` is not in the RiskLink EP summary `analysis_id` values.
 
-The anti-join report should be empty. Fix any rows before running the pipeline.
+Fix validation or staging failures before running the full pipeline.

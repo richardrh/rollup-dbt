@@ -52,5 +52,5 @@ input:
 Example once such a CSV config exists:
 
 ```bash
-uv run validnator validate -p path/to/verisk-ylt-csv-validnator.yml -i exports/verisk_ylt.csv -o validation-output/verisk-ylt-csv
+validnator validate -p path/to/verisk-ylt-csv-validnator.yml -i exports/verisk_ylt.csv -o validation-output/verisk-ylt-csv
 ```

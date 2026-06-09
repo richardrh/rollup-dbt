@@ -1,7 +1,7 @@
 # data/seeds
 
-Seed inputs are described by `data/seeds/schema.yaml`. Most seed files are CSVs;
-validation catalogues are parquet. CSV validation and parquet/DataFrame
+Seed inputs are described by colocated `validnator*.yml` files. Most seed files
+are CSVs; validation catalogues are parquet. CSV validation and parquet/DataFrame
 validation use different validnator modes:
 
 - CSV configs include `input: {type: csv, mode: raw_strings}` so validnator reads
@@ -46,10 +46,10 @@ Parquet catalogue DataFrame schema rules live beside those files under
 Validnator CSV raw-string CLI examples:
 
 ```bash
-uv run validnator validate -p data/seeds/business/validnator-lobs.yml -i data/seeds/business/lobs.csv -o validation-output/lobs
-uv run validnator validate -p data/seeds/business/validnator-perils.yml -i data/seeds/business/perils.csv -o validation-output/perils
-uv run validnator validate -p data/seeds/vor/validnator-fx-rates.yml -i data/seeds/vor/fx_rates.csv -o validation-output/fx-rates
-uv run validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
+validnator validate -p data/seeds/business/validnator-lobs.yml -i data/seeds/business/lobs.csv -o validation-output/lobs
+validnator validate -p data/seeds/business/validnator-perils.yml -i data/seeds/business/perils.csv -o validation-output/perils
+validnator validate -p data/seeds/vor/validnator-fx-rates.yml -i data/seeds/vor/fx_rates.csv -o validation-output/fx-rates
+validnator validate -p data/seeds/adjustments/validnator.yml -i data/seeds/adjustments/euws_rank_overrides.csv -o validation-output/euws-rank-overrides
 ```
 
 For parquet catalogues, load the file and run validnator against the DataFrame:

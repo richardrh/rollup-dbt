@@ -1,0 +1,63 @@
+error_codes,warn_codes,validation_bucket,error_messages,warn_messages,lob_id,modelled_lob,rollup_lob,lob_type,cds_cat_class_name,office,class,currency
+"","",pass,"","",1,HSA_HH_EU_IE,HSA_HH_EU_IE,prop,HSA EU Household,IE,HH,EUR
+"","",pass,"","",2,S33_FA_EU_FR_QS,S33_FA_EU_FR,fa,33 EU Euro Household,FR,FA,EUR
+"","",pass,"","",3,HIG_HH_GU,HIG_HH_GU,prop,HIG LM Fine Art,GU,HH,GBP
+"","",pass,"","",4,S33_FA_Lloyds,S33_FA_Lloyds,fa,33 UK Fine Art,Lloyds,FA,GBP
+"","",pass,"","",5,S33_FA_EU_BE,S33_FA_EU_BE,fa,33 EU Euro Household,BE,FA,EUR
+"","",pass,"","",6,HSA_FA_UK,HSA_FA_UK,fa,HSA UK Property,UK,FA,GBP
+"","",pass,"","",7,HSA_FA_EU_FR,HSA_FA_EU_FR,fa,HSA EU Fine Art,FR,FA,EUR
+"","",pass,"","",8,HIG_FA_GU,HIG_FA_GU,fa,HIG LM Fine Art,GU,FA,GBP
+"","",pass,"","",9,MGA_Caravans,Caravans,mga,HIC UK Household Cherish,Caravans,Caravans,GBP
+"","",pass,"","",10,S33_FA_Lloyds_SRP,S33_FA_Lloyds,fa,33 UK Fine Art,Lloyds,FA,GBP
+"","",pass,"","",11,HSA_FA_EU_ES,HSA_FA_EU_ES,fa,HSA EU Fine Art,ES,FA,EUR
+"","",pass,"","",12,Caravans,Caravans,mga,HIC UK Household Cherish,Caravans,Caravans,GBP
+"","",pass,"","",13,HSA_HH_EU_ES,HSA_HH_EU_ES,prop,HSA EU Household,ES,HH,EUR
+"","",pass,"","",14,HSA_FA_EU_PT,HSA_FA_EU_PT,fa,HSA EU Fine Art,PT,FA,EUR
+"","",pass,"","",15,HSA_HH_EU_PT,HSA_HH_EU_PT,prop,HSA EU Household,PT,HH,EUR
+"","",pass,"","",16,HSA_COMM_EU_ES,HSA_COMM_EU_ES,prop,HSA EU Spec Comm Property,ES,COMM,EUR
+"","",pass,"","",17,HIG_FA_GU_QS,HIG_FA_GU,fa,HIG LM Fine Art,GU,FA,GBP
+"","",pass,"","",18,MGA_Pen,Pen,mga,HIC UK Household Pen,Pen,Pen,GBP
+"","",pass,"","",19,Cherish,Cherish,mga,HIC UK Household Cherish,Cherish,Cherish,GBP
+"","",pass,"","",20,S33_HH_EU_FR,S33_HH_EU_FR,prop,33 EU Euro Household,FR,HH,EUR
+"","",pass,"","",21,HSA_COMM_UK,HSA_COMM_UK,prop,HSA UK Property,UK,COMM,GBP
+"","",pass,"","",22,S33_FA_UK_SRP,S33_FA_UK,fa,33 UK Fine Art,UK,FA,GBP
+"","",pass,"","",23,MGA_Cherish,Cherish,mga,HIC UK Household Cherish,Cherish,Cherish,GBP
+"","",pass,"","",24,S33_FA_EU_DE,S33_FA_EU_DE,fa,33 EU Euro Household,DE,FA,EUR
+"","",pass,"","",25,HSA_COMM_EU_IE,HSA_COMM_EU_IE,prop,HSA EU Spec Comm Property,IE,COMM,EUR
+"","",pass,"","",26,S33_FA_EU_FR,S33_FA_EU_FR,fa,33 EU Euro Household,FR,FA,EUR
+"","",pass,"","",27,S33_HH_EU_NL,S33_HH_EU_NL,prop,33 EU Euro Household,NL,HH,EUR
+"","",pass,"","",28,S33_FA_EU_ES,S33_FA_EU_ES,fa,33 EU Euro Household,ES,FA,EUR
+"","",pass,"","",29,HIC_HH_UK,HIC_HH_UK,prop,HIC UK Household,UK,HH,GBP
+"","",pass,"","",30,S3624_COMM_UK,S3624_COMM_UK,prop,33 UK Euro Household,UK,COMM,GBP
+"","",pass,"","",31,HIG_FA_GU_SRP,HIG_FA_GU,fa,HIG LM Fine Art,GU,FA,GBP
+"","",pass,"","",32,S33_FA_Miami,S33_FA_Miami,fa,33 UK Fine Art,Miami,FA,GBP
+"","",pass,"","",33,HSA_HH_UK,HSA_HH_UK,prop,HSA UK Property,UK,HH,GBP
+"","",pass,"","",34,S33_HH_UK,S33_HH_UK,prop,33 UK Euro Household,UK,HH,GBP
+"","",pass,"","",35,S33_FA_Lloyds_QS,S33_FA_Lloyds,fa,33 UK Fine Art,Lloyds,FA,GBP
+"","",pass,"","",36,Pen,Pen,mga,HIC UK Household Pen,Pen,Pen,GBP
+"","",pass,"","",37,HSA_HH_EU_BE,HSA_HH_EU_BE,prop,HSA EU Household,BE,HH,EUR
+"","",pass,"","",38,HIC_COMM_UK,HIC_COMM_UK,prop,HIC UK Spec Comm Property,UK,COMM,GBP
+"","",pass,"","",39,HSA_FA_EU_DE,HSA_FA_EU_DE,fa,HSA EU Fine Art,DE,FA,EUR
+"","",pass,"","",40,S33_HH_EU_ES,S33_HH_EU_ES,prop,33 EU Euro Household,ES,HH,EUR
+"","",pass,"","",41,HSA_FA_EU_BE,HSA_FA_EU_BE,fa,HSA EU Fine Art,BE,FA,EUR
+"","",pass,"","",42,HSA_FA_EU_NL_QS,HSA_FA_EU_NL,fa,HSA EU Fine Art,NL,FA,EUR
+"","",pass,"","",43,S33_FA_UK,S33_FA_UK,fa,33 UK Fine Art,UK,FA,GBP
+"","",pass,"","",44,HSA_COMM_EU_FR,HSA_COMM_EU_FR,prop,HSA EU Spec Comm Property,FR,COMM,EUR
+"","",pass,"","",45,S33_FA_EU_BE_QS,S33_FA_EU_BE,fa,33 EU Euro Household,BE,FA,EUR
+"","",pass,"","",46,S33_FA_UK_QS,S33_FA_UK,fa,33 UK Fine Art,UK,FA,GBP
+"","",pass,"","",47,S33_HH_EU_BE,S33_HH_EU_BE,prop,33 EU Euro Household,BE,HH,EUR
+"","",pass,"","",48,S33_HH_Lloyds,S33_HH_Lloyds,prop,33 UK Euro Household,Lloyds,HH,GBP
+"","",pass,"","",49,HSA_FA_EU_NL,HSA_FA_EU_NL,fa,HSA EU Fine Art,NL,FA,EUR
+"","",pass,"","",50,HSA_FA_EU_BE_QS,HSA_FA_EU_BE,fa,HSA EU Fine Art,BE,FA,EUR
+"","",pass,"","",51,HSA_HH_EU_DE,HSA_HH_EU_DE,prop,HSA EU Household,DE,HH,EUR
+"","",pass,"","",52,HSA_FA_EU_IE,HSA_FA_EU_IE,fa,HSA EU Fine Art,IE,FA,EUR
+"","",pass,"","",53,HSA_FA_EU_ES_QS,HSA_FA_EU_ES,fa,HSA EU Fine Art,ES,FA,EUR
+"","",pass,"","",54,HSA_COMM_EU_DE,HSA_COMM_EU_DE,prop,HSA EU Spec Comm Property,DE,COMM,EUR
+"","",pass,"","",55,S33_HH_EU_DE,S33_HH_EU_DE,prop,33 EU Euro Household,DE,HH,EUR
+"","",pass,"","",56,S33_FA_EU_NL,S33_FA_EU_NL,fa,33 EU Euro Household,NL,FA,EUR
+"","",pass,"","",57,HSA_HH_EU_FR,HSA_HH_EU_FR,prop,HSA EU Household,FR,HH,EUR
+"","",pass,"","",58,HSA_HH_EU_NL,HSA_HH_EU_NL,prop,HSA EU Household,NL,HH,EUR
+"","",pass,"","",59,S3624_COMM_EU_DE,S3624_COMM_EU_DE,prop,33 EU Euro Household,DE,COMM,EUR
+"","",pass,"","",60,HIC_FA_UK,HIC_FA_UK,fa,HIC UK Fine Art,UK,FA,GBP
+"","",pass,"","",61,HSA_FA_EU_FR_QS,HSA_FA_EU_FR,fa,HSA EU Fine Art,FR,FA,EUR
+"","",pass,"","",62,HSA_FA_EU_DE_QS,HSA_FA_EU_DE,fa,HSA EU Fine Art,DE,FA,EUR

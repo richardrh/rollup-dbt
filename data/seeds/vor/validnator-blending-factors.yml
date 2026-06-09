@@ -13,13 +13,14 @@ rules:
     checks:
       - type: schema_matches
         mode: castable
-        allow_extra_columns: true
+        allow_extra_columns: false
         columns:
           id: int64
           BlendSetID: int64
           RegionPerilID: int64
           RegionPeril: string
           SubRegionPerilID: string
+          SubRegionPeril: string
           AIRBlend: float64
           RMSBlend: float64
           KatRiskBlend: float64

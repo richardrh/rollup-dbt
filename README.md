@@ -36,7 +36,6 @@ validation.raise_for_errors()
 result = run_rollup(
     data_root="data",
     output_root="output",
-    validate=True,
     write_analysis=True,
 )
 ```

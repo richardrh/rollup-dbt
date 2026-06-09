@@ -13,7 +13,7 @@ rules:
     checks:
       - type: schema_matches
         mode: castable
-        allow_extra_columns: true
+        allow_extra_columns: false
         columns:
           class: string
           office: string

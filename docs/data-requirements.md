@@ -75,7 +75,8 @@ data/ep_summaries/risklink/*.csv
 ```
 
 Existing `*.long.csv` files are ignored during source selection. RiskLink uses
-the same source CSV format as Verisk.
+the same source CSV format as Verisk. If a vendor folder contains multiple source
+wide CSVs, pass `--vendor` and `--csv`; scan mode fails rather than guessing.
 
 ### Step 2. Run the converter
 
@@ -88,8 +89,8 @@ uv run rollup generate-ep-summaries
 Non-interactive:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
-uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
+uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv
 ```
 
 ### Step 3. Check the generated `.long.csv`
@@ -158,19 +159,19 @@ verisk,ANALYSIS_1,Property,US_WS,AEP,50,1750472.0
 verisk,ANALYSIS_1,Property,US_WS,OEP,100,2250000.0
 ```
 
-### Source schema file
+### Source validation config
 
 Do not add a separate YAML schema file for source wide CSVs yet. The converter
 checks the required identifier columns and at least one EP metric column. The
-existing `data/ep_summaries/schema.yaml` remains the schema contract for the long
-CSV files used by validation and the pipeline.
+existing `data/ep_summaries/validnator.yml` describes the long CSV files used by
+remote validation workflows. The runtime enforces the long CSV shape with a
+strict Pandera schema.
 
 ## Seed files
 
-Seed schema contracts are defined in `data/seeds/schema.yaml`; see
-[Schema contracts](schema-contracts.md) for how these YAML files anchor required
-columns and validation. `validate_rollup_inputs("data")` and the CLI run command
-report schema issues before calculations start.
+Seed schema contracts are documented in colocated Validnator configs; see
+[Validnator contracts](schema-contracts.md). Runtime validation uses strict
+Pandera schemas and reports seed shape issues before calculations start.
 
 ### `data/seeds/business/lobs.csv`
 
@@ -246,14 +247,14 @@ event day fields for RiskLink flood rows.
 
 - Every EP `modelled_lob` and YLT modelled LOB must exist in `lobs.csv`.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
-- Inputs must match their colocated `schema.yaml` contracts for required files,
-  columns, and types.
+- Inputs must match the runtime Pandera schemas for required files, columns, and
+  types. The colocated YAML contracts document the same intended shapes for
+  remote validation workflows.
 - Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
   strict and should not contain unexpected columns.
 - Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
   `analysis_id` values.
-- Seed entries without matching EP/YLT data do not produce anti-join errors and
-  are silently ignored downstream.
+- Seed entries without matching EP/YLT data do not produce output by themselves.
 - Run `validate_rollup_inputs("data")` or a no-output-analysis smoke run; treat
   validation failures as blocking
   input or lookup errors.
