@@ -74,6 +74,26 @@ def test_package_no_version_prompt_skips_prompt(
     assert calls == ["package"]
 
 
+def test_all_target_builds_package_then_binary_without_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build_script = load_build_script()
+    calls: list[str] = []
+
+    monkeypatch.setattr(build_script, "get_version", lambda: "0.12.0")
+    monkeypatch.setattr(
+        build_script,
+        "prompt_version",
+        lambda current_version: pytest.fail(f"unexpected prompt for {current_version}"),
+    )
+    monkeypatch.setattr(build_script, "check_dependencies", lambda: calls.append("check") or 0)
+    monkeypatch.setattr(build_script, "build_package", lambda: calls.append("package") or 0)
+    monkeypatch.setattr(build_script, "build_binary", lambda: calls.append("binary") or 0)
+
+    assert build_script.main(["all", "--no-version-prompt"]) == 0
+    assert calls == ["check", "package", "binary"]
+
+
 def test_unknown_target_returns_nonzero() -> None:
     build_script = load_build_script()
 
