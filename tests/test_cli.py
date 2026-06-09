@@ -274,6 +274,34 @@ def test_cli_run_validation_failure_prints_details_without_traceback(
     assert "Traceback" not in captured.err
 
 
+def test_cli_run_unexpected_error_propagates_without_validation_message(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+        return None
+
+    def run_rollup(
+        data_root: Path,
+        output_root: Path,
+        *,
+        config_path: Path | None,
+        config: object | None,
+        write_analysis: bool,
+        log_file: Path,
+    ) -> RollupRunResult:
+        raise RuntimeError("unexpected load bug")
+
+    monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
+
+    with pytest.raises(RuntimeError, match="unexpected load bug"):
+        cli.main(["run"])
+
+    captured = capsys.readouterr()
+    assert "Input validation failed" not in captured.err
+
+
 def test_success_summary_reports_output_paths_and_counts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

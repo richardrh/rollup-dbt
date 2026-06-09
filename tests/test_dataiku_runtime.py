@@ -168,6 +168,34 @@ def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
     with pytest.raises(SchemaError, match="column 'Analysis' not in dataframe"):
         load_sources(data_root)
 
+    result = validate_rollup_inputs(data_root)
+    assert not result.is_valid
+    assert "column 'Analysis' not in dataframe" in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_reports_missing_input_files(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+
+    result = validate_rollup_inputs(data_root)
+
+    assert not result.is_valid
+    assert "no parquet files found" in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_propagates_unexpected_load_sources_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from rollup import api
+
+    def fail_unexpectedly(data_root: Path) -> None:
+        raise RuntimeError(f"bug while loading {data_root}")
+
+    monkeypatch.setattr(api, "load_sources", fail_unexpectedly)
+
+    with pytest.raises(RuntimeError, match="bug while loading"):
+        api.validate_rollup_inputs(tmp_path / "data")
+
 
 def test_verisk_ylt_schema_rejects_null_required_values() -> None:
     from rollup.staging.load_sources import VERISK_YLT_SCHEMA

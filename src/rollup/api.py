@@ -7,6 +7,7 @@ import logging
 import time
 
 import polars as pl
+from pandera.errors import SchemaError, SchemaErrors
 
 from rollup.analysis import write_ep_report
 from rollup.config import RollupConfig, load_config
@@ -14,7 +15,7 @@ from rollup.duckdb_export import export_duckdb
 from rollup.ep_summary_generator import generate_vendor_ep_summary
 from rollup.logging import temporary_file_logging
 from rollup.pipeline import run
-from rollup.staging import load_sources
+from rollup.staging import RollupInputValidationFailure, load_sources
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ def validate_rollup_inputs(data_root: str | Path = "data") -> RollupValidationRe
     data_root = Path(data_root)
     try:
         load_sources(data_root)
-    except Exception as exc:
+    except (SchemaError, SchemaErrors, FileNotFoundError, RollupInputValidationFailure) as exc:
         report = pl.DataFrame(
             [{"source_group": "runtime_schema_guard", "valid": False, "error": str(exc)}]
         )

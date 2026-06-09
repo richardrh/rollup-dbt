@@ -117,6 +117,10 @@ class StagingFrames:
     euws_overrides: pl.DataFrame
 
 
+class RollupInputValidationFailure(ValueError):
+    pass
+
+
 def load_sources(data_root: str | Path) -> StagingFrames:
     data_root = Path(data_root)
     verisk_ylt = scan_parquet_folder(data_root / "ylt" / "verisk")
@@ -169,7 +173,7 @@ def validate_lazy_required_nulls(
         column for column in required_columns if null_count_by_column.get(column, 0) > 0
     ]
     if columns_with_nulls:
-        raise ValueError(
+        raise RollupInputValidationFailure(
             f"{source_group} required columns contain nulls: {', '.join(columns_with_nulls)}"
         )
 
