@@ -8,6 +8,7 @@ import pytest
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
+from rollup.marts.wide import wide_column_name
 from rollup.marts.write_marts import write_marts
 from rollup.metric_names import (
     LOSS_ORIGINAL_YLT,
@@ -48,13 +49,30 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     assert combined_out.height == 5
     assert dialsup_out.select(Col.metric).unique().to_series().to_list() == [DIALSUP_METRIC]
     assert dialsup_out.select(Col.event_id, Col.loss).rows() == [(1, 10.0)]
-    assert set(wide_out.columns) >= {FINAL_MAIN_METRIC, DIALSUP_METRIC, Col.target_currency}
-    assert LOSS_ORIGINAL_YLT not in wide_out.columns
+    forecast_column = wide_column_name(FORECAST_METRIC, "2026-01-01")
+    final_column = wide_column_name(FINAL_MAIN_METRIC, "2026-01-01")
+    original_column = wide_column_name(LOSS_ORIGINAL_YLT, "2026-01-01")
+    dialsup_column = wide_column_name(DIALSUP_METRIC, "2026-01-01")
+    assert Col.metric not in wide_out.columns
+    assert Col.forecast_date not in wide_out.columns
+    assert set(wide_out.columns) >= {forecast_column, final_column, original_column, Col.target_currency}
+    assert dialsup_column not in wide_out.columns
     assert wide_out.sort(Col.event_id).select(
         Col.event_id,
-        FINAL_MAIN_METRIC,
-        DIALSUP_METRIC,
-    ).rows() == [(1, 15.0, 10.0), (2, 25.0, None)]
+        forecast_column,
+        final_column,
+        original_column,
+    ).rows() == [(1, 10.0, 15.0, 5.0), (2, 20.0, 25.0, None)]
+    for metric, column in [
+        (FORECAST_METRIC, forecast_column),
+        (FINAL_MAIN_METRIC, final_column),
+        (LOSS_ORIGINAL_YLT, original_column),
+    ]:
+        combined_sum = combined_out.filter(
+            (pl.col(Col.metric) == metric) & (pl.col(Col.forecast_date) == "2026-01-01")
+        ).select(pl.col(Col.loss).sum()).item()
+        wide_sum = wide_out.select(pl.col(column).sum()).item()
+        assert wide_sum == combined_sum
     assert validation_out.sort(Col.event_id).select(
         Col.base_model,
         Col.event_id,

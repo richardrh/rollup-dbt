@@ -43,7 +43,7 @@ def write_marts(
     final_metrics = pl.concat([final_main, dialsup_scan], how="diagonal_relaxed")
 
     logger.info("writing operational wide mart path=%s", wide_path)
-    write_parquet(wide(final_metrics, target_currency), wide_path)
+    write_parquet(wide(combined_scan, target_currency), wide_path)
     logger.info("writing event validation mart path=%s", event_validation_path)
     write_parquet(event_validation(final_metrics), event_validation_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
