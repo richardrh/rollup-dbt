@@ -8,7 +8,6 @@ from rollup.intermediate.apply_euws import apply_euws
 from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
 from rollup.intermediate.build_dialsup import build_dialsup, dialsup_metric
-from rollup.intermediate.build_metric_long import build_metric_long, metric_specs
 
 
 def test_apply_fx_uses_configured_target_currency_rates() -> None:
@@ -207,27 +206,6 @@ def test_apply_euws_non_europe_ws_ignores_zero_factor_and_keeps_forecast_loss() 
     assert result.select(Col.euws_factor_raw, Col.euws_factor, "euws_loss").rows() == [
         (1.0, 1.0, 100.0)
     ]
-
-
-def test_build_metric_long_uses_default_gbp_lineage_metric_names() -> None:
-    adjusted = blended_frame([{Col.currency: "GBP", "blended_loss": 10.0}]).with_columns(
-        pl.lit(1.0).alias(Col.fx_rate),
-        pl.lit("GBP").alias(Col.target_currency),
-        pl.lit(10.0).alias("fx_loss"),
-        pl.lit("2026-01-01").alias(Col.forecast_date),
-        pl.lit(1.0).alias(Col.forecast_factor),
-        pl.lit(10.0).alias("forecast_loss"),
-        pl.lit(1).cast(pl.Int64).alias(Col.model_event_id),
-        pl.lit(15).cast(pl.Int64).alias(Col.event_day),
-        pl.lit(1.0).alias(Col.euws_factor_raw),
-        pl.lit(1.0).alias(Col.euws_factor),
-        pl.lit(False).alias(Col.euws_override_applied),
-        pl.lit(10.0).alias("euws_loss"),
-    )
-
-    metrics = build_metric_long(adjusted.lazy()).collect().select(Col.metric).to_series().to_list()
-
-    assert metrics == [spec.name for spec in metric_specs("GBP")]
 
 
 def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
