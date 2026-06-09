@@ -483,7 +483,9 @@ return_periods = [2]
 
 [outputs]
 write_stage_outputs = false
+write_duckdb = true
 combined_file = "combined.parquet"
+duckdb_file = "custom-rollup.duckdb"
 
 [fx]
 target_currency = "usd"
@@ -496,7 +498,10 @@ target_currency = "usd"
     assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
     assert config.analysis.return_periods == (2,)
     assert config.outputs.write_stage_outputs is False
+    assert config.outputs.write_duckdb is True
     assert config.outputs.combined_file == "combined.parquet"
+    assert config.outputs.duckdb_file == "custom-rollup.duckdb"
+    assert config.outputs.duckdb_path(tmp_path / "output") == tmp_path / "output" / "custom-rollup.duckdb"
     assert config.fx.target_currency == "USD"
 
 

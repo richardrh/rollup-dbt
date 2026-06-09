@@ -10,6 +10,7 @@ import polars as pl
 
 from rollup.analysis import write_ep_report
 from rollup.config import RollupConfig, load_config
+from rollup.duckdb_export import export_duckdb
 from rollup.ep_summary_generator import generate_vendor_ep_summary
 from rollup.logging import temporary_file_logging
 from rollup.pipeline import run
@@ -27,6 +28,7 @@ class RollupOutputPaths:
     marts_dir: Path
     mart_files: tuple[Path, ...]
     stage_dir: Path | None = None
+    duckdb_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,8 @@ def run_rollup(
         if validate:
             validation.raise_for_errors()
         run(data_root, output_root=output_root, config=config)
+        if config.outputs.write_duckdb:
+            export_duckdb(data_root, output_root, config)
         ep_report_path = write_ep_report(output_root, config=config) if write_analysis else None
         logger.info("done rollup output_root=%s elapsed=%.2fs", output_root, time.perf_counter() - started)
         return RollupRunResult(
@@ -131,4 +135,5 @@ def collect_output_paths(
         marts_dir=marts_dir,
         mart_files=tuple(sorted(marts_dir.glob("*.parquet"))) if marts_dir.exists() else (),
         stage_dir=output_root / config.outputs.stage_output_dir if config.outputs.write_stage_outputs else None,
+        duckdb_file=config.outputs.duckdb_path(output_root) if config.outputs.write_duckdb else None,
     )

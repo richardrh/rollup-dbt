@@ -13,6 +13,7 @@ authors = [ { name = "Richard Hampton" } ]
 
 
 dependencies = [
+    "duckdb>=1.4.0",
     "tomli-w>=1.2.0",
     "polars>=1.20.0",
     "pyarrow>=22.0.0",
