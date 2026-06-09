@@ -11,14 +11,14 @@ EUWS_INPUT_SCHEMA = FORECAST_APPLIED_YLT_SCHEMA
 EUWS_FACTORS_SCHEMA = pa.DataFrameSchema(
     {
         Col.event_id: pa.Column(pl.Int64, nullable=True),
-        RawCol.factor: pa.Column(pl.Float64, nullable=True),
+        RawCol.factor: pa.Column(pl.Float64, nullable=True, coerce=True),
     },
     strict=False,
 )
 MODEL_EVENT_EUWS_FACTORS_SCHEMA = pa.DataFrameSchema(
     {
         Col.model_event_id: pa.Column(pl.Int64, nullable=True),
-        RawCol.factor: pa.Column(pl.Float64, nullable=True),
+        RawCol.factor: pa.Column(pl.Float64, nullable=True, coerce=True),
     },
     strict=False,
 )

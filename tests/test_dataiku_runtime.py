@@ -168,6 +168,37 @@ def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
         load_sources(data_root)
 
 
+def test_risklink_ylt_schema_rejects_null_required_values(tmp_path: Path) -> None:
+    from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA
+
+    data_root = _write_tiny_input(tmp_path)
+    risklink_path = data_root / "ylt" / "risklink" / "risklink.parquet"
+    pl.DataFrame(
+        {
+            "anlsid": [9001, 9001],
+            "yearid": [1, 2],
+            "eventid": [None, 2],
+            "loss": [40.0, 80.0],
+        }
+    ).write_parquet(risklink_path)
+
+    with pytest.raises(SchemaError, match="non-nullable column 'eventid' contains null values"):
+        RISKLINK_YLT_SCHEMA.validate(pl.read_parquet(risklink_path))
+
+
+def test_euws_factor_schema_accepts_integer_seed_factors() -> None:
+    from rollup.intermediate.apply_euws import MODEL_EVENT_EUWS_FACTORS_SCHEMA
+
+    factors = pl.DataFrame(
+        {
+            "model_event_id": [410024195],
+            "factor": [1],
+        }
+    )
+
+    MODEL_EVENT_EUWS_FACTORS_SCHEMA.validate(factors)
+
+
 def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from rollup import pipeline
 

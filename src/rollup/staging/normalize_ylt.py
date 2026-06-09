@@ -11,8 +11,8 @@ NORMALIZE_VERISK_INPUT_SCHEMA = VERISK_YLT_SCHEMA
 NORMALIZE_RISKLINK_INPUT_SCHEMA = RISKLINK_YLT_SCHEMA
 NORMALIZED_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pa.Column(pl.String, nullable=True),
-        Col.analysis_id: pa.Column(pl.String, nullable=True),
+        Col.vendor: pa.Column(pl.String, nullable=False),
+        Col.analysis_id: pa.Column(pl.String, nullable=False),
         Col.modelled_lob: pa.Column(pl.String, nullable=True),
         Col.modelled_peril: pa.Column(pl.String, nullable=True),
         Col.model_code: pa.Column(pl.Int64, nullable=True),

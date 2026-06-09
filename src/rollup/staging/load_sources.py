@@ -24,10 +24,10 @@ VERISK_YLT_SCHEMA = pa.DataFrameSchema(
 
 RISKLINK_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        RawCol.anlsid: pa.Column(pl.Int64, nullable=True),
-        RawCol.yearid: pa.Column(pl.Int64, nullable=True),
-        RawCol.eventid: pa.Column(pl.Int64, nullable=True),
-        RawCol.loss: pa.Column(pl.Float64, nullable=True),
+        RawCol.anlsid: pa.Column(pl.Int64, nullable=False),
+        RawCol.yearid: pa.Column(pl.Int64, nullable=False),
+        RawCol.eventid: pa.Column(pl.Int64, nullable=False),
+        RawCol.loss: pa.Column(pl.Float64, nullable=False),
     },
     strict=False,
 )
