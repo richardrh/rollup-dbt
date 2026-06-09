@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
 from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA, VERISK_YLT_SCHEMA, StagingFrames
@@ -8,30 +9,25 @@ from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA, VERISK_YLT_SCHEMA, 
 
 NORMALIZE_VERISK_INPUT_SCHEMA = VERISK_YLT_SCHEMA
 NORMALIZE_RISKLINK_INPUT_SCHEMA = RISKLINK_YLT_SCHEMA
-NORMALIZED_YLT_SCHEMA = pl.Schema(
+NORMALIZED_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pl.String,
-        Col.analysis_id: pl.String,
-        Col.modelled_lob: pl.String,
-        Col.modelled_peril: pl.String,
-        Col.model_code: pl.Int64,
-        Col.year_id: pl.Int64,
-        Col.event_id: pl.Int64,
-        Col.loss: pl.Float64,
-    }
+        Col.vendor: pa.Column(pl.String, nullable=True),
+        Col.analysis_id: pa.Column(pl.String, nullable=True),
+        Col.modelled_lob: pa.Column(pl.String, nullable=True),
+        Col.modelled_peril: pa.Column(pl.String, nullable=True),
+        Col.model_code: pa.Column(pl.Int64, nullable=True),
+        Col.year_id: pa.Column(pl.Int64, nullable=True),
+        Col.event_id: pa.Column(pl.Int64, nullable=True),
+        Col.loss: pa.Column(pl.Float64, nullable=True),
+    },
+    strict=False,
 )
 NORMALIZE_YLT_OUTPUT_SCHEMA = NORMALIZED_YLT_SCHEMA
 
 
 def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
-    actual = frames.verisk_ylt.collect_schema()
-    missing = [str(name) for name in NORMALIZE_VERISK_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"normalize_ylt missing columns: {missing}")
-    actual = frames.risklink_ylt.collect_schema()
-    missing = [str(name) for name in NORMALIZE_RISKLINK_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"normalize_ylt missing columns: {missing}")
+    NORMALIZE_VERISK_INPUT_SCHEMA.validate(frames.verisk_ylt)
+    NORMALIZE_RISKLINK_INPUT_SCHEMA.validate(frames.risklink_ylt)
 
     verisk = frames.verisk_ylt.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
         pl.lit("verisk").alias(Col.vendor),
@@ -54,8 +50,4 @@ def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
         pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
     )
     normalized = pl.concat([verisk, risklink], how="vertical")
-    actual = normalized.collect_schema()
-    missing = [str(name) for name in NORMALIZE_YLT_OUTPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"normalize_ylt missing columns: {missing}")
     return normalized

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pandera.polars as pa
 
 from rollup.columns import Col
 from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
@@ -9,37 +10,32 @@ from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
 ENRICHED_YLT_INPUT_SCHEMA = NORMALIZED_YLT_SCHEMA
 ENRICHED_EP_INPUT_SCHEMA = STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
-ENRICHED_YLT_OUTPUT_SCHEMA = pl.Schema(
+ENRICHED_YLT_OUTPUT_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pl.String,
-        Col.analysis_id: pl.String,
-        Col.modelled_lob: pl.String,
-        Col.modelled_peril: pl.String,
-        Col.model_code: pl.Int64,
-        Col.year_id: pl.Int64,
-        Col.event_id: pl.Int64,
-        Col.loss: pl.Float64,
-        Col.rollup_lob: pl.String,
-        Col.rollup_peril: pl.String,
-        Col.region_peril_id: pl.Int64,
-        Col.class_: pl.String,
-        Col.office: pl.String,
-        Col.currency: pl.String,
-        Col.selection_priority: pl.Int64,
-        Col.is_dialsup: pl.Int64,
-    }
+        Col.vendor: pa.Column(pl.String, nullable=True),
+        Col.analysis_id: pa.Column(pl.String, nullable=True),
+        Col.modelled_lob: pa.Column(pl.String, nullable=True),
+        Col.modelled_peril: pa.Column(pl.String, nullable=True),
+        Col.model_code: pa.Column(pl.Int64, nullable=True),
+        Col.year_id: pa.Column(pl.Int64, nullable=True),
+        Col.event_id: pa.Column(pl.Int64, nullable=True),
+        Col.loss: pa.Column(pl.Float64, nullable=True),
+        Col.rollup_lob: pa.Column(pl.String, nullable=True),
+        Col.rollup_peril: pa.Column(pl.String, nullable=True),
+        Col.region_peril_id: pa.Column(pl.Int64, nullable=True),
+        Col.class_: pa.Column(pl.String, nullable=True),
+        Col.office: pa.Column(pl.String, nullable=True),
+        Col.currency: pa.Column(pl.String, nullable=True),
+        Col.selection_priority: pa.Column(pl.Int64, nullable=True),
+        Col.is_dialsup: pa.Column(pl.Int64, nullable=True),
+    },
+    strict=False,
 )
 
 
 def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) -> pl.LazyFrame:
-    actual = normalized_ylt.collect_schema()
-    missing = [str(name) for name in ENRICHED_YLT_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
-    actual = staged_ep.collect_schema()
-    missing = [str(name) for name in ENRICHED_EP_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
+    ENRICHED_YLT_INPUT_SCHEMA.validate(normalized_ylt)
+    ENRICHED_EP_INPUT_SCHEMA.validate(staged_ep)
 
     ep_keys = staged_ep.select(
         Col.vendor,
@@ -71,8 +67,4 @@ def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) ->
         how="inner",
     )
     enriched = pl.concat([verisk, risklink], how="diagonal_relaxed")
-    actual = enriched.collect_schema()
-    missing = [str(name) for name in ENRICHED_YLT_OUTPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
     return enriched

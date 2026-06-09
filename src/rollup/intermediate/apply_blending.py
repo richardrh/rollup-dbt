@@ -1,44 +1,41 @@
 from __future__ import annotations
 
 import polars as pl
+import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
 from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
 
 
 BLENDING_INPUT_SCHEMA = ENRICHED_YLT_OUTPUT_SCHEMA
-BLENDING_FACTORS_SCHEMA = pl.Schema({Col.region_peril_id: pl.Int64})
-RAW_BLENDING_FACTORS_SCHEMA = pl.Schema({RawCol.RegionPerilID: pl.Int64})
-BLENDED_YLT_SCHEMA = pl.Schema(
+BLENDING_FACTORS_SCHEMA = pa.DataFrameSchema(
+    {Col.region_peril_id: pa.Column(pl.Int64, nullable=True)},
+    strict=False,
+)
+RAW_BLENDING_FACTORS_SCHEMA = pa.DataFrameSchema(
+    {RawCol.RegionPerilID: pa.Column(pl.Int64, nullable=True)},
+    strict=False,
+)
+BLENDED_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        **BLENDING_INPUT_SCHEMA,
-        "blended_loss": pl.Float64,
-    }
+        **BLENDING_INPUT_SCHEMA.columns,
+        "blended_loss": pa.Column(pl.Float64, nullable=True),
+    },
+    strict=False,
 )
 
 
 def apply_blending(enriched: pl.LazyFrame, blending: pl.DataFrame) -> pl.LazyFrame:
-    actual = enriched.collect_schema()
-    missing = [str(name) for name in BLENDING_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"apply_blending missing columns: {missing}")
+    BLENDING_INPUT_SCHEMA.validate(enriched)
 
     if blending.is_empty():
-        blended = enriched.with_columns(pl.col(Col.loss).alias("blended_loss"))
-        actual = blended.collect_schema()
-        missing = [str(name) for name in BLENDED_YLT_SCHEMA if name not in actual]
-        if missing:
-            raise ValueError(f"apply_blending missing columns: {missing}")
-        return blended
+        return enriched.with_columns(pl.col(Col.loss).alias("blended_loss"))
     columns = blending.columns
     region_col = RawCol.RegionPerilID if RawCol.RegionPerilID in columns else Col.region_peril_id
     factor_schema = (
         RAW_BLENDING_FACTORS_SCHEMA if RawCol.RegionPerilID in columns else BLENDING_FACTORS_SCHEMA
     )
-    actual = blending.schema
-    missing = [str(name) for name in factor_schema if name not in actual]
-    if missing:
-        raise ValueError(f"apply_blending missing columns: {missing}")
+    factor_schema.validate(blending)
     air_col = RawCol.AIRBlend if RawCol.AIRBlend in columns else "verisk_weight"
     rms_col = RawCol.RMSBlend if RawCol.RMSBlend in columns else "risklink_weight"
     verisk_blend_weight = (
@@ -59,8 +56,4 @@ def apply_blending(enriched: pl.LazyFrame, blending: pl.DataFrame) -> pl.LazyFra
         .fill_null(1.0)
         .alias("blend_weight")
     ).with_columns((pl.col(Col.loss) * pl.col("blend_weight")).alias("blended_loss"))
-    actual = blended.collect_schema()
-    missing = [str(name) for name in BLENDED_YLT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"apply_blending missing columns: {missing}")
     return blended

@@ -4,61 +4,67 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
+import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
 
 
-VERISK_YLT_SCHEMA = pl.Schema(
+VERISK_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        RawCol.Analysis: pl.String,
-        RawCol.ExposureAttribute: pl.String,
-        RawCol.CatalogTypeCode: pl.String,
-        RawCol.EventID: pl.Int64,
-        RawCol.ModelCode: pl.Int64,
-        RawCol.YearID: pl.Int64,
-        RawCol.GroundUpLoss: pl.Float64,
-    }
+        RawCol.Analysis: pa.Column(pl.String, nullable=True),
+        RawCol.ExposureAttribute: pa.Column(pl.String, nullable=True),
+        RawCol.CatalogTypeCode: pa.Column(pl.String, nullable=True),
+        RawCol.EventID: pa.Column(pl.Int64, nullable=True),
+        RawCol.ModelCode: pa.Column(pl.Int64, nullable=True),
+        RawCol.YearID: pa.Column(pl.Int64, nullable=True),
+        RawCol.GroundUpLoss: pa.Column(pl.Float64, nullable=True),
+    },
+    strict=False,
 )
 
-RISKLINK_YLT_SCHEMA = pl.Schema(
+RISKLINK_YLT_SCHEMA = pa.DataFrameSchema(
     {
-        RawCol.anlsid: pl.Int64,
-        RawCol.yearid: pl.Int64,
-        RawCol.eventid: pl.Int64,
-        RawCol.loss: pl.Float64,
-    }
+        RawCol.anlsid: pa.Column(pl.Int64, nullable=True),
+        RawCol.yearid: pa.Column(pl.Int64, nullable=True),
+        RawCol.eventid: pa.Column(pl.Int64, nullable=True),
+        RawCol.loss: pa.Column(pl.Float64, nullable=True),
+    },
+    strict=False,
 )
 
-EP_SUMMARY_SCHEMA = pl.Schema(
+EP_SUMMARY_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pl.String,
-        Col.analysis_id: pl.String,
-        Col.modelled_lob: pl.String,
-        Col.modelled_peril: pl.String,
-        Col.ep_type: pl.String,
-        Col.return_period: pl.Int64,
-        Col.loss: pl.Float64,
-    }
+        Col.vendor: pa.Column(pl.String, nullable=True),
+        Col.analysis_id: pa.Column(pl.String, nullable=True),
+        Col.modelled_lob: pa.Column(pl.String, nullable=True),
+        Col.modelled_peril: pa.Column(pl.String, nullable=True),
+        Col.ep_type: pa.Column(pl.String, nullable=True),
+        Col.return_period: pa.Column(pl.Int64, nullable=True),
+        Col.loss: pa.Column(pl.Float64, nullable=True),
+    },
+    strict=False,
 )
 
-LOBS_SCHEMA = pl.Schema(
+LOBS_SCHEMA = pa.DataFrameSchema(
     {
-        Col.modelled_lob: pl.String,
-        Col.rollup_lob: pl.String,
-        Col.class_: pl.String,
-        Col.office: pl.String,
-        Col.currency: pl.String,
-    }
+        Col.modelled_lob: pa.Column(pl.String, nullable=True),
+        Col.rollup_lob: pa.Column(pl.String, nullable=True),
+        Col.class_: pa.Column(pl.String, nullable=True),
+        Col.office: pa.Column(pl.String, nullable=True),
+        Col.currency: pa.Column(pl.String, nullable=True),
+    },
+    strict=False,
 )
 
-PERILS_SCHEMA = pl.Schema(
+PERILS_SCHEMA = pa.DataFrameSchema(
     {
-        Col.modelled_peril: pl.String,
-        Col.rollup_peril: pl.String,
-        Col.region_peril_id: pl.Int64,
-        Col.selection_priority: pl.Int64,
-        Col.is_dialsup: pl.Int64,
-    }
+        Col.modelled_peril: pa.Column(pl.String, nullable=True),
+        Col.rollup_peril: pa.Column(pl.String, nullable=True),
+        Col.region_peril_id: pa.Column(pl.Int64, nullable=True),
+        Col.selection_priority: pa.Column(pl.Int64, nullable=True),
+        Col.is_dialsup: pa.Column(pl.Int64, nullable=True),
+    },
+    strict=False,
 )
 
 
@@ -79,31 +85,16 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     data_root = Path(data_root)
     verisk_ylt = scan_parquet_folder(data_root / "ylt" / "verisk")
     risklink_ylt = scan_parquet_folder(data_root / "ylt" / "risklink")
-    actual = verisk_ylt.collect_schema()
-    missing = [str(name) for name in VERISK_YLT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"load_sources verisk_ylt missing columns: {missing}")
-    actual = risklink_ylt.collect_schema()
-    missing = [str(name) for name in RISKLINK_YLT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"load_sources risklink_ylt missing columns: {missing}")
+    VERISK_YLT_SCHEMA.validate(verisk_ylt)
+    RISKLINK_YLT_SCHEMA.validate(risklink_ylt)
 
     ep_summaries = read_ep_summaries(data_root)
-    actual = ep_summaries.schema
-    missing = [str(name) for name in EP_SUMMARY_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"load_sources ep_summaries missing columns: {missing}")
+    EP_SUMMARY_SCHEMA.validate(ep_summaries)
 
     lobs = read_seed_csv(data_root, "lobs.csv")
-    actual = lobs.schema
-    missing = [str(name) for name in LOBS_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"load_sources lobs missing columns: {missing}")
+    LOBS_SCHEMA.validate(lobs)
     perils = read_seed_csv(data_root, "perils.csv")
-    actual = perils.schema
-    missing = [str(name) for name in PERILS_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"load_sources perils missing columns: {missing}")
+    PERILS_SCHEMA.validate(perils)
 
     return StagingFrames(
         verisk_ylt=verisk_ylt,

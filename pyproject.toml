@@ -18,7 +18,7 @@ dependencies = [
     "pyarrow>=22.0.0",
     "pyyaml>=6.0",
     "pyodbc",
-
+    "pandera[polars]>=0.31.1",
 ]
 
 [tool.setuptools.package-dir]

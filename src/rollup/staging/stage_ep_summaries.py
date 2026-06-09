@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pandera.polars as pa
 
 from rollup.columns import Col
 from rollup.staging.load_sources import EP_SUMMARY_SCHEMA, LOBS_SCHEMA, PERILS_SCHEMA, StagingFrames
@@ -9,40 +10,32 @@ from rollup.staging.load_sources import EP_SUMMARY_SCHEMA, LOBS_SCHEMA, PERILS_S
 STAGED_EP_SUMMARIES_INPUT_SCHEMA = EP_SUMMARY_SCHEMA
 STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA = LOBS_SCHEMA
 STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA = PERILS_SCHEMA
-STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pl.Schema(
+STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pa.DataFrameSchema(
     {
-        Col.vendor: pl.String,
-        Col.analysis_id: pl.String,
-        Col.modelled_lob: pl.String,
-        Col.modelled_peril: pl.String,
-        Col.ep_type: pl.String,
-        Col.return_period: pl.Int64,
-        Col.loss: pl.Float64,
-        Col.rollup_lob: pl.String,
-        Col.class_: pl.String,
-        Col.office: pl.String,
-        Col.currency: pl.String,
-        Col.rollup_peril: pl.String,
-        Col.region_peril_id: pl.Int64,
-        Col.selection_priority: pl.Int64,
-        Col.is_dialsup: pl.Int64,
-    }
+        Col.vendor: pa.Column(pl.String, nullable=True),
+        Col.analysis_id: pa.Column(pl.String, nullable=True),
+        Col.modelled_lob: pa.Column(pl.String, nullable=True),
+        Col.modelled_peril: pa.Column(pl.String, nullable=True),
+        Col.ep_type: pa.Column(pl.String, nullable=True),
+        Col.return_period: pa.Column(pl.Int64, nullable=True),
+        Col.loss: pa.Column(pl.Float64, nullable=True),
+        Col.rollup_lob: pa.Column(pl.String, nullable=True),
+        Col.class_: pa.Column(pl.String, nullable=True),
+        Col.office: pa.Column(pl.String, nullable=True),
+        Col.currency: pa.Column(pl.String, nullable=True),
+        Col.rollup_peril: pa.Column(pl.String, nullable=True),
+        Col.region_peril_id: pa.Column(pl.Int64, nullable=True),
+        Col.selection_priority: pa.Column(pl.Int64, nullable=True),
+        Col.is_dialsup: pa.Column(pl.Int64, nullable=True),
+    },
+    strict=False,
 )
 
 
 def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
-    actual = frames.ep_summaries.schema
-    missing = [str(name) for name in STAGED_EP_SUMMARIES_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
-    actual = frames.lobs.schema
-    missing = [str(name) for name in STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
-    actual = frames.perils.schema
-    missing = [str(name) for name in STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
+    STAGED_EP_SUMMARIES_INPUT_SCHEMA.validate(frames.ep_summaries)
+    STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA.validate(frames.lobs)
+    STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA.validate(frames.perils)
 
     lobs = frames.lobs.lazy().select(
         Col.modelled_lob,
@@ -69,8 +62,4 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         .join(lobs, on=Col.modelled_lob, how="left")
         .join(perils, on=Col.modelled_peril, how="left")
     )
-    actual = staged.collect_schema()
-    missing = [str(name) for name in STAGED_EP_SUMMARIES_OUTPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
     return staged

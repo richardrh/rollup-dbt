@@ -12,10 +12,7 @@ FANOUT_INPUT_SCHEMA = METRIC_LONG_SCHEMA
 
 
 def write_fanouts(marts_dir: Path, frame: pl.DataFrame) -> tuple[Path, ...]:
-    actual = frame.schema
-    missing = [str(name) for name in FANOUT_INPUT_SCHEMA if name not in actual]
-    if missing:
-        raise ValueError(f"write_fanouts missing columns: {missing}")
+    FANOUT_INPUT_SCHEMA.validate(frame)
 
     paths: list[Path] = []
     if frame.is_empty():
