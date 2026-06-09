@@ -61,5 +61,30 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         )
         .join(lobs, on=Col.modelled_lob, how="left")
         .join(perils, on=Col.modelled_peril, how="left")
+        .with_columns(pl.col(Col.selection_priority).fill_null(99))
     )
-    return staged
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    selected_candidates = staged.select(
+        *selection_keys,
+        Col.modelled_peril,
+        Col.selection_priority,
+    ).unique()
+    selected_priorities = selected_candidates.group_by(selection_keys).agg(
+        pl.col(Col.selection_priority).min()
+    )
+    selected_modelled_perils = (
+        selected_candidates.join(
+            selected_priorities,
+            on=[*selection_keys, Col.selection_priority],
+            how="inner",
+        )
+        .sort([*selection_keys, Col.selection_priority, Col.modelled_peril])
+        .group_by(selection_keys, maintain_order=True)
+        .first()
+        .select(*selection_keys, Col.modelled_peril)
+    )
+    return staged.join(
+        selected_modelled_perils,
+        on=[*selection_keys, Col.modelled_peril],
+        how="inner",
+    )
