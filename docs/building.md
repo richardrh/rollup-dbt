@@ -4,8 +4,8 @@ The project has two build outputs:
 
 | Output | Use it when | Command |
 | --- | --- | --- |
-| Python wheel | Installing/importing `rollup` in another Python environment, such as Dataiku | `uv run python scripts/build.py package` |
-| PyInstaller bundle | Sending a self-contained executable folder to analysts | `uv run --group build pyinstaller -y rollup.spec` |
+| Python wheel | Installing/importing `rollup` in another Python environment, such as Dataiku | `uv run python scripts/build.py package --no-version-prompt` |
+| PyInstaller bundle | Sending a self-contained executable folder to analysts | `uv run --group build python scripts/build.py binary` |
 
 Use the wheel for development and programmatic API usage. Use the PyInstaller
 bundle only when the recipient should not need Python, `uv`, or the repository.
@@ -16,7 +16,7 @@ From the repository root:
 
 ```bash
 uv sync
-uv run python scripts/build.py package
+uv run python scripts/build.py package --no-version-prompt
 ```
 
 The wheel is written under `dist/`, for example:
@@ -44,7 +44,7 @@ On PowerShell, use `.\.venv-test\Scripts\python.exe` instead of
 From the repository root:
 
 ```bash
-uv run --group build pyinstaller -y rollup.spec
+uv run --group build python scripts/build.py binary
 ```
 
 The output is a one-folder distribution:
@@ -60,16 +60,14 @@ Smoke test after each build:
 
 ```bash
 dist/rollup/rollup --help
-dist/rollup/rollup generate-ep-summaries --help
-dist/rollup/rollup docs
+dist/rollup/rollup run --help
 ```
 
 On Windows:
 
 ```powershell
 .\dist\rollup\rollup.exe --help
-.\dist\rollup\rollup.exe generate-ep-summaries --help
-.\dist\rollup\rollup.exe docs
+.\dist\rollup\rollup.exe run --help
 ```
 
 ## Analyst folder layout
@@ -90,10 +88,11 @@ work/
 Run from `work/`:
 
 ```powershell
-rollup\rollup.exe validate
 rollup\rollup.exe run
-rollup\rollup.exe docs
 ```
+
+Use `rollup\rollup.exe run --help` to see runtime options such as
+`--data-root`, `--output-root`, `--target-currency`, and `--duckdb`.
 
 Outputs are written to `work/output/`.
 
