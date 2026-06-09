@@ -258,6 +258,81 @@ def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
         PERILS_SCHEMA.validate(frame)
 
 
+def test_normalized_ylt_output_schema_rejects_null_core_values() -> None:
+    from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", None],
+            "modelled_peril": ["EQ", None],
+            "model_code": [7, None],
+            "year_id": [1, 2],
+            "event_id": [1, None],
+            "loss": [10.0, 40.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'event_id' contains null values"):
+        NORMALIZED_YLT_SCHEMA.validate(frame)
+
+
+def test_staged_ep_output_schema_rejects_null_joined_required_values() -> None:
+    from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", "Fine Art"],
+            "modelled_peril": ["EQ", "EQ"],
+            "ep_type": ["AAL", "AAL"],
+            "return_period": [0, 0],
+            "loss": [1.0, 1.0],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "class": ["ART", "ART"],
+            "office": ["London", "London"],
+            "currency": ["GBP", None],
+            "rollup_peril": ["Earthquake", "Earthquake"],
+            "region_peril_id": [205, 205],
+            "selection_priority": [1, 1],
+            "is_dialsup": [1, 1],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'currency' contains null values"):
+        STAGED_EP_SUMMARIES_OUTPUT_SCHEMA.validate(frame)
+
+
+def test_enriched_ylt_output_schema_rejects_null_required_enrichment_values() -> None:
+    from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", None],
+            "modelled_peril": ["EQ", None],
+            "model_code": [7, None],
+            "year_id": [1, 2],
+            "event_id": [1, 2],
+            "loss": [10.0, 40.0],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "rollup_peril": ["Earthquake", None],
+            "region_peril_id": [205, 205],
+            "class": ["ART", "ART"],
+            "office": ["London", "London"],
+            "currency": ["GBP", "GBP"],
+            "selection_priority": [1, 1],
+            "is_dialsup": [1, 1],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'rollup_peril' contains null values"):
+        ENRICHED_YLT_OUTPUT_SCHEMA.validate(frame)
+
+
 def test_euws_factor_schema_accepts_integer_seed_factors() -> None:
     from rollup.intermediate.apply_euws import MODEL_EVENT_EUWS_FACTORS_SCHEMA
 

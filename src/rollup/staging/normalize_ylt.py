@@ -16,9 +16,9 @@ NORMALIZED_YLT_SCHEMA = pa.DataFrameSchema(
         Col.modelled_lob: pa.Column(pl.String, nullable=True),
         Col.modelled_peril: pa.Column(pl.String, nullable=True),
         Col.model_code: pa.Column(pl.Int64, nullable=True),
-        Col.year_id: pa.Column(pl.Int64, nullable=True),
-        Col.event_id: pa.Column(pl.Int64, nullable=True),
-        Col.loss: pa.Column(pl.Float64, nullable=True),
+        Col.year_id: pa.Column(pl.Int64, nullable=False),
+        Col.event_id: pa.Column(pl.Int64, nullable=False),
+        Col.loss: pa.Column(pl.Float64, nullable=False),
     },
     strict=False,
 )
