@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from rollup import cli
-from rollup.api import RollupOutputPaths, RollupRunResult
+from rollup.api import RollupOutputPaths, RollupRunResult, RollupValidationError, RollupValidationResult
 
 
 def test_cli_run_uses_local_defaults(
@@ -146,6 +147,133 @@ combined_file = "custom-combined.parquet"
     assert "stage outputs: (disabled)" in summary
 
 
+def test_cli_run_duckdb_flag_enables_default_duckdb_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: dict[str, object] = {}
+
+    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+        calls["logging"] = (log_level, log_file)
+
+    def run_rollup(
+        data_root: Path,
+        output_root: Path,
+        *,
+        config_path: Path | None,
+        config: object | None,
+        write_analysis: bool,
+        log_file: Path,
+    ) -> RollupRunResult:
+        calls["run"] = {
+            "data_root": data_root,
+            "output_root": output_root,
+            "config_path": config_path,
+            "config": config,
+            "write_analysis": write_analysis,
+            "log_file": log_file,
+        }
+        return rollup_result(data_root, output_root, ep_report_path=None, duckdb_file=output_root / "rollup.duckdb")
+
+    monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
+
+    output_root = tmp_path / "output"
+
+    assert cli.main(["run", "--output-root", str(output_root), "--duckdb"]) == 0
+
+    run_call = calls["run"]
+    assert isinstance(run_call, dict)
+    config = run_call["config"]
+    assert config is not None
+    assert config.outputs.write_duckdb is True
+    assert config.outputs.duckdb_file is None
+    assert run_call["config_path"] is None
+    assert f"duckdb: {output_root / 'rollup.duckdb'} (missing)" in capsys.readouterr().out
+
+
+def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: dict[str, object] = {}
+
+    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+        calls["logging"] = (log_level, log_file)
+
+    def run_rollup(
+        data_root: Path,
+        output_root: Path,
+        *,
+        config_path: Path | None,
+        config: object | None,
+        write_analysis: bool,
+        log_file: Path,
+    ) -> RollupRunResult:
+        calls["run"] = {"config": config, "config_path": config_path}
+        return rollup_result(data_root, output_root, ep_report_path=None, duckdb_file=duckdb_file)
+
+    monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
+    duckdb_file = tmp_path / "custom" / "my_rollup.duckdb"
+
+    assert cli.main(["run", "--duckdb-file", str(duckdb_file)]) == 0
+
+    run_call = calls["run"]
+    assert isinstance(run_call, dict)
+    config = run_call["config"]
+    assert config is not None
+    assert config.outputs.write_duckdb is True
+    assert config.outputs.duckdb_file == str(duckdb_file)
+    assert run_call["config_path"] is None
+    assert f"duckdb: {duckdb_file} (missing)" in capsys.readouterr().out
+
+
+def test_cli_run_validation_failure_prints_details_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def configure_console_logging(log_level: str, *, log_file: Path | None = None) -> None:
+        return None
+
+    def run_rollup(
+        data_root: Path,
+        output_root: Path,
+        *,
+        config_path: Path | None,
+        config: object | None,
+        write_analysis: bool,
+        log_file: Path,
+    ) -> RollupRunResult:
+        report = pl.DataFrame(
+            [
+                {
+                    "source_group": "runtime_schema_guard",
+                    "valid": False,
+                    "error": "verisk_ylt required columns contain nulls: EventID",
+                }
+            ]
+        )
+        raise RollupValidationError(
+            RollupValidationResult(data_root=tmp_path / "data", is_valid=False, validation_report=report)
+        )
+
+    monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
+
+    assert cli.main(["run"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Input validation failed" in captured.err
+    assert "source_group=runtime_schema_guard" in captured.err
+    assert "error=verisk_ylt required columns contain nulls: EventID" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_success_summary_reports_output_paths_and_counts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -220,6 +348,7 @@ def rollup_result(
     *,
     ep_report_path: Path | None,
     stage_dir: Path | None | object = ...,
+    duckdb_file: Path | None = None,
 ) -> RollupRunResult:
     stage_path = output_root / "stages" if stage_dir is ... else stage_dir
     return RollupRunResult(
@@ -233,6 +362,7 @@ def rollup_result(
             marts_dir=output_root / "marts",
             mart_files=(),
             stage_dir=stage_path,
+            duckdb_file=duckdb_file,
         ),
         ep_report_path=ep_report_path,
     )
