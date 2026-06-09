@@ -6,15 +6,16 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
-from rollup.schemas import require_columns
 
 
 FANOUT_INPUT_SCHEMA = METRIC_LONG_SCHEMA
-FANOUT_SCHEMA = METRIC_LONG_SCHEMA
 
 
 def write_fanouts(marts_dir: Path, frame: pl.DataFrame) -> tuple[Path, ...]:
-    require_columns(frame, FANOUT_INPUT_SCHEMA)
+    actual = frame.schema
+    missing = [str(name) for name in FANOUT_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"write_fanouts missing columns: {missing}")
 
     paths: list[Path] = []
     if frame.is_empty():

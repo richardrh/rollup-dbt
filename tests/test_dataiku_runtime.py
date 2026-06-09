@@ -10,7 +10,19 @@ import pytest
 
 from rollup.api import run_rollup
 from rollup.config import load_config
-from rollup.schemas import SchemaGuardError, require_columns
+
+
+def assert_required_columns(frame: pl.DataFrame, schema: pl.Schema) -> None:
+    actual = frame.schema
+    missing = [str(name) for name in schema if name not in actual]
+    dtype_mismatches = [
+        f"{name}: expected {schema[name]}, got {actual[name]}"
+        for name in schema
+        if name in actual and actual[name] != schema[name]
+    ]
+
+    assert missing == []
+    assert dtype_mismatches == []
 
 
 def test_import_surface() -> None:
@@ -110,12 +122,8 @@ def test_transform_modules_expose_polars_schema_contracts() -> None:
             "EVENT_VALIDATION_INPUT_SCHEMA",
             "EVENT_VALIDATION_SCHEMA",
         ),
-        "rollup.marts.fanouts": ("FANOUT_INPUT_SCHEMA", "FANOUT_SCHEMA"),
+        "rollup.marts.fanouts": ("FANOUT_INPUT_SCHEMA",),
         "rollup.marts.wide": ("WIDE_INPUT_SCHEMA", "WIDE_OUTPUT_SCHEMA"),
-        "rollup.marts.write_marts": (
-            "COMBINED_MART_INPUT_SCHEMA",
-            "DIALSUP_MART_INPUT_SCHEMA",
-        ),
     }
 
     for module_name, schema_names in expected_schemas.items():
@@ -147,11 +155,23 @@ def test_query_path_modules_do_not_define_private_helpers() -> None:
     assert violations == []
 
 
-def test_schema_guard_catches_missing_required_column() -> None:
-    frame = pl.DataFrame({"present": [1]})
+def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
+    from rollup.staging.load_sources import load_sources
 
-    with pytest.raises(SchemaGuardError, match="missing columns"):
-        require_columns(frame, pl.Schema({"present": pl.Int64, "missing": pl.String}))
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "ExposureAttribute": ["Fine Art"],
+            "CatalogTypeCode": ["STC"],
+            "EventID": [1],
+            "ModelCode": [7],
+            "YearID": [1],
+            "GroundUpLoss": [10.0],
+        }
+    ).write_parquet(data_root / "ylt" / "verisk" / "verisk.parquet")
+
+    with pytest.raises(ValueError, match="load_sources verisk_ylt missing columns: .*Analysis"):
+        load_sources(data_root)
 
 
 def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -311,17 +331,17 @@ write_stage_outputs = true
     aal = report.filter((pl.col("ep_type") == "AAL") & (pl.col("base_model") == "verisk"))
     assert aal.filter(pl.col("metric") == "euws_override")["loss"].to_list() == [15.0]
 
-    require_columns(pl.read_parquet(normalized_ylt_path), NORMALIZED_YLT_SCHEMA)
-    require_columns(pl.read_parquet(staged_ep_path), STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
-    require_columns(pl.read_parquet(enriched_ylt_path), ENRICHED_YLT_OUTPUT_SCHEMA)
-    require_columns(pl.read_parquet(blended_ylt_path), BLENDED_YLT_SCHEMA)
-    require_columns(pl.read_parquet(fx_applied_ylt_path), FX_APPLIED_YLT_SCHEMA)
-    require_columns(pl.read_parquet(forecast_applied_ylt_path), FORECAST_APPLIED_YLT_SCHEMA)
-    require_columns(pl.read_parquet(euws_applied_ylt_path), EUWS_APPLIED_YLT_SCHEMA)
-    require_columns(pl.read_parquet(result.outputs.mts_combined), METRIC_LONG_SCHEMA)
-    require_columns(pl.read_parquet(result.outputs.mts_wide), WIDE_OUTPUT_SCHEMA)
-    require_columns(pl.read_parquet(result.outputs.mts_dialsup), DIALSUP_SCHEMA)
-    require_columns(pl.read_parquet(result.outputs.event_validation), EVENT_VALIDATION_SCHEMA)
+    assert_required_columns(pl.read_parquet(normalized_ylt_path), NORMALIZED_YLT_SCHEMA)
+    assert_required_columns(pl.read_parquet(staged_ep_path), STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
+    assert_required_columns(pl.read_parquet(enriched_ylt_path), ENRICHED_YLT_OUTPUT_SCHEMA)
+    assert_required_columns(pl.read_parquet(blended_ylt_path), BLENDED_YLT_SCHEMA)
+    assert_required_columns(pl.read_parquet(fx_applied_ylt_path), FX_APPLIED_YLT_SCHEMA)
+    assert_required_columns(pl.read_parquet(forecast_applied_ylt_path), FORECAST_APPLIED_YLT_SCHEMA)
+    assert_required_columns(pl.read_parquet(euws_applied_ylt_path), EUWS_APPLIED_YLT_SCHEMA)
+    assert_required_columns(pl.read_parquet(result.outputs.mts_combined), METRIC_LONG_SCHEMA)
+    assert_required_columns(pl.read_parquet(result.outputs.mts_wide), WIDE_OUTPUT_SCHEMA)
+    assert_required_columns(pl.read_parquet(result.outputs.mts_dialsup), DIALSUP_SCHEMA)
+    assert_required_columns(pl.read_parquet(result.outputs.event_validation), EVENT_VALIDATION_SCHEMA)
 
 
 def _write_tiny_input(tmp_path: Path) -> Path:

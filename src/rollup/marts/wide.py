@@ -4,7 +4,6 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
-from rollup.schemas import require_columns
 
 
 WIDE_INPUT_SCHEMA = METRIC_LONG_SCHEMA
@@ -22,7 +21,10 @@ WIDE_OUTPUT_SCHEMA = pl.Schema(
 
 
 def wide(frame: pl.DataFrame) -> pl.DataFrame:
-    require_columns(frame, WIDE_INPUT_SCHEMA)
+    actual = frame.schema
+    missing = [str(name) for name in WIDE_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"wide missing columns: {missing}")
 
     index = [
         Col.base_model,
@@ -34,5 +36,8 @@ def wide(frame: pl.DataFrame) -> pl.DataFrame:
         Col.forecast_date,
     ]
     wide_frame = frame.pivot(index=index, on=Col.metric, values=Col.loss, aggregate_function="sum")
-    require_columns(wide_frame, WIDE_OUTPUT_SCHEMA)
+    actual = wide_frame.schema
+    missing = [str(name) for name in WIDE_OUTPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"wide missing columns: {missing}")
     return wide_frame

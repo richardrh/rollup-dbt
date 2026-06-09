@@ -3,7 +3,6 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col
-from rollup.schemas import require_columns
 from rollup.staging.load_sources import EP_SUMMARY_SCHEMA, LOBS_SCHEMA, PERILS_SCHEMA, StagingFrames
 
 
@@ -32,9 +31,18 @@ STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pl.Schema(
 
 
 def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
-    require_columns(frames.ep_summaries, STAGED_EP_SUMMARIES_INPUT_SCHEMA, check_dtypes=False)
-    require_columns(frames.lobs, STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA, check_dtypes=False)
-    require_columns(frames.perils, STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA, check_dtypes=False)
+    actual = frames.ep_summaries.schema
+    missing = [str(name) for name in STAGED_EP_SUMMARIES_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
+    actual = frames.lobs.schema
+    missing = [str(name) for name in STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
+    actual = frames.perils.schema
+    missing = [str(name) for name in STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
 
     lobs = frames.lobs.lazy().select(
         Col.modelled_lob,
@@ -61,5 +69,8 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         .join(lobs, on=Col.modelled_lob, how="left")
         .join(perils, on=Col.modelled_peril, how="left")
     )
-    require_columns(staged, STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
+    actual = staged.collect_schema()
+    missing = [str(name) for name in STAGED_EP_SUMMARIES_OUTPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"stage_ep_summaries missing columns: {missing}")
     return staged

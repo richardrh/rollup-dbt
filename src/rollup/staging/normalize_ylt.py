@@ -3,7 +3,6 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.schemas import require_columns
 from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA, VERISK_YLT_SCHEMA, StagingFrames
 
 
@@ -25,8 +24,14 @@ NORMALIZE_YLT_OUTPUT_SCHEMA = NORMALIZED_YLT_SCHEMA
 
 
 def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
-    require_columns(frames.verisk_ylt, NORMALIZE_VERISK_INPUT_SCHEMA, check_dtypes=False)
-    require_columns(frames.risklink_ylt, NORMALIZE_RISKLINK_INPUT_SCHEMA, check_dtypes=False)
+    actual = frames.verisk_ylt.collect_schema()
+    missing = [str(name) for name in NORMALIZE_VERISK_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"normalize_ylt missing columns: {missing}")
+    actual = frames.risklink_ylt.collect_schema()
+    missing = [str(name) for name in NORMALIZE_RISKLINK_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"normalize_ylt missing columns: {missing}")
 
     verisk = frames.verisk_ylt.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
         pl.lit("verisk").alias(Col.vendor),
@@ -49,5 +54,8 @@ def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
         pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
     )
     normalized = pl.concat([verisk, risklink], how="vertical")
-    require_columns(normalized, NORMALIZE_YLT_OUTPUT_SCHEMA)
+    actual = normalized.collect_schema()
+    missing = [str(name) for name in NORMALIZE_YLT_OUTPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"normalize_ylt missing columns: {missing}")
     return normalized

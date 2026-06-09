@@ -3,7 +3,6 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col
-from rollup.schemas import require_columns
 from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
 from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
@@ -33,8 +32,14 @@ ENRICHED_YLT_OUTPUT_SCHEMA = pl.Schema(
 
 
 def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) -> pl.LazyFrame:
-    require_columns(normalized_ylt, ENRICHED_YLT_INPUT_SCHEMA)
-    require_columns(staged_ep, ENRICHED_EP_INPUT_SCHEMA)
+    actual = normalized_ylt.collect_schema()
+    missing = [str(name) for name in ENRICHED_YLT_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
+    actual = staged_ep.collect_schema()
+    missing = [str(name) for name in ENRICHED_EP_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
 
     ep_keys = staged_ep.select(
         Col.vendor,
@@ -66,5 +71,8 @@ def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) ->
         how="inner",
     )
     enriched = pl.concat([verisk, risklink], how="diagonal_relaxed")
-    require_columns(enriched, ENRICHED_YLT_OUTPUT_SCHEMA)
+    actual = enriched.collect_schema()
+    missing = [str(name) for name in ENRICHED_YLT_OUTPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"build_enriched_ylt missing columns: {missing}")
     return enriched

@@ -4,7 +4,6 @@ import polars as pl
 
 from rollup.columns import Col, RawCol
 from rollup.intermediate.apply_fx import FX_APPLIED_YLT_SCHEMA
-from rollup.schemas import require_columns
 
 
 FORECAST_INPUT_SCHEMA = FX_APPLIED_YLT_SCHEMA
@@ -27,7 +26,10 @@ FORECAST_APPLIED_YLT_SCHEMA = pl.Schema(
 
 
 def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.LazyFrame:
-    require_columns(frame, FORECAST_INPUT_SCHEMA)
+    actual = frame.collect_schema()
+    missing = [str(name) for name in FORECAST_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"apply_forecast missing columns: {missing}")
 
     if forecast_factors.is_empty():
         applied = frame.with_columns(
@@ -35,9 +37,15 @@ def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.La
             pl.lit(1.0).alias(Col.forecast_factor),
             pl.col("gbp_loss").alias("forecast_loss"),
         )
-        require_columns(applied, FORECAST_APPLIED_YLT_SCHEMA)
+        actual = applied.collect_schema()
+        missing = [str(name) for name in FORECAST_APPLIED_YLT_SCHEMA if name not in actual]
+        if missing:
+            raise ValueError(f"apply_forecast missing columns: {missing}")
         return applied
-    require_columns(forecast_factors, FORECAST_FACTORS_SCHEMA, check_dtypes=False)
+    actual = forecast_factors.schema
+    missing = [str(name) for name in FORECAST_FACTORS_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"apply_forecast missing columns: {missing}")
     factors = forecast_factors.lazy().select(
         pl.col(Col.class_).cast(pl.String),
         pl.col(Col.office).cast(pl.String),
@@ -48,5 +56,8 @@ def apply_forecast(frame: pl.LazyFrame, forecast_factors: pl.DataFrame) -> pl.La
         pl.col(Col.forecast_date).fill_null("base"),
         pl.col(Col.forecast_factor).fill_null(1.0),
     ).with_columns((pl.col("gbp_loss") * pl.col(Col.forecast_factor)).alias("forecast_loss"))
-    require_columns(applied, FORECAST_APPLIED_YLT_SCHEMA)
+    actual = applied.collect_schema()
+    missing = [str(name) for name in FORECAST_APPLIED_YLT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"apply_forecast missing columns: {missing}")
     return applied

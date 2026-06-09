@@ -6,7 +6,6 @@ from pathlib import Path
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.schemas import require_columns
 
 
 VERISK_YLT_SCHEMA = pl.Schema(
@@ -80,16 +79,31 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     data_root = Path(data_root)
     verisk_ylt = scan_parquet_folder(data_root / "ylt" / "verisk")
     risklink_ylt = scan_parquet_folder(data_root / "ylt" / "risklink")
-    require_columns(verisk_ylt, VERISK_YLT_SCHEMA, check_dtypes=False)
-    require_columns(risklink_ylt, RISKLINK_YLT_SCHEMA, check_dtypes=False)
+    actual = verisk_ylt.collect_schema()
+    missing = [str(name) for name in VERISK_YLT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"load_sources verisk_ylt missing columns: {missing}")
+    actual = risklink_ylt.collect_schema()
+    missing = [str(name) for name in RISKLINK_YLT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"load_sources risklink_ylt missing columns: {missing}")
 
     ep_summaries = read_ep_summaries(data_root)
-    require_columns(ep_summaries, EP_SUMMARY_SCHEMA, check_dtypes=False)
+    actual = ep_summaries.schema
+    missing = [str(name) for name in EP_SUMMARY_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"load_sources ep_summaries missing columns: {missing}")
 
     lobs = read_seed_csv(data_root, "lobs.csv")
-    require_columns(lobs, LOBS_SCHEMA, check_dtypes=False)
+    actual = lobs.schema
+    missing = [str(name) for name in LOBS_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"load_sources lobs missing columns: {missing}")
     perils = read_seed_csv(data_root, "perils.csv")
-    require_columns(perils, PERILS_SCHEMA, check_dtypes=False)
+    actual = perils.schema
+    missing = [str(name) for name in PERILS_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"load_sources perils missing columns: {missing}")
 
     return StagingFrames(
         verisk_ylt=verisk_ylt,

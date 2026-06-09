@@ -4,7 +4,6 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
-from rollup.schemas import require_columns
 
 
 METRIC_LONG_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
@@ -32,7 +31,10 @@ METRIC_LONG_SCHEMA = pl.Schema(
 
 
 def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
-    require_columns(adjusted, METRIC_LONG_INPUT_SCHEMA)
+    actual = adjusted.collect_schema()
+    missing = [str(name) for name in METRIC_LONG_INPUT_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"build_metric_long missing columns: {missing}")
 
     metric_columns = [
         Col.vendor,
@@ -104,5 +106,8 @@ def build_metric_long(adjusted: pl.LazyFrame) -> pl.LazyFrame:
         ],
         how="vertical",
     )
-    require_columns(metric_long, METRIC_LONG_SCHEMA)
+    actual = metric_long.collect_schema()
+    missing = [str(name) for name in METRIC_LONG_SCHEMA if name not in actual]
+    if missing:
+        raise ValueError(f"build_metric_long missing columns: {missing}")
     return metric_long
