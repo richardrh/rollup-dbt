@@ -21,6 +21,15 @@ VERISK_YLT_SCHEMA = pa.DataFrameSchema(
     },
     strict=False,
 )
+VERISK_YLT_REQUIRED_COLUMNS = (
+    RawCol.Analysis,
+    RawCol.ExposureAttribute,
+    RawCol.CatalogTypeCode,
+    RawCol.EventID,
+    RawCol.ModelCode,
+    RawCol.YearID,
+    RawCol.GroundUpLoss,
+)
 
 RISKLINK_YLT_SCHEMA = pa.DataFrameSchema(
     {
@@ -30,6 +39,12 @@ RISKLINK_YLT_SCHEMA = pa.DataFrameSchema(
         RawCol.loss: pa.Column(pl.Float64, nullable=False),
     },
     strict=False,
+)
+RISKLINK_YLT_REQUIRED_COLUMNS = (
+    RawCol.anlsid,
+    RawCol.yearid,
+    RawCol.eventid,
+    RawCol.loss,
 )
 
 EP_SUMMARY_SCHEMA = pa.DataFrameSchema(
@@ -87,6 +102,8 @@ def load_sources(data_root: str | Path) -> StagingFrames:
     risklink_ylt = scan_parquet_folder(data_root / "ylt" / "risklink")
     VERISK_YLT_SCHEMA.validate(verisk_ylt)
     RISKLINK_YLT_SCHEMA.validate(risklink_ylt)
+    validate_lazy_required_nulls(verisk_ylt, "verisk_ylt", VERISK_YLT_REQUIRED_COLUMNS)
+    validate_lazy_required_nulls(risklink_ylt, "risklink_ylt", RISKLINK_YLT_REQUIRED_COLUMNS)
 
     ep_summaries = read_ep_summaries(data_root)
     EP_SUMMARY_SCHEMA.validate(ep_summaries)
@@ -114,6 +131,24 @@ def scan_parquet_folder(folder: Path) -> pl.LazyFrame:
     if not paths:
         raise FileNotFoundError(f"no parquet files found in {folder}")
     return pl.scan_parquet(str(folder / "*.parquet"))
+
+
+def validate_lazy_required_nulls(
+    frame: pl.LazyFrame,
+    source_group: str,
+    required_columns: tuple[str, ...],
+) -> None:
+    null_counts = frame.select(
+        pl.col(column).null_count().alias(column) for column in required_columns
+    ).collect()
+    null_count_by_column = null_counts.row(0, named=True)
+    columns_with_nulls = [
+        column for column in required_columns if null_count_by_column.get(column, 0) > 0
+    ]
+    if columns_with_nulls:
+        raise ValueError(
+            f"{source_group} required columns contain nulls: {', '.join(columns_with_nulls)}"
+        )
 
 
 def read_ep_summaries(data_root: Path) -> pl.DataFrame:

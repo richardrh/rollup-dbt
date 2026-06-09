@@ -9,7 +9,7 @@ import polars as pl
 from pandera.errors import SchemaError
 import pytest
 
-from rollup.api import run_rollup
+from rollup.api import run_rollup, validate_rollup_inputs
 from rollup.config import load_config
 
 
@@ -203,6 +203,54 @@ def test_risklink_ylt_schema_rejects_null_required_values(tmp_path: Path) -> Non
 
     with pytest.raises(SchemaError, match="non-nullable column 'eventid' contains null values"):
         RISKLINK_YLT_SCHEMA.validate(pl.read_parquet(risklink_path))
+
+
+def test_load_sources_rejects_lazy_verisk_ylt_mixed_null_required_values(
+    tmp_path: Path,
+) -> None:
+    from rollup.staging.load_sources import load_sources
+
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "Analysis": ["EQ", "EQ"],
+            "ExposureAttribute": ["Fine Art", "Fine Art"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [1, None],
+            "ModelCode": [7, 7],
+            "YearID": [1, 2],
+            "GroundUpLoss": [10.0, 20.0],
+        }
+    ).write_parquet(data_root / "ylt" / "verisk" / "verisk.parquet")
+    expected_error = "verisk_ylt required columns contain nulls: EventID"
+
+    with pytest.raises(ValueError, match=expected_error):
+        load_sources(data_root)
+
+    result = validate_rollup_inputs(data_root)
+    assert not result.is_valid
+    assert expected_error in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_rejects_lazy_risklink_ylt_mixed_null_required_values(
+    tmp_path: Path,
+) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "anlsid": [9001, 9001],
+            "yearid": [1, 2],
+            "eventid": [1, None],
+            "loss": [40.0, 80.0],
+        }
+    ).write_parquet(data_root / "ylt" / "risklink" / "risklink.parquet")
+
+    result = validate_rollup_inputs(data_root)
+
+    assert not result.is_valid
+    assert "risklink_ylt required columns contain nulls: eventid" in result.validation_report[
+        "error"
+    ].item()
 
 
 def test_ep_summary_schema_rejects_null_required_values() -> None:
