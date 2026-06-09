@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 import polars as pl
 
+from rollup.columns import Col
 from rollup.config import RollupConfig
+from rollup.intermediate.build_dialsup import build_dialsup
 from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
+from rollup.marts.write_parquet import write_parquet
+
+logger = logging.getLogger(__name__)
 
 
 def write_marts(
@@ -23,13 +29,25 @@ def write_marts(
     dialsup_path = marts_dir / config.outputs.dialsup_file
     event_validation_path = marts_dir / config.outputs.event_validation_file
 
-    combined_df = combined.collect()
-    dialsup_df = dialsup.collect()
-    combined_df.write_parquet(combined_path)
-    wide(combined_df).write_parquet(wide_path)
-    dialsup_df.write_parquet(dialsup_path)
-    event_validation(combined_df).write_parquet(event_validation_path)
-    fanout_paths = write_fanouts(marts_dir, combined_df)
+    logger.info("writing combined mart path=%s", combined_path)
+    write_parquet(combined, combined_path)
+
+    combined_scan = pl.scan_parquet(combined_path)
+    dialsup_scan_source = build_dialsup(combined_scan)
+    logger.info("writing dialsup mart path=%s", dialsup_path)
+    write_parquet(dialsup_scan_source, dialsup_path)
+
+    dialsup_scan = pl.scan_parquet(dialsup_path)
+    final_main = combined_scan.filter(pl.col(Col.metric) == "euws_override")
+    final_metrics = pl.concat([final_main, dialsup_scan], how="diagonal_relaxed")
+
+    logger.info("writing operational wide mart path=%s", wide_path)
+    write_parquet(wide(final_metrics), wide_path)
+    logger.info("writing event validation mart path=%s", event_validation_path)
+    write_parquet(event_validation(final_metrics), event_validation_path)
+    logger.info("writing fanout marts dir=%s", marts_dir)
+    fanout_paths = write_fanouts(marts_dir, final_main)
+    logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {
         "combined": combined_path,

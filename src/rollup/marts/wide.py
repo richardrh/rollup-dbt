@@ -21,8 +21,10 @@ WIDE_OUTPUT_SCHEMA = pa.DataFrameSchema(
     strict=False,
 )
 
+WIDE_METRICS = ("euws_override", "dialsup_gbp_forecast")
 
-def wide(frame: pl.DataFrame) -> pl.DataFrame:
+
+def wide(frame: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     WIDE_INPUT_SCHEMA.validate(frame)
 
     index = [
@@ -34,5 +36,16 @@ def wide(frame: pl.DataFrame) -> pl.DataFrame:
         Col.event_id,
         Col.forecast_date,
     ]
-    wide_frame = frame.pivot(index=index, on=Col.metric, values=Col.loss, aggregate_function="sum")
+    source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
+    wide_frame = source.group_by(index).agg(
+        [
+            pl.when((pl.col(Col.metric) == metric).any())
+            .then(pl.col(Col.loss).filter(pl.col(Col.metric) == metric).sum())
+            .otherwise(None)
+            .alias(metric)
+            for metric in WIDE_METRICS
+        ]
+    )
+    if isinstance(frame, pl.DataFrame):
+        return wide_frame.collect()
     return wide_frame

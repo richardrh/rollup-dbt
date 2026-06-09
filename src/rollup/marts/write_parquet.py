@@ -8,6 +8,6 @@ import polars as pl
 def write_parquet(frame: pl.DataFrame | pl.LazyFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(frame, pl.LazyFrame):
-        frame.collect().write_parquet(path)
+        frame.sink_parquet(path, mkdir=True)
     else:
         frame.write_parquet(path)

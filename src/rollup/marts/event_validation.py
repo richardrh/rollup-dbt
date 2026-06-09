@@ -18,7 +18,7 @@ EVENT_VALIDATION_SCHEMA = pa.DataFrameSchema(
 )
 
 
-def event_validation(frame: pl.DataFrame) -> pl.DataFrame:
+def event_validation(frame: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     EVENT_VALIDATION_INPUT_SCHEMA.validate(frame)
 
     validation = frame.select(
