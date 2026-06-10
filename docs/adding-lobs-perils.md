@@ -34,7 +34,7 @@ Peril lookup. Columns:
 | `region_peril_id` | Integer identifier for region-peril combination used in blend weight joins | `216` |
 | `base_model` | Vendor/model whose YLT is used as the base for EP blending for this rollup peril | `risklink` |
 | `selection_priority` | Main-pipeline precedence for choosing among multiple modelled perils that map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower numbers win. Missing values default to `99`. | `99` |
-| `is_dialsup` | DIALSUP-only selection flag. Exactly one active candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted alternatives should usually be `0`. | `1` |
+| `is_dialsup` | DIALSUP-only selection flag on the selected modelled peril row. Set `1` for rows that should feed DIALSUP and `0` for adjusted alternatives. | `1` |
 | `is_euws` | EUWS factor application flag. Use `1` only for modelled perils that should consume event-level EUWS factors. | `0` |
 
 ## Adding a new LOB
@@ -80,9 +80,8 @@ does not yet exist in `perils.csv`.
     - `selection_priority` of `99` is the normal fallback for the main pipeline.
       Set a lower number (e.g. `1`) if this modelled peril should be preferred
       over other modelled perils that target the same `rollup_peril`.
-    - `is_dialsup` should be `1` for the least-adjusted/base peril that DIALSUP
-      should use, and `0` for adjusted alternatives. Validation requires exactly
-      one active DIALSUP candidate per vendor/rollup LOB/rollup peril group.
+    - `is_dialsup` should be `1` for the selected modelled peril row that
+      DIALSUP should use, and `0` for adjusted alternatives.
     - `is_euws` should be `1` only when this peril should use event-level EUWS
       factors. Most non-Europe-windstorm rows should be `0`.
 
@@ -105,10 +104,10 @@ picks one using `selection_priority`:
 If you want to change which modelled peril is preferred, update the
 `selection_priority` values for the relevant rows in `perils.csv`.
 
-DIALSUP is separate: it uses `is_dialsup = 1`, not the main priority winner, so
-it can keep using the base peril even when the main pipeline selects an adjusted
-variant. If DIALSUP chooses a different modelled peril, DIALSUP output can have
-different row counts or sparser wide-output values than the main output.
+DIALSUP is separate from the blend, FX, forecast, and EUWS metric chain, but it
+uses the `is_dialsup` flag from the selected modelled peril row. If DIALSUP
+should use a different modelled peril, make that row the selected row for the
+relevant vendor, rollup LOB, and rollup peril.
 
 ## Validation
 

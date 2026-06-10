@@ -51,7 +51,7 @@ def run(
         enriched,
         staged_ep,
         sources.blending,
-        config.blending.vendor_years,
+        config.blending,
     )
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)

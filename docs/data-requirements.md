@@ -212,10 +212,10 @@ when multiple modelled perils map to the same vendor, `rollup_lob`, and
 EP staging; schema text uses `99` as the normal fallback priority, and some
 calling contexts treat the fallback/default as `99`/`100`.
 
-`is_dialsup` is the independent DIALSUP peril-selection flag and is preserved at
-rollup peril level. The main pipeline ignores this flag and continues to use
-`selection_priority`. DIALSUP output can differ from the main output when this
-flag selects a different source peril.
+`is_dialsup` is the independent DIALSUP peril-selection flag on the selected
+modelled peril row. The main pipeline still chooses the selected row with
+`selection_priority`, so set this flag on the `modelled_peril` that should feed
+DIALSUP.
 
 `is_euws` controls event-level EUWS factor application. Set it to `1` for
 modelled peril rows that should use `euws_rate_factors.csv`; unflagged rows use
@@ -227,8 +227,9 @@ VOR blend weights by `RegionPerilID` and `SubRegionPerilID`. The EP blend target
 step uses the AIR and RMS weights to create blended loss targets from Verisk and
 RiskLink EP summaries.
 
-Europe Flood `RegionPerilID` `216` is special-cased to use
-`SubRegionPerilID` `216b`.
+Subregion choices are configured in TOML under
+`[blending.subregion_selection]`. The default maps Europe Flood
+`RegionPerilID` `216` to `SubRegionPerilID` `216b`.
 
 ### `data/seeds/vor/fx_rates.csv`
 

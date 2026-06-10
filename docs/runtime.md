@@ -64,8 +64,8 @@ data/
 
 `perils.csv` must contain `base_model`, `selection_priority`, `is_dialsup`, and
 `is_euws`. `base_model` chooses the vendor base model for blending,
-`selection_priority` chooses the main EP peril candidate, `is_dialsup` chooses
-the DIALSUP peril candidate at rollup peril level, and `is_euws` controls EUWS
+`selection_priority` chooses the main EP peril candidate, `is_dialsup` flags the
+selected modelled peril row for the DIALSUP branch, and `is_euws` controls EUWS
 factor application.
 
 ## Output layout
@@ -99,14 +99,13 @@ The pipeline executes these stages in order:
 2. `normalize_ylt` converts Verisk and RiskLink YLTs to common YLT columns.
 3. `stage_ep_summaries` joins LOB/peril seeds and selects the lowest
    `selection_priority` per `(vendor, rollup_lob, rollup_peril)`, while
-   preserving `is_dialsup` at rollup peril level and `is_euws` from the selected
-   peril row.
+   preserving `is_dialsup` and `is_euws` from the selected modelled peril row.
 4. `build_enriched_ylt` enriches normalized YLT rows from the staged EP summary
    mapping. RiskLink raw YLT is keyed by analysis id, so modelled dimensions
    should come from EP summary enrichment.
-5. `apply_blending` restores EP-derived blending from the old master: AAL and
-   OEP 200/1000 target points, blend weights, target loss, base model, base model
-   loss, clipped uplift factor `0.1..10`, and rank/RP bucket joins.
+5. `apply_blending` restores EP-derived blending from the old master: configured
+   target points, blend weights, target loss, base model, base model loss,
+   clipped uplift factor, and rank/RP bucket joins.
 6. `apply_fx` converts blended loss to the explicit target currency.
 7. `apply_forecast` cross-joins every forecast date and uses factor `1.0` when a
    class/office/date factor is absent.

@@ -428,8 +428,9 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         euws_factors="euws_factors",
         euws_overrides="euws_overrides",
     )
+    blending_config = SimpleNamespace(vendor_years={"verisk": 123, "risklink": 456})
     config = SimpleNamespace(
-        blending=SimpleNamespace(vendor_years={"verisk": 123, "risklink": 456}),
+        blending=blending_config,
         outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
         fx=SimpleNamespace(target_currency="GBP"),
     )
@@ -472,7 +473,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("build_enriched_ylt", ("normalized", "staged_ep")),
         (
             "apply_blending",
-            ("enriched", "staged_ep", "blending", {"verisk": 123, "risklink": 456}),
+            ("enriched", "staged_ep", "blending", blending_config),
         ),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
@@ -501,15 +502,29 @@ return_periods = [2]
 verisk = 2
 risklink = 4
 
+[blending]
+uplift_factor_min = 0.25
+uplift_factor_max = 4.0
+target_points = [
+  { ep_type = "AAL", return_period = 0 },
+  { ep_type = "OEP", return_period = 5 },
+]
+
 [blending.vendor_years]
 verisk = 7
 risklink = 11
+
+[blending.subregion_selection]
+"999" = "999z"
 
 [outputs]
 write_stage_outputs = false
 write_duckdb = true
 combined_file = "combined.parquet"
 duckdb_file = "custom-rollup.duckdb"
+
+[outputs.fanout_prefixes]
+bespoke = "BespokeModel"
 
 [fx]
 target_currency = "usd"
@@ -522,10 +537,18 @@ target_currency = "usd"
     assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
     assert config.analysis.return_periods == (2,)
     assert config.blending.vendor_years == {"verisk": 7, "risklink": 11}
+    assert [(point.ep_type, point.return_period) for point in config.blending.target_points] == [
+        ("AAL", 0),
+        ("OEP", 5),
+    ]
+    assert config.blending.uplift_factor_min == 0.25
+    assert config.blending.uplift_factor_max == 4.0
+    assert config.blending.subregion_selection == {999: "999z"}
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.write_duckdb is True
     assert config.outputs.combined_file == "combined.parquet"
     assert config.outputs.duckdb_file == "custom-rollup.duckdb"
+    assert config.outputs.fanout_prefixes == {"bespoke": "BespokeModel"}
     assert config.outputs.duckdb_path(tmp_path / "output") == tmp_path / "output" / "custom-rollup.duckdb"
     assert config.fx.target_currency == "USD"
 

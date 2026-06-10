@@ -46,7 +46,12 @@ def write_marts(
     logger.info("writing event validation mart path=%s", event_validation_path)
     _write_parquet(event_validation(final_metrics), event_validation_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
-    fanout_paths = write_fanouts(marts_dir, final_main, target_currency)
+    fanout_paths = write_fanouts(
+        marts_dir,
+        final_main,
+        config.outputs.fanout_prefixes,
+        target_currency,
+    )
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {

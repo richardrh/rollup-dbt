@@ -55,9 +55,6 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         pl.col(Col.is_dialsup).cast(pl.Int64),
         pl.col(Col.is_euws).cast(pl.Int64),
     )
-    dialsup_flags = perils.group_by(Col.rollup_peril).agg(
-        pl.col(Col.is_dialsup).max().alias(Col.is_dialsup)
-    )
     staged = (
         frames.ep_summaries.lazy()
         .with_columns(
@@ -95,4 +92,4 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         on=[*selection_keys, Col.modelled_peril],
         how="inner",
     )
-    return selected.drop(Col.is_dialsup).join(dialsup_flags, on=Col.rollup_peril, how="left")
+    return selected

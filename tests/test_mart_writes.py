@@ -110,7 +110,12 @@ def test_write_fanouts_rejects_unknown_base_model(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="unsupported base model for fanout 'katrisk'"):
-        write_fanouts(tmp_path, frame.lazy(), "GBP")
+        write_fanouts(
+            tmp_path,
+            frame.lazy(),
+            {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+            "GBP",
+        )
 
 
 def combined_metric_frame() -> pl.DataFrame:

@@ -141,6 +141,10 @@ write_stage_outputs = true
 write_duckdb = false
 duckdb_file = "rollup.duckdb"
 
+[outputs.fanout_prefixes]
+verisk = "HiscoAIR"
+risklink = "HiscoRMS"
+
 [analysis]
 return_periods = [30, 200, 1000]
 
@@ -148,14 +152,28 @@ return_periods = [30, 200, 1000]
 verisk = 10000
 risklink = 100000
 
+[blending]
+uplift_factor_min = 0.1
+uplift_factor_max = 10.0
+target_points = [
+    { ep_type = "AAL", return_period = 0 },
+    { ep_type = "OEP", return_period = 200 },
+    { ep_type = "OEP", return_period = 1000 },
+]
+
 [blending.vendor_years]
 verisk = 10000
 risklink = 100000
+
+[blending.subregion_selection]
+"216" = "216b"
 ```
 
 Analysis vendor years control EP report rank and AAL calculations. Blending
 vendor years control YLT rank to return-period bucket conversion during
-EP-derived blending.
+EP-derived blending. The blend target points, uplift clipping bounds, VOR
+subregion selections, and fanout filename prefixes are configuration defaults
+rather than hidden code branches.
 
 ## More documentation
 
