@@ -6,12 +6,22 @@ from typing import Any
 import tomllib
 
 
+DEFAULT_VENDOR_YEARS = {"verisk": 10000, "risklink": 100000}
+
+
 @dataclass(frozen=True)
 class AnalysisConfig:
     simulation_counts: dict[str, int] = field(
-        default_factory=lambda: {"verisk": 10000, "risklink": 100000}
+        default_factory=lambda: dict(DEFAULT_VENDOR_YEARS)
     )
     return_periods: tuple[int, ...] = (30, 200, 1000)
+
+
+@dataclass(frozen=True)
+class BlendingConfig:
+    vendor_years: dict[str, int] = field(
+        default_factory=lambda: dict(DEFAULT_VENDOR_YEARS)
+    )
 
 
 @dataclass(frozen=True)
@@ -60,6 +70,7 @@ class FXConfig:
 @dataclass(frozen=True)
 class RollupConfig:
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
+    blending: BlendingConfig = field(default_factory=BlendingConfig)
     outputs: OutputConfig = field(default_factory=OutputConfig)
     fx: FXConfig = field(default_factory=FXConfig)
 
@@ -74,14 +85,18 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
         raw = tomllib.load(handle)
 
     analysis_raw = _normalise_keys(raw.get("analysis", {}))
+    blending_raw = _normalise_keys(raw.get("blending", {}))
     outputs_raw = _normalise_keys(raw.get("outputs", {}))
     fx_raw = _normalise_keys(raw.get("fx", {}))
 
     return RollupConfig(
         analysis=AnalysisConfig(
             simulation_counts=_simulation_counts(analysis_raw),
-            return_periods=tuple(int(value) for value in analysis_raw.get("return_periods", (30, 200, 1000))),
+            return_periods=tuple(
+                int(value) for value in analysis_raw.get("return_periods", (30, 200, 1000))
+            ),
         ),
+        blending=BlendingConfig(vendor_years=_vendor_years(blending_raw)),
         outputs=OutputConfig(**_output_values(outputs_raw)),
         fx=FXConfig(**_fx_values(fx_raw)),
     )
@@ -92,15 +107,23 @@ def _normalise_keys(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def _simulation_counts(values: dict[str, Any]) -> dict[str, int]:
-    nested = values.get("simulation_counts")
-    if isinstance(nested, dict):
-        return {str(key).lower(): int(value) for key, value in nested.items()}
+    for nested_key in ("vendor_years", "simulation_counts"):
+        nested = values.get(nested_key)
+        if isinstance(nested, dict):
+            return {str(key).lower(): int(value) for key, value in nested.items()}
 
     default = AnalysisConfig().simulation_counts
     return {
         "verisk": int(values.get("num_sims_verisk", default["verisk"])),
         "risklink": int(values.get("num_sims_risklink", default["risklink"])),
     }
+
+
+def _vendor_years(values: dict[str, Any]) -> dict[str, int]:
+    nested = values.get("vendor_years")
+    if isinstance(nested, dict):
+        return {str(key).lower(): int(value) for key, value in nested.items()}
+    return dict(BlendingConfig().vendor_years)
 
 
 def _output_values(values: dict[str, Any]) -> dict[str, Any]:

@@ -28,6 +28,7 @@ STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pa.DataFrameSchema(
         Col.base_model: pa.Column(pl.String, nullable=False),
         Col.selection_priority: pa.Column(pl.Int64, nullable=False),
         Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
+        Col.is_euws: pa.Column(pl.Int64, nullable=False),
     },
     strict=False,
 )
@@ -52,6 +53,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         pl.col(Col.base_model).cast(pl.String).str.to_lowercase(),
         pl.col(Col.selection_priority).cast(pl.Int64),
         pl.col(Col.is_dialsup).cast(pl.Int64),
+        pl.col(Col.is_euws).cast(pl.Int64),
     )
     dialsup_flags = perils.group_by(Col.rollup_peril).agg(
         pl.col(Col.is_dialsup).max().alias(Col.is_dialsup)

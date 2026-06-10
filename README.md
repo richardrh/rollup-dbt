@@ -76,8 +76,8 @@ data/
 ```
 
 `perils.csv` includes `base_model` for blend base-model selection,
-`selection_priority` for the main branch, and `is_dialsup` for the DIALSUP
-branch.
+`selection_priority` for the main branch, `is_dialsup` for the DIALSUP branch,
+and `is_euws` for EUWS factor application.
 
 ## Default output layout
 
@@ -123,15 +123,14 @@ The default path is `output/rollup.duckdb`.
 Included tables: `mts_tbl_ylt_combined_all_factors`, `input_ylt_verisk`,
 `input_ylt_risklink`, `input_ep_summaries`, `seed_lobs`, `seed_perils`,
 `seed_blending_factors`, `seed_fx_rates`, `seed_forecast_factors`,
-`seed_euws_rate_factors`, `seed_euws_rank_overrides`, `seed_verisk_events`, and
-`seed_risklink_flood22_model_events`.
+`seed_euws_rate_factors`, and `seed_euws_rank_overrides`.
 
 Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
 
 ## Configuration
 
-`rollup.local.toml` is loaded by default when present. Supported keys are defined
-in `src/rollup/config.py`.
+`rollup.local.toml` is loaded by default when present. Start from
+`rollup.example.toml`; supported keys are defined in `src/rollup/config.py`.
 
 ```toml
 [fx]
@@ -144,11 +143,19 @@ duckdb_file = "rollup.duckdb"
 
 [analysis]
 return_periods = [30, 200, 1000]
+
+[analysis.vendor_years]
+verisk = 10000
+risklink = 100000
+
+[blending.vendor_years]
+verisk = 10000
+risklink = 100000
 ```
 
-Simulation count defaults used by analysis are `verisk = 10000` and
-`risklink = 100000`. They can be overridden with `[analysis.simulation_counts]`
-or legacy `num_sims_verisk` / `num_sims_risklink` keys.
+Analysis vendor years control EP report rank and AAL calculations. Blending
+vendor years control YLT rank to return-period bucket conversion during
+EP-derived blending.
 
 ## More documentation
 

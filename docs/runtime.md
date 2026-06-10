@@ -62,10 +62,11 @@ data/
   seeds/validation/risklink_flood22_model_events.parquet
 ```
 
-`perils.csv` must contain `base_model`, `selection_priority`, and `is_dialsup`.
-`base_model` chooses the vendor base model for blending, `selection_priority`
-chooses the main EP peril candidate, and `is_dialsup` chooses the DIALSUP peril
-candidate at rollup peril level.
+`perils.csv` must contain `base_model`, `selection_priority`, `is_dialsup`, and
+`is_euws`. `base_model` chooses the vendor base model for blending,
+`selection_priority` chooses the main EP peril candidate, `is_dialsup` chooses
+the DIALSUP peril candidate at rollup peril level, and `is_euws` controls EUWS
+factor application.
 
 ## Output layout
 
@@ -98,7 +99,8 @@ The pipeline executes these stages in order:
 2. `normalize_ylt` converts Verisk and RiskLink YLTs to common YLT columns.
 3. `stage_ep_summaries` joins LOB/peril seeds and selects the lowest
    `selection_priority` per `(vendor, rollup_lob, rollup_peril)`, while
-   preserving `is_dialsup` at rollup peril level.
+   preserving `is_dialsup` at rollup peril level and `is_euws` from the selected
+   peril row.
 4. `build_enriched_ylt` enriches normalized YLT rows from the staged EP summary
    mapping. RiskLink raw YLT is keyed by analysis id, so modelled dimensions
    should come from EP summary enrichment.
@@ -108,7 +110,8 @@ The pipeline executes these stages in order:
 6. `apply_fx` converts blended loss to the explicit target currency.
 7. `apply_forecast` cross-joins every forecast date and uses factor `1.0` when a
    class/office/date factor is absent.
-8. `apply_euws` applies event-based EUWS factors and rank overrides.
+8. `apply_euws` applies event-based EUWS factors to rows where `is_euws == 1`
+   and applies rank overrides.
 9. `build_metric_long` creates the combined long metric mart.
 10. `build_dialsup` creates DIALSUP from original YLT loss multiplied by FX and
     forecast factors, not EUWS-adjusted loss. Rows are selected by
@@ -186,8 +189,6 @@ Tables included:
 - `seed_forecast_factors`
 - `seed_euws_rate_factors`
 - `seed_euws_rank_overrides`
-- `seed_verisk_events`
-- `seed_risklink_flood22_model_events`
 
 Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
 

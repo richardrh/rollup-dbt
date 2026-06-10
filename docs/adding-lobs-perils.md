@@ -35,6 +35,7 @@ Peril lookup. Columns:
 | `base_model` | Vendor/model whose YLT is used as the base for EP blending for this rollup peril | `risklink` |
 | `selection_priority` | Main-pipeline precedence for choosing among multiple modelled perils that map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower numbers win. Missing values default to `99`. | `99` |
 | `is_dialsup` | DIALSUP-only selection flag. Exactly one active candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted alternatives should usually be `0`. | `1` |
+| `is_euws` | EUWS factor application flag. Use `1` only for modelled perils that should consume event-level EUWS factors. | `0` |
 
 ## Adding a new LOB
 
@@ -67,7 +68,7 @@ does not yet exist in `perils.csv`.
 2.  Add a new row:
 
     ```csv
-    ES_FL,Spain_FL,Spain,FL,218,verisk,99,1
+    ES_FL,Spain_FL,Spain,FL,218,verisk,99,1,0
     ```
 
     - `region_peril_id` must be unique. Check the existing rows for the highest
@@ -82,6 +83,8 @@ does not yet exist in `perils.csv`.
     - `is_dialsup` should be `1` for the least-adjusted/base peril that DIALSUP
       should use, and `0` for adjusted alternatives. Validation requires exactly
       one active DIALSUP candidate per vendor/rollup LOB/rollup peril group.
+    - `is_euws` should be `1` only when this peril should use event-level EUWS
+      factors. Most non-Europe-windstorm rows should be `0`.
 
 3.  If your EP data uses a different column name for perils (e.g. `Analysis`
       instead of `modelled_peril`), the EP summary converter accepts that alias

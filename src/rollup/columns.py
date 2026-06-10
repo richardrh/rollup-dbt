@@ -61,6 +61,7 @@ class Col(StrEnum):
     return_period = "return_period"
     selection_priority = "selection_priority"
     is_dialsup = "is_dialsup"
+    is_euws = "is_euws"
     risklink_loss = "risklink_loss"
     verisk_loss = "verisk_loss"
     risklink_weight = "risklink_weight"

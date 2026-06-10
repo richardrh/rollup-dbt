@@ -118,11 +118,12 @@ def test_apply_forecast_cross_joins_dates_and_defaults_missing_class_office_fact
     ]
 
 
-def test_apply_euws_zeros_europe_ws_forecast_loss_from_model_event_year_factor() -> None:
+def test_apply_euws_zeros_flagged_forecast_loss_from_model_event_year_factor() -> None:
     frame = forecast_frame(
         [
             {
-                Col.rollup_peril: "Europe_WS",
+                Col.rollup_peril: "Spain_WS",
+                Col.is_euws: 1,
                 Col.event_id: 11,
                 Col.year_id: 2026,
                 "forecast_loss": 100.0,
@@ -151,6 +152,7 @@ def test_apply_euws_rank_override_replaces_zero_raw_factor_with_lob_factor() -> 
             {
                 Col.rollup_lob: "Fine Art",
                 Col.rollup_peril: "Europe_WS",
+                Col.is_euws: 1,
                 Col.event_id: 11,
                 Col.year_id: 2026,
                 Col.rnk: 2,
@@ -181,7 +183,7 @@ def test_apply_euws_rank_override_replaces_zero_raw_factor_with_lob_factor() -> 
     ]
 
 
-def test_apply_euws_non_europe_ws_ignores_zero_factor_and_keeps_forecast_loss() -> None:
+def test_apply_euws_unflagged_peril_ignores_zero_factor_and_keeps_forecast_loss() -> None:
     frame = forecast_frame(
         [
             {
@@ -250,7 +252,7 @@ def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
         Col.loss: 10.0,
         Col.base_model: "verisk",
         Col.rnk: 1,
-        Col.rp: 10000.0,
+        Col.rp: 1.0,
         Col.rp_bucket: 1000,
         Col.risklink_loss: 5.0,
         Col.verisk_loss: 10.0,
@@ -265,6 +267,7 @@ def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
         Col.currency: "GBP",
         Col.selection_priority: 1,
         Col.is_dialsup: 1,
+        Col.is_euws: 0,
         "blended_loss": 10.0,
     }
     return pl.DataFrame([{**base, **override} for override in overrides])

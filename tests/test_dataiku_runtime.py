@@ -309,6 +309,7 @@ def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
             "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 2],
             "is_dialsup": [1, None],
+            "is_euws": [0, 0],
         }
     )
 
@@ -357,6 +358,7 @@ def test_staged_ep_output_schema_rejects_null_joined_required_values() -> None:
             "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 1],
             "is_dialsup": [1, 1],
+            "is_euws": [0, 0],
         }
     )
 
@@ -386,6 +388,7 @@ def test_enriched_ylt_output_schema_rejects_null_required_enrichment_values() ->
             "currency": ["GBP", "GBP"],
             "selection_priority": [1, 1],
             "is_dialsup": [1, 1],
+            "is_euws": [0, 0],
         }
     )
 
@@ -426,6 +429,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         euws_overrides="euws_overrides",
     )
     config = SimpleNamespace(
+        blending=SimpleNamespace(vendor_years={"verisk": 123, "risklink": 456}),
         outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
         fx=SimpleNamespace(target_currency="GBP"),
     )
@@ -466,7 +470,10 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("normalize_ylt", (sources,)),
         ("stage_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
-        ("apply_blending", ("enriched", "staged_ep", "blending")),
+        (
+            "apply_blending",
+            ("enriched", "staged_ep", "blending", {"verisk": 123, "risklink": 456}),
+        ),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
@@ -488,9 +495,15 @@ def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) 
     config_path.write_text(
         """
 [analysis]
-num_sims_verisk = 2
-num_sims_risklink = 4
 return_periods = [2]
+
+[analysis.vendor_years]
+verisk = 2
+risklink = 4
+
+[blending.vendor_years]
+verisk = 7
+risklink = 11
 
 [outputs]
 write_stage_outputs = false
@@ -508,12 +521,52 @@ target_currency = "usd"
 
     assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
     assert config.analysis.return_periods == (2,)
+    assert config.blending.vendor_years == {"verisk": 7, "risklink": 11}
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.write_duckdb is True
     assert config.outputs.combined_file == "combined.parquet"
     assert config.outputs.duckdb_file == "custom-rollup.duckdb"
     assert config.outputs.duckdb_path(tmp_path / "output") == tmp_path / "output" / "custom-rollup.duckdb"
     assert config.fx.target_currency == "USD"
+
+
+def test_analysis_report_uses_vendor_years_from_config_toml(tmp_path: Path) -> None:
+    from rollup.analysis import build_ep_report
+
+    output_root = tmp_path / "output"
+    marts_dir = output_root / "marts"
+    marts_dir.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "forecast_date": ["2026-01-01", "2026-01-01"],
+            "metric": [final_main_metric("GBP"), final_main_metric("GBP")],
+            "base_model": ["custom_model", "custom_model"],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "rollup_peril": ["Earthquake", "Earthquake"],
+            "year_id": [1, 2],
+            "loss": [10.0, 20.0],
+        }
+    ).write_parquet(marts_dir / "mts_tbl_ylt_combined_all_factors.parquet")
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[analysis]
+return_periods = [2]
+
+[analysis.vendor_years]
+custom_model = 2
+""".strip(),
+        encoding="utf-8",
+    )
+
+    report = build_ep_report(output_root, config_path=config_path)
+
+    aal = report.filter(pl.col("ep_type") == "AAL").select("loss").item()
+    oep = report.filter(
+        (pl.col("ep_type") == "OEP") & (pl.col("return_period") == 2)
+    ).select("loss").item()
+    assert aal == 15.0
+    assert oep == 20.0
 
 
 def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> None:
@@ -720,6 +773,7 @@ def _write_seeds(data_root: Path) -> None:
             "base_model": ["verisk"],
             "selection_priority": [1],
             "is_dialsup": [1],
+            "is_euws": [0],
         }
     ).write_csv(seeds / "perils.csv")
     pl.DataFrame(

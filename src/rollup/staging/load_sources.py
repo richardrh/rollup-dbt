@@ -90,6 +90,7 @@ PERILS_SCHEMA = strict_schema(
         Col.base_model: required(pl.String),
         Col.selection_priority: required(pl.Int64),
         Col.is_dialsup: required(pl.Int64),
+        Col.is_euws: required(pl.Int64),
     }
 )
 

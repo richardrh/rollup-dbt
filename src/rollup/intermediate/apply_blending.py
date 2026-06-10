@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import polars as pl
 import pandera.polars as pa
 
@@ -46,16 +48,13 @@ BLEND_VENDOR_LOSS_COLUMNS = {
     "risklink": Col.risklink_loss,
     "verisk": Col.verisk_loss,
 }
-CATALOG_YEARS_BY_VENDOR = {
-    "risklink": 100_000.0,
-    "verisk": 10_000.0,
-}
 
 
 def apply_blending(
     enriched: pl.LazyFrame,
     staged_ep: pl.LazyFrame,
     blending: pl.DataFrame,
+    vendor_years: Mapping[str, int],
 ) -> pl.LazyFrame:
     BLENDING_INPUT_SCHEMA.validate(enriched)
     BLENDING_EP_INPUT_SCHEMA.validate(staged_ep)
@@ -67,7 +66,7 @@ def apply_blending(
     joined_ep = join_ep_summaries(ep_losses)
     base_model_losses = calculate_base_model_losses(ep_losses)
     targets = calculate_ep_blending_targets(joined_ep, base_model_losses, blending)
-    return apply_ep_blending_to_ylt(enriched, targets)
+    return apply_ep_blending_to_ylt(enriched, targets, vendor_years)
 
 
 def aggregate_ep_losses(staged_ep: pl.LazyFrame) -> pl.LazyFrame:
@@ -157,7 +156,11 @@ def calculate_ep_blending_targets(
     )
 
 
-def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> pl.LazyFrame:
+def apply_ep_blending_to_ylt(
+    enriched: pl.LazyFrame,
+    targets: pl.LazyFrame,
+    vendor_years: Mapping[str, int],
+) -> pl.LazyFrame:
     base_model_only = enriched.filter(
         pl.col(Col.vendor) == pl.col(Col.base_model)
     )
@@ -170,7 +173,7 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
             .alias(Col.rnk)
         )
         .with_columns(
-            (catalog_years_expr() / pl.col(Col.rnk)).alias(Col.rp)
+            (vendor_years_expr(vendor_years) / pl.col(Col.rnk)).alias(Col.rp)
         )
         .with_columns(
             pl.when(pl.col(Col.rp) < 200)
@@ -210,8 +213,12 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
     )
 
 
-def catalog_years_expr() -> pl.Expr:
+def vendor_years_expr(vendor_years: Mapping[str, int]) -> pl.Expr:
+    years = {
+        str(vendor).lower(): float(year_count)
+        for vendor, year_count in vendor_years.items()
+    }
     return pl.col(Col.vendor).replace_strict(
-        CATALOG_YEARS_BY_VENDOR,
+        years,
         return_dtype=pl.Float64,
     )

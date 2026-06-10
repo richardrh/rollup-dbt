@@ -1,20 +1,18 @@
-[analysis]
-num_sims_verisk = 10000
-num_sims_risklink = 100000
-return_periods = [30, 200, 1000]
+[fx]
+target_currency = "GBP"
 
 [outputs]
 write_stage_outputs = true
-stage_output_dir = "stages"
-staging_dir = "staging"
-intermediate_dir = "intermediate"
-marts_dir = "marts"
-analysis_dir = "analysis"
-combined_file = "mts_tbl_ylt_combined_all_factors.parquet"
-wide_file = "mts_tbl_ylt_combined_all_factors_wide.parquet"
-dialsup_file = "mts_tbl_ylt_dialsup.parquet"
-event_validation_file = "mts_event_validation.parquet"
-ep_report_file = "ep_report.csv"
+write_duckdb = false
+duckdb_file = "rollup.duckdb"
 
-[fx]
-target_currency = "GBP"
+[analysis]
+return_periods = [30, 200, 1000]
+
+[analysis.vendor_years]
+verisk = 10000
+risklink = 100000
+
+[blending.vendor_years]
+verisk = 10000
+risklink = 100000

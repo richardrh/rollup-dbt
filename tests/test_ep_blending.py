@@ -43,6 +43,7 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
                 Col.base_model: ["verisk", "verisk"],
                 Col.selection_priority: [2, 1],
                 Col.is_dialsup: [1, 0],
+                Col.is_euws: [0, 0],
             }
         ),
     )
@@ -77,6 +78,7 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
             Col.base_model: ["risklink", "risklink"],
             Col.selection_priority: [1, 1],
             Col.is_dialsup: [0, 0],
+            Col.is_euws: [0, 0],
         }
     )
     blending = pl.DataFrame(
@@ -90,7 +92,12 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
     )
 
     result = (
-        apply_blending(enriched.lazy(), staged_ep.lazy(), blending)
+        apply_blending(
+            enriched.lazy(),
+            staged_ep.lazy(),
+            blending,
+            {"verisk": 123, "risklink": 2_000},
+        )
         .collect()
         .sort(Col.loss)
     )
@@ -133,6 +140,7 @@ def enriched_ylt_frame() -> pl.DataFrame:
                     Col.currency: "GBP",
                     Col.selection_priority: 1,
                     Col.is_dialsup: 0,
+                    Col.is_euws: 0,
                 }
             )
     return pl.DataFrame(rows)

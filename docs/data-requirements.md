@@ -217,6 +217,10 @@ rollup peril level. The main pipeline ignores this flag and continues to use
 `selection_priority`. DIALSUP output can differ from the main output when this
 flag selects a different source peril.
 
+`is_euws` controls event-level EUWS factor application. Set it to `1` for
+modelled peril rows that should use `euws_rate_factors.csv`; unflagged rows use
+factor `1.0`.
+
 ### `data/seeds/vor/blending_factors.csv`
 
 VOR blend weights by `RegionPerilID` and `SubRegionPerilID`. The EP blend target
@@ -242,8 +246,9 @@ Missing class/office/date factors default to `1.0`.
 ### `data/seeds/vor/euws_rate_factors.csv`
 
 Event-level Europe Windstorm factors by model event and occurrence year. These
-are applied only to `Europe_WS` rows after joining YLT events to the Verisk event
-catalogue. Non-Europe Windstorm rows use factor `1.0`.
+are applied only to rows whose selected peril mapping has `is_euws = 1` after
+joining YLT events to the Verisk event catalogue. Unflagged rows use factor
+`1.0`.
 
 ### `data/seeds/adjustments/euws_rank_overrides.csv`
 

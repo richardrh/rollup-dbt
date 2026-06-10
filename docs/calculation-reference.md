@@ -37,8 +37,9 @@ For the main branch, it selects the lowest `selection_priority` per:
 vendor, rollup_lob, rollup_peril
 ```
 
-It also preserves `is_dialsup` at rollup peril level. This flag drives the
-separate DIALSUP branch and does not change main-branch selection.
+It also preserves `is_dialsup` at rollup peril level and `is_euws` from the
+selected peril row. `is_dialsup` drives the separate DIALSUP branch and does not
+change main-branch selection; `is_euws` controls EUWS factor application.
 
 ## YLT enrichment
 
@@ -67,8 +68,7 @@ Blending uses the restored old-master method:
 Rank-derived buckets:
 
 ```text
-RiskLink RP = 100000 / rank
-Verisk RP   = 10000 / rank
+vendor RP = configured blending vendor years / rank
 
 RP < 200   -> 0
 RP < 1000  -> 200
@@ -96,7 +96,8 @@ date. Missing class/office/date factors default to `1.0`.
 
 EUWS factors are event based. The runtime uses Verisk event catalogues,
 `euws_rate_factors.csv`, and `euws_rank_overrides.csv` to restore the old-master
-EUWS adjustment and rank override behavior.
+EUWS adjustment and rank override behavior. EUWS factors are applied when the
+selected peril mapping has `is_euws == 1`; unflagged rows use factor `1.0`.
 
 ## DIALSUP
 
