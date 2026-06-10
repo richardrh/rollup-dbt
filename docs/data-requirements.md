@@ -58,8 +58,23 @@ string casting.
 
 ## Creating EP summary long CSVs from wide CSVs
 
-Use `rollup generate-ep-summaries` when an analyst or vendor gives you a wide
-CSV instead of a `.long.csv` file.
+Use `convert_ep_summary(...)` when an analyst or vendor gives you a wide CSV
+instead of a `.long.csv` file:
+
+```python
+from rollup import convert_ep_summary
+
+frame = convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
+```
+
+The function converts one source file at a time, returns a Polars `DataFrame`,
+and writes a CSV only when `output_csv` is supplied. The `rollup
+generate-ep-summaries` command remains available as a local convenience wrapper
+for vendor-folder workflows.
 
 If the vendor provides an Excel file (`.xlsx`), the tool does not support Excel
 directly. Open the file in Excel or another spreadsheet application, save the
@@ -67,7 +82,7 @@ relevant sheet as a CSV file (e.g. "Save As" → "CSV UTF-8 (Comma delimited)
 (*.csv)"), then place that CSV in the vendor folder and proceed with the steps
 below.
 
-### Step 1. Put the source CSV in the vendor folder
+### Step 1. Put the source CSV in the vendor folder for CLI scan mode
 
 ```text
 data/ep_summaries/verisk/*.csv
@@ -78,9 +93,9 @@ Existing `*.long.csv` files are ignored during source selection. RiskLink uses
 the same source CSV format as Verisk. If a vendor folder contains multiple source
 wide CSVs, pass `--vendor` and `--csv`; scan mode fails rather than guessing.
 
-### Step 2. Run the converter
+### Step 2. Run the local converter command
 
-Interactive:
+Scan mode:
 
 ```bash
 uv run rollup generate-ep-summaries

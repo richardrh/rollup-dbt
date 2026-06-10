@@ -26,7 +26,7 @@ flowchart TD
 
 | Layer | Module | Purpose |
 | --- | --- | --- |
-| API | `rollup.api` | Public functions: `run_rollup`, `validate_rollup_inputs`, output path collection, EP report helper. |
+| API | `rollup.api` | Public functions: `run_rollup`, `validate_rollup_inputs`, `convert_ep_summary`, `convert_ep_summaries`, output path collection, EP report helper. |
 | CLI | `rollup.cli` | Thin local runner around the API. Adds flags, log setup, friendly validation errors, and summary printing. |
 | Config | `rollup.config` | Dataiku-friendly defaults plus optional TOML overrides. |
 | Staging | `rollup.staging` | Source loading, schema checks, YLT normalization, EP summary enrichment. |

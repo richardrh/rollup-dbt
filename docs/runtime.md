@@ -27,6 +27,9 @@ flowchart TD
   schemas/nullability for the main inputs without writing outputs. Runtime
   validation uses hard-coded Pandera schemas; colocated YAML/Validnator configs
   are for external validation callers.
+- `convert_ep_summary(input_csv, vendor, output_csv=None)` converts one wide EP
+  summary CSV to canonical long rows, returns a Polars `DataFrame`, and writes a
+  CSV only when `output_csv` is supplied.
 
 ### CLI examples
 

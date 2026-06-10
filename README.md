@@ -25,10 +25,16 @@ DuckDB status.
 
 ## Programmatic API
 
-Dataiku recipes and Python callers should use:
+Dataiku recipes and Python callers should use the package API:
 
 ```python
-from rollup.api import run_rollup, validate_rollup_inputs
+from rollup.api import convert_ep_summary, run_rollup, validate_rollup_inputs
+
+convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
 
 validation = validate_rollup_inputs("data")
 validation.raise_for_errors()
@@ -44,6 +50,8 @@ result = run_rollup(
   main input schema/nullability.
 - `run_rollup(...)` runs validation, the pipeline, optional DuckDB export, and
   optional analysis report generation.
+- `convert_ep_summary(...)` converts one wide EP summary CSV to canonical long
+  rows, returning a Polars `DataFrame` and optionally writing a CSV.
 
 Expected validation failures return a `RollupValidationResult(is_valid=False)`.
 The CLI catches `RollupValidationError`, prints friendly details, and exits `1`.

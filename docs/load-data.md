@@ -46,10 +46,24 @@ Required columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-If you have a vendor/source CSV instead:
+If you have a vendor/source CSV instead, convert that single file with the
+public API:
+
+```python
+from rollup import convert_ep_summary
+
+convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
+```
+
+For local operator workflows, the CLI can scan and convert files in the vendor
+folders:
 
 1. Put it in `data/ep_summaries/<vendor>/`.
-2. Run the interactive command:
+2. Run the scan command:
 
 ```bash
 uv run rollup generate-ep-summaries
