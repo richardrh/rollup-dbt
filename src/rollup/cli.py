@@ -10,12 +10,15 @@ import sys
 from rollup.api import (
     RollupRunResult,
     RollupValidationError,
+    convert_ep_summaries,
+    convert_ep_summary,
     run_rollup,
-    write_ep_summaries,
-    write_ep_summary,
 )
 from rollup.config import RollupConfig, load_config
-from rollup.ep_summary_generator import ep_summary_vendor_names
+from rollup.ep_summary_generator import (
+    ep_summary_vendor_names,
+    get_ep_summary_vendor_config,
+)
 from rollup.logging import configure_console_logging
 
 logger = logging.getLogger(__name__)
@@ -91,20 +94,24 @@ def run_command(args: Namespace) -> int:
 def generate_ep_summaries_command(args: Namespace) -> int:
     try:
         if args.vendor is None and args.csv is None:
-            output_paths = write_ep_summaries(args.data_root)
+            output_paths = convert_ep_summaries(args.data_root)
         elif args.vendor is not None and args.csv is not None:
             csv_path = resolve_ep_summary_csv_path(
                 args.data_root, args.vendor, args.csv
             )
-            output_paths = [write_ep_summary(args.data_root, args.vendor, csv_path)]
+            output_path = get_ep_summary_vendor_config(args.vendor).output_path(
+                args.data_root
+            )
+            convert_ep_summary(csv_path, args.vendor, output_csv=output_path)
+            output_paths = [output_path]
         else:
             raise ValueError("--vendor and --csv must be passed together")
     except (FileNotFoundError, ValueError) as exc:
-        logger.error("EP summary generation failed: %s", exc)
-        print(f"EP summary generation failed: {exc}", file=sys.stderr)
+        logger.error("EP summary conversion failed: %s", exc)
+        print(f"EP summary conversion failed: {exc}", file=sys.stderr)
         return 1
 
-    print("EP summary generation complete")
+    print("EP summary conversion complete")
     for output_path in output_paths:
         print(f"  wrote: {_display_path(output_path)}")
     return 0

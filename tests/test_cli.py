@@ -352,11 +352,11 @@ def test_cli_generate_ep_summaries_scans_all_vendors(
     ]
     calls: dict[str, object] = {}
 
-    def write_ep_summaries(data_root: Path) -> list[Path]:
+    def convert_ep_summaries(data_root: Path) -> list[Path]:
         calls["data_root"] = data_root
         return output_paths
 
-    monkeypatch.setattr(cli, "write_ep_summaries", write_ep_summaries)
+    monkeypatch.setattr(cli, "convert_ep_summaries", convert_ep_summaries)
 
     assert (
         cli.main(["generate-ep-summaries", "--data-root", str(tmp_path / "data")]) == 0
@@ -364,7 +364,7 @@ def test_cli_generate_ep_summaries_scans_all_vendors(
 
     assert calls == {"data_root": tmp_path / "data"}
     summary = capsys.readouterr().out
-    assert "EP summary generation complete" in summary
+    assert "EP summary conversion complete" in summary
     assert f"wrote: {output_paths[0]}" in summary
 
 
@@ -377,11 +377,13 @@ def test_cli_generate_ep_summaries_specific_vendor_and_csv(
     output_path = data_root / "ep_summaries" / "verisk" / "verisk_ep_summary.long.csv"
     calls: dict[str, object] = {}
 
-    def write_ep_summary(data_root_arg: Path, vendor: str, csv_path: Path) -> Path:
-        calls["generate"] = (data_root_arg, vendor, csv_path)
-        return output_path
+    def convert_ep_summary(
+        input_csv: Path, vendor: str, *, output_csv: Path
+    ) -> pl.DataFrame:
+        calls["convert"] = (input_csv, vendor, output_csv)
+        return pl.DataFrame()
 
-    monkeypatch.setattr(cli, "write_ep_summary", write_ep_summary)
+    monkeypatch.setattr(cli, "convert_ep_summary", convert_ep_summary)
 
     assert (
         cli.main(
@@ -399,10 +401,10 @@ def test_cli_generate_ep_summaries_specific_vendor_and_csv(
     )
 
     assert calls == {
-        "generate": (
-            data_root,
-            "verisk",
+        "convert": (
             data_root / "ep_summaries" / "verisk" / "nested" / "verisk_clean.csv",
+            "verisk",
+            output_path,
         )
     }
     assert f"wrote: {output_path}" in capsys.readouterr().out

@@ -82,16 +82,23 @@ def scan_ep_summary_csvs(data_root: Path | str, vendor: str) -> list[Path]:
     )
 
 
-def build_ep_summary_from_wide_csv(csv_path: Path | str, vendor: str) -> pl.DataFrame:
-    csv_path = Path(csv_path)
-    frame = pl.read_csv(csv_path, infer_schema=False)
+def convert_ep_summary(
+    input_csv: Path | str,
+    vendor: str,
+    *,
+    output_csv: Path | str | None = None,
+) -> pl.DataFrame:
+    get_ep_summary_vendor_config(vendor)
+
+    input_csv = Path(input_csv)
+    frame = pl.read_csv(input_csv, infer_schema=False)
     frame = _apply_source_aliases(frame)
-    _validate_required_columns(frame, csv_path)
+    _validate_required_columns(frame, input_csv)
 
     metric_columns = _metric_columns(frame.columns)
     if not metric_columns:
         raise ValueError(
-            f"{csv_path} does not contain metric columns like AAL_0, AEP_50, or OEP_100"
+            f"{input_csv} does not contain metric columns like AAL_0, AEP_50, or OEP_100"
         )
 
     if "CatalogTypeCode" in frame.columns:
@@ -112,7 +119,7 @@ def build_ep_summary_from_wide_csv(csv_path: Path | str, vendor: str) -> pl.Data
         },
     )
 
-    return (
+    converted = (
         long_frame.join(metric_metadata, on="metric", how="left")
         .with_columns(
             pl.lit(vendor).alias("vendor"),
@@ -136,18 +143,24 @@ def build_ep_summary_from_wide_csv(csv_path: Path | str, vendor: str) -> pl.Data
         .select(CANONICAL_COLUMNS)
     )
 
+    if output_csv is not None:
+        _write_ep_summary(converted, Path(output_csv))
 
-def write_vendor_ep_summary(
+    return converted
+
+
+def convert_vendor_ep_summary(
     data_root: Path | str,
     vendor: str,
     csv_path: Path | str,
 ) -> Path:
     config = get_ep_summary_vendor_config(vendor)
-    frame = build_ep_summary_from_wide_csv(csv_path, vendor)
-    return _write_ep_summary(frame, config.output_path(data_root))
+    output_path = config.output_path(data_root)
+    convert_ep_summary(csv_path, vendor, output_csv=output_path)
+    return output_path
 
 
-def write_ep_summaries(data_root: Path | str = "data") -> list[Path]:
+def convert_ep_summaries(data_root: Path | str = "data") -> list[Path]:
     data_root = Path(data_root)
     output_paths: list[Path] = []
     for vendor in EP_SUMMARY_VENDOR_CONFIGS:
@@ -162,7 +175,9 @@ def write_ep_summaries(data_root: Path | str = "data") -> list[Path]:
                 f"Multiple source CSV files found for {vendor}: {candidates}. "
                 "Pass --vendor and --csv to select one file explicitly."
             )
-        output_paths.append(write_vendor_ep_summary(data_root, vendor, source_files[0]))
+        output_paths.append(
+            convert_vendor_ep_summary(data_root, vendor, source_files[0])
+        )
     return output_paths
 
 

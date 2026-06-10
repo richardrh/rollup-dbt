@@ -66,12 +66,24 @@ run_rollup("data", "output", config=config)
 ## EP summary conversion
 
 ```python
-from rollup.api import write_ep_summary, write_ep_summaries
+from rollup.api import convert_ep_summary
 
-write_ep_summary("data", "verisk", "data/ep_summaries/verisk/verisk_clean.csv")
-write_ep_summaries("data")
+frame = convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+)
+
+frame = convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
 ```
 
-These functions write canonical `.long.csv` files and return the output paths.
-Use `build_ep_summary_from_wide_csv(...)` from `rollup.ep_summary_generator` when
-you only need the in-memory DataFrame transformation.
+`convert_ep_summary(...)` converts one wide CSV to the canonical long shape and
+returns a Polars `DataFrame`. Pass `output_csv` only when you also want the
+converted rows written to disk.
+
+For local operator workflows, `convert_ep_summaries("data")` scans the configured
+vendor folders, ignores existing `.long.csv` files, writes one output per vendor,
+and returns the output paths.

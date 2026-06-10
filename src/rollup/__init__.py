@@ -1,15 +1,15 @@
 """Dataiku-friendly rollup runtime."""
 
 from rollup.api import (
+    convert_ep_summaries,
+    convert_ep_summary,
     run_rollup,
     validate_rollup_inputs,
-    write_ep_summaries,
-    write_ep_summary,
 )
 
 __all__ = [
+    "convert_ep_summaries",
+    "convert_ep_summary",
     "run_rollup",
     "validate_rollup_inputs",
-    "write_ep_summaries",
-    "write_ep_summary",
 ]

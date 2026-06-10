@@ -41,7 +41,20 @@ staging. Non-long CSV files (e.g. source wide CSVs) are ignored.
 ## Creating long CSVs from wide CSV exports
 
 When an analyst or vendor provides a **wide** CSV (one row per analysis, with
-EP losses in metric columns), use `rollup generate-ep-summaries` to convert it.
+EP losses in metric columns), convert that single file with the public API:
+
+```python
+from rollup import convert_ep_summary
+
+frame = convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
+```
+
+The function returns a Polars `DataFrame`. The `output_csv` argument is optional;
+omit it when you only need the in-memory rows.
 
 ### Step 1. Place the source CSV
 
@@ -50,9 +63,10 @@ data/ep_summaries/verisk/verisk_clean.csv
 data/ep_summaries/risklink/risklink_clean.csv
 ```
 
-### Step 2. Run the converter
+### Step 2. Run the local converter command
 
-Scan mode — converts one source wide CSV per configured vendor:
+For local operation, the CLI can scan and convert one source wide CSV per
+configured vendor:
 
 ```bash
 uv run rollup generate-ep-summaries

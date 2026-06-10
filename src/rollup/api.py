@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from collections.abc import Callable
+from dataclasses import dataclass
 import logging
+from pathlib import Path
 import time
 
 import polars as pl
@@ -12,8 +12,10 @@ from pandera.errors import SchemaError, SchemaErrors
 from rollup.analysis import write_ep_report
 from rollup.config import RollupConfig, load_config
 from rollup.duckdb_export import export_duckdb
-from rollup.ep_summary_generator import write_ep_summaries as write_all_ep_summaries
-from rollup.ep_summary_generator import write_vendor_ep_summary
+from rollup.ep_summary_generator import (
+    convert_ep_summaries as convert_all_ep_summaries,
+    convert_ep_summary as convert_single_ep_summary,
+)
 from rollup.logging import temporary_file_logging
 from rollup.pipeline import run
 from rollup.staging import RollupInputValidationFailure, load_sources
@@ -136,16 +138,17 @@ def build_ep_report(
     return write_ep_report(output_root, config_path=config_path)
 
 
-def write_ep_summary(
-    data_root: str | Path,
+def convert_ep_summary(
+    input_csv: str | Path,
     vendor: str,
-    csv_path: str | Path,
-) -> Path:
-    return write_vendor_ep_summary(data_root, vendor, csv_path)
+    *,
+    output_csv: str | Path | None = None,
+) -> pl.DataFrame:
+    return convert_single_ep_summary(input_csv, vendor, output_csv=output_csv)
 
 
-def write_ep_summaries(data_root: str | Path = "data") -> list[Path]:
-    return write_all_ep_summaries(data_root)
+def convert_ep_summaries(data_root: str | Path = "data") -> list[Path]:
+    return convert_all_ep_summaries(data_root)
 
 
 def collect_output_paths(
