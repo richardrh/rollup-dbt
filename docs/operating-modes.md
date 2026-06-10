@@ -11,9 +11,15 @@ from rollup.api import run_rollup
 result = run_rollup(
     data_root="data",
     output_root="output",
+    config_path="rollup.local.toml",
     write_analysis=True,
 )
 ```
+
+In Dataiku, prefer an explicit `config_path` in the job workspace or managed
+folder. Pass a managed-folder path directly as `data_root` when it already
+matches the required layout; otherwise materialize inputs into a temporary
+workspace and persist the returned `result.outputs` files before cleanup.
 
 ## Local CLI mode
 
@@ -33,6 +39,8 @@ Useful flags:
 
 ## Config mode
 
-`rollup.local.toml` is loaded when present. See [Runtime guide](runtime.md#duckdb-export)
-and [Runtime guide](runtime.md#validation-behavior) for supported keys and runtime
+`rollup.local.toml` is loaded when no explicit config object or `config_path` is
+supplied. Dataiku callers should pass `config_path` explicitly. See
+[Programmatic API](programmatic-api.md#config-loading) and
+[Runtime guide](runtime.md#duckdb-export) for supported keys and runtime
 behavior.

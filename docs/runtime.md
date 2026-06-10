@@ -22,7 +22,8 @@ flowchart TD
 
 - `run_rollup(data_root="data", output_root="output", ...)` runs validation, all
   calculation stages, optional DuckDB export, and optional analysis report
-  generation.
+  generation. Dataiku callers should pass `config_path` explicitly, usually from
+  a job workspace or managed-folder path.
 - `validate_rollup_inputs(data_root)` checks source availability and required
   schemas/nullability for the main inputs without writing outputs. Runtime
   validation uses hard-coded Pandera schemas; colocated YAML/Validnator configs
@@ -30,6 +31,11 @@ flowchart TD
 - `convert_ep_summary(input_csv, vendor, output_csv=None)` converts one wide EP
   summary CSV to canonical long rows, returns a Polars `DataFrame`, and writes a
   CSV only when `output_csv` is supplied.
+
+Programmatic callers receive concrete paths from `result.outputs`: combined,
+wide, DIALSUP, event validation, mart fanouts, optional stage directory, and
+optional DuckDB file. See [Programmatic API](programmatic-api.md) for the
+Dataiku workspace pattern.
 
 ### CLI examples
 

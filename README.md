@@ -42,6 +42,7 @@ validation.raise_for_errors()
 result = run_rollup(
     data_root="data",
     output_root="output",
+    config_path="rollup.local.toml",
     write_analysis=True,
 )
 ```
@@ -49,13 +50,20 @@ result = run_rollup(
 - `validate_rollup_inputs(data_root)` validates required source availability and
   main input schema/nullability.
 - `run_rollup(...)` runs validation, the pipeline, optional DuckDB export, and
-  optional analysis report generation.
+  optional analysis report generation. Dataiku callers should pass
+  `config_path` explicitly rather than relying on `rollup.local.toml` in the
+  current working directory.
 - `convert_ep_summary(...)` converts one wide EP summary CSV to canonical long
   rows, returning a Polars `DataFrame` and optionally writing a CSV.
 
 Expected validation failures return a `RollupValidationResult(is_valid=False)`.
 The CLI catches `RollupValidationError`, prints friendly details, and exits `1`.
 Unexpected errors are not hidden.
+
+`run_rollup(...)` returns all output paths via `result.outputs`, including
+combined, wide, DIALSUP, event validation, mart fanouts, optional stage output
+directory, and optional DuckDB file. See [Programmatic API](docs/programmatic-api.md)
+for the Dataiku temp-workspace pattern.
 
 ## Expected input layout
 
