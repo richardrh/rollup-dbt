@@ -498,9 +498,9 @@ def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) 
 [analysis]
 return_periods = [2]
 
-[analysis.vendor_years]
-verisk = 2
-risklink = 4
+[vendor_years]
+verisk = 7
+risklink = 11
 
 [blending]
 uplift_factor_min = 0.25
@@ -509,10 +509,6 @@ target_points = [
   { ep_type = "AAL", return_period = 0 },
   { ep_type = "OEP", return_period = 5 },
 ]
-
-[blending.vendor_years]
-verisk = 7
-risklink = 11
 
 [blending.subregion_selection]
 "999" = "999z"
@@ -534,7 +530,7 @@ target_currency = "usd"
 
     config = load_config(config_path)
 
-    assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
+    assert config.analysis.simulation_counts == {"verisk": 7, "risklink": 11}
     assert config.analysis.return_periods == (2,)
     assert config.blending.vendor_years == {"verisk": 7, "risklink": 11}
     assert [(point.ep_type, point.return_period) for point in config.blending.target_points] == [
@@ -576,7 +572,7 @@ def test_analysis_report_uses_vendor_years_from_config_toml(tmp_path: Path) -> N
 [analysis]
 return_periods = [2]
 
-[analysis.vendor_years]
+[vendor_years]
 custom_model = 2
 """.strip(),
         encoding="utf-8",
