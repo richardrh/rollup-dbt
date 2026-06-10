@@ -70,7 +70,7 @@ Blending uses the restored old-master method:
 Rank-derived buckets:
 
 ```text
-vendor RP = configured blending vendor years / rank
+vendor RP = configured vendor years / rank
 
 RP < 200   -> 0
 RP < 1000  -> 200
