@@ -32,6 +32,7 @@ Peril lookup. Columns:
 | `region` | Region label | `Belgium` |
 | `peril` | Base peril code | `FL` |
 | `region_peril_id` | Integer identifier for region-peril combination used in blend weight joins | `216` |
+| `base_model` | Vendor/model whose YLT is used as the base for EP blending for this rollup peril | `risklink` |
 | `selection_priority` | Main-pipeline precedence for choosing among multiple modelled perils that map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower numbers win. Missing values default to `99`. | `99` |
 | `is_dialsup` | DIALSUP-only selection flag. Exactly one active candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted alternatives should usually be `0`. | `1` |
 
@@ -66,12 +67,15 @@ does not yet exist in `perils.csv`.
 2.  Add a new row:
 
     ```csv
-    ES_FL,Spain_FL,Spain,FL,218,99,1
+    ES_FL,Spain_FL,Spain,FL,218,verisk,99,1
     ```
 
     - `region_peril_id` must be unique. Check the existing rows for the highest
       value and increment. This ID is used in VOR blending, so choose a stable
       value.
+    - `base_model` controls which vendor's YLT is blended for this rollup peril.
+      Set it to the vendor that should act as the base model, e.g. `verisk` or
+      `risklink`.
     - `selection_priority` of `99` is the normal fallback for the main pipeline.
       Set a lower number (e.g. `1`) if this modelled peril should be preferred
       over other modelled perils that target the same `rollup_peril`.

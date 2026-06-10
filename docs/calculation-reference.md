@@ -58,7 +58,7 @@ Blending uses the restored old-master method:
 - target points: `AAL`, `OEP 200`, and `OEP 1000`
 - blending weights from `seeds/vor/blending_factors.csv`
 - `target_loss = verisk_loss * AIRBlend + risklink_loss * RMSBlend`
-- base model is RiskLink for Europe/UK flood and Verisk otherwise
+- base model comes from `base_model` in `seeds/business/perils.csv`
 - `base_model_loss` comes from the chosen base model
 - `uplift_factor_on_base_model = target_loss / base_model_loss`
 - uplift factors are clipped to `0.1..10`

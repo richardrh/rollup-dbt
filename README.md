@@ -75,8 +75,9 @@ data/
   seeds/validation/risklink_flood22_model_events.parquet
 ```
 
-`perils.csv` includes both `selection_priority` for the main branch and
-`is_dialsup` for the DIALSUP branch.
+`perils.csv` includes `base_model` for blend base-model selection,
+`selection_priority` for the main branch, and `is_dialsup` for the DIALSUP
+branch.
 
 ## Default output layout
 

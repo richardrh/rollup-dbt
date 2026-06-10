@@ -10,7 +10,7 @@ import pytest
 
 from rollup.api import run_rollup, validate_rollup_inputs
 from rollup.config import load_config
-from rollup.intermediate.build_metric_long import final_main_metric
+from rollup.metrics import final_main_metric
 
 
 def assert_schema_validates(frame: pl.DataFrame, schema: object) -> None:
@@ -306,6 +306,7 @@ def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
             "region": ["US", "Europe"],
             "peril": ["EQ", "WS"],
             "region_peril_id": [205, 150],
+            "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 2],
             "is_dialsup": [1, None],
         }
@@ -353,6 +354,7 @@ def test_staged_ep_output_schema_rejects_null_joined_required_values() -> None:
             "currency": ["GBP", None],
             "rollup_peril": ["Earthquake", "Earthquake"],
             "region_peril_id": [205, 205],
+            "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 1],
             "is_dialsup": [1, 1],
         }
@@ -378,6 +380,7 @@ def test_enriched_ylt_output_schema_rejects_null_required_enrichment_values() ->
             "rollup_lob": ["Fine Art", "Fine Art"],
             "rollup_peril": ["Earthquake", None],
             "region_peril_id": [205, 205],
+            "base_model": ["verisk", "verisk"],
             "class": ["ART", "ART"],
             "office": ["London", "London"],
             "currency": ["GBP", "GBP"],
@@ -520,9 +523,9 @@ def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> N
     from rollup.intermediate.apply_fx import FX_APPLIED_YLT_SCHEMA
     from rollup.intermediate.build_dialsup import DIALSUP_SCHEMA
     from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
-    from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
     from rollup.marts.event_validation import EVENT_VALIDATION_SCHEMA
     from rollup.marts.wide import WIDE_OUTPUT_SCHEMA
+    from rollup.metrics import METRIC_LONG_SCHEMA
     from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
     from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
@@ -714,6 +717,7 @@ def _write_seeds(data_root: Path) -> None:
             "region": ["US"],
             "peril": ["EQ"],
             "region_peril_id": [205],
+            "base_model": ["verisk"],
             "selection_priority": [1],
             "is_dialsup": [1],
         }

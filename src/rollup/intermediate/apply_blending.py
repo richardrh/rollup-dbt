@@ -34,6 +34,22 @@ BLENDED_YLT_SCHEMA = pa.DataFrameSchema(
     },
     strict=False,
 )
+EP_LOSS_KEYS = [
+    Col.rollup_lob,
+    Col.rollup_peril,
+    Col.region_peril_id,
+    Col.base_model,
+    Col.ep_type,
+    Col.return_period,
+]
+BLEND_VENDOR_LOSS_COLUMNS = {
+    "risklink": Col.risklink_loss,
+    "verisk": Col.verisk_loss,
+}
+CATALOG_YEARS_BY_VENDOR = {
+    "risklink": 100_000.0,
+    "verisk": 10_000.0,
+}
 
 
 def apply_blending(
@@ -47,34 +63,43 @@ def apply_blending(
     if blending.is_empty():
         raise ValueError("EP-derived blending requires non-empty blending factors")
 
-    joined_ep = join_ep_summaries(staged_ep)
-    targets = calculate_ep_blending_targets(joined_ep, blending)
+    ep_losses = aggregate_ep_losses(staged_ep)
+    joined_ep = join_ep_summaries(ep_losses)
+    base_model_losses = calculate_base_model_losses(ep_losses)
+    targets = calculate_ep_blending_targets(joined_ep, base_model_losses, blending)
     return apply_ep_blending_to_ylt(enriched, targets)
 
 
-def join_ep_summaries(staged_ep: pl.LazyFrame) -> pl.LazyFrame:
-    join_keys = [
-        Col.rollup_lob,
-        Col.rollup_peril,
-        Col.region_peril_id,
-        Col.ep_type,
-        Col.return_period,
+def aggregate_ep_losses(staged_ep: pl.LazyFrame) -> pl.LazyFrame:
+    return staged_ep.group_by([*EP_LOSS_KEYS, Col.vendor]).agg(
+        pl.col(Col.loss).sum().alias(Col.loss)
+    )
+
+
+def join_ep_summaries(ep_losses: pl.LazyFrame) -> pl.LazyFrame:
+    summaries = [
+        ep_losses.filter(pl.col(Col.vendor) == vendor)
+        .drop(Col.vendor)
+        .rename({Col.loss: loss_column})
+        for vendor, loss_column in BLEND_VENDOR_LOSS_COLUMNS.items()
     ]
-    verisk = (
-        staged_ep.filter(pl.col(Col.vendor) == "verisk")
-        .group_by(join_keys)
-        .agg(pl.col(Col.loss).sum().alias(Col.verisk_loss))
+    joined = summaries[0]
+    for summary in summaries[1:]:
+        joined = joined.join(summary, on=EP_LOSS_KEYS, how="full", coalesce=True)
+    return joined
+
+
+def calculate_base_model_losses(ep_losses: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        ep_losses.filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        .drop(Col.vendor)
+        .rename({Col.loss: Col.base_model_loss})
     )
-    risklink = (
-        staged_ep.filter(pl.col(Col.vendor) == "risklink")
-        .group_by(join_keys)
-        .agg(pl.col(Col.loss).sum().alias(Col.risklink_loss))
-    )
-    return risklink.join(verisk, on=join_keys, how="full", coalesce=True)
 
 
 def calculate_ep_blending_targets(
     joined_ep: pl.LazyFrame,
+    base_model_losses: pl.LazyFrame,
     blending: pl.DataFrame,
 ) -> pl.LazyFrame:
     columns = blending.columns
@@ -116,19 +141,13 @@ def calculate_ep_blending_targets(
             pl.col(Col.risklink_loss).is_not_null()
             & pl.col(Col.verisk_loss).is_not_null()
         )
+        .join(base_model_losses, on=EP_LOSS_KEYS, how="left")
         .join(weights, on=Col.region_peril_id, how="left")
         .with_columns(
             (
                 (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
                 + (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
             ).alias(Col.target_loss),
-            base_model_expr().alias(Col.base_model),
-        )
-        .with_columns(
-            pl.when(pl.col(Col.base_model) == "risklink")
-            .then(pl.col(Col.risklink_loss))
-            .otherwise(pl.col(Col.verisk_loss))
-            .alias(Col.base_model_loss)
         )
         .with_columns(
             (pl.col(Col.target_loss) / pl.col(Col.base_model_loss))
@@ -139,7 +158,7 @@ def calculate_ep_blending_targets(
 
 
 def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> pl.LazyFrame:
-    base_model_only = enriched.with_columns(base_model_expr().alias(Col.base_model)).filter(
+    base_model_only = enriched.filter(
         pl.col(Col.vendor) == pl.col(Col.base_model)
     )
     ranked = (
@@ -151,10 +170,7 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
             .alias(Col.rnk)
         )
         .with_columns(
-            pl.when(pl.col(Col.vendor) == "risklink")
-            .then(100_000.0 / pl.col(Col.rnk))
-            .otherwise(10_000.0 / pl.col(Col.rnk))
-            .alias(Col.rp)
+            (catalog_years_expr() / pl.col(Col.rnk)).alias(Col.rp)
         )
         .with_columns(
             pl.when(pl.col(Col.rp) < 200)
@@ -194,7 +210,8 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
     )
 
 
-def base_model_expr() -> pl.Expr:
-    return pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"])).then(
-        pl.lit("risklink")
-    ).otherwise(pl.lit("verisk"))
+def catalog_years_expr() -> pl.Expr:
+    return pl.col(Col.vendor).replace_strict(
+        CATALOG_YEARS_BY_VENDOR,
+        return_dtype=pl.Float64,
+    )

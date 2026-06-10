@@ -10,7 +10,7 @@ from rollup.config import RollupConfig
 from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
-from rollup.intermediate.build_metric_long import final_main_metric
+from rollup.metrics import final_main_metric
 
 logger = logging.getLogger(__name__)
 

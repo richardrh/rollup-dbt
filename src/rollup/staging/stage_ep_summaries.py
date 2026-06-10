@@ -25,6 +25,7 @@ STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pa.DataFrameSchema(
         Col.currency: pa.Column(pl.String, nullable=False),
         Col.rollup_peril: pa.Column(pl.String, nullable=False),
         Col.region_peril_id: pa.Column(pl.Int64, nullable=False),
+        Col.base_model: pa.Column(pl.String, nullable=False),
         Col.selection_priority: pa.Column(pl.Int64, nullable=False),
         Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
     },
@@ -48,6 +49,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         Col.modelled_peril,
         Col.rollup_peril,
         pl.col(Col.region_peril_id).cast(pl.Int64),
+        pl.col(Col.base_model).cast(pl.String).str.to_lowercase(),
         pl.col(Col.selection_priority).cast(pl.Int64),
         pl.col(Col.is_dialsup).cast(pl.Int64),
     )

@@ -4,7 +4,7 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
-from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
+from rollup.metrics import METRIC_LONG_SCHEMA
 
 
 DIALSUP_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA

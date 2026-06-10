@@ -62,9 +62,10 @@ data/
   seeds/validation/risklink_flood22_model_events.parquet
 ```
 
-`perils.csv` must contain `selection_priority` and `is_dialsup`.
-`selection_priority` chooses the main EP peril candidate; `is_dialsup` chooses
-the DIALSUP peril candidate at rollup peril level.
+`perils.csv` must contain `base_model`, `selection_priority`, and `is_dialsup`.
+`base_model` chooses the vendor base model for blending, `selection_priority`
+chooses the main EP peril candidate, and `is_dialsup` chooses the DIALSUP peril
+candidate at rollup peril level.
 
 ## Output layout
 
