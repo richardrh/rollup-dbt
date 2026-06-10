@@ -1,17 +1,20 @@
-# Local rollup configuration template.
-# Copy to `rollup.local.toml` at the repo root, then edit for your machine.
-# `rollup.local.toml` is gitignored because it may contain SQL connection strings.
+[analysis]
+num_sims_verisk = 10000
+num_sims_risklink = 100000
+return_periods = [30, 200, 1000]
 
-[sql]
-# Connection string used by `rollup sql-check` and `rollup run --push-sql`.
-# `connection_string` is preferred. `mssql_conn_str` remains supported for
-# older local configs.
-# Windows auth (no credentials inline — recommended):
-connection_string = "mssql+pyodbc://prod-groupuw-db/CDSStaging_HiscoCAT?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
-# SQL auth:
-# connection_string = "mssql+pyodbc://user:pass@server/database?driver=ODBC+Driver+17+for+SQL+Server"
-# schema = "dbo"
-# if_exists = "replace"  # replace, append, or fail
-# table_prefix = ""
+[outputs]
+write_stage_outputs = true
+stage_output_dir = "stages"
+staging_dir = "staging"
+intermediate_dir = "intermediate"
+marts_dir = "marts"
+analysis_dir = "analysis"
+combined_file = "mts_tbl_ylt_combined_all_factors.parquet"
+wide_file = "mts_tbl_ylt_combined_all_factors_wide.parquet"
+dialsup_file = "mts_tbl_ylt_dialsup.parquet"
+event_validation_file = "mts_event_validation.parquet"
+ep_report_file = "ep_report.csv"
 
-# jdbc:sqlserver://;serverName=prod-groupuw-db;databaseName=master
+[fx]
+target_currency = "GBP"

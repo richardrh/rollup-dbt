@@ -2,8 +2,7 @@
 
 The pipeline maps vendor/modelled LOB and peril values to canonical rollup labels
 using two business seed files. Every LOB and peril in your EP summaries and YLT
-data must exist in these files before the pipeline runs, or `rollup validate`
-will report anti-join failures.
+data must exist in these files before the pipeline runs.
 
 ## Seed files
 
@@ -109,26 +108,19 @@ different row counts or sparser wide-output values than the main output.
 After editing either file, run:
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
-The validation report includes a **Modelled LOB/peril anti-join check** that
-lists every EP summary and YLT modelled LOB/peril value that has no matching
-row in `lobs.csv` or `perils.csv`. The anti-join report must be empty before
-running the pipeline.
+The smoke run validates strict seed and EP summary shapes before calculations.
+If a modelled LOB or peril is missing from the lookup seeds, the later join will
+produce null enrichment and fail a required output schema guard.
 
-The anti-join only checks data-to-seed direction: values in EP summaries or YLTs
-that are missing from `lobs.csv` or `perils.csv`. Adding a LOB or peril to a seed
-file that has no matching data produces no error — the entry is silently ignored
-downstream. To make a new LOB or peril actually flow through the pipeline, it must
-also appear in an EP summary or YLT input file.
+Lookup validation is data-to-seed direction: values in EP summaries or YLTs must
+exist in `lobs.csv` or `perils.csv`. Adding a LOB or peril to a seed file that has
+no matching data produces no output by itself. To make a new LOB or peril actually
+flow through the pipeline, it must also appear in an EP summary or YLT input file.
 
-```text
-Modelled LOB/peril anti-join report   ← check this section in the output
-shape: (0, 14)                        ← zero rows means all LOBs and perils match
-```
-
-If the anti-join report has rows, either:
+If validation or staging reports missing enrichment values, either:
 
 - Add the missing values to `lobs.csv` / `perils.csv` (recommended if the data
   is legitimate), or
@@ -137,6 +129,6 @@ If the anti-join report has rows, either:
 ## See also
 
 - [Data requirements](data-requirements.md#seed-files) — full seed file reference
-- [Schema contracts](schema-contracts.md) — how `schema.yaml` defines required
-  columns and types
+- [Validnator contracts](schema-contracts.md) — runtime schemas and remote
+  validation contracts
 - [Troubleshooting](troubleshooting.md) — common LOB/peril mismatch issues

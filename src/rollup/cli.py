@@ -1,593 +1,268 @@
 from __future__ import annotations
 
-import argparse
-from collections.abc import Callable, Sequence
-from contextlib import contextmanager
-import logging
-import os
+from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
-import shutil
+import logging
 import sys
-import tempfile
-import time
-from typing import TypeVar
-
-import polars as pl
 
 from rollup.api import (
+    RollupRunResult,
     RollupValidationError,
-    RollupValidationResult,
-    build_ep_report,
-    generate_ep_summary,
+    convert_ep_summaries,
+    convert_ep_summary,
     run_rollup,
-    validate_rollup_inputs,
 )
+from rollup.config import RollupConfig, load_config
 from rollup.ep_summary_generator import (
     ep_summary_vendor_names,
     get_ep_summary_vendor_config,
-    scan_ep_summary_csvs,
 )
-from rollup import resources as rollup_resources
 from rollup.logging import configure_console_logging
-from rollup.sql import check_sql_connection
+
+logger = logging.getLogger(__name__)
 
 
-DEFAULT_CONFIG_PATH = Path("rollup.local.toml")
+def build_parser() -> ArgumentParser:
+    parser = ArgumentParser(prog="rollup", description="Local rollup test runner")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-
-def _add_config_argument(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=argparse.SUPPRESS,
-        help="Path to rollup local TOML config (default: rollup.local.toml).",
+    run_parser = subparsers.add_parser("run", help="run the rollup pipeline locally")
+    run_parser.add_argument("--data-root", type=Path, default=Path("data"))
+    run_parser.add_argument("--output-root", type=Path, default=Path("output"))
+    run_parser.add_argument("--config-path", type=Path, default=None)
+    run_parser.add_argument(
+        "--no-analysis", action="store_false", dest="write_analysis"
     )
-
-
-T = TypeVar("T")
-
-_USER_FACING_EP_SUMMARY_ERRORS = (
-    FileNotFoundError,
-    KeyError,
-    OSError,
-    UnicodeDecodeError,
-    ValueError,
-    pl.exceptions.PolarsError,
-)
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="rollup")
-    parser.add_argument(
-        "--data-root",
-        default="data",
-        help="Root data directory containing schema.yaml files and inputs.",
-    )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Console logging level.",
-    )
-    parser.add_argument(
-        "--log-file",
-        type=Path,
-        help="Optional path to also write logs to a file.",
-    )
-    parser.add_argument(
-        "--output-root",
-        default="output",
-        help="Root output directory for generated pipeline artifacts.",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=DEFAULT_CONFIG_PATH,
-        help="Path to rollup local TOML config (default: rollup.local.toml).",
-    )
-
-    subcommands = parser.add_subparsers(dest="command", required=True)
-
-    validate_parser = subcommands.add_parser(
-        "validate",
-        help="Validate configured inputs and print a validation report.",
-    )
-    validate_parser.add_argument(
-        "--report-dir",
-        type=Path,
-        help="Directory to write validation report CSV files.",
-    )
-
-    subcommands.add_parser(
-        "analyze",
-        aliases=["analyse"],
-        help="Build EP analysis CSV from pipeline outputs.",
-    )
-
-    cleanup_parser = subcommands.add_parser(
-        "cleanup",
-        help="Delete generated pipeline output files.",
-    )
-    cleanup_parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="Actually delete generated output files; default is dry run.",
-    )
-
-    ep_summary_parser = subcommands.add_parser(
-        "generate-ep-summaries",
-        help="Generate one canonical long EP summary CSV from a selected source wide CSV file.",
-        description=(
-            "Interactively select a vendor and discovered source wide CSV file, or pass "
-            "--vendor, --csv, and --yes for non-interactive automation."
-        ),
-    )
-    ep_summary_parser.add_argument(
-        "--vendor",
-        choices=ep_summary_vendor_names(),
-        help="EP summary vendor to generate.",
-    )
-    ep_summary_parser.add_argument(
-        "--csv",
-        type=Path,
-        help=(
-            "Source canonical wide CSV path. Relative filenames are also resolved inside "
-            "data/ep_summaries/<vendor>/."
-        ),
-    )
-    ep_summary_parser.add_argument(
-        "-y",
-        "--yes",
-        action="store_true",
-        help="Skip overwrite confirmation for automation.",
-    )
-
-    sql_check_parser = subcommands.add_parser(
-        "sql-check",
-        aliases=["test-sql"],
-        help="Check configured SQL Server connectivity.",
-    )
-    _add_config_argument(sql_check_parser)
-
-    run_parser = subcommands.add_parser(
-        "run",
-        help="Run the pipeline.",
+    run_parser.add_argument("--no-stage-outputs", action="store_true")
+    run_parser.add_argument("--target-currency", type=str.upper, default=None)
+    run_parser.add_argument(
+        "--duckdb", action="store_true", help="write a DuckDB export"
     )
     run_parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Write intermediate frames to output/debug.",
+        "--duckdb-file", type=Path, default=None, help="DuckDB output file path"
     )
+    run_parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="INFO",
+    )
+    run_parser.add_argument("--log-file", type=Path, default=None)
+    run_parser.set_defaults(func=run_command, write_analysis=True)
 
-    docs_parser = subcommands.add_parser(
-        "docs",
-        help="Serve the local documentation site.",
+    ep_parser = subparsers.add_parser(
+        "generate-ep-summaries",
+        help="convert wide vendor EP summary CSVs to canonical long CSVs",
     )
-    docs_parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host interface for the docs server.",
+    ep_parser.add_argument("--data-root", type=Path, default=Path("data"))
+    ep_parser.add_argument("--vendor", choices=ep_summary_vendor_names(), default=None)
+    ep_parser.add_argument(
+        "--csv",
+        type=Path,
+        default=None,
+        help="source wide CSV; relative paths resolve inside the vendor folder",
     )
-    docs_parser.add_argument(
-        "--port",
-        default=4322,
-        type=int,
-        help="Port for the docs server.",
-    )
+    ep_parser.set_defaults(func=generate_ep_summaries_command)
 
     return parser
 
 
-def configure_logging(log_level: str, log_file: Path | None = None) -> None:
-    configure_console_logging(log_level, log_file=log_file)
-
-
-def add_file_logging(output_root: Path) -> Path:
-    output_root.mkdir(parents=True, exist_ok=True)
-    log_path = output_root / "rollup.log"
-    handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s %(message)s",
-            "%Y-%m-%dT%H:%M:%S",
-        )
-    )
-    logging.getLogger().addHandler(handler)
-    return log_path
-
-
-ValidationReports = RollupValidationResult
-
-
-def collect_validation_reports(data_root: Path) -> ValidationReports:
-    return validate_rollup_inputs(data_root)
-
-
-def print_validation_reports(reports: ValidationReports) -> None:
-    with pl.Config(
-        tbl_cols=-1,
-        tbl_rows=-1,
-        tbl_width_chars=1000,
-        fmt_str_lengths=1000,
-    ):
-        print("Validation report")
-        print(reports.validation_report)
-        print("\nModelled LOB/peril anti-join report")
-        print(reports.coverage_report)
-        print("\nYLT loss validation summary")
-        print(reports.ylt_loss_report)
-        print("\nInput YLT AAL by LOB/peril summary")
-        print(reports.input_ylt_aal_report)
-
-
-def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -> None:
-    reports.write_reports(report_dir)
-
-
-def validation_exit_code(reports: ValidationReports) -> int:
-    return 0 if reports.is_valid else 1
-
-
-def validate_command(data_root: Path, *, report_dir: Path | None = None) -> int:
-    reports = collect_validation_reports(data_root)
-    print_validation_reports(reports)
-    if report_dir is not None:
-        try:
-            write_validation_csv_reports(reports, report_dir)
-        except Exception as exc:
-            print(
-                f"Failed to write validation CSV reports to {report_dir}: {exc}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"Validation CSV reports written to {report_dir}")
-    return validation_exit_code(reports)
-
-
-def run_command(
-    data_root: Path,
-    *,
-    output_root: Path,
-    debug: bool = False,
-) -> int:
-    log_path = add_file_logging(output_root)
-    logging.info("writing log=%s", log_path)
+def run_command(args: Namespace) -> int:
+    log_file = args.log_file or args.output_root / "rollup.log"
+    config = override_config(args)
+    configure_console_logging(args.log_level, log_file=log_file)
     try:
         result = run_rollup(
-            data_root,
-            output_root=output_root,
-            debug=debug,
-            validation_callback=print_validation_reports,
+            args.data_root,
+            args.output_root,
+            config_path=None if config is not None else args.config_path,
+            config=config,
+            write_analysis=args.write_analysis,
+            log_file=log_file,
         )
-    except RollupValidationError:
+    except RollupValidationError as exc:
+        message = validation_failure_message(exc)
+        logger.error(message)
+        print(message, file=sys.stderr)
         return 1
-    if debug:
-        print(f"Debug frames written to {output_root / 'debug'}")
-
-    if result.ep_report_path is not None:
-        print(f"Analysis report written to {result.ep_report_path}")
-
+    print_success_summary(result, log_file)
     return 0
 
 
-def analyze_command(output_root: Path) -> int:
-    output_path = build_ep_report(output_root)
-    print(f"Analysis report written to {output_path}")
-    return 0
-
-
-def cleanup_paths(output_root: Path) -> list[Path]:
-    paths = sorted((output_root / "marts").glob("*.parquet"))
-    paths.extend(
-        path
-        for path in [
-            output_root / "mts_tbl_ylt_combined_all_factors.parquet",
-            output_root / "mts_tbl_ylt_dialsup.parquet",
-            output_root / "mts_event_validation.parquet",
-        ]
-        if path.is_file()
-    )
-    return paths
-
-
-def cleanup_command(output_root: Path, *, yes: bool = False) -> int:
-    paths = cleanup_paths(output_root)
-    if not yes:
-        print(f"Would delete {len(paths)} generated output file(s):")
-        for path in paths:
-            print(path)
-        print("Pass --yes to delete these files.")
-        return 0
-
-    for path in paths:
-        path.unlink(missing_ok=True)
-    print(f"Deleted {len(paths)} generated output file(s).")
-    return 0
-
-
-def sql_check_command(config_path: Path = DEFAULT_CONFIG_PATH) -> int:
-    result = check_sql_connection(config_path)
-    print(f"SQL check {result.status}: {result.message}")
-    return 0 if result.status == "OK" else 1
-
-
-@contextmanager
-def _working_directory(path: Path):
-    previous_cwd = Path.cwd()
-    os.chdir(path)
+def generate_ep_summaries_command(args: Namespace) -> int:
     try:
-        yield
-    finally:
-        os.chdir(previous_cwd)
-
-
-def _run_zensical(args: Sequence[str]) -> int:
-    try:
-        import zensical.main
-    except ModuleNotFoundError:
-        print(
-            "Could not import Zensical. Install dev dependencies or use the PyInstaller build that bundles docs support.",
-            file=sys.stderr,
-        )
+        if args.vendor is None and args.csv is None:
+            output_paths = convert_ep_summaries(args.data_root)
+        elif args.vendor is not None and args.csv is not None:
+            csv_path = resolve_ep_summary_csv_path(
+                args.data_root, args.vendor, args.csv
+            )
+            output_path = get_ep_summary_vendor_config(args.vendor).output_path(
+                args.data_root
+            )
+            convert_ep_summary(csv_path, args.vendor, output_csv=output_path)
+            output_paths = [output_path]
+        else:
+            raise ValueError("--vendor and --csv must be passed together")
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error("EP summary conversion failed: %s", exc)
+        print(f"EP summary conversion failed: {exc}", file=sys.stderr)
         return 1
 
-    result = zensical.main.cli.main(
-        args=list(args),
-        prog_name="zensical",
-        standalone_mode=False,
+    print("EP summary conversion complete")
+    for output_path in output_paths:
+        print(f"  wrote: {_display_path(output_path)}")
+    return 0
+
+
+def resolve_ep_summary_csv_path(data_root: Path, vendor: str, csv_path: Path) -> Path:
+    if csv_path.is_absolute():
+        return csv_path
+    return data_root / "ep_summaries" / vendor / csv_path
+
+
+def override_config(args: Namespace) -> RollupConfig | None:
+    if (
+        not args.no_stage_outputs
+        and args.target_currency is None
+        and not args.duckdb
+        and args.duckdb_file is None
+    ):
+        return None
+    config = load_config(args.config_path)
+    if args.no_stage_outputs:
+        config = replace(
+            config, outputs=replace(config.outputs, write_stage_outputs=False)
+        )
+    if args.target_currency is not None:
+        config = replace(
+            config, fx=replace(config.fx, target_currency=args.target_currency)
+        )
+    if args.duckdb or args.duckdb_file is not None:
+        duckdb_file = config.outputs.duckdb_file
+        if args.duckdb_file is not None:
+            duckdb_file = str(args.duckdb_file.expanduser().resolve(strict=False))
+        config = replace(
+            config,
+            outputs=replace(config.outputs, write_duckdb=True, duckdb_file=duckdb_file),
+        )
+    return config
+
+
+def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
+    marts_dir = result.outputs.marts_dir
+    mart_count = _parquet_count(marts_dir)
+
+    print("Rollup complete")
+    print(f"  data root: {_display_path(result.data_root)}")
+    print(
+        f"  output root: {_display_path(result.output_root)} ({_exists_status(result.output_root)})"
     )
-    return int(result or 0)
+    print(f"  log file: {_display_path(log_file)} ({_exists_status(log_file)})")
+    print(
+        f"  marts dir: {_display_path(marts_dir)} ({_exists_status(marts_dir)}, {_parquet_label(mart_count)})"
+    )
+    print(f"  combined mart: {_display_path(result.outputs.mts_combined)}")
+    print(f"  wide mart: {_display_path(result.outputs.mts_wide)}")
+    print(f"  dialsup mart: {_display_path(result.outputs.mts_dialsup)}")
+    print(f"  event validation: {_display_path(result.outputs.event_validation)}")
+    _print_duckdb_summary(result.outputs.duckdb_file)
+    _print_analysis_summary(result.ep_report_path)
+    _print_stage_summary(result.outputs.stage_dir)
 
 
-@contextmanager
-def _docs_runtime_project(docs_dir: Path, config_file: Path):
-    if not rollup_resources.is_frozen():
-        yield rollup_resources.resource_root(), config_file
+def validation_failure_message(exc: RollupValidationError) -> str:
+    report = exc.validation.validation_report
+    invalid = report.filter(~report["valid"]) if "valid" in report.columns else report
+    if invalid.height == 0:
+        invalid = report
+
+    lines = ["Input validation failed"]
+    for row in invalid.iter_rows(named=True):
+        source_group = row.get("source_group")
+        error = row.get("error")
+        if source_group is not None:
+            lines.append(f"source_group={source_group}")
+        if error is not None:
+            lines.append(f"error={error}")
+    return "\n".join(lines)
+
+
+def _print_duckdb_summary(duckdb_file: Path | None) -> None:
+    if duckdb_file is None:
+        print("  duckdb: (disabled)")
+        return
+    print(f"  duckdb: {_display_path(duckdb_file)} ({_exists_status(duckdb_file)})")
+
+
+def _print_analysis_summary(ep_report_path: Path | None) -> None:
+    if ep_report_path is None:
+        print("  analysis report: (disabled)")
         return
 
-    with tempfile.TemporaryDirectory(prefix="rollup-docs-") as temp_dir:
-        runtime_root = Path(temp_dir)
-        runtime_docs_dir = runtime_root / "docs"
-        runtime_config_file = runtime_root / "zensical.toml"
-        shutil.copytree(docs_dir, runtime_docs_dir)
-        shutil.copy2(config_file, runtime_config_file)
-        yield runtime_root, runtime_config_file
+    status = "exists" if ep_report_path.is_file() else "missing"
+    print(f"  analysis report: {_display_path(ep_report_path)} ({status})")
+    if status == "missing":
+        print(f"  WARNING: analysis report missing: {_display_path(ep_report_path)}")
 
 
+def _print_stage_summary(stage_dir: Path | None) -> None:
+    if stage_dir is None:
+        print("  stage outputs: (disabled)")
+        return
 
-def _run_docs_foreground(
-    *,
-    docs_dir: Path,
-    config_file: Path,
-    host: str,
-    port: int,
-    zensical_runner: Callable[[Sequence[str]], int | None] | None,
-) -> int:
-    print(f"Docs available at http://{host}:{port}/")
-    runner = zensical_runner or _run_zensical
-    args = [
-        "serve",
-        "--config-file",
-        str(config_file),
-        "--dev-addr",
-        f"{host}:{port}",
-    ]
-    with _docs_runtime_project(docs_dir, config_file) as (runtime_root, runtime_config_file):
-        args[2] = str(runtime_config_file)
-        with _working_directory(runtime_root):
-            result = runner(args)
-    return int(result or 0)
+    staging_dir = stage_dir / "staging"
+    intermediate_dir = stage_dir / "intermediate"
+    staging_count = _parquet_count(staging_dir)
+    intermediate_count = _parquet_count(intermediate_dir)
 
-
-def docs_command(
-    *,
-    host: str = "localhost",
-    port: int = 4322,
-    zensical_runner: Callable[[Sequence[str]], int | None] | None = None,
-) -> int:
-    docs_dir = rollup_resources.docs_dir()
-    if not docs_dir.is_dir():
-        print(
-            f"Documentation source directory was not found: {docs_dir}",
-            file=sys.stderr,
-        )
-        return 1
-    config_file = rollup_resources.zensical_config_path()
-    if not config_file.is_file():
-        print(
-            f"Zensical configuration file was not found: {config_file}",
-            file=sys.stderr,
-        )
-        return 1
-
-    return _run_docs_foreground(
-        docs_dir=docs_dir,
-        config_file=config_file,
-        host=host,
-        port=port,
-        zensical_runner=zensical_runner,
+    print(f"  stage outputs: {_display_path(stage_dir)} ({_exists_status(stage_dir)})")
+    print(
+        f"    staging: {_display_path(staging_dir)} ({_parquet_label(staging_count)})"
+    )
+    print(
+        f"    intermediate: {_display_path(intermediate_dir)} ({_parquet_label(intermediate_count)})"
     )
 
-
-def _prompt_numbered_option(
-    prompt: str,
-    options: Sequence[T],
-    display: Callable[[T], str] = str,
-) -> T:
-    while True:
-        print(prompt)
-        for index, option in enumerate(options, start=1):
-            print(f"  {index}. {display(option)}")
-        selection = input("Enter number: ").strip()
-        if selection.isdecimal():
-            index = int(selection)
-            if 1 <= index <= len(options):
-                return options[index - 1]
-        print(f"Invalid selection. Enter a number from 1 to {len(options)}.")
+    warnings = _stage_warnings("staging", staging_dir, staging_count) + _stage_warnings(
+        "intermediate",
+        intermediate_dir,
+        intermediate_count,
+    )
+    if warnings:
+        print(f"  WARNING: stage outputs incomplete: {', '.join(warnings)}")
 
 
-def _confirm_overwrite(output_path: Path) -> bool:
-    while True:
-        response = input(f"Overwrite {output_path}? [y/N]: ").strip().lower()
-        if response == "":
-            return False
-        if response in {"y", "yes"}:
-            return True
-        if response in {"n", "no"}:
-            return False
-        print("Please answer y or n.")
+def _stage_warnings(name: str, directory: Path, parquet_count: int) -> list[str]:
+    if not directory.exists():
+        return [f"{name} directory missing"]
+    if parquet_count == 0:
+        return [f"{name} parquet files missing"]
+    return []
 
 
-def _resolve_csv_path(data_root: Path, vendor: str, csv: Path) -> Path:
-    if csv.is_absolute() or csv.is_file():
-        return csv
-    candidate = get_ep_summary_vendor_config(vendor).source_dir(data_root) / csv
-    if candidate.is_file():
-        return candidate
-    return csv
+def _display_path(path: Path) -> str:
+    return str(path.expanduser().resolve(strict=False))
 
 
-def _sorted_distinct_values(frame: pl.DataFrame, column: str) -> list[str]:
-    return sorted(str(value) for value in frame.get_column(column).drop_nulls().unique())
+def _exists_status(path: Path) -> str:
+    return "exists" if path.exists() else "missing"
 
 
-def _format_values(values: Sequence[str]) -> str:
-    return ", ".join(values) if values else "none"
+def _parquet_count(directory: Path) -> int:
+    if not directory.exists():
+        return 0
+    return sum(1 for path in directory.glob("*.parquet") if path.is_file())
 
 
-def _format_ep_type_counts(frame: pl.DataFrame) -> str:
-    counts = frame.group_by("ep_type").len(name="count").sort("ep_type")
-    values = [f"{ep_type}={count}" for ep_type, count in counts.iter_rows()]
-    return ", ".join(values) if values else "none"
+def _parquet_label(count: int) -> str:
+    suffix = "file" if count == 1 else "files"
+    return f"{count} parquet {suffix}"
 
 
-def _format_return_period_range(frame: pl.DataFrame) -> str:
-    if frame.is_empty():
-        return "n/a"
-    return_periods = frame.get_column("return_period").drop_nulls()
-    if return_periods.is_empty():
-        return "n/a"
-    return f"{return_periods.min()}-{return_periods.max()}"
-
-
-def _print_ep_summary_overview(output_path: Path) -> None:
-    frame = pl.read_csv(output_path)
-    modelled_pair_count = frame.select(["modelled_lob", "modelled_peril"]).unique().height
-    print("EP summary overview:")
-    print(f"  Rows: {frame.height}")
-    print(f"  Columns ({len(frame.columns)}): {', '.join(frame.columns)}")
-    print(f"  Vendors: {_format_values(_sorted_distinct_values(frame, 'vendor'))}")
-    print(f"  EP type counts: {_format_ep_type_counts(frame)}")
-    print(f"  Modelled LOB/peril pairs: {modelled_pair_count}")
-    print(f"  Return period range: {_format_return_period_range(frame)}")
-
-
-def generate_ep_summaries_command(
-    data_root: Path,
-    *,
-    vendor: str | None = None,
-    csv: Path | None = None,
-    yes: bool = False,
-) -> int:
-    try:
-        selected_vendor = vendor or _prompt_numbered_option(
-            "Select EP summary vendor:",
-            ep_summary_vendor_names(),
-        )
-
-        try:
-            config = get_ep_summary_vendor_config(selected_vendor)
-        except ValueError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
-
-        if csv is None:
-            csv_files = scan_ep_summary_csvs(data_root, selected_vendor)
-            if not csv_files:
-                print(
-                    f"No source .csv files found in {config.source_dir(data_root)}.",
-                    file=sys.stderr,
-                )
-                return 1
-            csv_path = _prompt_numbered_option(
-                "Select source wide CSV:",
-                csv_files,
-                lambda path: path.name,
-            )
-        else:
-            csv_path = _resolve_csv_path(data_root, selected_vendor, csv)
-
-        if not csv_path.is_file():
-            print(f"CSV file not found: {csv_path}", file=sys.stderr)
-            return 1
-
-        output_path = config.output_path(data_root)
-        if output_path.exists() and not yes and not _confirm_overwrite(output_path):
-            print("EP summary generation cancelled; no files overwritten.")
-            return 0
-
-        print("EP summary generation:")
-        print(f"  Vendor: {selected_vendor}")
-        print(f"  CSV: {csv_path}")
-        print(f"  Output: {output_path}")
-        started = time.perf_counter()
-        output_path = generate_ep_summary(
-            data_root,
-            selected_vendor,
-            csv_path,
-            status_callback=print,
-        )
-        elapsed_seconds = time.perf_counter() - started
-    except EOFError:
-        print("Input ended before EP summary generation could continue.", file=sys.stderr)
-        return 1
-    except KeyboardInterrupt:
-        print("EP summary generation cancelled; no files overwritten.")
-        return 130
-    except _USER_FACING_EP_SUMMARY_ERRORS as exc:
-        print(f"EP summary generation failed: {exc}", file=sys.stderr)
-        return 1
-
-    print(f"Done in {elapsed_seconds:.2f}s. EP summary written to {output_path}")
-    _print_ep_summary_overview(output_path)
-    return 0
-
-
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(args.log_level, log_file=args.log_file)
-    data_root = Path(args.data_root)
-    output_root = Path(args.output_root)
-    config_path = Path(args.config)
-
-    if args.command == "validate":
-        return validate_command(data_root, report_dir=args.report_dir)
-    if args.command == "run":
-        return run_command(
-            data_root,
-            output_root=output_root,
-            debug=args.debug,
-        )
-    if args.command in {"analyze", "analyse"}:
-        return analyze_command(output_root)
-    if args.command == "cleanup":
-        return cleanup_command(output_root, yes=args.yes)
-    if args.command in {"sql-check", "test-sql"}:
-        return sql_check_command(config_path)
-    if args.command == "generate-ep-summaries":
-        return generate_ep_summaries_command(
-            data_root,
-            vendor=args.vendor,
-            csv=args.csv,
-            yes=args.yes,
-        )
-    if args.command == "docs":
-        return docs_command(host=args.host, port=args.port)
-
-    parser.error(f"unknown command: {args.command}")
-    return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return args.func(args)

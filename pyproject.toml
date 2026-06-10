@@ -9,30 +9,27 @@ description = "Retail rollup pipeliner"
 readme = "README.md"
 requires-python = "==3.13.*"
 authors = [ { name = "Richard Hampton" } ]
+
+
+
 dependencies = [
-    "argcomplete>=3.0",
-    "duckdb>=1.4.4",
+    "duckdb>=1.4.0",
     "tomli-w>=1.2.0",
     "polars>=1.20.0",
-    "pandas>=2.3.0",
-    "pandera[polars]>=0.27.0",
     "pyarrow>=22.0.0",
     "pyyaml>=6.0",
-    "sqlalchemy>=2.0",
-    "pyodbc",
-    "mypy>=2.1.0",
-    "ruff>=0.15.13",
+    "pandera[polars]>=0.31.1",
 ]
 
 [project.scripts]
-rollup = "rollup.cli:main"
+rollup = "rollup.__main__:main"
 
 [tool.setuptools.package-dir]
 "" = "src"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rollup"]
+include = ["rollup", "rollup.*"]
 
 [dependency-groups]
 build = [
@@ -41,9 +38,8 @@ build = [
 dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
-    "pytest-xdist>=3.8.0",
-    "pymssql>=2.3.0",
-    "testcontainers>=4.13.0",
+    "mypy>=2.1.0",
+    "ruff>=0.15.13",
     "build>=1.5.0",
     "hypothesis>=6.155.2",
 ]
@@ -62,3 +58,6 @@ markers = [
     "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
     "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
 ]
+
+[tool.ruff]
+exclude = ["jan-rollup", "utils", "scripts/build.py"]

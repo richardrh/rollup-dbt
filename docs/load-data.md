@@ -46,23 +46,40 @@ Required columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-If you have a vendor/source CSV instead:
+If you have a vendor/source CSV instead, convert that single file with the
+public API:
+
+```python
+from rollup import convert_ep_summary
+
+convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
+```
+
+For local operator workflows, the CLI can scan and convert files in the vendor
+folders:
 
 1. Put it in `data/ep_summaries/<vendor>/`.
-2. Run the interactive command:
+2. Run the scan command:
 
 ```bash
 uv run rollup generate-ep-summaries
 ```
 
-Or run without prompts:
+Or select one source file explicitly:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 3. Check the generated `.long.csv` file listed above.
 4. Run validation in Step 4.
+
+If a vendor folder contains multiple source wide CSVs, the scan command fails and
+asks you to choose with `--vendor` and `--csv` instead of guessing.
 
 See [Creating EP summary long CSVs from wide CSVs](data-requirements.md#creating-ep-summary-long-csvs-from-wide-csvs)
 for the detailed source and output tables.
@@ -95,7 +112,7 @@ Check these before validating:
 ## Step 4. Validate the drop
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 Common failures:
@@ -106,4 +123,4 @@ Common failures:
 - Verisk YLT `Analysis` is not in `perils.csv`.
 - RiskLink YLT `anlsid` is not in the RiskLink EP summary `analysis_id` values.
 
-The anti-join report should be empty. Fix any rows before running the pipeline.
+Fix validation or staging failures before running the full pipeline.

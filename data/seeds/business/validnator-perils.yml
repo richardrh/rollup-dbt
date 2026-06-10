@@ -1,0 +1,61 @@
+name: Rollup peril seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: PERILS_SCHEMA
+    name: Peril seed required columns and types
+    level: error
+    message: "perils.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: false
+        columns:
+          modelled_peril: string
+          rollup_peril: string
+          region: string
+          peril: string
+          region_peril_id: int64
+          selection_priority: int64
+          is_dialsup: int64
+
+  - code: PERILS_REQUIRED_VALUES
+    name: Peril seed required values
+    level: error
+    message: "Peril seed key fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - modelled_peril
+          - rollup_peril
+          - region
+          - peril
+          - region_peril_id
+          - selection_priority
+          - is_dialsup
+
+  - code: PERILS_NON_NEGATIVE_NUMBERS
+    name: Peril seed non-negative numeric fields
+    level: error
+    message: "region_peril_id and selection_priority must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - region_peril_id
+          - selection_priority
+        min: 0
+
+  - code: PERILS_DIALSUP_FLAG
+    name: Peril seed DIALSUP flag
+    column: is_dialsup
+    level: error
+    message: "is_dialsup must be 0 or 1"
+    checks:
+      - type: valid_values
+        values:
+          - "0"
+          - "1"

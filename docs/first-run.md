@@ -1,152 +1,49 @@
-# Quickstart
+# First run
 
-Run from the repository root. If you are on a fresh Windows machine, first use
-the [Windows install guide](windows-install.md) to install `uv` and build the
-local environment.
+Use this page for a local smoke run. Dataiku callers should use the
+programmatic API described in [Programmatic API](programmatic-api.md).
 
-## Step 1. Drop the data
+## 1. Prepare inputs
 
-Put analyst inputs under `data/`:
-
-```text
-data/ylt/verisk/*.parquet
-data/ylt/risklink/*.parquet
-data/ep_summaries/verisk/verisk_ep_summary.long.csv
-data/ep_summaries/risklink/rms_ep_summary.long.csv
-data/seeds/**
-```
-
-Generated outputs land in root `output/`; do not put analyst inputs there.
-
-YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
-the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
-You can provide one or more YLT parquet files per vendor. The pipeline loads every
-direct `*.parquet` file in `data/ylt/verisk/` and `data/ylt/risklink/`; there is
-no required filename pattern beyond the extension. Use clear names, and do not
-place inactive/test parquet files in those folders. Subdirectories are ignored.
-
-EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
-The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
-`data/ep_summaries/risklink/rms_ep_summary.long.csv`.
-
-Required EP summary columns:
+Place inputs under `data/`:
 
 ```text
-vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
+data/
+  ylt/verisk/*.parquet
+  ylt/risklink/*.parquet
+  ep_summaries/**/*.long.csv
+  seeds/business/lobs.csv
+  seeds/business/perils.csv
+  seeds/vor/blending_factors.csv
+  seeds/vor/fx_rates.csv
+  seeds/vor/forecast_factors.csv
+  seeds/vor/euws_rate_factors.csv
+  seeds/adjustments/euws_rank_overrides.csv
+  seeds/validation/verisk_events.parquet
+  seeds/validation/risklink_flood22_model_events.parquet
 ```
 
-Need to convert a vendor/source EP summary CSV to `.long.csv`? Put the source CSV
-in `data/ep_summaries/<vendor>/`, then run either the interactive converter or a
-specific non-interactive conversion:
+## 2. Run locally
 
 ```bash
-uv run rollup generate-ep-summaries
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP
 ```
 
-With the standalone analyst bundle, run the bundled executable instead of
-`uv run rollup`:
+Faster smoke run without stage outputs or analysis:
 
 ```bash
-dist/rollup/rollup generate-ep-summaries
-dist/rollup/rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
-Check that the converter wrote the expected `.long.csv`, then continue to Step 3
-and validate. For source columns, aliases, and examples, see
-[EP summaries](ep-summaries.md).
-
-## Step 2. Check seed lookups
-
-Check these files before validation:
-
-- `data/seeds/business/lobs.csv`: must contain every EP/YLT modelled LOB; maps
-  to rollup LOB, class, office, currency, and CDS class metadata.
-- `data/seeds/business/perils.csv`: must contain every EP/YLT modelled peril;
-  maps to rollup peril, region/peril labels, `region_peril_id`, and main-pipeline
-  `selection_priority`. It also includes DIALSUP-only `is_dialsup`, which must
-  mark exactly one active base/least-adjusted DIALSUP candidate per vendor,
-  rollup LOB, and rollup peril.
-
-The anti-join validation only flags the reverse: input values missing from seed
-files. Adding a seed entry without matching data will not cause errors, but it
-will also not be used by the pipeline.
-
-The anti-join validation only flags the reverse: input values missing from seed
-files. Adding a seed entry without matching data will not cause errors, but it
-will also not be used by the pipeline.
-
-## Step 3. Validate
+Optional DuckDB export:
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --duckdb
 ```
 
-Optional: write validation reports to CSV while preserving the same console
-output:
+## 3. Check outputs
 
-```bash
-uv run rollup validate --report-dir output/validation
-```
+The CLI summary prints absolute paths and status for logs, marts, analysis,
+stage outputs, and DuckDB. Logs default to `output/rollup.log`.
 
-This creates `validation_report.csv`,
-`modelled_lob_peril_anti_join_report.csv`,
-`ylt_loss_validation_summary.csv`, and
-`input_ylt_aal_by_lob_peril_summary.csv` under `output/validation/`.
-
-Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
-files, columns, dtypes, and required flags come from the colocated
-[`schema.yaml` contracts](schema-contracts.md). Read the output in four
-sections:
-
-1. `Validation report`: schema, required-column, and type checks. `valid=False`
-   means fix the file format before running.
-2. `Modelled LOB/peril anti-join report`: should be empty. Any rows are blocking
-   errors; add/fix values in `lobs.csv`/`perils.csv` or correct the input data.
-3. `YLT loss validation summary`: non-blocking sanity totals unless an input read
-   failed. Check file names, loss sums, and scaled loss.
-4. `Input YLT AAL by LOB/peril summary`: raw input YLT AAL by vendor,
-   rollup/modelled LOB, and rollup/modelled peril before blending, FX, forecast,
-   or EUWS adjustments.
-
-## Step 4. Run
-
-```bash
-uv run rollup run
-```
-
-Outputs land in root `output/`, not `data/output/`.
-
-## Step 5. Optional: check SQL Server config
-
-Copy `rollup.example.toml` to `rollup.local.toml`, fill in `[sql]`, and keep the
-local file uncommitted. Check the connection first:
-
-```bash
-uv run rollup sql-check --config rollup.local.toml
-```
-
-`rollup run` writes files only. If marts need to land in SQL Server, load
-`output/marts/*.parquet` through Dataiku or a separate SQL-loading process after
-the pipeline run completes.
-
-## Step 6. Inspect outputs
-
-```bash
-duckdb -c "SELECT COUNT(*) FROM 'output/mts_tbl_ylt_combined_all_factors.parquet';"
-duckdb -c "SELECT * FROM 'output/mts_event_validation.parquet' LIMIT 20;"
-```
-
-## Step 7. Debug if needed
-
-```bash
-uv run rollup run --debug
-duckdb -c "SELECT * FROM 'output/debug/int_ylt_blending_applied.parquet' LIMIT 10;"
-```
-
-## Step 8. Generate EP report
-
-```bash
-uv run rollup analyze
-duckdb -c "SELECT * FROM read_csv_auto('output/analysis/ep_report.csv') LIMIT 20;"
-```
+Expected default output layout is documented in [Runtime guide](runtime.md).

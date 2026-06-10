@@ -1,0 +1,769 @@
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+from types import SimpleNamespace
+
+import polars as pl
+from pandera.errors import SchemaError
+import pytest
+
+from rollup.api import run_rollup, validate_rollup_inputs
+from rollup.config import load_config
+from rollup.intermediate.build_metric_long import final_main_metric
+
+
+def assert_schema_validates(frame: pl.DataFrame, schema: object) -> None:
+    assert hasattr(schema, "validate")
+    schema.validate(frame)
+
+
+def test_import_surface() -> None:
+    import rollup
+    from rollup.api import run_rollup as api_run_rollup
+    from rollup.pipeline import run
+    from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
+
+    assert rollup.run_rollup is api_run_rollup
+    assert callable(run)
+    assert callable(load_sources)
+    assert callable(normalize_ylt)
+    assert callable(stage_ep_summaries)
+
+
+def test_transform_modules_are_split_into_packages() -> None:
+    expected_members = {
+        "rollup.staging.load_sources": "load_sources",
+        "rollup.staging.normalize_ylt": "normalize_ylt",
+        "rollup.staging.stage_ep_summaries": "stage_ep_summaries",
+        "rollup.intermediate.build_enriched_ylt": "build_enriched_ylt",
+        "rollup.intermediate.apply_blending": "apply_blending",
+        "rollup.intermediate.apply_fx": "apply_fx",
+        "rollup.intermediate.apply_forecast": "apply_forecast",
+        "rollup.intermediate.apply_euws": "apply_euws",
+        "rollup.intermediate.build_metric_long": "build_metric_long",
+        "rollup.intermediate.build_dialsup": "build_dialsup",
+        "rollup.marts.write_marts": "write_marts",
+        "rollup.marts.wide": "wide",
+        "rollup.marts.event_validation": "event_validation",
+        "rollup.marts.fanouts": "write_fanouts",
+    }
+
+    for module_name, member_name in expected_members.items():
+        module = importlib.import_module(module_name)
+
+        assert callable(getattr(module, member_name))
+
+
+def test_transform_modules_expose_pandera_schema_contracts() -> None:
+    expected_schemas = {
+        "rollup.staging.load_sources": (
+            "VERISK_YLT_SCHEMA",
+            "RISKLINK_YLT_SCHEMA",
+            "EP_SUMMARY_SCHEMA",
+            "LOBS_SCHEMA",
+            "PERILS_SCHEMA",
+        ),
+        "rollup.staging.normalize_ylt": (
+            "NORMALIZE_VERISK_INPUT_SCHEMA",
+            "NORMALIZE_RISKLINK_INPUT_SCHEMA",
+            "NORMALIZED_YLT_SCHEMA",
+            "NORMALIZE_YLT_OUTPUT_SCHEMA",
+        ),
+        "rollup.staging.stage_ep_summaries": (
+            "STAGED_EP_SUMMARIES_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_LOBS_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_PERILS_INPUT_SCHEMA",
+            "STAGED_EP_SUMMARIES_OUTPUT_SCHEMA",
+        ),
+        "rollup.intermediate.build_enriched_ylt": (
+            "ENRICHED_YLT_INPUT_SCHEMA",
+            "ENRICHED_EP_INPUT_SCHEMA",
+            "ENRICHED_YLT_OUTPUT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_blending": (
+            "BLENDING_INPUT_SCHEMA",
+            "BLENDING_FACTORS_SCHEMA",
+            "BLENDED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_fx": (
+            "FX_INPUT_SCHEMA",
+            "FX_RATES_SCHEMA",
+            "FX_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_forecast": (
+            "FORECAST_INPUT_SCHEMA",
+            "FORECAST_FACTORS_SCHEMA",
+            "FORECAST_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.apply_euws": (
+            "EUWS_INPUT_SCHEMA",
+            "EUWS_FACTORS_SCHEMA",
+            "EUWS_APPLIED_YLT_SCHEMA",
+        ),
+        "rollup.intermediate.build_metric_long": (
+            "METRIC_LONG_INPUT_SCHEMA",
+            "METRIC_LONG_SCHEMA",
+        ),
+        "rollup.intermediate.build_dialsup": (
+            "DIALSUP_INPUT_SCHEMA",
+            "DIALSUP_SCHEMA",
+        ),
+        "rollup.marts.event_validation": (
+            "EVENT_VALIDATION_INPUT_SCHEMA",
+            "EVENT_VALIDATION_SCHEMA",
+        ),
+        "rollup.marts.fanouts": ("FANOUT_INPUT_SCHEMA",),
+        "rollup.marts.wide": ("WIDE_INPUT_SCHEMA", "WIDE_OUTPUT_SCHEMA"),
+    }
+
+    for module_name, schema_names in expected_schemas.items():
+        module = importlib.import_module(module_name)
+
+        for schema_name in schema_names:
+            schema = getattr(module, schema_name)
+            assert hasattr(schema, "validate")
+
+
+def test_load_sources_catches_missing_required_column(tmp_path: Path) -> None:
+    from rollup.staging.load_sources import load_sources
+
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "ExposureAttribute": ["Fine Art"],
+            "CatalogTypeCode": ["STC"],
+            "EventID": [1],
+            "ModelCode": [7],
+            "YearID": [1],
+            "GroundUpLoss": [10.0],
+        }
+    ).write_parquet(data_root / "ylt" / "verisk" / "verisk.parquet")
+
+    with pytest.raises(SchemaError, match="column 'Analysis' not in dataframe"):
+        load_sources(data_root)
+
+    result = validate_rollup_inputs(data_root)
+    assert not result.is_valid
+    assert "column 'Analysis' not in dataframe" in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_reports_missing_input_files(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+
+    result = validate_rollup_inputs(data_root)
+
+    assert not result.is_valid
+    assert "no parquet files found" in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_propagates_unexpected_load_sources_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from rollup import api
+
+    def fail_unexpectedly(data_root: Path) -> None:
+        raise RuntimeError(f"bug while loading {data_root}")
+
+    monkeypatch.setattr(api, "load_sources", fail_unexpectedly)
+
+    with pytest.raises(RuntimeError, match="bug while loading"):
+        api.validate_rollup_inputs(tmp_path / "data")
+
+
+def test_verisk_ylt_schema_rejects_null_required_values() -> None:
+    from rollup.staging.load_sources import VERISK_YLT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "Analysis": ["EQ", "EQ"],
+            "ExposureAttribute": ["Fine Art", "Fine Art"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [1, None],
+            "ModelCode": [7, 7],
+            "YearID": [1, 2],
+            "GroundUpLoss": [10.0, 20.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'EventID' contains null values"):
+        VERISK_YLT_SCHEMA.validate(frame)
+
+
+def test_risklink_ylt_schema_rejects_null_required_values(tmp_path: Path) -> None:
+    from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA
+
+    data_root = _write_tiny_input(tmp_path)
+    risklink_path = data_root / "ylt" / "risklink" / "risklink.parquet"
+    pl.DataFrame(
+        {
+            "anlsid": [9001, 9001],
+            "yearid": [1, 2],
+            "eventid": [None, 2],
+            "loss": [40.0, 80.0],
+        }
+    ).write_parquet(risklink_path)
+
+    with pytest.raises(SchemaError, match="non-nullable column 'eventid' contains null values"):
+        RISKLINK_YLT_SCHEMA.validate(pl.read_parquet(risklink_path))
+
+
+def test_load_sources_rejects_lazy_verisk_ylt_mixed_null_required_values(
+    tmp_path: Path,
+) -> None:
+    from rollup.staging.load_sources import load_sources
+
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "Analysis": ["EQ", "EQ"],
+            "ExposureAttribute": ["Fine Art", "Fine Art"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [1, None],
+            "ModelCode": [7, 7],
+            "YearID": [1, 2],
+            "GroundUpLoss": [10.0, 20.0],
+        }
+    ).write_parquet(data_root / "ylt" / "verisk" / "verisk.parquet")
+    expected_error = "verisk_ylt required columns contain nulls: EventID"
+
+    with pytest.raises(ValueError, match=expected_error):
+        load_sources(data_root)
+
+    result = validate_rollup_inputs(data_root)
+    assert not result.is_valid
+    assert expected_error in result.validation_report["error"].item()
+
+
+def test_validate_rollup_inputs_rejects_lazy_risklink_ylt_mixed_null_required_values(
+    tmp_path: Path,
+) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    pl.DataFrame(
+        {
+            "anlsid": [9001, 9001],
+            "yearid": [1, 2],
+            "eventid": [1, None],
+            "loss": [40.0, 80.0],
+        }
+    ).write_parquet(data_root / "ylt" / "risklink" / "risklink.parquet")
+
+    result = validate_rollup_inputs(data_root)
+
+    assert not result.is_valid
+    assert "risklink_ylt required columns contain nulls: eventid" in result.validation_report[
+        "error"
+    ].item()
+
+
+def test_ep_summary_schema_rejects_null_required_values() -> None:
+    from rollup.staging.load_sources import EP_SUMMARY_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", "Fine Art"],
+            "modelled_peril": ["EQ", "EQ"],
+            "ep_type": ["AAL", None],
+            "return_period": [0, 0],
+            "loss": [1.0, 1.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'ep_type' contains null values"):
+        EP_SUMMARY_SCHEMA.validate(frame)
+
+
+def test_lobs_schema_rejects_null_required_lookup_values() -> None:
+    from rollup.staging.load_sources import LOBS_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "lob_id": [1, 2],
+            "modelled_lob": ["Fine Art", "Casualty"],
+            "rollup_lob": ["Fine Art", "Casualty"],
+            "lob_type": ["property", "casualty"],
+            "cds_cat_class_name": ["ART", "CAS"],
+            "class": ["ART", None],
+            "office": ["London", "London"],
+            "currency": ["GBP", "GBP"],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'class' contains null values"):
+        LOBS_SCHEMA.validate(frame)
+
+
+def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
+    from rollup.staging.load_sources import PERILS_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "modelled_peril": ["EQ", "WS"],
+            "rollup_peril": ["Earthquake", "Windstorm"],
+            "region": ["US", "Europe"],
+            "peril": ["EQ", "WS"],
+            "region_peril_id": [205, 150],
+            "selection_priority": [1, 2],
+            "is_dialsup": [1, None],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'is_dialsup' contains null values"):
+        PERILS_SCHEMA.validate(frame)
+
+
+def test_normalized_ylt_output_schema_rejects_null_core_values() -> None:
+    from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", None],
+            "modelled_peril": ["EQ", None],
+            "model_code": [7, None],
+            "year_id": [1, 2],
+            "event_id": [1, None],
+            "loss": [10.0, 40.0],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'event_id' contains null values"):
+        NORMALIZED_YLT_SCHEMA.validate(frame)
+
+
+def test_staged_ep_output_schema_rejects_null_joined_required_values() -> None:
+    from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", "Fine Art"],
+            "modelled_peril": ["EQ", "EQ"],
+            "ep_type": ["AAL", "AAL"],
+            "return_period": [0, 0],
+            "loss": [1.0, 1.0],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "class": ["ART", "ART"],
+            "office": ["London", "London"],
+            "currency": ["GBP", None],
+            "rollup_peril": ["Earthquake", "Earthquake"],
+            "region_peril_id": [205, 205],
+            "selection_priority": [1, 1],
+            "is_dialsup": [1, 1],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'currency' contains null values"):
+        STAGED_EP_SUMMARIES_OUTPUT_SCHEMA.validate(frame)
+
+
+def test_enriched_ylt_output_schema_rejects_null_required_enrichment_values() -> None:
+    from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
+
+    frame = pl.DataFrame(
+        {
+            "vendor": ["verisk", "risklink"],
+            "analysis_id": ["EQ", "9001"],
+            "modelled_lob": ["Fine Art", None],
+            "modelled_peril": ["EQ", None],
+            "model_code": [7, None],
+            "year_id": [1, 2],
+            "event_id": [1, 2],
+            "loss": [10.0, 40.0],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "rollup_peril": ["Earthquake", None],
+            "region_peril_id": [205, 205],
+            "class": ["ART", "ART"],
+            "office": ["London", "London"],
+            "currency": ["GBP", "GBP"],
+            "selection_priority": [1, 1],
+            "is_dialsup": [1, 1],
+        }
+    )
+
+    with pytest.raises(SchemaError, match="non-nullable column 'rollup_peril' contains null values"):
+        ENRICHED_YLT_OUTPUT_SCHEMA.validate(frame)
+
+
+def test_euws_factor_schema_accepts_integer_seed_factors() -> None:
+    from rollup.intermediate.apply_euws import MODEL_EVENT_EUWS_FACTORS_SCHEMA
+
+    factors = pl.DataFrame(
+        {
+            "model_event_id": [410024195],
+            "occ_year": [2026],
+            "factor": [1],
+        }
+    )
+
+    MODEL_EVENT_EUWS_FACTORS_SCHEMA.validate(factors)
+
+
+def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from rollup import pipeline
+
+    calls: list[tuple[str, object]] = []
+    stage_outputs: dict[str, tuple[str, ...]] = {}
+    sources = SimpleNamespace(
+        verisk_ylt="verisk_ylt",
+        risklink_ylt="risklink_ylt",
+        verisk_events="verisk_events",
+        ep_summaries="ep_summaries",
+        lobs="lobs",
+        perils="perils",
+        blending="blending",
+        fx_rates="fx_rates",
+        forecast_factors="forecast_factors",
+        euws_factors="euws_factors",
+        euws_overrides="euws_overrides",
+    )
+    config = SimpleNamespace(
+        outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
+        fx=SimpleNamespace(target_currency="GBP"),
+    )
+
+    def record(name: str, result: str):
+        def transform(*args: object) -> str:
+            calls.append((name, args))
+            return result
+
+        return transform
+
+    def write_stage_frames(
+        output_root: Path,
+        section: str,
+        frames: dict[str, object],
+        config: object,
+    ) -> tuple[Path, ...]:
+        stage_outputs[section] = tuple(frames)
+        return tuple(output_root / section / f"{name}.parquet" for name in frames)
+
+    monkeypatch.setattr(pipeline, "load_sources", record("load_sources", sources))
+    monkeypatch.setattr(pipeline, "normalize_ylt", record("normalize_ylt", "normalized"))
+    monkeypatch.setattr(pipeline, "stage_ep_summaries", record("stage_ep_summaries", "staged_ep"))
+    monkeypatch.setattr(pipeline, "build_enriched_ylt", record("build_enriched_ylt", "enriched"))
+    monkeypatch.setattr(pipeline, "apply_blending", record("apply_blending", "blended"))
+    monkeypatch.setattr(pipeline, "apply_fx", record("apply_fx", "fx_applied"))
+    monkeypatch.setattr(pipeline, "apply_forecast", record("apply_forecast", "forecast_applied"))
+    monkeypatch.setattr(pipeline, "apply_euws", record("apply_euws", "euws_applied"))
+    monkeypatch.setattr(pipeline, "build_metric_long", record("build_metric_long", "combined"))
+    monkeypatch.setattr(pipeline, "build_dialsup", record("build_dialsup", "dialsup"))
+    monkeypatch.setattr(pipeline, "_write_stage_frames", write_stage_frames)
+    monkeypatch.setattr(pipeline, "write_marts", record("write_marts", {}))
+
+    pipeline.run(tmp_path / "data", output_root=tmp_path / "output", config=config)
+
+    assert calls == [
+        ("load_sources", (tmp_path / "data",)),
+        ("normalize_ylt", (sources,)),
+        ("stage_ep_summaries", (sources,)),
+        ("build_enriched_ylt", ("normalized", "staged_ep")),
+        ("apply_blending", ("enriched", "staged_ep", "blending")),
+        ("apply_fx", ("blended", "fx_rates", "GBP")),
+        ("apply_forecast", ("fx_applied", "forecast_factors")),
+        ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
+        ("build_metric_long", ("euws_applied", "GBP")),
+        ("build_dialsup", ("euws_applied", "GBP")),
+        ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
+    ]
+    assert stage_outputs["intermediate"] == (
+        "enriched_ylt",
+        "blended_ylt",
+        "fx_applied_ylt",
+        "forecast_applied_ylt",
+        "euws_applied_ylt",
+    )
+
+
+def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) -> None:
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[analysis]
+num_sims_verisk = 2
+num_sims_risklink = 4
+return_periods = [2]
+
+[outputs]
+write_stage_outputs = false
+write_duckdb = true
+combined_file = "combined.parquet"
+duckdb_file = "custom-rollup.duckdb"
+
+[fx]
+target_currency = "usd"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
+    assert config.analysis.return_periods == (2,)
+    assert config.outputs.write_stage_outputs is False
+    assert config.outputs.write_duckdb is True
+    assert config.outputs.combined_file == "combined.parquet"
+    assert config.outputs.duckdb_file == "custom-rollup.duckdb"
+    assert config.outputs.duckdb_path(tmp_path / "output") == tmp_path / "output" / "custom-rollup.duckdb"
+    assert config.fx.target_currency == "USD"
+
+
+def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> None:
+    from rollup.intermediate.apply_blending import BLENDED_YLT_SCHEMA
+    from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.apply_forecast import FORECAST_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.apply_fx import FX_APPLIED_YLT_SCHEMA
+    from rollup.intermediate.build_dialsup import DIALSUP_SCHEMA
+    from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
+    from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
+    from rollup.marts.event_validation import EVENT_VALIDATION_SCHEMA
+    from rollup.marts.wide import WIDE_OUTPUT_SCHEMA
+    from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
+    from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
+
+    data_root = _write_tiny_input(tmp_path)
+    output_root = tmp_path / "output"
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[analysis]
+num_sims_verisk = 2
+num_sims_risklink = 4
+return_periods = [2]
+
+[outputs]
+write_stage_outputs = true
+write_duckdb = true
+duckdb_file = "rollup.duckdb"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = run_rollup(data_root, output_root, config_path=config_path)
+
+    assert result.outputs.stage_dir == output_root / "stages"
+    normalized_ylt_path = output_root / "stages" / "staging" / "normalized_ylt.parquet"
+    staged_ep_path = output_root / "stages" / "staging" / "staged_ep_summaries.parquet"
+    assert normalized_ylt_path.is_file()
+    assert staged_ep_path.is_file()
+    intermediate_stage = output_root / "stages" / "intermediate"
+    enriched_ylt_path = intermediate_stage / "enriched_ylt.parquet"
+    blended_ylt_path = intermediate_stage / "blended_ylt.parquet"
+    fx_applied_ylt_path = intermediate_stage / "fx_applied_ylt.parquet"
+    forecast_applied_ylt_path = intermediate_stage / "forecast_applied_ylt.parquet"
+    euws_applied_ylt_path = intermediate_stage / "euws_applied_ylt.parquet"
+    assert enriched_ylt_path.is_file()
+    assert blended_ylt_path.is_file()
+    assert fx_applied_ylt_path.is_file()
+    assert forecast_applied_ylt_path.is_file()
+    assert euws_applied_ylt_path.is_file()
+    assert not (intermediate_stage / "adjusted_ylt.parquet").exists()
+    assert result.outputs.mts_combined.is_file()
+    assert result.outputs.mts_wide.is_file()
+    assert result.outputs.mts_dialsup.is_file()
+    assert result.outputs.event_validation.is_file()
+    assert result.outputs.duckdb_file == output_root / "rollup.duckdb"
+    assert result.outputs.duckdb_file.is_file()
+    assert result.ep_report_path == output_root / "analysis" / "ep_report.csv"
+    assert result.ep_report_path.is_file()
+
+    report = pl.read_csv(result.ep_report_path)
+    assert set(report["return_period"].to_list()) == {0, 2}
+    aal = report.filter((pl.col("ep_type") == "AAL") & (pl.col("base_model") == "verisk"))
+    assert aal.filter(pl.col("metric") == final_main_metric("GBP"))[
+        "loss"
+    ].to_list() == [15.0]
+
+    assert_schema_validates(pl.read_parquet(normalized_ylt_path), NORMALIZED_YLT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(staged_ep_path), STAGED_EP_SUMMARIES_OUTPUT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(enriched_ylt_path), ENRICHED_YLT_OUTPUT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(blended_ylt_path), BLENDED_YLT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(fx_applied_ylt_path), FX_APPLIED_YLT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(forecast_applied_ylt_path), FORECAST_APPLIED_YLT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(euws_applied_ylt_path), EUWS_APPLIED_YLT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(result.outputs.mts_combined), METRIC_LONG_SCHEMA)
+    assert_schema_validates(pl.read_parquet(result.outputs.mts_wide), WIDE_OUTPUT_SCHEMA)
+    assert_schema_validates(pl.read_parquet(result.outputs.mts_dialsup), DIALSUP_SCHEMA)
+    assert_schema_validates(pl.read_parquet(result.outputs.event_validation), EVENT_VALIDATION_SCHEMA)
+
+
+def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path: Path) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    seeds = data_root / "seeds"
+    pl.DataFrame(
+        {
+            "lob_id": [1],
+            "modelled_lob": ["Fine Art"],
+            "rollup_lob": ["HIC_FA_UK"],
+            "lob_type": ["property"],
+            "cds_cat_class_name": ["FA"],
+            "class": ["FA"],
+            "office": ["UK"],
+            "currency": ["GBP"],
+        }
+    ).write_csv(seeds / "lobs.csv")
+    pl.DataFrame(
+        {
+            "class": ["PROP", "PROP", "PROP"],
+            "office": ["US", "US", "US"],
+            "office_iso2": ["US", "US", "US"],
+            "forecast_date": ["2026-01-01", "2026-07-01", "2026-12-31"],
+            "factor": [1.1, 1.2, 1.3],
+        }
+    ).write_csv(seeds / "forecast_factors.csv")
+
+    result = run_rollup(data_root, tmp_path / "output")
+    combined = pl.read_parquet(result.outputs.mts_combined)
+    final_main = combined.filter(
+        pl.col("metric") == final_main_metric("GBP")
+    )
+
+    assert final_main.select("forecast_date").unique().sort("forecast_date").to_series().to_list() == [
+        "2026-01-01",
+        "2026-07-01",
+        "2026-12-31",
+    ]
+    assert final_main.select("forecast_date", "loss").group_by("forecast_date").sum().sort("forecast_date").rows() == [
+        ("2026-01-01", 30.0),
+        ("2026-07-01", 30.0),
+        ("2026-12-31", 30.0),
+    ]
+    dialsup = pl.read_parquet(result.outputs.mts_dialsup)
+    assert dialsup.group_by("forecast_date").agg(pl.col("loss").sum()).sort("forecast_date").rows() == [
+        ("2026-01-01", 30.0),
+        ("2026-07-01", 30.0),
+        ("2026-12-31", 30.0),
+    ]
+
+
+def _write_tiny_input(tmp_path: Path) -> Path:
+    data_root = tmp_path / "data"
+    _write_ylt(data_root)
+    _write_ep_summaries(data_root)
+    _write_seeds(data_root)
+    return data_root
+
+
+def _write_ylt(data_root: Path) -> None:
+    verisk_dir = data_root / "ylt" / "verisk"
+    risklink_dir = data_root / "ylt" / "risklink"
+    verisk_dir.mkdir(parents=True)
+    risklink_dir.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "Analysis": ["EQ", "EQ"],
+            "ExposureAttribute": ["Fine Art", "Fine Art"],
+            "CatalogTypeCode": ["STC", "STC"],
+            "EventID": [1, 2],
+            "ModelCode": [7, 7],
+            "YearID": [1, 2],
+            "GroundUpLoss": [10.0, 20.0],
+        }
+    ).write_parquet(verisk_dir / "verisk.parquet")
+    pl.DataFrame(
+        {
+            "anlsid": [9001, 9001],
+            "yearid": [1, 2],
+            "eventid": [1, 2],
+            "loss": [40.0, 80.0],
+        }
+    ).write_parquet(risklink_dir / "risklink.parquet")
+
+
+def _write_ep_summaries(data_root: Path) -> None:
+    for vendor, analysis_id, oep_loss in [("verisk", "EQ", 100.0), ("risklink", "9001", 0.0)]:
+        folder = data_root / "ep_summaries" / vendor
+        folder.mkdir(parents=True)
+        pl.DataFrame(
+            {
+                "vendor": [vendor, vendor],
+                "analysis_id": [analysis_id, analysis_id],
+                "modelled_lob": ["Fine Art", "Fine Art"],
+                "modelled_peril": ["EQ", "EQ"],
+                "ep_type": ["AAL", "OEP"],
+                "return_period": [0, 1000],
+                "loss": [1.0, oep_loss],
+            }
+        ).write_csv(folder / f"{vendor}.long.csv")
+
+
+def _write_seeds(data_root: Path) -> None:
+    seeds = data_root / "seeds"
+    seeds.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "lob_id": [1],
+            "modelled_lob": ["Fine Art"],
+            "rollup_lob": ["Fine Art"],
+            "lob_type": ["property"],
+            "cds_cat_class_name": ["ART"],
+            "class": ["ART"],
+            "office": ["London"],
+            "currency": ["GBP"],
+        }
+    ).write_csv(seeds / "lobs.csv")
+    pl.DataFrame(
+        {
+            "modelled_peril": ["EQ"],
+            "rollup_peril": ["Earthquake"],
+            "region": ["US"],
+            "peril": ["EQ"],
+            "region_peril_id": [205],
+            "selection_priority": [1],
+            "is_dialsup": [1],
+        }
+    ).write_csv(seeds / "perils.csv")
+    pl.DataFrame(
+        {
+            "id": [1],
+            "BlendSetID": [1],
+            "RegionPerilID": [205],
+            "RegionPeril": ["US_EQ"],
+            "SubRegionPerilID": ["205"],
+            "SubRegionPeril": ["US_EQ"],
+            "AIRBlend": [1.0],
+            "RMSBlend": [0.5],
+            "KatRiskBlend": [0.0],
+            "DateCreated": ["2026-01-01"],
+        }
+    ).write_csv(seeds / "blending_factors.csv")
+    pl.DataFrame(
+        {
+            "currency_code": ["GBP"],
+            "target_currency": ["GBP"],
+            "rate_date": ["2026-01-01"],
+            "rate": [1.0],
+        }
+    ).write_csv(seeds / "fx_rates.csv")
+    pl.DataFrame(
+        {
+            "class": ["ART"],
+            "office": ["London"],
+            "office_iso2": ["GB"],
+            "forecast_date": ["2026-01-01"],
+            "factor": [1.0],
+        }
+    ).write_csv(seeds / "forecast_factors.csv")
+    pl.DataFrame(
+        {
+            "model_event_id": [101, 102],
+            "occ_year": [1, 2],
+            "factor": [1.0, 1.0],
+        }
+    ).write_csv(seeds / "euws_rate_factors.csv")
+    validation = seeds / "validation"
+    validation.mkdir()
+    pl.DataFrame(
+        {
+            "EventID": [101, 102],
+            "ModelID": [7, 7],
+            "Event": [1, 2],
+            "Year": [1, 2],
+            "Day": [10, 20],
+        }
+    ).write_parquet(validation / "verisk_events.parquet")

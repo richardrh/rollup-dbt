@@ -1,0 +1,48 @@
+name: Rollup Verisk event catalogue schema validation
+version: "1.0"
+
+# DataFrame/parquet config: load parquet into Polars/Dataiku and validate with
+# Pipeline.run_with_df(df). Add a separate CSV config/input block for CSV extracts.
+
+rules:
+  - code: VERISK_EVENTS_SCHEMA
+    name: Verisk event catalogue required columns and types
+    level: error
+    message: "verisk_events.parquet must contain the event catalogue columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: strict
+        allow_extra_columns: true
+        columns:
+          EventID: int64
+          ModelID: int64
+          Event: int64
+          Year: int64
+          Day: int64
+
+  - code: VERISK_EVENTS_REQUIRED_VALUES
+    name: Verisk event catalogue required values
+    level: error
+    message: "Verisk event catalogue fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - EventID
+          - ModelID
+          - Event
+          - Year
+          - Day
+
+  - code: VERISK_EVENTS_NON_NEGATIVE_VALUES
+    name: Verisk event catalogue non-negative numeric values
+    level: error
+    message: "Verisk event catalogue identifiers, years, and days must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - EventID
+          - ModelID
+          - Event
+          - Year
+          - Day
+        min: 0

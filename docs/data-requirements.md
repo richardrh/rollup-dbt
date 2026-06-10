@@ -1,8 +1,8 @@
 # Data requirements
 
-Inputs live under `data/`. Generated files live under root `output/`.
-Schema contracts for required files, columns, and dtypes live in colocated
-`schema.yaml` files; see [Schema contracts](schema-contracts.md).
+Inputs live under `data/`. Generated files live under `output/`. The runtime
+validates source availability plus required schema/nullability for the main
+inputs before running calculations.
 
 ## Required analyst inputs
 
@@ -10,9 +10,26 @@ Schema contracts for required files, columns, and dtypes live in colocated
 | --- | --- |
 | Verisk YLT parquet | `data/ylt/verisk/*.parquet` |
 | RiskLink YLT parquet | `data/ylt/risklink/*.parquet` |
-| Verisk EP summary | `data/ep_summaries/verisk/verisk_ep_summary.long.csv` |
-| RiskLink EP summary | `data/ep_summaries/risklink/rms_ep_summary.long.csv` |
+| EP summary long CSVs | `data/ep_summaries/**/*.long.csv` |
 | Seeds | `data/seeds/**` |
+
+Expected layout:
+
+```text
+data/
+  ylt/verisk/*.parquet
+  ylt/risklink/*.parquet
+  ep_summaries/**/*.long.csv
+  seeds/business/lobs.csv
+  seeds/business/perils.csv
+  seeds/vor/blending_factors.csv
+  seeds/vor/fx_rates.csv
+  seeds/vor/forecast_factors.csv
+  seeds/vor/euws_rate_factors.csv
+  seeds/adjustments/euws_rank_overrides.csv
+  seeds/validation/verisk_events.parquet
+  seeds/validation/risklink_flood22_model_events.parquet
+```
 
 YLT contracts support multiple parquet files per vendor. The loader reads all
 direct `*.parquet` files in `data/ylt/verisk/` and `data/ylt/risklink/`; each
@@ -41,8 +58,23 @@ string casting.
 
 ## Creating EP summary long CSVs from wide CSVs
 
-Use `rollup generate-ep-summaries` when an analyst or vendor gives you a wide
-CSV instead of a `.long.csv` file.
+Use `convert_ep_summary(...)` when an analyst or vendor gives you a wide CSV
+instead of a `.long.csv` file:
+
+```python
+from rollup import convert_ep_summary
+
+frame = convert_ep_summary(
+    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
+    vendor="verisk",
+    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
+)
+```
+
+The function converts one source file at a time, returns a Polars `DataFrame`,
+and writes a CSV only when `output_csv` is supplied. The `rollup
+generate-ep-summaries` command remains available as a local convenience wrapper
+for vendor-folder workflows.
 
 If the vendor provides an Excel file (`.xlsx`), the tool does not support Excel
 directly. Open the file in Excel or another spreadsheet application, save the
@@ -50,7 +82,7 @@ relevant sheet as a CSV file (e.g. "Save As" → "CSV UTF-8 (Comma delimited)
 (*.csv)"), then place that CSV in the vendor folder and proceed with the steps
 below.
 
-### Step 1. Put the source CSV in the vendor folder
+### Step 1. Put the source CSV in the vendor folder for CLI scan mode
 
 ```text
 data/ep_summaries/verisk/*.csv
@@ -58,11 +90,12 @@ data/ep_summaries/risklink/*.csv
 ```
 
 Existing `*.long.csv` files are ignored during source selection. RiskLink uses
-the same source CSV format as Verisk.
+the same source CSV format as Verisk. If a vendor folder contains multiple source
+wide CSVs, pass `--vendor` and `--csv`; scan mode fails rather than guessing.
 
-### Step 2. Run the converter
+### Step 2. Run the local converter command
 
-Interactive:
+Scan mode:
 
 ```bash
 uv run rollup generate-ep-summaries
@@ -71,8 +104,8 @@ uv run rollup generate-ep-summaries
 Non-interactive:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
-uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
+uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv
 ```
 
 ### Step 3. Check the generated `.long.csv`
@@ -85,7 +118,7 @@ Output paths are fixed by vendor:
 ### Step 4. Validate
 
 ```bash
-uv run rollup validate
+uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
 ### Source wide CSV format
@@ -141,20 +174,19 @@ verisk,ANALYSIS_1,Property,US_WS,AEP,50,1750472.0
 verisk,ANALYSIS_1,Property,US_WS,OEP,100,2250000.0
 ```
 
-### Source schema file
+### Source validation config
 
 Do not add a separate YAML schema file for source wide CSVs yet. The converter
 checks the required identifier columns and at least one EP metric column. The
-existing `data/ep_summaries/schema.yaml` remains the schema contract for the long
-CSV files used by validation and the pipeline.
+existing `data/ep_summaries/validnator.yml` describes the long CSV files used by
+remote validation workflows. The runtime enforces the long CSV shape with a
+strict Pandera schema.
 
 ## Seed files
 
-Seed schema contracts are defined in `data/seeds/schema.yaml`; see
-[Schema contracts](schema-contracts.md) for how these YAML files anchor required
-columns and validation. `uv run rollup validate` reports schema issues and runs
-anti-join validation for LOB/peril coverage. The anti-join report should be
-empty before running the pipeline.
+Seed schema contracts are documented in colocated Validnator configs; see
+[Validnator contracts](schema-contracts.md). Runtime validation uses strict
+Pandera schemas and reports seed shape issues before calculations start.
 
 ### `data/seeds/business/lobs.csv`
 
@@ -176,10 +208,8 @@ when multiple modelled perils map to the same vendor, `rollup_lob`, and
 EP staging; schema text uses `99` as the normal fallback priority, and some
 calling contexts treat the fallback/default as `99`/`100`.
 
-`is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
-candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
-alternatives should generally be `0` unless they are the only sensible base
-candidate. The main pipeline ignores this flag and continues to use
+`is_dialsup` is the independent DIALSUP peril-selection flag and is preserved at
+rollup peril level. The main pipeline ignores this flag and continues to use
 `selection_priority`. DIALSUP output can differ from the main output when this
 flag selects a different source peril.
 
@@ -194,11 +224,9 @@ Europe Flood `RegionPerilID` `216` is special-cased to use
 
 ### `data/seeds/vor/fx_rates.csv`
 
-FX lookup from source currency to target currency. The pipeline filters this file
-to GBP targets and joins by source currency to produce GBP losses.
-
-Missing FX rows are not defaulted: the join is inner, so rows without a GBP FX
-rate are dropped rather than carried forward with `1.0`.
+FX lookup from source currency to target currency. The target currency is
+explicit and defaults to `GBP`. A non-empty FX seed must include the requested
+target currency. Missing non-target rates fail rather than silently defaulting.
 
 ### `data/seeds/vor/forecast_factors.csv`
 
@@ -234,13 +262,14 @@ event day fields for RiskLink flood rows.
 
 - Every EP `modelled_lob` and YLT modelled LOB must exist in `lobs.csv`.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
-- Inputs must match their colocated `schema.yaml` contracts for required files,
-  columns, and types.
+- Inputs must match the runtime Pandera schemas for required files, columns, and
+  types. The colocated YAML contracts document the same intended shapes for
+  remote validation workflows.
 - Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
   strict and should not contain unexpected columns.
 - Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
   `analysis_id` values.
-- Seed entries without matching EP/YLT data do not produce anti-join errors and
-  are silently ignored downstream.
-- Run `uv run rollup validate`; treat any LOB/peril anti-join rows as blocking
+- Seed entries without matching EP/YLT data do not produce output by themselves.
+- Run `validate_rollup_inputs("data")` or a no-output-analysis smoke run; treat
+  validation failures as blocking
   input or lookup errors.

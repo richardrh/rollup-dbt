@@ -14,9 +14,18 @@ docs_hiddenimports = [
     *collect_submodules("pymdownx"),
     *collect_submodules("pygments.lexers"),
 ]
+runtime_hiddenimports = [
+    "duckdb",
+    "pandera",
+    "pandera.errors",
+    "pandera.polars",
+    "polars",
+    "pyarrow",
+    "pyarrow.parquet",
+]
 
 a = Analysis(
-    [str(ROOT / "src" / "rollup" / "cli.py")],
+    [str(ROOT / "src" / "rollup" / "__main__.py")],
     pathex=[str(ROOT / "src")],
     binaries=[],
     datas=[
@@ -24,7 +33,7 @@ a = Analysis(
         (str(ROOT / "zensical.toml"), "."),
         *zensical_datas,
     ],
-    hiddenimports=docs_hiddenimports,
+    hiddenimports=[*docs_hiddenimports, *runtime_hiddenimports],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

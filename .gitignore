@@ -34,11 +34,14 @@ jan-rollup/combined_table
 
 # Generated artefacts (regenerable via CLI subcommands)
 output/
+validation-output/
 
 # Local runtime state
 /.tmp/
 
-# Ignore everything inside data/ except schema.yaml files
+# Ignore everything inside data/ except section contracts and docs
 data/**
 !data/**/
+!data/**/README.md
 !data/**/schema.y*ml
+!data/**/validnator*.yml

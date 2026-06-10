@@ -1,0 +1,50 @@
+name: Rollup LOB seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: LOBS_SCHEMA
+    name: LOB seed required columns and types
+    level: error
+    message: "lobs.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: false
+        columns:
+          lob_id: int64
+          modelled_lob: string
+          rollup_lob: string
+          lob_type: string
+          cds_cat_class_name: string
+          office: string
+          class: string
+          currency: string
+
+  - code: LOBS_REQUIRED_VALUES
+    name: LOB seed required values
+    level: error
+    message: "LOB seed key fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - lob_id
+          - modelled_lob
+          - rollup_lob
+          - lob_type
+          - cds_cat_class_name
+          - office
+          - class
+          - currency
+
+  - code: LOBS_NON_NEGATIVE_ID
+    name: LOB seed non-negative identifier
+    column: lob_id
+    level: error
+    message: "lob_id must be non-negative"
+    checks:
+      - type: valid_range
+        min: 0
