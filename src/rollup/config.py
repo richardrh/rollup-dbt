@@ -112,16 +112,19 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
     blending_raw = _normalise_keys(raw.get("blending", {}))
     outputs_raw = _normalise_keys(raw.get("outputs", {}))
     fx_raw = _normalise_keys(raw.get("fx", {}))
+    vendor_years = _configured_vendor_years(
+        _normalise_keys(raw.get("vendor_years", {}))
+    )
 
     return RollupConfig(
         analysis=AnalysisConfig(
-            simulation_counts=_simulation_counts(analysis_raw),
+            simulation_counts=_simulation_counts(analysis_raw, vendor_years),
             return_periods=tuple(
                 int(value) for value in analysis_raw.get("return_periods", (30, 200, 1000))
             ),
         ),
         blending=BlendingConfig(
-            vendor_years=_vendor_years(blending_raw),
+            vendor_years=_blending_vendor_years(blending_raw, vendor_years),
             target_points=_blending_target_points(blending_raw),
             uplift_factor_min=float(blending_raw.get("uplift_factor_min", 0.1)),
             uplift_factor_max=float(blending_raw.get("uplift_factor_max", 10.0)),
@@ -136,7 +139,18 @@ def _normalise_keys(values: dict[str, Any]) -> dict[str, Any]:
     return {key.lower(): value for key, value in values.items()}
 
 
-def _simulation_counts(values: dict[str, Any]) -> dict[str, int]:
+def _configured_vendor_years(values: dict[str, Any]) -> dict[str, int] | None:
+    if not values:
+        return None
+    return {str(key).lower(): int(value) for key, value in values.items()}
+
+
+def _simulation_counts(
+    values: dict[str, Any],
+    vendor_years: dict[str, int] | None,
+) -> dict[str, int]:
+    if vendor_years is not None:
+        return dict(vendor_years)
     for nested_key in ("vendor_years", "simulation_counts"):
         nested = values.get(nested_key)
         if isinstance(nested, dict):
@@ -149,7 +163,12 @@ def _simulation_counts(values: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _vendor_years(values: dict[str, Any]) -> dict[str, int]:
+def _blending_vendor_years(
+    values: dict[str, Any],
+    vendor_years: dict[str, int] | None,
+) -> dict[str, int]:
+    if vendor_years is not None:
+        return dict(vendor_years)
     nested = values.get("vendor_years")
     if isinstance(nested, dict):
         return {str(key).lower(): int(value) for key, value in nested.items()}
