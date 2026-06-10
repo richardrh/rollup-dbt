@@ -20,6 +20,7 @@ ENRICHED_YLT_OUTPUT_SCHEMA = pa.DataFrameSchema(
         Col.year_id: pa.Column(pl.Int64, nullable=False),
         Col.event_id: pa.Column(pl.Int64, nullable=False),
         Col.loss: pa.Column(pl.Float64, nullable=False),
+        Col.base_model: pa.Column(pl.String, nullable=False),
         Col.rollup_lob: pa.Column(pl.String, nullable=False),
         Col.rollup_peril: pa.Column(pl.String, nullable=False),
         Col.region_peril_id: pa.Column(pl.Int64, nullable=False),
@@ -28,6 +29,7 @@ ENRICHED_YLT_OUTPUT_SCHEMA = pa.DataFrameSchema(
         Col.currency: pa.Column(pl.String, nullable=False),
         Col.selection_priority: pa.Column(pl.Int64, nullable=False),
         Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
+        Col.is_euws: pa.Column(pl.Int64, nullable=False),
     },
     strict=False,
 )
@@ -45,11 +47,13 @@ def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) ->
         Col.rollup_lob,
         Col.rollup_peril,
         Col.region_peril_id,
+        Col.base_model,
         Col.class_,
         Col.office,
         Col.currency,
         Col.selection_priority,
         Col.is_dialsup,
+        Col.is_euws,
     ).unique()
     verisk_keys = ep_keys.filter(pl.col(Col.vendor) == "verisk").drop(Col.analysis_id)
     risklink_keys = ep_keys.filter(pl.col(Col.vendor) == "risklink").drop(

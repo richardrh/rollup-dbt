@@ -10,7 +10,7 @@ import pytest
 
 from rollup.api import run_rollup, validate_rollup_inputs
 from rollup.config import load_config
-from rollup.intermediate.build_metric_long import final_main_metric
+from rollup.metrics import final_main_metric
 
 
 def assert_schema_validates(frame: pl.DataFrame, schema: object) -> None:
@@ -306,8 +306,10 @@ def test_perils_schema_rejects_null_required_dialsup_flag() -> None:
             "region": ["US", "Europe"],
             "peril": ["EQ", "WS"],
             "region_peril_id": [205, 150],
+            "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 2],
             "is_dialsup": [1, None],
+            "is_euws": [0, 0],
         }
     )
 
@@ -353,8 +355,10 @@ def test_staged_ep_output_schema_rejects_null_joined_required_values() -> None:
             "currency": ["GBP", None],
             "rollup_peril": ["Earthquake", "Earthquake"],
             "region_peril_id": [205, 205],
+            "base_model": ["verisk", "verisk"],
             "selection_priority": [1, 1],
             "is_dialsup": [1, 1],
+            "is_euws": [0, 0],
         }
     )
 
@@ -378,11 +382,13 @@ def test_enriched_ylt_output_schema_rejects_null_required_enrichment_values() ->
             "rollup_lob": ["Fine Art", "Fine Art"],
             "rollup_peril": ["Earthquake", None],
             "region_peril_id": [205, 205],
+            "base_model": ["verisk", "verisk"],
             "class": ["ART", "ART"],
             "office": ["London", "London"],
             "currency": ["GBP", "GBP"],
             "selection_priority": [1, 1],
             "is_dialsup": [1, 1],
+            "is_euws": [0, 0],
         }
     )
 
@@ -422,7 +428,9 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         euws_factors="euws_factors",
         euws_overrides="euws_overrides",
     )
+    blending_config = SimpleNamespace(vendor_years={"verisk": 123, "risklink": 456})
     config = SimpleNamespace(
+        blending=blending_config,
         outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
         fx=SimpleNamespace(target_currency="GBP"),
     )
@@ -463,7 +471,10 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("normalize_ylt", (sources,)),
         ("stage_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
-        ("apply_blending", ("enriched", "staged_ep", "blending")),
+        (
+            "apply_blending",
+            ("enriched", "staged_ep", "blending", blending_config),
+        ),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
@@ -485,15 +496,35 @@ def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) 
     config_path.write_text(
         """
 [analysis]
-num_sims_verisk = 2
-num_sims_risklink = 4
 return_periods = [2]
+
+[analysis.vendor_years]
+verisk = 2
+risklink = 4
+
+[blending]
+uplift_factor_min = 0.25
+uplift_factor_max = 4.0
+target_points = [
+  { ep_type = "AAL", return_period = 0 },
+  { ep_type = "OEP", return_period = 5 },
+]
+
+[blending.vendor_years]
+verisk = 7
+risklink = 11
+
+[blending.subregion_selection]
+"999" = "999z"
 
 [outputs]
 write_stage_outputs = false
 write_duckdb = true
 combined_file = "combined.parquet"
 duckdb_file = "custom-rollup.duckdb"
+
+[outputs.fanout_prefixes]
+bespoke = "BespokeModel"
 
 [fx]
 target_currency = "usd"
@@ -505,12 +536,60 @@ target_currency = "usd"
 
     assert config.analysis.simulation_counts == {"verisk": 2, "risklink": 4}
     assert config.analysis.return_periods == (2,)
+    assert config.blending.vendor_years == {"verisk": 7, "risklink": 11}
+    assert [(point.ep_type, point.return_period) for point in config.blending.target_points] == [
+        ("AAL", 0),
+        ("OEP", 5),
+    ]
+    assert config.blending.uplift_factor_min == 0.25
+    assert config.blending.uplift_factor_max == 4.0
+    assert config.blending.subregion_selection == {999: "999z"}
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.write_duckdb is True
     assert config.outputs.combined_file == "combined.parquet"
     assert config.outputs.duckdb_file == "custom-rollup.duckdb"
+    assert config.outputs.fanout_prefixes == {"bespoke": "BespokeModel"}
     assert config.outputs.duckdb_path(tmp_path / "output") == tmp_path / "output" / "custom-rollup.duckdb"
     assert config.fx.target_currency == "USD"
+
+
+def test_analysis_report_uses_vendor_years_from_config_toml(tmp_path: Path) -> None:
+    from rollup.analysis import build_ep_report
+
+    output_root = tmp_path / "output"
+    marts_dir = output_root / "marts"
+    marts_dir.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "forecast_date": ["2026-01-01", "2026-01-01"],
+            "metric": [final_main_metric("GBP"), final_main_metric("GBP")],
+            "base_model": ["custom_model", "custom_model"],
+            "rollup_lob": ["Fine Art", "Fine Art"],
+            "rollup_peril": ["Earthquake", "Earthquake"],
+            "year_id": [1, 2],
+            "loss": [10.0, 20.0],
+        }
+    ).write_parquet(marts_dir / "mts_tbl_ylt_combined_all_factors.parquet")
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[analysis]
+return_periods = [2]
+
+[analysis.vendor_years]
+custom_model = 2
+""".strip(),
+        encoding="utf-8",
+    )
+
+    report = build_ep_report(output_root, config_path=config_path)
+
+    aal = report.filter(pl.col("ep_type") == "AAL").select("loss").item()
+    oep = report.filter(
+        (pl.col("ep_type") == "OEP") & (pl.col("return_period") == 2)
+    ).select("loss").item()
+    assert aal == 15.0
+    assert oep == 20.0
 
 
 def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> None:
@@ -520,9 +599,9 @@ def test_dataiku_run_writes_stage_mart_and_analysis_outputs(tmp_path: Path) -> N
     from rollup.intermediate.apply_fx import FX_APPLIED_YLT_SCHEMA
     from rollup.intermediate.build_dialsup import DIALSUP_SCHEMA
     from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
-    from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
     from rollup.marts.event_validation import EVENT_VALIDATION_SCHEMA
     from rollup.marts.wide import WIDE_OUTPUT_SCHEMA
+    from rollup.metrics import METRIC_LONG_SCHEMA
     from rollup.staging.normalize_ylt import NORMALIZED_YLT_SCHEMA
     from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
@@ -714,8 +793,10 @@ def _write_seeds(data_root: Path) -> None:
             "region": ["US"],
             "peril": ["EQ"],
             "region_peril_id": [205],
+            "base_model": ["verisk"],
             "selection_priority": [1],
             "is_dialsup": [1],
+            "is_euws": [0],
         }
     ).write_csv(seeds / "perils.csv")
     pl.DataFrame(

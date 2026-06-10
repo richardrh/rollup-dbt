@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+import logging
+
 import polars as pl
 import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
+from rollup.config import BlendingConfig, BlendingTargetPoint
 from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
 from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
 
+logger = logging.getLogger(__name__)
 BLENDING_INPUT_SCHEMA = ENRICHED_YLT_OUTPUT_SCHEMA
 BLENDING_EP_INPUT_SCHEMA = STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 BLENDING_FACTORS_SCHEMA = pa.DataFrameSchema(
@@ -30,16 +35,39 @@ BLENDED_YLT_SCHEMA = pa.DataFrameSchema(
         Col.target_loss: pa.Column(pl.Float64, nullable=True),
         Col.base_model_loss: pa.Column(pl.Float64, nullable=True),
         Col.uplift_factor_on_base_model: pa.Column(pl.Float64, nullable=True),
+        Col.sub_region_peril_id: pa.Column(
+            pl.String,
+            nullable=True,
+            required=False,
+        ),
+        Col.sub_region_peril: pa.Column(
+            pl.String,
+            nullable=True,
+            required=False,
+        ),
         "blended_loss": pa.Column(pl.Float64, nullable=True),
     },
     strict=False,
 )
+EP_LOSS_KEYS = [
+    Col.rollup_lob,
+    Col.rollup_peril,
+    Col.region_peril_id,
+    Col.base_model,
+    Col.ep_type,
+    Col.return_period,
+]
+BLEND_VENDOR_LOSS_COLUMNS = {
+    "risklink": Col.risklink_loss,
+    "verisk": Col.verisk_loss,
+}
 
 
 def apply_blending(
     enriched: pl.LazyFrame,
     staged_ep: pl.LazyFrame,
     blending: pl.DataFrame,
+    config: BlendingConfig,
 ) -> pl.LazyFrame:
     BLENDING_INPUT_SCHEMA.validate(enriched)
     BLENDING_EP_INPUT_SCHEMA.validate(staged_ep)
@@ -47,35 +75,50 @@ def apply_blending(
     if blending.is_empty():
         raise ValueError("EP-derived blending requires non-empty blending factors")
 
-    joined_ep = join_ep_summaries(staged_ep)
-    targets = calculate_ep_blending_targets(joined_ep, blending)
-    return apply_ep_blending_to_ylt(enriched, targets)
+    ep_losses = aggregate_ep_losses(staged_ep)
+    joined_ep = join_ep_summaries(ep_losses)
+    base_model_losses = calculate_base_model_losses(ep_losses)
+    targets = calculate_ep_blending_targets(
+        joined_ep,
+        base_model_losses,
+        blending,
+        config,
+    )
+    return apply_ep_blending_to_ylt(enriched, targets, config)
 
 
-def join_ep_summaries(staged_ep: pl.LazyFrame) -> pl.LazyFrame:
-    join_keys = [
-        Col.rollup_lob,
-        Col.rollup_peril,
-        Col.region_peril_id,
-        Col.ep_type,
-        Col.return_period,
+def aggregate_ep_losses(staged_ep: pl.LazyFrame) -> pl.LazyFrame:
+    return staged_ep.group_by([*EP_LOSS_KEYS, Col.vendor]).agg(
+        pl.col(Col.loss).sum().alias(Col.loss)
+    )
+
+
+def join_ep_summaries(ep_losses: pl.LazyFrame) -> pl.LazyFrame:
+    summaries = [
+        ep_losses.filter(pl.col(Col.vendor) == vendor)
+        .drop(Col.vendor)
+        .rename({Col.loss: loss_column})
+        for vendor, loss_column in BLEND_VENDOR_LOSS_COLUMNS.items()
     ]
-    verisk = (
-        staged_ep.filter(pl.col(Col.vendor) == "verisk")
-        .group_by(join_keys)
-        .agg(pl.col(Col.loss).sum().alias(Col.verisk_loss))
+    joined = summaries[0]
+    for summary in summaries[1:]:
+        joined = joined.join(summary, on=EP_LOSS_KEYS, how="full", coalesce=True)
+    return joined
+
+
+def calculate_base_model_losses(ep_losses: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        ep_losses.filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        .drop(Col.vendor)
+        .rename({Col.loss: Col.base_model_loss})
     )
-    risklink = (
-        staged_ep.filter(pl.col(Col.vendor) == "risklink")
-        .group_by(join_keys)
-        .agg(pl.col(Col.loss).sum().alias(Col.risklink_loss))
-    )
-    return risklink.join(verisk, on=join_keys, how="full", coalesce=True)
 
 
 def calculate_ep_blending_targets(
     joined_ep: pl.LazyFrame,
+    base_model_losses: pl.LazyFrame,
     blending: pl.DataFrame,
+    config: BlendingConfig,
 ) -> pl.LazyFrame:
     columns = blending.columns
     region_col = RawCol.RegionPerilID if RawCol.RegionPerilID in columns else Col.region_peril_id
@@ -95,9 +138,10 @@ def calculate_ep_blending_targets(
     )
     weights = blending.lazy()
     if RawCol.SubRegionPerilID in columns:
-        weights = weights.filter(
-            (pl.col(region_col) != 216)
-            | (pl.col(RawCol.SubRegionPerilID).cast(pl.String) == "216b")
+        weights = filter_selected_subregions(
+            weights,
+            region_col,
+            config.subregion_selection,
         ).sort(RawCol.SubRegionPerilID)
     weights = weights.group_by(region_col).first().select(
         pl.col(region_col).cast(pl.Int64).alias(Col.region_peril_id),
@@ -107,39 +151,49 @@ def calculate_ep_blending_targets(
         pl.col(rms_col).cast(pl.Float64).alias(Col.risklink_weight),
     )
 
-    target_points = joined_ep.filter(
-        ((pl.col(Col.ep_type) == "AAL") & (pl.col(Col.return_period) == 0))
-        | ((pl.col(Col.ep_type) == "OEP") & (pl.col(Col.return_period).is_in([200, 1000])))
+    target_points = joined_ep.join(
+        blending_target_points(config.target_points),
+        on=[Col.ep_type, Col.return_period],
+        how="inner",
     )
-    return (
-        target_points.filter(
-            pl.col(Col.risklink_loss).is_not_null()
-            & pl.col(Col.verisk_loss).is_not_null()
-        )
+    with_base_model = (
+        target_points
+        .join(base_model_losses, on=EP_LOSS_KEYS, how="left")
         .join(weights, on=Col.region_peril_id, how="left")
+    )
+    validate_base_model_losses(with_base_model)
+    warn_missing_vendor_losses(with_base_model)
+    return (
+        with_base_model
         .with_columns(
-            (
+            pl.when(
+                pl.col(Col.risklink_loss).is_null()
+                | pl.col(Col.verisk_loss).is_null()
+            )
+            .then(pl.col(Col.base_model_loss))
+            .otherwise(
                 (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
                 + (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
-            ).alias(Col.target_loss),
-            base_model_expr().alias(Col.base_model),
-        )
-        .with_columns(
-            pl.when(pl.col(Col.base_model) == "risklink")
-            .then(pl.col(Col.risklink_loss))
-            .otherwise(pl.col(Col.verisk_loss))
-            .alias(Col.base_model_loss)
+            )
+            .alias(Col.target_loss),
         )
         .with_columns(
             (pl.col(Col.target_loss) / pl.col(Col.base_model_loss))
-            .clip(lower_bound=0.1, upper_bound=10.0)
+            .clip(
+                lower_bound=config.uplift_factor_min,
+                upper_bound=config.uplift_factor_max,
+            )
             .alias(Col.uplift_factor_on_base_model)
         )
     )
 
 
-def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> pl.LazyFrame:
-    base_model_only = enriched.with_columns(base_model_expr().alias(Col.base_model)).filter(
+def apply_ep_blending_to_ylt(
+    enriched: pl.LazyFrame,
+    targets: pl.LazyFrame,
+    config: BlendingConfig,
+) -> pl.LazyFrame:
+    base_model_only = enriched.filter(
         pl.col(Col.vendor) == pl.col(Col.base_model)
     )
     ranked = (
@@ -151,17 +205,10 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
             .alias(Col.rnk)
         )
         .with_columns(
-            pl.when(pl.col(Col.vendor) == "risklink")
-            .then(100_000.0 / pl.col(Col.rnk))
-            .otherwise(10_000.0 / pl.col(Col.rnk))
-            .alias(Col.rp)
+            (vendor_years_expr(config.vendor_years) / pl.col(Col.rnk)).alias(Col.rp)
         )
         .with_columns(
-            pl.when(pl.col(Col.rp) < 200)
-            .then(pl.lit(0))
-            .when(pl.col(Col.rp) < 1000)
-            .then(pl.lit(200))
-            .otherwise(pl.lit(1000))
+            rp_bucket_expr(config.target_points)
             .cast(pl.Int64)
             .alias(Col.rp_bucket)
         )
@@ -178,6 +225,8 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
         Col.base_model,
         Col.base_model_loss,
         Col.uplift_factor_on_base_model,
+        Col.sub_region_peril_id,
+        Col.sub_region_peril,
     )
     return ranked.join(
         factors,
@@ -194,7 +243,112 @@ def apply_ep_blending_to_ylt(enriched: pl.LazyFrame, targets: pl.LazyFrame) -> p
     )
 
 
-def base_model_expr() -> pl.Expr:
-    return pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"])).then(
-        pl.lit("risklink")
-    ).otherwise(pl.lit("verisk"))
+def filter_selected_subregions(
+    weights: pl.LazyFrame,
+    region_col: str,
+    subregion_selection: Mapping[int, str],
+) -> pl.LazyFrame:
+    if not subregion_selection:
+        return weights
+    region_id = "__region_peril_id"
+    selected_subregion = "__selected_subregion_peril_id"
+    selections = pl.DataFrame(
+        {
+            region_id: list(subregion_selection),
+            selected_subregion: list(subregion_selection.values()),
+        },
+        schema={region_id: pl.Int64, selected_subregion: pl.String},
+    ).lazy()
+    return (
+        weights.with_columns(pl.col(region_col).cast(pl.Int64).alias(region_id))
+        .join(selections, on=region_id, how="left")
+        .filter(
+            pl.col(selected_subregion).is_null()
+            | (pl.col(RawCol.SubRegionPerilID).cast(pl.String) == pl.col(selected_subregion))
+        )
+        .drop(region_id, selected_subregion)
+    )
+
+
+def blending_target_points(
+    target_points: tuple[BlendingTargetPoint, ...],
+) -> pl.LazyFrame:
+    if not target_points:
+        raise ValueError("EP blending requires at least one configured target point")
+    return pl.DataFrame(
+        {
+            Col.ep_type: [point.ep_type for point in target_points],
+            Col.return_period: [point.return_period for point in target_points],
+        },
+        schema={Col.ep_type: pl.String, Col.return_period: pl.Int64},
+    ).lazy()
+
+
+def validate_base_model_losses(frame: pl.LazyFrame) -> None:
+    missing = frame.filter(pl.col(Col.base_model_loss).is_null()).select(
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        Col.base_model,
+        Col.ep_type,
+        Col.return_period,
+    ).collect()
+    if missing.is_empty():
+        return
+    raise ValueError(
+        "EP blending target points are missing base-model losses: "
+        f"{missing.rows(named=True)}"
+    )
+
+
+def warn_missing_vendor_losses(frame: pl.LazyFrame) -> None:
+    missing = frame.filter(
+        pl.col(Col.risklink_loss).is_null() | pl.col(Col.verisk_loss).is_null()
+    ).select(
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.region_peril_id,
+        Col.base_model,
+        Col.ep_type,
+        Col.return_period,
+    ).collect()
+    if missing.is_empty():
+        return
+    logger.warning(
+        "EP blending target points are missing vendor losses; "
+        "falling back to base-model loss for %d point(s): %s",
+        missing.height,
+        missing.rows(named=True),
+    )
+
+
+def rp_bucket_expr(target_points: tuple[BlendingTargetPoint, ...]) -> pl.Expr:
+    periods = sorted(
+        {
+            point.return_period
+            for point in target_points
+            if point.ep_type == "OEP" and point.return_period > 0
+        }
+    )
+    if not periods:
+        raise ValueError("EP blending requires at least one positive OEP target point")
+    expr: pl.Expr = pl.lit(periods[-1])
+    for index in range(len(periods) - 1, -1, -1):
+        lower_bucket = 0 if index == 0 else periods[index - 1]
+        expr = (
+            pl.when(pl.col(Col.rp) < periods[index])
+            .then(pl.lit(lower_bucket))
+            .otherwise(expr)
+        )
+    return expr
+
+
+def vendor_years_expr(vendor_years: Mapping[str, int]) -> pl.Expr:
+    years = {
+        str(vendor).lower(): float(year_count)
+        for vendor, year_count in vendor_years.items()
+    }
+    return pl.col(Col.vendor).replace_strict(
+        years,
+        return_dtype=pl.Float64,
+    )

@@ -9,7 +9,8 @@ import pytest
 from rollup.columns import Col
 from rollup.config import RollupConfig
 from rollup.intermediate.build_dialsup import dialsup_metric
-from rollup.intermediate.build_metric_long import final_main_metric, forecast_metric, metric_specs
+from rollup.metrics import final_main_metric, forecast_metric, metric_specs
+from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide_column_name
 from rollup.marts.write_marts import write_marts
 
@@ -101,6 +102,20 @@ def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
         "dialsup": 1,
         "event_validation": 2,
     }
+
+
+def test_write_fanouts_rejects_unknown_base_model(tmp_path: Path) -> None:
+    frame = combined_metric_frame().with_columns(
+        pl.lit("katrisk").alias(Col.base_model)
+    )
+
+    with pytest.raises(ValueError, match="unsupported base model for fanout 'katrisk'"):
+        write_fanouts(
+            tmp_path,
+            frame.lazy(),
+            {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+            "GBP",
+        )
 
 
 def combined_metric_frame() -> pl.DataFrame:

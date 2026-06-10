@@ -200,7 +200,11 @@ application.
 ### `data/seeds/business/perils.csv`
 
 Peril lookup from GC/vendor `modelled_peril` values to rollup peril labels,
-region/peril labels, and `region_peril_id`.
+region/peril labels, `region_peril_id`, and blend `base_model`.
+
+`base_model` chooses which vendor YLT stream is used as the base model for EP
+blending. It is data-driven from this seed file; for the current data, Europe
+and UK flood rows use `risklink`, while the other rows use `verisk`.
 
 `selection_priority` chooses the main pipeline's preferred modelled peril variant
 when multiple modelled perils map to the same vendor, `rollup_lob`, and
@@ -208,10 +212,14 @@ when multiple modelled perils map to the same vendor, `rollup_lob`, and
 EP staging; schema text uses `99` as the normal fallback priority, and some
 calling contexts treat the fallback/default as `99`/`100`.
 
-`is_dialsup` is the independent DIALSUP peril-selection flag and is preserved at
-rollup peril level. The main pipeline ignores this flag and continues to use
-`selection_priority`. DIALSUP output can differ from the main output when this
-flag selects a different source peril.
+`is_dialsup` is the independent DIALSUP peril-selection flag on the selected
+modelled peril row. The main pipeline still chooses the selected row with
+`selection_priority`, so set this flag on the `modelled_peril` that should feed
+DIALSUP.
+
+`is_euws` controls event-level EUWS factor application. Set it to `1` for
+modelled peril rows that should use `euws_rate_factors.csv`; unflagged rows use
+factor `1.0`.
 
 ### `data/seeds/vor/blending_factors.csv`
 
@@ -219,8 +227,9 @@ VOR blend weights by `RegionPerilID` and `SubRegionPerilID`. The EP blend target
 step uses the AIR and RMS weights to create blended loss targets from Verisk and
 RiskLink EP summaries.
 
-Europe Flood `RegionPerilID` `216` is special-cased to use
-`SubRegionPerilID` `216b`.
+Subregion choices are configured in TOML under
+`[blending.subregion_selection]`. The default maps Europe Flood
+`RegionPerilID` `216` to `SubRegionPerilID` `216b`.
 
 ### `data/seeds/vor/fx_rates.csv`
 
@@ -238,8 +247,9 @@ Missing class/office/date factors default to `1.0`.
 ### `data/seeds/vor/euws_rate_factors.csv`
 
 Event-level Europe Windstorm factors by model event and occurrence year. These
-are applied only to `Europe_WS` rows after joining YLT events to the Verisk event
-catalogue. Non-Europe Windstorm rows use factor `1.0`.
+are applied only to rows whose selected peril mapping has `is_euws = 1` after
+joining YLT events to the Verisk event catalogue. Unflagged rows use factor
+`1.0`.
 
 ### `data/seeds/adjustments/euws_rank_overrides.csv`
 

@@ -4,7 +4,7 @@ import polars as pl
 import pandera.polars as pa
 
 from rollup.columns import Col
-from rollup.intermediate.build_metric_long import METRIC_LONG_SCHEMA
+from rollup.metrics import METRIC_LONG_SCHEMA
 
 
 WIDE_INPUT_SCHEMA = METRIC_LONG_SCHEMA

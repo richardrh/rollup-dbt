@@ -42,15 +42,12 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
             "seed_fx_rates",
             "seed_lobs",
             "seed_perils",
-            "seed_risklink_flood22_model_events",
-            "seed_verisk_events",
         }
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "input_ylt_verisk") == 1
         assert row_count(connection, "input_ylt_risklink") == 1
         assert row_count(connection, "input_ep_summaries") == 2
         assert row_count(connection, "seed_blending_factors") == 1
-        assert row_count(connection, "seed_risklink_flood22_model_events") == 1
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from rollup.columns import Col
+from rollup.config import BlendingConfig, BlendingTargetPoint
 from rollup.intermediate.apply_blending import apply_blending
 from rollup.staging.load_sources import StagingFrames
 from rollup.staging.stage_ep_summaries import stage_ep_summaries
@@ -40,8 +42,10 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
                 "region": ["UK", "UK"],
                 "peril": ["WS", "WS"],
                 Col.region_peril_id: [216, 216],
+                Col.base_model: ["verisk", "verisk"],
                 Col.selection_priority: [2, 1],
                 Col.is_dialsup: [1, 0],
+                Col.is_euws: [0, 0],
             }
         ),
     )
@@ -51,8 +55,8 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
     assert result.select(
         Col.vendor, Col.modelled_peril, Col.selection_priority, Col.is_dialsup
     ).rows() == [
-        ("risklink", "LOW", 1, 1),
-        ("verisk", "LOW", 1, 1),
+        ("risklink", "LOW", 1, 0),
+        ("verisk", "LOW", 1, 0),
     ]
 
 
@@ -71,10 +75,12 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
             Col.class_: ["FA", "FA"],
             Col.office: ["UK", "UK"],
             Col.currency: ["GBP", "GBP"],
-            Col.rollup_peril: ["UK_FL", "UK_FL"],
+            Col.rollup_peril: ["Spain_FL", "Spain_FL"],
             Col.region_peril_id: [101, 101],
+            Col.base_model: ["risklink", "risklink"],
             Col.selection_priority: [1, 1],
             Col.is_dialsup: [0, 0],
+            Col.is_euws: [0, 0],
         }
     )
     blending = pl.DataFrame(
@@ -88,7 +94,12 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
     )
 
     result = (
-        apply_blending(enriched.lazy(), staged_ep.lazy(), blending)
+        apply_blending(
+            enriched.lazy(),
+            staged_ep.lazy(),
+            blending,
+            BlendingConfig(vendor_years={"verisk": 123, "risklink": 2_000}),
+        )
         .collect()
         .sort(Col.loss)
     )
@@ -103,6 +114,117 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
         ("risklink", "risklink", 1000, 2.0, 50.0),
         ("risklink", "risklink", 1000, 2.0, 100.0),
     ]
+
+
+def test_apply_blending_uses_configured_subregion_selection() -> None:
+    enriched = (
+        enriched_ylt_frame()
+        .filter(pl.col(Col.vendor) == "risklink")
+        .head(1)
+        .with_columns(pl.lit(216, dtype=pl.Int64).alias(Col.region_peril_id))
+    )
+    staged_ep = pl.DataFrame(
+        {
+            Col.vendor: ["verisk", "risklink"],
+            Col.analysis_id: ["V", "R"],
+            Col.modelled_lob: ["ML", "ML"],
+            Col.modelled_peril: ["FL", "FL"],
+            Col.ep_type: ["OEP", "OEP"],
+            Col.return_period: [1000, 1000],
+            Col.loss: [200.0, 100.0],
+            Col.rollup_lob: ["RL", "RL"],
+            Col.class_: ["FA", "FA"],
+            Col.office: ["UK", "UK"],
+            Col.currency: ["GBP", "GBP"],
+            Col.rollup_peril: ["Spain_FL", "Spain_FL"],
+            Col.region_peril_id: [216, 216],
+            Col.base_model: ["risklink", "risklink"],
+            Col.selection_priority: [1, 1],
+            Col.is_dialsup: [0, 0],
+            Col.is_euws: [0, 0],
+        }
+    )
+    blending = pl.DataFrame(
+        {
+            "RegionPerilID": [216, 216],
+            "SubRegionPerilID": ["216a", "216b"],
+            "SubRegionPeril": ["Unused", "Selected"],
+            "AIRBlend": [0.0, 0.5],
+            "RMSBlend": [1.0, 1.0],
+        }
+    )
+
+    result = apply_blending(
+        enriched.lazy(),
+        staged_ep.lazy(),
+        blending,
+        BlendingConfig(
+            vendor_years={"risklink": 2_000},
+            target_points=(BlendingTargetPoint("OEP", 1000),),
+            subregion_selection={216: "216b"},
+        ),
+    ).collect()
+
+    assert result.select(
+        Col.sub_region_peril_id,
+        Col.target_loss,
+        Col.uplift_factor_on_base_model,
+        "blended_loss",
+    ).rows() == [("216b", 200.0, 2.0, 50.0)]
+
+
+def test_apply_blending_warns_and_falls_back_to_base_model_when_vendor_loss_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    enriched = enriched_ylt_frame().filter(pl.col(Col.vendor) == "risklink").head(1)
+    staged_ep = pl.DataFrame(
+        {
+            Col.vendor: ["risklink"],
+            Col.analysis_id: ["R"],
+            Col.modelled_lob: ["ML"],
+            Col.modelled_peril: ["FL"],
+            Col.ep_type: ["OEP"],
+            Col.return_period: [1000],
+            Col.loss: [100.0],
+            Col.rollup_lob: ["RL"],
+            Col.class_: ["FA"],
+            Col.office: ["UK"],
+            Col.currency: ["GBP"],
+            Col.rollup_peril: ["Spain_FL"],
+            Col.region_peril_id: [101],
+            Col.base_model: ["risklink"],
+            Col.selection_priority: [1],
+            Col.is_dialsup: [0],
+            Col.is_euws: [0],
+        }
+    )
+    blending = pl.DataFrame(
+        {
+            "RegionPerilID": [101],
+            "SubRegionPerilID": ["101a"],
+            "SubRegionPeril": ["Flood"],
+            "AIRBlend": [0.5],
+            "RMSBlend": [1.0],
+        }
+    )
+
+    with caplog.at_level("WARNING", logger="rollup.intermediate.apply_blending"):
+        result = apply_blending(
+            enriched.lazy(),
+            staged_ep.lazy(),
+            blending,
+            BlendingConfig(
+                vendor_years={"risklink": 2_000},
+                target_points=(BlendingTargetPoint("OEP", 1000),),
+            ),
+        ).collect()
+
+    assert "falling back to base-model loss" in caplog.text
+    assert result.select(
+        Col.target_loss,
+        Col.uplift_factor_on_base_model,
+        "blended_loss",
+    ).rows() == [(100.0, 1.0, 25.0)]
 
 
 def enriched_ylt_frame() -> pl.DataFrame:
@@ -122,14 +244,16 @@ def enriched_ylt_frame() -> pl.DataFrame:
                     Col.year_id: event_id,
                     Col.event_id: event_id,
                     Col.loss: loss,
+                    Col.base_model: "risklink",
                     Col.rollup_lob: "RL",
-                    Col.rollup_peril: "UK_FL",
+                    Col.rollup_peril: "Spain_FL",
                     Col.region_peril_id: 101,
                     Col.class_: "FA",
                     Col.office: "UK",
                     Col.currency: "GBP",
                     Col.selection_priority: 1,
                     Col.is_dialsup: 0,
+                    Col.is_euws: 0,
                 }
             )
     return pl.DataFrame(rows)

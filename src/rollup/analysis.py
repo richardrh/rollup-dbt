@@ -6,7 +6,7 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.config import RollupConfig, load_config
-from rollup.intermediate.build_metric_long import final_main_metric
+from rollup.metrics import final_main_metric
 
 
 def build_ep_report(

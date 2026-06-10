@@ -118,8 +118,10 @@ def peril_lookup(perils: list[str]) -> pl.DataFrame:
             "region": ["Region"] * len(perils),
             "peril": ["Peril"] * len(perils),
             Col.region_peril_id: list(range(1, len(perils) + 1)),
+            Col.base_model: ["verisk"] * len(perils),
             Col.selection_priority: [1] * len(perils),
             Col.is_dialsup: [0] * len(perils),
+            Col.is_euws: [0] * len(perils),
         }
     )
 

@@ -20,8 +20,10 @@ rules:
           region: string
           peril: string
           region_peril_id: int64
+          base_model: string
           selection_priority: int64
           is_dialsup: int64
+          is_euws: int64
 
   - code: PERILS_REQUIRED_VALUES
     name: Peril seed required values
@@ -35,8 +37,10 @@ rules:
           - region
           - peril
           - region_peril_id
+          - base_model
           - selection_priority
           - is_dialsup
+          - is_euws
 
   - code: PERILS_NON_NEGATIVE_NUMBERS
     name: Peril seed non-negative numeric fields
@@ -54,6 +58,17 @@ rules:
     column: is_dialsup
     level: error
     message: "is_dialsup must be 0 or 1"
+    checks:
+      - type: valid_values
+        values:
+          - "0"
+          - "1"
+
+  - code: PERILS_EUWS_FLAG
+    name: Peril seed EUWS flag
+    column: is_euws
+    level: error
+    message: "is_euws must be 0 or 1"
     checks:
       - type: valid_values
         values:

@@ -87,8 +87,10 @@ PERILS_SCHEMA = strict_schema(
         "region": required(pl.String),
         "peril": required(pl.String),
         Col.region_peril_id: required(pl.Int64),
+        Col.base_model: required(pl.String),
         Col.selection_priority: required(pl.Int64),
         Col.is_dialsup: required(pl.Int64),
+        Col.is_euws: required(pl.Int64),
     }
 )
 

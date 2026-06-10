@@ -10,7 +10,7 @@ from rollup.config import RollupConfig
 from rollup.marts.event_validation import event_validation
 from rollup.marts.fanouts import write_fanouts
 from rollup.marts.wide import wide
-from rollup.intermediate.build_metric_long import final_main_metric
+from rollup.metrics import final_main_metric
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,12 @@ def write_marts(
     logger.info("writing event validation mart path=%s", event_validation_path)
     _write_parquet(event_validation(final_metrics), event_validation_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
-    fanout_paths = write_fanouts(marts_dir, final_main, target_currency)
+    fanout_paths = write_fanouts(
+        marts_dir,
+        final_main,
+        config.outputs.fanout_prefixes,
+        target_currency,
+    )
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {

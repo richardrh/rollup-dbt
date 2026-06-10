@@ -68,7 +68,7 @@ def apply_euws(
         )
         .join(factors, on=[Col.model_event_id, Col.year_id], how="left")
         .with_columns(
-            pl.when(pl.col(Col.rollup_peril) == "Europe_WS")
+            pl.when(pl.col(Col.is_euws) == 1)
             .then(pl.col(Col.euws_factor_raw_source).fill_null(1.0))
             .otherwise(pl.lit(1.0))
             .alias(Col.euws_factor_raw)

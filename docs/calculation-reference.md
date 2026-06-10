@@ -37,8 +37,9 @@ For the main branch, it selects the lowest `selection_priority` per:
 vendor, rollup_lob, rollup_peril
 ```
 
-It also preserves `is_dialsup` at rollup peril level. This flag drives the
-separate DIALSUP branch and does not change main-branch selection.
+It also preserves `is_dialsup` and `is_euws` from the selected modelled peril
+row. `is_dialsup` drives the separate DIALSUP branch and does not change
+main-branch selection; `is_euws` controls EUWS factor application.
 
 ## YLT enrichment
 
@@ -55,29 +56,32 @@ RiskLink `analysis_id` join in `build_enriched_ylt`.
 
 Blending uses the restored old-master method:
 
-- target points: `AAL`, `OEP 200`, and `OEP 1000`
+- target points from `[blending].target_points`, defaulting to `AAL`, `OEP 200`,
+  and `OEP 1000`
 - blending weights from `seeds/vor/blending_factors.csv`
 - `target_loss = verisk_loss * AIRBlend + risklink_loss * RMSBlend`
-- base model is RiskLink for Europe/UK flood and Verisk otherwise
+- base model comes from `base_model` in `seeds/business/perils.csv`
 - `base_model_loss` comes from the chosen base model
 - `uplift_factor_on_base_model = target_loss / base_model_loss`
-- uplift factors are clipped to `0.1..10`
+- uplift factors are clipped by `[blending].uplift_factor_min` and
+  `[blending].uplift_factor_max`, defaulting to `0.1..10.0`
 - YLT rows join targets by rank-derived return-period bucket
 
 Rank-derived buckets:
 
 ```text
-RiskLink RP = 100000 / rank
-Verisk RP   = 10000 / rank
+vendor RP = configured blending vendor years / rank
 
 RP < 200   -> 0
 RP < 1000  -> 200
 RP >= 1000 -> 1000
 ```
 
-Missing required blending weights are a follow-up candidate for an explicit
-error; today they can cause downstream row loss or join failures depending on the
-case.
+The bucket boundaries come from the configured positive OEP target points. VOR
+subregion choices are configured under `[blending.subregion_selection]`; the
+default keeps Europe Flood `RegionPerilID` `216` on `SubRegionPerilID` `216b`.
+If one vendor loss is missing for a target point, the pipeline logs a warning
+and falls back to the base-model loss; missing base-model loss remains an error.
 
 ## FX
 
@@ -96,13 +100,14 @@ date. Missing class/office/date factors default to `1.0`.
 
 EUWS factors are event based. The runtime uses Verisk event catalogues,
 `euws_rate_factors.csv`, and `euws_rank_overrides.csv` to restore the old-master
-EUWS adjustment and rank override behavior.
+EUWS adjustment and rank override behavior. EUWS factors are applied when the
+selected peril mapping has `is_euws == 1`; unflagged rows use factor `1.0`.
 
 ## DIALSUP
 
 DIALSUP uses original YLT loss × FX × forecast. It does **not** use blended loss
-or EUWS-adjusted loss. Rows are selected by `is_dialsup == 1` from the enriched
-rollup peril mapping.
+or EUWS-adjusted loss. Rows are selected by `is_dialsup == 1` from the selected
+modelled peril mapping.
 
 DIALSUP writes `mts_tbl_ylt_dialsup.parquet`. DIALSUP fanout files are not
 emitted separately today.

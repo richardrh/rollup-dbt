@@ -25,8 +25,10 @@ STAGED_EP_SUMMARIES_OUTPUT_SCHEMA = pa.DataFrameSchema(
         Col.currency: pa.Column(pl.String, nullable=False),
         Col.rollup_peril: pa.Column(pl.String, nullable=False),
         Col.region_peril_id: pa.Column(pl.Int64, nullable=False),
+        Col.base_model: pa.Column(pl.String, nullable=False),
         Col.selection_priority: pa.Column(pl.Int64, nullable=False),
         Col.is_dialsup: pa.Column(pl.Int64, nullable=False),
+        Col.is_euws: pa.Column(pl.Int64, nullable=False),
     },
     strict=False,
 )
@@ -48,11 +50,10 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         Col.modelled_peril,
         Col.rollup_peril,
         pl.col(Col.region_peril_id).cast(pl.Int64),
+        pl.col(Col.base_model).cast(pl.String).str.to_lowercase(),
         pl.col(Col.selection_priority).cast(pl.Int64),
         pl.col(Col.is_dialsup).cast(pl.Int64),
-    )
-    dialsup_flags = perils.group_by(Col.rollup_peril).agg(
-        pl.col(Col.is_dialsup).max().alias(Col.is_dialsup)
+        pl.col(Col.is_euws).cast(pl.Int64),
     )
     staged = (
         frames.ep_summaries.lazy()
@@ -91,4 +92,4 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         on=[*selection_keys, Col.modelled_peril],
         how="inner",
     )
-    return selected.drop(Col.is_dialsup).join(dialsup_flags, on=Col.rollup_peril, how="left")
+    return selected
