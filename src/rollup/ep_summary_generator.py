@@ -149,17 +149,6 @@ def convert_ep_summary(
     return converted
 
 
-def convert_vendor_ep_summary(
-    data_root: Path | str,
-    vendor: str,
-    csv_path: Path | str,
-) -> Path:
-    config = get_ep_summary_vendor_config(vendor)
-    output_path = config.output_path(data_root)
-    convert_ep_summary(csv_path, vendor, output_csv=output_path)
-    return output_path
-
-
 def convert_ep_summaries(data_root: Path | str = "data") -> list[Path]:
     data_root = Path(data_root)
     output_paths: list[Path] = []
@@ -175,9 +164,10 @@ def convert_ep_summaries(data_root: Path | str = "data") -> list[Path]:
                 f"Multiple source CSV files found for {vendor}: {candidates}. "
                 "Pass --vendor and --csv to select one file explicitly."
             )
-        output_paths.append(
-            convert_vendor_ep_summary(data_root, vendor, source_files[0])
-        )
+        config = get_ep_summary_vendor_config(vendor)
+        output_path = config.output_path(data_root)
+        convert_ep_summary(source_files[0], vendor, output_csv=output_path)
+        output_paths.append(output_path)
     return output_paths
 
 
