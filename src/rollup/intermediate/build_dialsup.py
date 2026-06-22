@@ -3,17 +3,9 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col
-from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
-from rollup.metrics import METRIC_LONG_SCHEMA
-
-
-DIALSUP_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
-DIALSUP_SCHEMA = METRIC_LONG_SCHEMA
 
 
 def build_dialsup(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> pl.LazyFrame:
-    DIALSUP_INPUT_SCHEMA.validate(adjusted)
-
     return adjusted.filter(pl.col(Col.is_dialsup) == 1).select(
         Col.vendor,
         Col.base_model,

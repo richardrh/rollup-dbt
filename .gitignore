@@ -24,8 +24,6 @@ site/
 
 # Local config (never commit — contains connection strings etc.)
 # Scoped to repo root only so src/rollup/config.py remains tracked.
-/config.py
-/rollup.local.toml
 .dual-graph/
 
 # Synthetic test fixture output (regenerated on each pytest run)
@@ -44,3 +42,7 @@ data/**
 !data/**/README.md
 !data/**/schema.y*ml
 !data/**/validnator*.yml
+
+
+# AI/LLM
+.claude

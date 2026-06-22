@@ -5,11 +5,15 @@ from pathlib import Path
 import duckdb
 import polars as pl
 
-from rollup.config import OutputConfig, RollupConfig
+from rollup.config import load_config
 from rollup.duckdb_export import export_duckdb
 
 
-def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Path) -> None:
+def test_duckdb_export_writes_requested_tables_without_mart_fanouts(
+    tmp_path: Path,
+) -> None:
+    from tests.conftest import make_test_config_toml
+
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     marts_dir = output_root / "marts"
@@ -18,14 +22,17 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
     pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0]}).write_parquet(
         marts_dir / "mts_tbl_ylt_combined_all_factors.parquet"
     )
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(marts_dir / "mts_tbl_ylt_dialsup.parquet")
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(marts_dir / "HiscoAIR_20260101_main.parquet")
-
-    db_path = export_duckdb(
-        data_root,
-        output_root,
-        RollupConfig(outputs=OutputConfig(write_duckdb=True, duckdb_file="custom.duckdb")),
+    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(
+        marts_dir / "mts_tbl_ylt_dialsup.parquet"
     )
+
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        make_test_config_toml(outputs={"write_duckdb": True, "duckdb_file": "custom.duckdb"}),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    db_path = export_duckdb(data_root, output_root, config)
 
     assert db_path == output_root / "custom.duckdb"
     with duckdb.connect(str(db_path)) as connection:

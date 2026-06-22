@@ -6,12 +6,7 @@ import polars as pl
 import pytest
 
 from rollup import cli
-from rollup.api import (
-    RollupOutputPaths,
-    RollupRunResult,
-    RollupValidationError,
-    RollupValidationResult,
-)
+from rollup.api import RollupOutputPaths, RollupRunResult
 
 
 def test_cli_run_uses_local_defaults(
@@ -82,13 +77,11 @@ def test_cli_run_applies_overrides_without_rewriting_config(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from tests.conftest import make_test_config_toml
+
     config_path = tmp_path / "rollup.toml"
     config_path.write_text(
-        """
-[outputs]
-write_stage_outputs = true
-combined_file = "custom-combined.parquet"
-""".strip(),
+        make_test_config_toml(outputs={"combined_file": "custom-combined.parquet"}),
         encoding="utf-8",
     )
     log_file = tmp_path / "logs" / "rollup.log"
@@ -162,7 +155,7 @@ combined_file = "custom-combined.parquet"
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.combined_file == "custom-combined.parquet"
     assert config.fx.target_currency == "USD"
-    assert "write_stage_outputs = true" in config_path.read_text(encoding="utf-8")
+    assert "combined_file = \"custom-combined.parquet\"" in config_path.read_text(encoding="utf-8")
     summary = capsys.readouterr().out
     assert "analysis report: (disabled)" in summary
     assert "stage outputs: (disabled)" in summary
@@ -216,7 +209,7 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
     config = run_call["config"]
     assert config is not None
     assert config.outputs.write_duckdb is True
-    assert config.outputs.duckdb_file is None
+    assert config.outputs.duckdb_file == "rollup.duckdb"
     assert run_call["config_path"] is None
     assert (
         f"duckdb: {output_root / 'rollup.duckdb'} (missing)" in capsys.readouterr().out
@@ -265,54 +258,7 @@ def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
     assert f"duckdb: {duckdb_file} (missing)" in capsys.readouterr().out
 
 
-def test_cli_run_validation_failure_prints_details_without_traceback(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
-    ) -> None:
-        return None
-
-    def run_rollup(
-        data_root: Path,
-        output_root: Path,
-        *,
-        config_path: Path | None,
-        config: object | None,
-        write_analysis: bool,
-        log_file: Path,
-    ) -> RollupRunResult:
-        report = pl.DataFrame(
-            [
-                {
-                    "source_group": "runtime_schema_guard",
-                    "valid": False,
-                    "error": "verisk_ylt required columns contain nulls: EventID",
-                }
-            ]
-        )
-        raise RollupValidationError(
-            RollupValidationResult(
-                data_root=tmp_path / "data", is_valid=False, validation_report=report
-            )
-        )
-
-    monkeypatch.setattr(cli, "configure_console_logging", configure_console_logging)
-    monkeypatch.setattr(cli, "run_rollup", run_rollup)
-
-    assert cli.main(["run"]) == 1
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "Input validation failed" in captured.err
-    assert "source_group=runtime_schema_guard" in captured.err
-    assert "error=verisk_ylt required columns contain nulls: EventID" in captured.err
-    assert "Traceback" not in captured.err
-
-
-def test_cli_run_unexpected_error_propagates_without_validation_message(
+def test_cli_run_unexpected_error_propagates(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -441,7 +387,6 @@ def test_success_summary_reports_output_paths_and_counts(
         marts_dir / "combined.parquet",
         marts_dir / "wide.parquet",
         marts_dir / "dialsup.parquet",
-        marts_dir / "event-validation.parquet",
         staging_dir / "staging-one.parquet",
         staging_dir / "staging-two.parquet",
         intermediate_dir / "intermediate.parquet",
@@ -456,7 +401,7 @@ def test_success_summary_reports_output_paths_and_counts(
     summary = capsys.readouterr().out
     assert f"output root: {output_root} (exists)" in summary
     assert f"log file: {log_file} (exists)" in summary
-    assert f"marts dir: {marts_dir} (exists, 4 parquet files)" in summary
+    assert f"marts dir: {marts_dir} (exists, 3 parquet files)" in summary
     assert f"analysis report: {analysis_report} (exists)" in summary
     assert f"stage outputs: {output_root / 'stages'} (exists)" in summary
     assert f"staging: {staging_dir} (2 parquet files)" in summary
@@ -505,7 +450,6 @@ def rollup_result(
             mts_combined=output_root / "marts" / "combined.parquet",
             mts_wide=output_root / "marts" / "wide.parquet",
             mts_dialsup=output_root / "marts" / "dialsup.parquet",
-            event_validation=output_root / "marts" / "event-validation.parquet",
             marts_dir=output_root / "marts",
             mart_files=(),
             stage_dir=stage_path,

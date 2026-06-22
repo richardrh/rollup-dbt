@@ -22,7 +22,6 @@ def build_ep_report(
         .replace_strict(config.analysis.simulation_counts, return_dtype=pl.Int64)
         .alias("n_simulations")
     )
-    aal = build_aal(losses)
     ep = pl.concat(
         [
             build_ranked_ep(losses, ep_type="AEP", aggregation="sum", config=config),
@@ -30,7 +29,7 @@ def build_ep_report(
         ],
         how="vertical",
     )
-    return pl.concat([aal, ep], how="vertical").sort(
+    return ep.sort(
         Col.forecast_date,
         Col.metric,
         Col.ep_type,
@@ -66,20 +65,6 @@ def load_analysis_losses(output_root: Path, config: RollupConfig) -> pl.LazyFram
         dialsup = pl.scan_parquet(dialsup_path)
         return pl.concat([main, dialsup], how="diagonal_relaxed")
     return main
-
-
-def build_aal(losses: pl.LazyFrame) -> pl.DataFrame:
-    keys = [Col.forecast_date, Col.metric, Col.base_model, Col.rollup_lob, Col.rollup_peril]
-    return losses.group_by(keys).agg(
-        pl.col(Col.loss).sum().alias("total_loss"),
-        pl.col("n_simulations").first().alias("n_simulations"),
-    ).with_columns(
-        pl.lit("AAL").alias(Col.ep_type),
-        pl.lit(0).cast(pl.Int64).alias(Col.return_period),
-        pl.lit(0).cast(pl.Int64).alias("rank"),
-        pl.lit(0.0).alias(Col.rp),
-        (pl.col("total_loss") / pl.col("n_simulations")).alias(Col.loss),
-    ).select(REPORT_COLUMNS).collect()
 
 
 def build_ranked_ep(

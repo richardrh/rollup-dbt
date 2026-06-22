@@ -24,6 +24,7 @@ FORECAST_METRIC = forecast_metric("GBP")
 def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    rollup_config: RollupConfig,
 ) -> None:
     combined = combined_metric_frame().lazy()
     original_collect = pl.LazyFrame.collect
@@ -36,13 +37,14 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
 
     monkeypatch.setattr(pl.LazyFrame, "collect", guarded_collect)
 
-    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
+    paths = write_marts(
+        tmp_path, combined, dialsup_metric_frame().lazy(), rollup_config
+    )
     monkeypatch.undo()
 
     combined_out = pl.read_parquet(paths["combined"])
     dialsup_out = pl.read_parquet(paths["dialsup"])
     wide_out = pl.read_parquet(paths["wide"])
-    validation_out = pl.read_parquet(paths["event_validation"])
 
     assert combined_out.height == 5
     assert dialsup_out.select(Col.metric).unique().to_series().to_list() == [DIALSUP_METRIC]
@@ -71,11 +73,6 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
         ).select(pl.col(Col.loss).sum()).item()
         wide_sum = wide_out.select(pl.col(column).sum()).item()
         assert wide_sum == combined_sum
-    assert validation_out.sort(Col.event_id).select(
-        Col.base_model,
-        Col.event_id,
-        Col.missing_model_event_day,
-    ).rows() == [("verisk", 1, False), ("verisk", 2, False)]
 
     fanouts = paths["fanouts"]
     assert isinstance(fanouts, tuple)
@@ -85,10 +82,14 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     ]
 
 
-def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
+def test_write_marts_outputs_match_expected_row_counts(
+    tmp_path: Path, rollup_config: RollupConfig
+) -> None:
     combined = combined_metric_frame().lazy()
 
-    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
+    paths = write_marts(
+        tmp_path, combined, dialsup_metric_frame().lazy(), rollup_config
+    )
 
     row_counts = {
         name: pl.scan_parquet(path).select(pl.len()).collect().item()
@@ -100,7 +101,6 @@ def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
         "combined": 5,
         "wide": 2,
         "dialsup": 1,
-        "event_validation": 2,
     }
 
 

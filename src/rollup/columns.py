@@ -85,8 +85,6 @@ class Col(StrEnum):
     risklink_event_day = "risklink_event_day"
     row_count = "row_count"
     loss_sum = "loss_sum"
-    missing_model_event_id = "missing_model_event_id"
-    missing_model_event_day = "missing_model_event_day"
     original_ylt_loss = "original_ylt_loss"
     original_ylt_loss_blended = "original_ylt_loss_blended"
     original_ylt_loss_blended_gbp = "original_ylt_loss_blended_gbp"

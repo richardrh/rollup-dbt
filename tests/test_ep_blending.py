@@ -98,7 +98,17 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
             enriched.lazy(),
             staged_ep.lazy(),
             blending,
-            BlendingConfig(vendor_years={"verisk": 123, "risklink": 2_000}),
+            BlendingConfig(
+                vendor_years={"verisk": 123, "risklink": 2_000},
+                target_points=(
+                    BlendingTargetPoint("AAL", 0),
+                    BlendingTargetPoint("OEP", 200),
+                    BlendingTargetPoint("OEP", 1000),
+                ),
+                uplift_factor_min=0.1,
+                uplift_factor_max=10.0,
+                subregion_selection={},
+            ),
         )
         .collect()
         .sort(Col.loss)
@@ -161,6 +171,8 @@ def test_apply_blending_uses_configured_subregion_selection() -> None:
         BlendingConfig(
             vendor_years={"risklink": 2_000},
             target_points=(BlendingTargetPoint("OEP", 1000),),
+            uplift_factor_min=0.1,
+            uplift_factor_max=10.0,
             subregion_selection={216: "216b"},
         ),
     ).collect()
@@ -216,6 +228,9 @@ def test_apply_blending_warns_and_falls_back_to_base_model_when_vendor_loss_miss
             BlendingConfig(
                 vendor_years={"risklink": 2_000},
                 target_points=(BlendingTargetPoint("OEP", 1000),),
+                uplift_factor_min=0.1,
+                uplift_factor_max=10.0,
+                subregion_selection={},
             ),
         ).collect()
 
