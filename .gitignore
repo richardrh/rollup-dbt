@@ -21,16 +21,15 @@ site/
 
 .DS_Store
 
-.data/risklink
 
 # Local config (never commit — contains connection strings etc.)
-config.py
-rollup.local.toml
+# Scoped to repo root only so src/rollup/config.py remains tracked.
+/config.py
+/rollup.local.toml
 .dual-graph/
 
 # Synthetic test fixture output (regenerated on each pytest run)
 tests/data/
-jan-rollup/combined_table
 
 # Generated artefacts (regenerable via CLI subcommands)
 output/
