@@ -57,7 +57,6 @@ class OutputConfig:
     combined_file: str = "mts_tbl_ylt_combined_all_factors.parquet"
     wide_file: str = "mts_tbl_ylt_combined_all_factors_wide.parquet"
     dialsup_file: str = "mts_tbl_ylt_dialsup.parquet"
-    event_validation_file: str = "mts_event_validation.parquet"
     ep_report_file: str = "ep_report.csv"
     duckdb_file: str | None = None
     fanout_prefixes: dict[str, str] = field(

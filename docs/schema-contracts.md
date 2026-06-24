@@ -4,9 +4,9 @@ Colocated `validnator*.yml` files are the reference data contracts for remote
 callers and external validation workflows. They live beside the data area they
 describe and document required files, columns, and types.
 
-The runtime does **not** load these YAML files. Runtime protection is implemented
-with hard-coded Pandera schemas in `src/rollup/staging/load_sources.py` so the
-pipeline fails before calculations when required inputs have the wrong shape.
+Validnator is the source of truth for input/schema validation. The runtime does
+**not** load these YAML files and does not duplicate them with Pandera or another
+internal schema framework.
 
 | Contract file | Describes |
 | --- | --- |
@@ -39,10 +39,10 @@ Each column entry defines:
 | `required` | Whether the column must be present. |
 | `description` | Business meaning of the column. |
 
-## How runtime validation works
+## How validation works
 
-`validate_rollup_inputs("data")` calls the runtime source loader and validates the
-inputs consumed by the pipeline. It checks:
+Run Validnator against the colocated contracts before runtime execution. The
+contracts check:
 
 - at least one direct YLT parquet file under each vendor folder;
 - required YLT columns and required-column nulls;
@@ -50,7 +50,7 @@ inputs consumed by the pipeline. It checks:
 - strict seed CSV columns for business, VOR, and adjustment seeds;
 - optional validation/event catalogues when their folders are present.
 
-The validation report flags runtime guard failures such as:
+Validation reports flag failures such as:
 
 - missing scanned input areas or required files;
 - missing required columns;
@@ -65,13 +65,14 @@ parquet file per vendor folder, validates each direct child parquet, and the
 loader scans all direct matches. There is no required filename convention beyond
 `.parquet` in the correct vendor folder. Subdirectories are ignored, and inactive
 or test parquet files should not be left in active vendor folders because they
-will be loaded. Seed CSVs and canonical EP summary CSVs are strict at runtime.
+will be loaded. Seed CSVs and canonical EP summary CSVs are strict in the
+Validnator contracts.
 Verisk YLT file names are derived from parquet paths for validation reporting, so
 a row-level `filename` column is optional rather than required. RiskLink YLT only
 requires `anlsid`, `yearid`, `eventid`, and `loss`; `anlsid` must match RiskLink
 EP summary `analysis_id` values.
 
-Fix runtime schema-validation failures before investigating calculation outputs.
+Fix validation failures before investigating calculation outputs.
 Use a no-output-analysis smoke run when validating a full data drop locally:
 
 ```bash
@@ -92,4 +93,4 @@ Use the colocated Validnator configs as documentation for external callers askin
 
 Keep contracts close to the data area they describe. If a pipeline change adds a
 new input/output contract or changes an existing one, update the appropriate
-Validnator YAML, runtime Pandera schema, and user-facing docs in the same change.
+Validnator YAML and user-facing docs in the same change.

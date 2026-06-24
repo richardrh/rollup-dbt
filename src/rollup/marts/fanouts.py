@@ -6,10 +6,7 @@ from pathlib import Path
 import polars as pl
 
 from rollup.columns import Col
-from rollup.metrics import METRIC_LONG_SCHEMA, final_main_metric
-
-
-FANOUT_INPUT_SCHEMA = METRIC_LONG_SCHEMA
+from rollup.metrics import final_main_metric
 
 
 def write_fanouts(
@@ -18,8 +15,6 @@ def write_fanouts(
     fanout_prefixes: Mapping[str, str],
     target_currency: str = "GBP",
 ) -> tuple[Path, ...]:
-    FANOUT_INPUT_SCHEMA.validate(frame)
-
     paths: list[Path] = []
     source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
     main = source.filter(pl.col(Col.metric) == final_main_metric(target_currency))

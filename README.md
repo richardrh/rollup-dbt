@@ -28,16 +28,13 @@ DuckDB status.
 Dataiku recipes and Python callers should use the package API:
 
 ```python
-from rollup.api import convert_ep_summary, run_rollup, validate_rollup_inputs
+from rollup.api import convert_ep_summary, run_rollup
 
 convert_ep_summary(
     input_csv="data/ep_summaries/verisk/verisk_clean.csv",
     vendor="verisk",
     output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
 )
-
-validation = validate_rollup_inputs("data")
-validation.raise_for_errors()
 
 result = run_rollup(
     data_root="data",
@@ -47,21 +44,20 @@ result = run_rollup(
 )
 ```
 
-- `validate_rollup_inputs(data_root)` validates required source availability and
-  main input schema/nullability.
-- `run_rollup(...)` runs validation, the pipeline, optional DuckDB export, and
-  optional analysis report generation. Dataiku callers should pass
+- Validnator owns input/schema validation before runtime execution.
+- `run_rollup(...)` runs the pipeline, preserves runtime business invariants,
+  writes the optional DuckDB export, and generates the optional analysis report.
+  Dataiku callers should pass
   `config_path` explicitly rather than relying on `rollup.local.toml` in the
   current working directory.
 - `convert_ep_summary(...)` converts one wide EP summary CSV to canonical long
   rows, returning a Polars `DataFrame` and optionally writing a CSV.
 
-Expected validation failures return a `RollupValidationResult(is_valid=False)`.
-The CLI catches `RollupValidationError`, prints friendly details, and exits `1`.
-Unexpected errors are not hidden.
+Runtime errors, including missing files needed for execution and business
+invariant failures, are not hidden.
 
 `run_rollup(...)` returns all output paths via `result.outputs`, including
-combined, wide, DIALSUP, event validation, mart fanouts, optional stage output
+combined, wide, DIALSUP, mart fanouts, optional stage output
 directory, and optional DuckDB file. See [Programmatic API](docs/programmatic-api.md)
 for the Dataiku temp-workspace pattern.
 
@@ -95,7 +91,6 @@ output/
     mts_tbl_ylt_combined_all_factors.parquet
     mts_tbl_ylt_combined_all_factors_wide.parquet
     mts_tbl_ylt_dialsup.parquet
-    mts_event_validation.parquet
     HiscoAIR_..._main.parquet
     HiscoRMS_..._main.parquet
   stages/

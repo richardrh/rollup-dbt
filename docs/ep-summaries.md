@@ -94,8 +94,8 @@ data/ep_summaries/risklink/rms_ep_summary.long.csv
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
 ```
 
-The runtime validation step checks strict EP summary columns and required values
-before running calculations.
+Validnator owns EP summary schema/input validation, including strict columns and
+required values. Rollup smoke runs exercise runtime/calculation behavior only.
 
 To validate just the long EP summary CSV shape and value constraints with
 Validnator, run the colocated pipeline config from an environment that provides

@@ -26,12 +26,12 @@ flowchart TD
 
 | Layer | Module | Purpose |
 | --- | --- | --- |
-| API | `rollup.api` | Public functions: `run_rollup`, `validate_rollup_inputs`, `convert_ep_summary`, `convert_ep_summaries`, output path collection, EP report helper. |
-| CLI | `rollup.cli` | Thin local runner around the API. Adds flags, log setup, friendly validation errors, and summary printing. |
+| API | `rollup.api` | Public functions: `run_rollup`, `convert_ep_summary`, `convert_ep_summaries`, output path collection, EP report helper. |
+| CLI | `rollup.cli` | Thin local runner around the API. Adds flags, log setup, and summary printing. |
 | Config | `rollup.config` | Dataiku-friendly defaults plus optional TOML overrides. |
-| Staging | `rollup.staging` | Source loading, schema checks, YLT normalization, EP summary enrichment. |
+| Staging | `rollup.staging` | Source loading, YLT normalization, EP summary enrichment. |
 | Intermediate | `rollup.intermediate` | Blending, FX, forecast, EUWS, metric-long, and DIALSUP calculations. |
-| Marts | `rollup.marts` | Parquet outputs, wide pivot, event validation, and fanouts. |
+| Marts | `rollup.marts` | Parquet outputs, wide pivot, and fanouts. |
 | Export | `rollup.duckdb_export` | Optional DuckDB snapshot of selected marts and inputs. |
 
 ## Data grain

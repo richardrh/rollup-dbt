@@ -3,17 +3,10 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col
-from rollup.intermediate.apply_euws import EUWS_APPLIED_YLT_SCHEMA
-from rollup.metrics import METRIC_LONG_SCHEMA as METRIC_LONG_SCHEMA
 from rollup.metrics import metric_specs
 
 
-METRIC_LONG_INPUT_SCHEMA = EUWS_APPLIED_YLT_SCHEMA
-
-
 def build_metric_long(adjusted: pl.LazyFrame, target_currency: str = "GBP") -> pl.LazyFrame:
-    METRIC_LONG_INPUT_SCHEMA.validate(adjusted)
-
     metric_columns = [
         Col.vendor,
         Col.base_model,

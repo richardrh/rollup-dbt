@@ -179,14 +179,13 @@ verisk,ANALYSIS_1,Property,US_WS,OEP,100,2250000.0
 Do not add a separate YAML schema file for source wide CSVs yet. The converter
 checks the required identifier columns and at least one EP metric column. The
 existing `data/ep_summaries/validnator.yml` describes the long CSV files used by
-remote validation workflows. The runtime enforces the long CSV shape with a
-strict Pandera schema.
+runtime callers.
 
 ## Seed files
 
 Seed schema contracts are documented in colocated Validnator configs; see
-[Validnator contracts](schema-contracts.md). Runtime validation uses strict
-Pandera schemas and reports seed shape issues before calculations start.
+[Validnator contracts](schema-contracts.md). Run Validnator before runtime to
+catch seed shape issues before calculations start.
 
 ### `data/seeds/business/lobs.csv`
 
@@ -272,14 +271,12 @@ event day fields for RiskLink flood rows.
 
 - Every EP `modelled_lob` and YLT modelled LOB must exist in `lobs.csv`.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
-- Inputs must match the runtime Pandera schemas for required files, columns, and
-  types. The colocated YAML contracts document the same intended shapes for
-  remote validation workflows.
+- Inputs must pass the colocated Validnator contracts for required files,
+  columns, nullability, and types before runtime execution.
 - Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
   strict and should not contain unexpected columns.
 - Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary
   `analysis_id` values.
 - Seed entries without matching EP/YLT data do not produce output by themselves.
-- Run `validate_rollup_inputs("data")` or a no-output-analysis smoke run; treat
-  validation failures as blocking
-  input or lookup errors.
+- Run Validnator or a no-output-analysis smoke run; treat validation failures as
+  blocking input or lookup errors.
