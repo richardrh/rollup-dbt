@@ -227,6 +227,62 @@ def test_apply_blending_warns_and_falls_back_to_base_model_when_vendor_loss_miss
     ).rows() == [(100.0, 1.0, 25.0)]
 
 
+def test_apply_blending_rejects_empty_blending_factors() -> None:
+    with pytest.raises(
+        ValueError,
+        match="EP-derived blending requires non-empty blending factors",
+    ):
+        apply_blending(
+            enriched_ylt_frame().lazy(),
+            staged_ep_frame().lazy(),
+            pl.DataFrame(),
+            BlendingConfig(),
+        )
+
+
+def test_apply_blending_rejects_missing_base_model_ep_loss() -> None:
+    staged_ep = staged_ep_frame().filter(pl.col(Col.vendor) == "verisk")
+
+    with pytest.raises(
+        ValueError,
+        match="EP blending target points are missing base-model losses",
+    ):
+        apply_blending(
+            enriched_ylt_frame().lazy(),
+            staged_ep.lazy(),
+            blending_factors_frame(),
+            BlendingConfig(
+                target_points=(BlendingTargetPoint("OEP", 1000),),
+            ),
+        )
+
+
+def test_apply_blending_rejects_empty_target_points() -> None:
+    with pytest.raises(
+        ValueError,
+        match="EP blending requires at least one configured target point",
+    ):
+        apply_blending(
+            enriched_ylt_frame().lazy(),
+            staged_ep_frame().lazy(),
+            blending_factors_frame(),
+            BlendingConfig(target_points=()),
+        )
+
+
+def test_apply_blending_rejects_no_positive_oep_target_points() -> None:
+    with pytest.raises(
+        ValueError,
+        match="EP blending requires at least one positive OEP target point",
+    ):
+        apply_blending(
+            enriched_ylt_frame().lazy(),
+            staged_ep_frame(ep_type="AAL", return_period=0).lazy(),
+            blending_factors_frame(),
+            BlendingConfig(target_points=(BlendingTargetPoint("AAL", 0),)),
+        )
+
+
 def enriched_ylt_frame() -> pl.DataFrame:
     rows = []
     for vendor, analysis_id, losses in [
@@ -257,6 +313,42 @@ def enriched_ylt_frame() -> pl.DataFrame:
                 }
             )
     return pl.DataFrame(rows)
+
+
+def staged_ep_frame(ep_type: str = "OEP", return_period: int = 1000) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            Col.vendor: ["verisk", "risklink"],
+            Col.analysis_id: ["V", "R"],
+            Col.modelled_lob: ["ML", "ML"],
+            Col.modelled_peril: ["FL", "FL"],
+            Col.ep_type: [ep_type, ep_type],
+            Col.return_period: [return_period, return_period],
+            Col.loss: [200.0, 100.0],
+            Col.rollup_lob: ["RL", "RL"],
+            Col.class_: ["FA", "FA"],
+            Col.office: ["UK", "UK"],
+            Col.currency: ["GBP", "GBP"],
+            Col.rollup_peril: ["Spain_FL", "Spain_FL"],
+            Col.region_peril_id: [101, 101],
+            Col.base_model: ["risklink", "risklink"],
+            Col.selection_priority: [1, 1],
+            Col.is_dialsup: [0, 0],
+            Col.is_euws: [0, 0],
+        }
+    )
+
+
+def blending_factors_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "RegionPerilID": [101],
+            "SubRegionPerilID": ["101a"],
+            "SubRegionPeril": ["Flood"],
+            "AIRBlend": [0.5],
+            "RMSBlend": [1.0],
+        }
+    )
 
 
 def staging_frames(

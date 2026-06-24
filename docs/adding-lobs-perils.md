@@ -135,6 +135,6 @@ If validation or staging reports missing enrichment values, either:
 ## See also
 
 - [Data requirements](data-requirements.md#seed-files) — full seed file reference
-- [Validnator contracts](schema-contracts.md) — runtime schemas and remote
+- [Validnator contracts](schema-contracts.md) — source of truth for input/schema
   validation contracts
 - [Troubleshooting](troubleshooting.md) — common LOB/peril mismatch issues
