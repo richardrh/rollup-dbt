@@ -1,6 +1,6 @@
 modelled_peril,rollup_peril,region,peril,region_peril_id,base_model,selection_priority,is_dialsup,is_euws
-BE FL,Belgium_FL,Belgium,FL,216,verisk,99,1,0
-DE FL,Germany_FL,Germany,FL,216,verisk,99,1,0
+BE FL,Europe_FL,Belgium,FL,216,risklink,99,1,0
+DE FL,Europe_FL,Germany,FL,216,risklink,99,1,0
 EU_EQ,Europe_EQ,Europe,EQ,205,verisk,1,1,0
 EU_FL,Europe_FL,Europe,FL,216,risklink,1,1,0
 EU_WS,Europe_WS,Europe,WS,206,verisk,2,1,1
