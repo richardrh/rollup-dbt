@@ -16,9 +16,6 @@ docs_hiddenimports = [
 ]
 runtime_hiddenimports = [
     "duckdb",
-    "pandera",
-    "pandera.errors",
-    "pandera.polars",
     "polars",
     "pyarrow",
     "pyarrow.parquet",

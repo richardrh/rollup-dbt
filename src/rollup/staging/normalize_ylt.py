@@ -1,34 +1,12 @@
 from __future__ import annotations
 
 import polars as pl
-import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
-from rollup.staging.load_sources import RISKLINK_YLT_SCHEMA, VERISK_YLT_SCHEMA, StagingFrames
-
-
-NORMALIZE_VERISK_INPUT_SCHEMA = VERISK_YLT_SCHEMA
-NORMALIZE_RISKLINK_INPUT_SCHEMA = RISKLINK_YLT_SCHEMA
-NORMALIZED_YLT_SCHEMA = pa.DataFrameSchema(
-    {
-        Col.vendor: pa.Column(pl.String, nullable=False),
-        Col.analysis_id: pa.Column(pl.String, nullable=False),
-        Col.modelled_lob: pa.Column(pl.String, nullable=True),
-        Col.modelled_peril: pa.Column(pl.String, nullable=True),
-        Col.model_code: pa.Column(pl.Int64, nullable=True),
-        Col.year_id: pa.Column(pl.Int64, nullable=False),
-        Col.event_id: pa.Column(pl.Int64, nullable=False),
-        Col.loss: pa.Column(pl.Float64, nullable=False),
-    },
-    strict=False,
-)
-NORMALIZE_YLT_OUTPUT_SCHEMA = NORMALIZED_YLT_SCHEMA
+from rollup.staging.load_sources import StagingFrames
 
 
 def normalize_ylt(frames: StagingFrames) -> pl.LazyFrame:
-    NORMALIZE_VERISK_INPUT_SCHEMA.validate(frames.verisk_ylt)
-    NORMALIZE_RISKLINK_INPUT_SCHEMA.validate(frames.risklink_ylt)
-
     verisk = frames.verisk_ylt.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
         pl.lit("verisk").alias(Col.vendor),
         pl.col(RawCol.Analysis).cast(pl.String).alias(Col.analysis_id),

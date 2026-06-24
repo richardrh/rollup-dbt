@@ -9,7 +9,6 @@ import sys
 
 from rollup.api import (
     RollupRunResult,
-    RollupValidationError,
     convert_ep_summaries,
     convert_ep_summary,
     run_rollup,
@@ -73,20 +72,14 @@ def run_command(args: Namespace) -> int:
     log_file = args.log_file or args.output_root / "rollup.log"
     config = override_config(args)
     configure_console_logging(args.log_level, log_file=log_file)
-    try:
-        result = run_rollup(
-            args.data_root,
-            args.output_root,
-            config_path=None if config is not None else args.config_path,
-            config=config,
-            write_analysis=args.write_analysis,
-            log_file=log_file,
-        )
-    except RollupValidationError as exc:
-        message = validation_failure_message(exc)
-        logger.error(message)
-        print(message, file=sys.stderr)
-        return 1
+    result = run_rollup(
+        args.data_root,
+        args.output_root,
+        config_path=None if config is not None else args.config_path,
+        config=config,
+        write_analysis=args.write_analysis,
+        log_file=log_file,
+    )
     print_success_summary(result, log_file)
     return 0
 
@@ -167,27 +160,9 @@ def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
     print(f"  combined mart: {_display_path(result.outputs.mts_combined)}")
     print(f"  wide mart: {_display_path(result.outputs.mts_wide)}")
     print(f"  dialsup mart: {_display_path(result.outputs.mts_dialsup)}")
-    print(f"  event validation: {_display_path(result.outputs.event_validation)}")
     _print_duckdb_summary(result.outputs.duckdb_file)
     _print_analysis_summary(result.ep_report_path)
     _print_stage_summary(result.outputs.stage_dir)
-
-
-def validation_failure_message(exc: RollupValidationError) -> str:
-    report = exc.validation.validation_report
-    invalid = report.filter(~report["valid"]) if "valid" in report.columns else report
-    if invalid.height == 0:
-        invalid = report
-
-    lines = ["Input validation failed"]
-    for row in invalid.iter_rows(named=True):
-        source_group = row.get("source_group")
-        error = row.get("error")
-        if source_group is not None:
-            lines.append(f"source_group={source_group}")
-        if error is not None:
-            lines.append(f"error={error}")
-    return "\n".join(lines)
 
 
 def _print_duckdb_summary(duckdb_file: Path | None) -> None:

@@ -4,51 +4,12 @@ from collections.abc import Mapping
 import logging
 
 import polars as pl
-import pandera.polars as pa
 
 from rollup.columns import Col, RawCol
 from rollup.config import BlendingConfig, BlendingTargetPoint
-from rollup.intermediate.build_enriched_ylt import ENRICHED_YLT_OUTPUT_SCHEMA
-from rollup.staging.stage_ep_summaries import STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
 
 
 logger = logging.getLogger(__name__)
-BLENDING_INPUT_SCHEMA = ENRICHED_YLT_OUTPUT_SCHEMA
-BLENDING_EP_INPUT_SCHEMA = STAGED_EP_SUMMARIES_OUTPUT_SCHEMA
-BLENDING_FACTORS_SCHEMA = pa.DataFrameSchema(
-    {Col.region_peril_id: pa.Column(pl.Int64, nullable=True)},
-    strict=False,
-)
-RAW_BLENDING_FACTORS_SCHEMA = pa.DataFrameSchema(
-    {RawCol.RegionPerilID: pa.Column(pl.Int64, nullable=True)},
-    strict=False,
-)
-BLENDED_YLT_SCHEMA = pa.DataFrameSchema(
-    {
-        **BLENDING_INPUT_SCHEMA.columns,
-        Col.base_model: pa.Column(pl.String, nullable=True),
-        Col.rnk: pa.Column(pl.Int64, nullable=True),
-        Col.rp: pa.Column(pl.Float64, nullable=True),
-        Col.rp_bucket: pa.Column(pl.Int64, nullable=True),
-        Col.risklink_loss: pa.Column(pl.Float64, nullable=True),
-        Col.verisk_loss: pa.Column(pl.Float64, nullable=True),
-        Col.target_loss: pa.Column(pl.Float64, nullable=True),
-        Col.base_model_loss: pa.Column(pl.Float64, nullable=True),
-        Col.uplift_factor_on_base_model: pa.Column(pl.Float64, nullable=True),
-        Col.sub_region_peril_id: pa.Column(
-            pl.String,
-            nullable=True,
-            required=False,
-        ),
-        Col.sub_region_peril: pa.Column(
-            pl.String,
-            nullable=True,
-            required=False,
-        ),
-        "blended_loss": pa.Column(pl.Float64, nullable=True),
-    },
-    strict=False,
-)
 EP_LOSS_KEYS = [
     Col.rollup_lob,
     Col.rollup_peril,
@@ -69,9 +30,6 @@ def apply_blending(
     blending: pl.DataFrame,
     config: BlendingConfig,
 ) -> pl.LazyFrame:
-    BLENDING_INPUT_SCHEMA.validate(enriched)
-    BLENDING_EP_INPUT_SCHEMA.validate(staged_ep)
-
     if blending.is_empty():
         raise ValueError("EP-derived blending requires non-empty blending factors")
 
@@ -122,8 +80,6 @@ def calculate_ep_blending_targets(
 ) -> pl.LazyFrame:
     columns = blending.columns
     region_col = RawCol.RegionPerilID if RawCol.RegionPerilID in columns else Col.region_peril_id
-    factor_schema = RAW_BLENDING_FACTORS_SCHEMA if RawCol.RegionPerilID in columns else BLENDING_FACTORS_SCHEMA
-    factor_schema.validate(blending)
     air_col = RawCol.AIRBlend if RawCol.AIRBlend in columns else "verisk_weight"
     rms_col = RawCol.RMSBlend if RawCol.RMSBlend in columns else "risklink_weight"
     sub_region_id_expr = (

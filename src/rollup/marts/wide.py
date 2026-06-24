@@ -1,33 +1,8 @@
 from __future__ import annotations
 
 import polars as pl
-import pandera.polars as pa
 
 from rollup.columns import Col
-from rollup.metrics import METRIC_LONG_SCHEMA
-
-
-WIDE_INPUT_SCHEMA = METRIC_LONG_SCHEMA
-WIDE_OUTPUT_SCHEMA = pa.DataFrameSchema(
-    {
-        Col.vendor: pa.Column(pl.String, nullable=True),
-        Col.base_model: pa.Column(pl.String, nullable=True),
-        Col.analysis_id: pa.Column(pl.String, nullable=True),
-        Col.modelled_lob: pa.Column(pl.String, nullable=True),
-        Col.modelled_peril: pa.Column(pl.String, nullable=True),
-        Col.rollup_lob: pa.Column(pl.String, nullable=True),
-        Col.rollup_peril: pa.Column(pl.String, nullable=True),
-        Col.region_peril_id: pa.Column(pl.Int64, nullable=True),
-        Col.class_: pa.Column(pl.String, nullable=True),
-        Col.office: pa.Column(pl.String, nullable=True),
-        Col.currency: pa.Column(pl.String, nullable=True),
-        Col.target_currency: pa.Column(pl.String, nullable=True),
-        Col.year_id: pa.Column(pl.Int64, nullable=True),
-        Col.event_id: pa.Column(pl.Int64, nullable=True),
-        Col.is_dialsup: pa.Column(pl.Int64, nullable=True),
-    },
-    strict=False,
-)
 
 _WIDE_PIVOT_COLUMNS = {Col.metric, Col.forecast_date, Col.loss}
 
@@ -38,7 +13,6 @@ def wide_column_name(metric: str, forecast_date: str) -> str:
 
 def wide(frame: pl.DataFrame | pl.LazyFrame, target_currency: str = "GBP") -> pl.DataFrame | pl.LazyFrame:
     del target_currency
-    WIDE_INPUT_SCHEMA.validate(frame)
     source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
     dimensions = [
         column
