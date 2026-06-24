@@ -10,8 +10,7 @@ analyst operation outside Dataiku.
 flowchart TD
   A[Dataiku recipe or Python caller] --> B[run_rollup]
   C[Local CLI: python -m rollup run] --> B
-  B --> D[validate_rollup_inputs]
-  D --> E[Pipeline stages]
+  B --> E[Pipeline stages]
   E --> F[Parquet marts]
   E --> G[Optional stage outputs]
   E --> H[Optional DuckDB export]
@@ -20,20 +19,19 @@ flowchart TD
 
 ### Programmatic API
 
-- `run_rollup(data_root="data", output_root="output", ...)` runs validation, all
-  calculation stages, optional DuckDB export, and optional analysis report
-  generation. Dataiku callers should pass `config_path` explicitly, usually from
-  a job workspace or managed-folder path.
-- `validate_rollup_inputs(data_root)` checks source availability and required
-  schemas/nullability for the main inputs without writing outputs. Runtime
-  validation uses hard-coded Pandera schemas; colocated YAML/Validnator configs
-  are for external validation callers.
+- `run_rollup(data_root="data", output_root="output", ...)` runs all calculation
+  stages, optional DuckDB export, and optional analysis report generation.
+  Dataiku callers should pass `config_path` explicitly, usually from a job
+  workspace or managed-folder path.
+- Validnator owns input/schema validation. The runtime does not duplicate those
+  contracts; it keeps business invariant checks that require computed or joined
+  data.
 - `convert_ep_summary(input_csv, vendor, output_csv=None)` converts one wide EP
   summary CSV to canonical long rows, returns a Polars `DataFrame`, and writes a
   CSV only when `output_csv` is supplied.
 
 Programmatic callers receive concrete paths from `result.outputs`: combined,
-wide, DIALSUP, event validation, mart fanouts, optional stage directory, and
+wide, DIALSUP, mart fanouts, optional stage directory, and
 optional DuckDB file. See [Programmatic API](programmatic-api.md) for the
 Dataiku workspace pattern.
 
@@ -82,7 +80,6 @@ output/
     mts_tbl_ylt_combined_all_factors.parquet
     mts_tbl_ylt_combined_all_factors_wide.parquet
     mts_tbl_ylt_dialsup.parquet
-    mts_event_validation.parquet
     HiscoAIR_..._main.parquet
     HiscoRMS_..._main.parquet
   stages/
@@ -121,8 +118,7 @@ The pipeline executes these stages in order:
 10. `build_dialsup` creates DIALSUP from original YLT loss multiplied by FX and
     forecast factors, not EUWS-adjusted loss. Rows are selected by
     `is_dialsup == 1`.
-11. `write_marts` writes combined, wide, DIALSUP, event-validation, and fanout
-    parquet files.
+11. `write_marts` writes combined, wide, DIALSUP, and fanout parquet files.
 
 ## Metrics and lineage
 
@@ -199,16 +195,13 @@ Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
 
 ## Validation behavior
 
-- `validate_rollup_inputs(data_root)` validates source availability and
-  schema/nullability for main inputs.
-- Expected input/schema failures return
-  `RollupValidationResult(is_valid=False)` plus a validation report.
-- The CLI catches `RollupValidationError`, prints friendly details, and exits
-  with code `1`.
+- Validnator owns required-file, schema, dtype, and nullability validation for
+  runtime inputs.
+- The runtime no longer exposes `validate_rollup_inputs` or Pandera schemas.
+- Missing files that the runtime needs to execute still fail normally.
+- Business invariant checks remain in runtime code, including base-model loss,
+  FX-rate, empty-blending-factor, target-point, and vendor-loss guards.
 - Unexpected errors are not hidden; they propagate.
-- Pandera schemas enforce required non-null fields.
-- Lazy YLT required-null checks use null-count aggregates rather than collecting
-  the full source data.
 
 ## Reference smoke values
 

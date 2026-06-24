@@ -3,23 +3,13 @@
 Use the API from Dataiku recipes, notebooks, or Python scripts. The API is the
 stable integration surface; the CLI is a thin local wrapper.
 
-## `validate_rollup_inputs`
+## Validation boundary
 
-```python
-from rollup.api import validate_rollup_inputs
-
-validation = validate_rollup_inputs("data")
-if not validation.is_valid:
-    print(validation.validation_report)
-```
-
-`validate_rollup_inputs(data_root)` validates source availability and
-schema/nullability for the main inputs. Expected source/schema failures return
-`RollupValidationResult(is_valid=False)` with a Polars validation report.
-Unexpected errors propagate.
-
-Call `validation.raise_for_errors()` when you want invalid inputs to raise
-`RollupValidationError`.
+Validnator is the source of truth for input/schema validation. Run Validnator on
+the documented data contracts before calling the runtime. The runtime does not
+expose a separate schema validation API; it keeps business invariants that can
+only be checked after computation or joins, and lets missing files needed for
+execution fail normally.
 
 ## `run_rollup`
 
@@ -45,12 +35,10 @@ Parameters commonly used by callers:
 | `config_path` | `None` | Optional TOML path; defaults to `rollup.local.toml` when no config object is passed. |
 | `config` | `None` | Optional `RollupConfig` object. Takes precedence over `config_path`. |
 | `write_analysis` | `True` | Write `analysis/ep_report.csv`. |
-| `validation_callback` | `None` | Optional callback receiving the validation result. |
 | `log_file` | `None` | Optional log path. CLI supplies `<output-root>/rollup.log` by default. |
 
-`run_rollup` always validates and raises `RollupValidationError` on expected
-input failures before calculations. It returns `RollupRunResult` with
-`data_root`, `output_root`, output paths, and optional `ep_report_path`.
+`run_rollup` returns `RollupRunResult` with `data_root`, `output_root`, output
+paths, and optional `ep_report_path`.
 
 For Dataiku callers, pass `config_path` explicitly. Do not rely on the current
 working directory containing `rollup.local.toml`.
@@ -159,7 +147,6 @@ result.ep_report_path
 result.outputs.mts_combined
 result.outputs.mts_wide
 result.outputs.mts_dialsup
-result.outputs.event_validation
 result.outputs.marts_dir
 result.outputs.mart_files
 result.outputs.stage_dir

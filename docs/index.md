@@ -25,7 +25,6 @@ output/
     mts_tbl_ylt_combined_all_factors.parquet
     mts_tbl_ylt_combined_all_factors_wide.parquet
     mts_tbl_ylt_dialsup.parquet
-    mts_event_validation.parquet
     HiscoAIR_..._main.parquet
     HiscoRMS_..._main.parquet
   stages/

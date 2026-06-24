@@ -1,19 +1,9 @@
 # Troubleshooting
 
-## Input validation failed
+## Input validation failed before runtime
 
-The CLI catches `RollupValidationError`, prints friendly details, and exits `1`.
-Read the reported `source_group` and `error`, then check the corresponding file
-under `data/`.
-
-Programmatic callers can inspect:
-
-```python
-from rollup.api import validate_rollup_inputs
-
-validation = validate_rollup_inputs("data")
-print(validation.validation_report)
-```
+Validnator owns input/schema validation. Read the Validnator report, then check
+the corresponding file under `data/` before re-running the runtime.
 
 ## Missing or empty outputs
 
