@@ -20,7 +20,7 @@ from rollup.api import run_rollup
 result = run_rollup(
     data_root=Path("data"),
     output_root=Path("output"),
-    config_path=Path("rollup.toml"),
+    config_path=Path("config.toml"),
     write_analysis=True,
     log_file="output/rollup.log",
 )
@@ -41,7 +41,9 @@ Parameters commonly used by callers:
 paths, and optional `ep_report_path`.
 
 For Dataiku callers, pass `config_path` explicitly for job-specific configs. Do
-not rely on the current working directory default.
+not rely on the current working directory default. The repository default is the
+tracked `config.toml`; Dataiku jobs may copy or write their own `config.toml` in
+a job workspace and pass that path explicitly.
 
 ## Config loading
 
@@ -94,6 +96,14 @@ target points, uplift clipping bounds, and fanout filename prefixes are config
 values. VOR subregion choices are business mappings in `perils.csv` through
 `blend_subregion_peril_id`.
 
+The `"216" = "216b"` subregion selection means: when VOR
+`blending_factors.csv` has multiple factor rows for Europe Flood
+`RegionPerilID` `216` (`216a`, `216b`, `216c`), use the `216b` row. It does not
+change the base model. The base model comes from `perils.csv`; for Europe Flood,
+modelled flood perils map to `Europe_FL` with `base_model=risklink`, so the
+uplift is applied to the RiskLink YLT. In the current seed, `216b` is Germany
+Flood and supplies the AIR/RMS blend weights from that row.
+
 ## Dataiku workspace pattern
 
 The path-based API works well when Dataiku can expose managed folders as local
@@ -113,7 +123,7 @@ with TemporaryDirectory() as workspace:
     workspace = Path(workspace)
     data_root = workspace / "data"
     output_root = workspace / "output"
-    config_path = workspace / "rollup.toml"
+    config_path = workspace / "config.toml"
 
     # Materialize/copy Dataiku inputs into data_root using the documented layout.
     # Write the job-specific TOML to config_path.
@@ -122,17 +132,18 @@ with TemporaryDirectory() as workspace:
         data_root=data_root,
         output_root=output_root,
         config_path=config_path,
-        write_analysis=True,
+        write_analysis=False,
         log_file=output_root / "rollup.log",
     )
 
     # Persist the files referenced by result.outputs before the temp dir exits.
 ```
 
-This is a local filesystem workspace. It is deliberately simple and
-reproducible, but copying large inputs can be inefficient. Avoid copying
+This is a local filesystem workspace. Exact Dataiku managed-folder and temp
+paths vary by project, so treat the paths above as examples. Avoid copying
 `data_root` when Dataiku already provides a usable managed-folder path; use the
-temporary workspace for config and outputs only.
+temporary workspace for config and outputs only. Persist files referenced by
+`result.outputs` to the appropriate managed folder or dataset.
 
 ## Returned outputs
 
@@ -188,7 +199,7 @@ from dataclasses import replace
 from rollup.api import run_rollup
 from rollup.config import load_config
 
-config = load_config("rollup.toml")
+config = load_config("config.toml")
 config = replace(config, outputs=replace(config.outputs, write_duckdb=True))
 
 run_rollup("data", "output", config=config)

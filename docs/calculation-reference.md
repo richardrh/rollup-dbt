@@ -80,10 +80,17 @@ RP >= 1000 -> 1000
 ```
 
 The bucket boundaries come from the configured positive OEP target points. VOR
-subregion choices are business seed data in `perils.csv`; Europe Flood
-`RegionPerilID` `216` currently maps to `blend_subregion_peril_id` `216b`.
-If one vendor loss is missing for a target point, the pipeline logs a warning
-and falls back to the base-model loss; missing base-model loss remains an error.
+subregion choices are configured under `[blending.subregion_selection]`; the
+default keeps Europe Flood `RegionPerilID` `216` on `SubRegionPerilID` `216b`.
+This chooses the Germany Flood row from `blending_factors.csv` when Europe Flood
+has multiple subregion rows (`216a`, `216b`, `216c`) and uses that row's AIR/RMS
+weights. It does not change the base model: `perils.csv` maps Europe Flood
+modelled flood perils to `Europe_FL` with `base_model=risklink`, so uplift is
+applied to RiskLink YLT.
+If the peer vendor loss is missing for a target point but the base-model loss
+exists, the pipeline logs a warning and falls back to `base_model_loss` with an
+uplift factor of `1.0`. If the base-model loss is missing, the pipeline logs a
+warning and skips that unblendable target point.
 
 ## FX
 

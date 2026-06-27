@@ -3,23 +3,35 @@
 ## Dataiku-first mode
 
 Use `rollup.api.run_rollup` from Python/Dataiku. This is the primary runtime
-contract and uses the same calculation path as the CLI.
+contract and uses the same calculation path as the CLI. Dataiku callers should
+not rely on current-working-directory defaults; pass an explicit job/workspace
+`config_path`.
 
 ```python
+from pathlib import Path
 from rollup.api import run_rollup
 
+workspace = Path("/tmp/rollup-job")
+data_root = workspace / "data"
+output_root = workspace / "output"
+config_path = workspace / "config.toml"
+
 result = run_rollup(
-    data_root="data",
-    output_root="output",
-    config_path="rollup.toml",
-    write_analysis=True,
+    data_root=data_root,
+    output_root=output_root,
+    config_path=config_path,
+    write_analysis=False,
+    log_file=output_root / "rollup.log",
 )
 ```
 
 In Dataiku, prefer an explicit `config_path` in the job workspace or managed
-folder. Pass a managed-folder path directly as `data_root` when it already
-matches the required layout; otherwise materialize inputs into a temporary
-workspace and persist the returned `result.outputs` files before cleanup.
+folder. The repository default is the tracked `config.toml`; a job can copy or
+write its own `config.toml` and pass it explicitly. Pass a managed-folder path
+directly as `data_root` when it already matches the required layout; otherwise
+materialize inputs into a temporary workspace and persist the returned
+`result.outputs` files before cleanup. The `/tmp/rollup-job` path above is only
+an example; real Dataiku managed-folder and temp paths vary.
 
 ## Local CLI mode
 
