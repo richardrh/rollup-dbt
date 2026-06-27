@@ -11,7 +11,7 @@ from rollup.api import run_rollup
 result = run_rollup(
     data_root="data",
     output_root="output",
-    config_path="rollup.local.toml",
+    config_path="rollup.toml",
     write_analysis=True,
 )
 ```
@@ -39,8 +39,10 @@ Useful flags:
 
 ## Config mode
 
-`rollup.local.toml` is loaded when no explicit config object or `config_path` is
-supplied. Dataiku callers should pass `config_path` explicitly. See
+`config.toml` is tracked and loaded when no explicit config object or
+`config_path` is supplied. Dataiku callers should pass `config_path` explicitly
+for job-specific configs. `rollup.local.toml` can still be passed explicitly but
+is no longer the runtime default. See
 [Programmatic API](programmatic-api.md#config-loading) and
 [Runtime guide](runtime.md#duckdb-export) for supported keys and runtime
 behavior.

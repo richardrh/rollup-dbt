@@ -20,7 +20,7 @@ from rollup.api import run_rollup
 result = run_rollup(
     data_root=Path("data"),
     output_root=Path("output"),
-    config_path=Path("rollup.local.toml"),
+    config_path=Path("rollup.toml"),
     write_analysis=True,
     log_file="output/rollup.log",
 )
@@ -32,7 +32,7 @@ Parameters commonly used by callers:
 | --- | --- | --- |
 | `data_root` | `"data"` | Input root. |
 | `output_root` | `"output"` | Output root. |
-| `config_path` | `None` | Optional TOML path; defaults to `rollup.local.toml` when no config object is passed. |
+| `config_path` | `None` | Optional TOML path; defaults to tracked `config.toml` when no config object is passed. |
 | `config` | `None` | Optional `RollupConfig` object. Takes precedence over `config_path`. |
 | `write_analysis` | `True` | Write `analysis/ep_report.csv`. |
 | `log_file` | `None` | Optional log path. CLI supplies `<output-root>/rollup.log` by default. |
@@ -40,8 +40,8 @@ Parameters commonly used by callers:
 `run_rollup` returns `RollupRunResult` with `data_root`, `output_root`, output
 paths, and optional `ep_report_path`.
 
-For Dataiku callers, pass `config_path` explicitly. Do not rely on the current
-working directory containing `rollup.local.toml`.
+For Dataiku callers, pass `config_path` explicitly for job-specific configs. Do
+not rely on the current working directory default.
 
 ## Config loading
 
@@ -49,11 +49,12 @@ working directory containing `rollup.local.toml`.
 
 1. If `config` is supplied, use it and ignore `config_path`.
 2. Otherwise, load the TOML at `config_path`.
-3. If neither is supplied, try `rollup.local.toml` in the current working
+3. If neither is supplied, try tracked `config.toml` in the current working
    directory.
 4. If no TOML exists, use the dataclass defaults in `rollup.config`.
 
-`rollup.example.toml` is a template. It is not loaded automatically.
+`rollup.local.toml` is not loaded automatically; pass it via `config_path` when
+you want a local override.
 
 The important TOML sections are:
 
@@ -189,7 +190,7 @@ from dataclasses import replace
 from rollup.api import run_rollup
 from rollup.config import load_config
 
-config = load_config("rollup.local.toml")
+config = load_config("rollup.toml")
 config = replace(config, outputs=replace(config.outputs, write_duckdb=True))
 
 run_rollup("data", "output", config=config)

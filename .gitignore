@@ -22,9 +22,10 @@ site/
 .DS_Store
 
 
-# Local config (never commit — contains connection strings etc.)
+# Local config overrides (tracked defaults live in /config.toml)
 # Scoped to repo root only so src/rollup/config.py remains tracked.
 /config.py
+!/config.toml
 /rollup.local.toml
 .dual-graph/
 

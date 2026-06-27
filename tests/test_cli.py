@@ -214,7 +214,7 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
     config = run_call["config"]
     assert config is not None
     assert config.outputs.write_duckdb is True
-    assert config.outputs.duckdb_file is None
+    assert config.outputs.duckdb_file == "rollup.duckdb"
     assert run_call["config_path"] is None
     assert (
         f"duckdb: {output_root / 'rollup.duckdb'} (missing)" in capsys.readouterr().out

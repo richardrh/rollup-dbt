@@ -99,8 +99,8 @@ class RollupConfig:
 
 
 def load_config(config_path: str | Path | None = None) -> RollupConfig:
-    """Load rollup TOML config, falling back to Dataiku-friendly defaults."""
-    path = Path(config_path) if config_path is not None else Path("rollup.local.toml")
+    """Load rollup TOML config, falling back to tracked defaults."""
+    path = Path(config_path) if config_path is not None else Path("config.toml")
     if not path.exists():
         return RollupConfig()
 
