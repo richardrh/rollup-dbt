@@ -39,7 +39,7 @@ convert_ep_summary(
 result = run_rollup(
     data_root="data",
     output_root="output",
-    config_path="rollup.local.toml",
+    config_path="rollup.toml",
     write_analysis=True,
 )
 ```
@@ -48,8 +48,8 @@ result = run_rollup(
 - `run_rollup(...)` runs the pipeline, preserves runtime business invariants,
   writes the optional DuckDB export, and generates the optional analysis report.
   Dataiku callers should pass
-  `config_path` explicitly rather than relying on `rollup.local.toml` in the
-  current working directory.
+  `config_path` explicitly for job-specific configs rather than relying on
+  the repository default `config.toml` in the current working directory.
 - `convert_ep_summary(...)` converts one wide EP summary CSV to canonical long
   rows, returning a Polars `DataFrame` and optionally writing a CSV.
 
@@ -132,8 +132,10 @@ Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
 
 ## Configuration
 
-`rollup.local.toml` is loaded by default when present. Start from
-`rollup.example.toml`; supported keys are defined in `src/rollup/config.py`.
+`config.toml` is tracked and loaded by default. Pass `config_path` explicitly
+for local or job-specific TOML files, including any `rollup.local.toml` override;
+`rollup.local.toml` is no longer the runtime default. Supported keys are defined
+in `src/rollup/config.py`.
 
 ```toml
 [fx]
