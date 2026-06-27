@@ -240,21 +240,64 @@ def test_apply_blending_rejects_empty_blending_factors() -> None:
         )
 
 
-def test_apply_blending_rejects_missing_base_model_ep_loss() -> None:
-    staged_ep = staged_ep_frame().filter(pl.col(Col.vendor) == "verisk")
+def test_apply_blending_warns_and_skips_missing_base_model_ep_loss(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    staged_ep = pl.concat(
+        [
+            staged_ep_frame(),
+            pl.DataFrame(
+                {
+                    Col.vendor: ["risklink"],
+                    Col.analysis_id: ["R2"],
+                    Col.modelled_lob: ["ML"],
+                    Col.modelled_peril: ["EQ"],
+                    Col.ep_type: ["OEP"],
+                    Col.return_period: [1000],
+                    Col.loss: [75.0],
+                    Col.rollup_lob: ["RL"],
+                    Col.class_: ["FA"],
+                    Col.office: ["UK"],
+                    Col.currency: ["GBP"],
+                    Col.rollup_peril: ["Europe_EQ"],
+                    Col.region_peril_id: [102],
+                    Col.base_model: ["verisk"],
+                    Col.selection_priority: [1],
+                    Col.is_dialsup: [0],
+                    Col.is_euws: [0],
+                }
+            ),
+        ],
+        how="vertical",
+    )
+    blending = pl.DataFrame(
+        {
+            "RegionPerilID": [101, 102],
+            "SubRegionPerilID": ["101a", "102a"],
+            "SubRegionPeril": ["Flood", "Quake"],
+            "AIRBlend": [0.5, 0.5],
+            "RMSBlend": [1.0, 1.0],
+        }
+    )
 
-    with pytest.raises(
-        ValueError,
-        match="EP blending target points are missing base-model losses",
-    ):
-        apply_blending(
+    with caplog.at_level("WARNING", logger="rollup.intermediate.apply_blending"):
+        result = apply_blending(
             enriched_ylt_frame().lazy(),
             staged_ep.lazy(),
-            blending_factors_frame(),
+            blending,
             BlendingConfig(
                 target_points=(BlendingTargetPoint("OEP", 1000),),
             ),
-        )
+        ).collect()
+
+    assert "missing base-model losses; skipping 1 unblendable point(s)" in caplog.text
+    assert "Europe_EQ" in caplog.text
+    assert "verisk" in caplog.text
+    assert result.select(
+        Col.region_peril_id,
+        Col.target_loss,
+        Col.uplift_factor_on_base_model,
+    ).unique().rows() == [(101, 200.0, 2.0)]
 
 
 def test_apply_blending_rejects_empty_target_points() -> None:

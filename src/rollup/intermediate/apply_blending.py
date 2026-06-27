@@ -117,10 +117,10 @@ def calculate_ep_blending_targets(
         .join(base_model_losses, on=EP_LOSS_KEYS, how="left")
         .join(weights, on=Col.region_peril_id, how="left")
     )
-    validate_base_model_losses(with_base_model)
-    warn_missing_vendor_losses(with_base_model)
+    blendable_targets = warn_and_skip_missing_base_model_losses(with_base_model)
+    warn_missing_vendor_losses(blendable_targets)
     return (
-        with_base_model
+        blendable_targets
         .with_columns(
             pl.when(
                 pl.col(Col.risklink_loss).is_null()
@@ -240,7 +240,7 @@ def blending_target_points(
     ).lazy()
 
 
-def validate_base_model_losses(frame: pl.LazyFrame) -> None:
+def warn_and_skip_missing_base_model_losses(frame: pl.LazyFrame) -> pl.LazyFrame:
     missing = frame.filter(pl.col(Col.base_model_loss).is_null()).select(
         Col.rollup_lob,
         Col.rollup_peril,
@@ -249,12 +249,14 @@ def validate_base_model_losses(frame: pl.LazyFrame) -> None:
         Col.ep_type,
         Col.return_period,
     ).collect()
-    if missing.is_empty():
-        return
-    raise ValueError(
-        "EP blending target points are missing base-model losses: "
-        f"{missing.rows(named=True)}"
-    )
+    if not missing.is_empty():
+        logger.warning(
+            "EP blending target points are missing base-model losses; "
+            "skipping %d unblendable point(s): %s",
+            missing.height,
+            missing.rows(named=True),
+        )
+    return frame.filter(pl.col(Col.base_model_loss).is_not_null())
 
 
 def warn_missing_vendor_losses(frame: pl.LazyFrame) -> None:
