@@ -18,6 +18,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         Col.modelled_peril,
         Col.rollup_peril,
         pl.col(Col.region_peril_id).cast(pl.Int64),
+        pl.col(Col.blend_subregion_peril_id).cast(pl.String),
         pl.col(Col.base_model).cast(pl.String).str.to_lowercase(),
         pl.col(Col.selection_priority).cast(pl.Int64),
         pl.col(Col.is_dialsup).cast(pl.Int64),

@@ -42,7 +42,6 @@ class BlendingConfig:
     )
     uplift_factor_min: float = 0.1
     uplift_factor_max: float = 10.0
-    subregion_selection: dict[int, str] = field(default_factory=lambda: {216: "216b"})
 
 
 @dataclass(frozen=True)
@@ -127,7 +126,6 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
             target_points=_blending_target_points(blending_raw),
             uplift_factor_min=float(blending_raw.get("uplift_factor_min", 0.1)),
             uplift_factor_max=float(blending_raw.get("uplift_factor_max", 10.0)),
-            subregion_selection=_subregion_selection(blending_raw),
         ),
         outputs=OutputConfig(**_output_values(outputs_raw)),
         fx=FXConfig(**_fx_values(fx_raw)),
@@ -182,16 +180,6 @@ def _blending_target_points(values: dict[str, Any]) -> tuple[BlendingTargetPoint
         BlendingTargetPoint(point["ep_type"], point["return_period"])
         for point in raw_points
     )
-
-
-def _subregion_selection(values: dict[str, Any]) -> dict[int, str]:
-    raw_selection = values.get("subregion_selection")
-    if not isinstance(raw_selection, dict):
-        return dict(BlendingConfig().subregion_selection)
-    return {
-        int(region_peril_id): str(sub_region_peril_id)
-        for region_peril_id, sub_region_peril_id in raw_selection.items()
-    }
 
 
 def _output_values(values: dict[str, Any]) -> dict[str, Any]:

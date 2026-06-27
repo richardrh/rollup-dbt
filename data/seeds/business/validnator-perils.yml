@@ -20,6 +20,7 @@ rules:
           region: string
           peril: string
           region_peril_id: int64
+          blend_subregion_peril_id: string
           base_model: string
           selection_priority: int64
           is_dialsup: int64
@@ -37,6 +38,7 @@ rules:
           - region
           - peril
           - region_peril_id
+          - blend_subregion_peril_id
           - base_model
           - selection_priority
           - is_dialsup
