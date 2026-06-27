@@ -228,7 +228,10 @@ RiskLink EP summaries.
 
 Subregion choices are configured in TOML under
 `[blending.subregion_selection]`. The default maps Europe Flood
-`RegionPerilID` `216` to `SubRegionPerilID` `216b`.
+`RegionPerilID` `216` to `SubRegionPerilID` `216b`. This means
+`blending_factors.csv` has multiple rows for 216 (`216a`, `216b`, `216c`), and
+the config selects the row whose AIR/RMS weights should be used. It does not
+change the base model; that still comes from `perils.csv`.
 
 ### `data/seeds/vor/fx_rates.csv`
 
