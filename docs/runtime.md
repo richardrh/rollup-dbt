@@ -66,11 +66,12 @@ data/
   seeds/validation/risklink_flood22_model_events.parquet
 ```
 
-`perils.csv` must contain `base_model`, `selection_priority`, `is_dialsup`, and
-`is_euws`. `base_model` chooses the vendor base model for blending,
-`selection_priority` chooses the main EP peril candidate, `is_dialsup` flags the
-selected modelled peril row for the DIALSUP branch, and `is_euws` controls EUWS
-factor application.
+`perils.csv` must contain `base_model`, `blend_subregion_peril_id`,
+`selection_priority`, `is_dialsup`, and `is_euws`. `base_model` chooses the
+vendor base model for blending, `blend_subregion_peril_id` chooses the VOR
+`SubRegionPerilID` used for blend weights, `selection_priority` chooses the main
+EP peril candidate, `is_dialsup` flags the selected modelled peril row for the
+DIALSUP branch, and `is_euws` controls EUWS factor application.
 
 ## Output layout
 

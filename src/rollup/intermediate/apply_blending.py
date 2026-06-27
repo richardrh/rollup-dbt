@@ -14,6 +14,7 @@ EP_LOSS_KEYS = [
     Col.rollup_lob,
     Col.rollup_peril,
     Col.region_peril_id,
+    Col.blend_subregion_peril_id,
     Col.base_model,
     Col.ep_type,
     Col.return_period,
@@ -82,26 +83,17 @@ def calculate_ep_blending_targets(
     region_col = RawCol.RegionPerilID if RawCol.RegionPerilID in columns else Col.region_peril_id
     air_col = RawCol.AIRBlend if RawCol.AIRBlend in columns else "verisk_weight"
     rms_col = RawCol.RMSBlend if RawCol.RMSBlend in columns else "risklink_weight"
-    sub_region_id_expr = (
-        pl.col(RawCol.SubRegionPerilID).cast(pl.String)
-        if RawCol.SubRegionPerilID in columns
-        else pl.lit(None, dtype=pl.String)
-    )
+    if RawCol.SubRegionPerilID not in columns:
+        raise ValueError("EP-derived blending requires SubRegionPerilID weights")
     sub_region_expr = (
         pl.col(RawCol.SubRegionPeril).cast(pl.String)
         if RawCol.SubRegionPeril in columns
         else pl.lit(None, dtype=pl.String)
     )
-    weights = blending.lazy()
-    if RawCol.SubRegionPerilID in columns:
-        weights = filter_selected_subregions(
-            weights,
-            region_col,
-            config.subregion_selection,
-        ).sort(RawCol.SubRegionPerilID)
-    weights = weights.group_by(region_col).first().select(
+    weights = blending.lazy().group_by(region_col, RawCol.SubRegionPerilID).first().select(
         pl.col(region_col).cast(pl.Int64).alias(Col.region_peril_id),
-        sub_region_id_expr.alias(Col.sub_region_peril_id),
+        pl.col(RawCol.SubRegionPerilID).cast(pl.String).alias(Col.blend_subregion_peril_id),
+        pl.col(RawCol.SubRegionPerilID).cast(pl.String).alias(Col.sub_region_peril_id),
         sub_region_expr.alias(Col.sub_region_peril),
         pl.col(air_col).cast(pl.Float64).alias(Col.verisk_weight),
         pl.col(rms_col).cast(pl.Float64).alias(Col.risklink_weight),
@@ -115,7 +107,11 @@ def calculate_ep_blending_targets(
     with_base_model = (
         target_points
         .join(base_model_losses, on=EP_LOSS_KEYS, how="left")
-        .join(weights, on=Col.region_peril_id, how="left")
+        .join(
+            weights,
+            on=[Col.region_peril_id, Col.blend_subregion_peril_id],
+            how="left",
+        )
     )
     blendable_targets = warn_and_skip_missing_base_model_losses(with_base_model)
     warn_missing_vendor_losses(blendable_targets)
@@ -173,6 +169,7 @@ def apply_ep_blending_to_ylt(
         Col.rollup_lob,
         Col.rollup_peril,
         Col.region_peril_id,
+        Col.blend_subregion_peril_id,
         pl.col(Col.return_period).alias(Col.rp_bucket),
         Col.ep_type,
         Col.risklink_loss,
@@ -190,39 +187,13 @@ def apply_ep_blending_to_ylt(
             Col.rollup_lob,
             Col.rollup_peril,
             Col.region_peril_id,
+            Col.blend_subregion_peril_id,
             Col.rp_bucket,
             Col.base_model,
         ],
         how="inner",
     ).with_columns(
         (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias("blended_loss")
-    )
-
-
-def filter_selected_subregions(
-    weights: pl.LazyFrame,
-    region_col: str,
-    subregion_selection: Mapping[int, str],
-) -> pl.LazyFrame:
-    if not subregion_selection:
-        return weights
-    region_id = "__region_peril_id"
-    selected_subregion = "__selected_subregion_peril_id"
-    selections = pl.DataFrame(
-        {
-            region_id: list(subregion_selection),
-            selected_subregion: list(subregion_selection.values()),
-        },
-        schema={region_id: pl.Int64, selected_subregion: pl.String},
-    ).lazy()
-    return (
-        weights.with_columns(pl.col(region_col).cast(pl.Int64).alias(region_id))
-        .join(selections, on=region_id, how="left")
-        .filter(
-            pl.col(selected_subregion).is_null()
-            | (pl.col(RawCol.SubRegionPerilID).cast(pl.String) == pl.col(selected_subregion))
-        )
-        .drop(region_id, selected_subregion)
     )
 
 

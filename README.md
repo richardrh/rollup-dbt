@@ -80,8 +80,9 @@ data/
 ```
 
 `perils.csv` includes `base_model` for blend base-model selection,
-`selection_priority` for the main branch, `is_dialsup` for the DIALSUP branch,
-and `is_euws` for EUWS factor application.
+`blend_subregion_peril_id` for VOR subregion selection, `selection_priority` for
+the main branch, `is_dialsup` for the DIALSUP branch, and `is_euws` for EUWS
+factor application.
 
 ## Default output layout
 
@@ -165,15 +166,13 @@ target_points = [
     { ep_type = "OEP", return_period = 200 },
     { ep_type = "OEP", return_period = 1000 },
 ]
-
-[blending.subregion_selection]
-"216" = "216b"
 ```
 
 Vendor years control EP report rank/AAL calculations and YLT rank to
 return-period bucket conversion during EP-derived blending. The blend target
-points, uplift clipping bounds, VOR subregion selections, and fanout filename
-prefixes are configuration defaults rather than hidden code branches.
+points, uplift clipping bounds, and fanout filename prefixes are configuration
+defaults rather than hidden code branches. VOR subregion selection is a business
+mapping in `perils.csv` via `blend_subregion_peril_id`.
 
 `[blending.subregion_selection] "216" = "216b"` selects which VOR
 `blending_factors.csv` row to use when Europe Flood `RegionPerilID` `216` has

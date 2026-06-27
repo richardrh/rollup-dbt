@@ -25,6 +25,3 @@ target_points = [
     { ep_type = "OEP", return_period = 200 },
     { ep_type = "OEP", return_period = 1000 },
 ]
-
-[blending.subregion_selection]
-"216" = "216b"

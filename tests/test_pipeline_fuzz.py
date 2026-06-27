@@ -54,6 +54,7 @@ def test_fuzz_stage_ep_summaries_enriches_known_dimensions(
             pl.col(Col.rollup_lob).is_not_null(),
             pl.col(Col.rollup_peril).is_not_null(),
             pl.col(Col.region_peril_id).is_not_null(),
+            pl.col(Col.blend_subregion_peril_id).is_not_null(),
         ).all()
     ).item()
 
@@ -118,6 +119,7 @@ def peril_lookup(perils: list[str]) -> pl.DataFrame:
             "region": ["Region"] * len(perils),
             "peril": ["Peril"] * len(perils),
             Col.region_peril_id: list(range(1, len(perils) + 1)),
+            Col.blend_subregion_peril_id: [f"{index}a" for index in range(1, len(perils) + 1)],
             Col.base_model: ["verisk"] * len(perils),
             Col.selection_priority: [1] * len(perils),
             Col.is_dialsup: [0] * len(perils),

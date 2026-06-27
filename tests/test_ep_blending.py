@@ -42,6 +42,7 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
                 "region": ["UK", "UK"],
                 "peril": ["WS", "WS"],
                 Col.region_peril_id: [216, 216],
+                Col.blend_subregion_peril_id: ["216b", "216b"],
                 Col.base_model: ["verisk", "verisk"],
                 Col.selection_priority: [2, 1],
                 Col.is_dialsup: [1, 0],
@@ -53,10 +54,14 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
     result = stage_ep_summaries(frames).collect().sort([Col.vendor, Col.loss])
 
     assert result.select(
-        Col.vendor, Col.modelled_peril, Col.selection_priority, Col.is_dialsup
+        Col.vendor,
+        Col.modelled_peril,
+        Col.selection_priority,
+        Col.is_dialsup,
+        Col.blend_subregion_peril_id,
     ).rows() == [
-        ("risklink", "LOW", 1, 0),
-        ("verisk", "LOW", 1, 0),
+        ("risklink", "LOW", 1, 0, "216b"),
+        ("verisk", "LOW", 1, 0, "216b"),
     ]
 
 
@@ -77,6 +82,7 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
             Col.currency: ["GBP", "GBP"],
             Col.rollup_peril: ["Spain_FL", "Spain_FL"],
             Col.region_peril_id: [101, 101],
+            Col.blend_subregion_peril_id: ["101a", "101a"],
             Col.base_model: ["risklink", "risklink"],
             Col.selection_priority: [1, 1],
             Col.is_dialsup: [0, 0],
@@ -116,12 +122,15 @@ def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
     ]
 
 
-def test_apply_blending_uses_configured_subregion_selection() -> None:
+def test_apply_blending_uses_perils_blend_subregion_selection() -> None:
     enriched = (
         enriched_ylt_frame()
         .filter(pl.col(Col.vendor) == "risklink")
         .head(1)
-        .with_columns(pl.lit(216, dtype=pl.Int64).alias(Col.region_peril_id))
+        .with_columns(
+            pl.lit(216, dtype=pl.Int64).alias(Col.region_peril_id),
+            pl.lit("216b", dtype=pl.String).alias(Col.blend_subregion_peril_id),
+        )
     )
     staged_ep = pl.DataFrame(
         {
@@ -138,6 +147,7 @@ def test_apply_blending_uses_configured_subregion_selection() -> None:
             Col.currency: ["GBP", "GBP"],
             Col.rollup_peril: ["Spain_FL", "Spain_FL"],
             Col.region_peril_id: [216, 216],
+            Col.blend_subregion_peril_id: ["216b", "216b"],
             Col.base_model: ["risklink", "risklink"],
             Col.selection_priority: [1, 1],
             Col.is_dialsup: [0, 0],
@@ -161,7 +171,6 @@ def test_apply_blending_uses_configured_subregion_selection() -> None:
         BlendingConfig(
             vendor_years={"risklink": 2_000},
             target_points=(BlendingTargetPoint("OEP", 1000),),
-            subregion_selection={216: "216b"},
         ),
     ).collect()
 
@@ -192,6 +201,7 @@ def test_apply_blending_warns_and_falls_back_to_base_model_when_vendor_loss_miss
             Col.currency: ["GBP"],
             Col.rollup_peril: ["Spain_FL"],
             Col.region_peril_id: [101],
+            Col.blend_subregion_peril_id: ["101a"],
             Col.base_model: ["risklink"],
             Col.selection_priority: [1],
             Col.is_dialsup: [0],
@@ -261,6 +271,7 @@ def test_apply_blending_warns_and_skips_missing_base_model_ep_loss(
                     Col.currency: ["GBP"],
                     Col.rollup_peril: ["Europe_EQ"],
                     Col.region_peril_id: [102],
+                    Col.blend_subregion_peril_id: ["102a"],
                     Col.base_model: ["verisk"],
                     Col.selection_priority: [1],
                     Col.is_dialsup: [0],
@@ -347,6 +358,7 @@ def enriched_ylt_frame() -> pl.DataFrame:
                     Col.rollup_lob: "RL",
                     Col.rollup_peril: "Spain_FL",
                     Col.region_peril_id: 101,
+                    Col.blend_subregion_peril_id: "101a",
                     Col.class_: "FA",
                     Col.office: "UK",
                     Col.currency: "GBP",
@@ -374,6 +386,7 @@ def staged_ep_frame(ep_type: str = "OEP", return_period: int = 1000) -> pl.DataF
             Col.currency: ["GBP", "GBP"],
             Col.rollup_peril: ["Spain_FL", "Spain_FL"],
             Col.region_peril_id: [101, 101],
+            Col.blend_subregion_peril_id: ["101a", "101a"],
             Col.base_model: ["risklink", "risklink"],
             Col.selection_priority: [1, 1],
             Col.is_dialsup: [0, 0],

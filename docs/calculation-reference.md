@@ -61,6 +61,8 @@ Blending uses the restored old-master method:
 - blending weights from `seeds/vor/blending_factors.csv`
 - `target_loss = verisk_loss * AIRBlend + risklink_loss * RMSBlend`
 - base model comes from `base_model` in `seeds/business/perils.csv`
+- selected VOR subregion comes from `blend_subregion_peril_id` in
+  `seeds/business/perils.csv`
 - `base_model_loss` comes from the chosen base model
 - `uplift_factor_on_base_model = target_loss / base_model_loss`
 - uplift factors are clipped by `[blending].uplift_factor_min` and

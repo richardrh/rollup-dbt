@@ -158,9 +158,6 @@ target_points = [
   { ep_type = "OEP", return_period = 5 },
 ]
 
-[blending.subregion_selection]
-"999" = "999z"
-
 [outputs]
 write_stage_outputs = false
 write_duckdb = true
@@ -187,7 +184,6 @@ target_currency = "usd"
     ]
     assert config.blending.uplift_factor_min == 0.25
     assert config.blending.uplift_factor_max == 4.0
-    assert config.blending.subregion_selection == {999: "999z"}
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.write_duckdb is True
     assert config.outputs.combined_file == "combined.parquet"
@@ -420,6 +416,7 @@ def _write_seeds(data_root: Path) -> None:
             "region": ["US"],
             "peril": ["EQ"],
             "region_peril_id": [205],
+            "blend_subregion_peril_id": ["205a"],
             "base_model": ["verisk"],
             "selection_priority": [1],
             "is_dialsup": [1],
@@ -432,7 +429,7 @@ def _write_seeds(data_root: Path) -> None:
             "BlendSetID": [1],
             "RegionPerilID": [205],
             "RegionPeril": ["US_EQ"],
-            "SubRegionPerilID": ["205"],
+            "SubRegionPerilID": ["205a"],
             "SubRegionPeril": ["US_EQ"],
             "AIRBlend": [1.0],
             "RMSBlend": [0.5],

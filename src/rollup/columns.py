@@ -46,6 +46,7 @@ class Col(StrEnum):
     rollup_lob = "rollup_lob"
     rollup_peril = "rollup_peril"
     region_peril_id = "region_peril_id"
+    blend_subregion_peril_id = "blend_subregion_peril_id"
     cds_cat_class_name = "cds_cat_class_name"
     class_ = "class"
     office = "office"
