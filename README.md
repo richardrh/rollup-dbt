@@ -39,7 +39,7 @@ convert_ep_summary(
 result = run_rollup(
     data_root="data",
     output_root="output",
-    config_path="rollup.toml",
+    config_path="config.toml",
     write_analysis=True,
 )
 ```
@@ -174,6 +174,13 @@ Vendor years control EP report rank/AAL calculations and YLT rank to
 return-period bucket conversion during EP-derived blending. The blend target
 points, uplift clipping bounds, VOR subregion selections, and fanout filename
 prefixes are configuration defaults rather than hidden code branches.
+
+`[blending.subregion_selection] "216" = "216b"` selects which VOR
+`blending_factors.csv` row to use when Europe Flood `RegionPerilID` `216` has
+multiple subregion rows (`216a`, `216b`, `216c`). It does not change the base
+model; `perils.csv` maps Europe Flood modelled flood perils to `Europe_FL` with
+`base_model=risklink`, so uplift is applied to RiskLink YLT. In the current
+seed, `216b` is Germany Flood and provides that row's AIR/RMS weights.
 
 ## More documentation
 
