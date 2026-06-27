@@ -18,7 +18,7 @@ Business seeds:
 - `business/lobs.csv`: maps source `modelled_lob` values to rollup LOB,
   class, office, currency, and CDS class metadata.
 - `business/perils.csv`: maps source `modelled_peril` values to rollup peril,
-  region/peril labels, and region-peril IDs.
+  region/peril labels, region-peril IDs, and selected VOR subregion-peril IDs.
 
 VOR/adjustment seeds:
 

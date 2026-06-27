@@ -86,15 +86,13 @@ target_points = [
     { ep_type = "OEP", return_period = 200 },
     { ep_type = "OEP", return_period = 1000 },
 ]
-
-[blending.subregion_selection]
-"216" = "216b"
 ```
 
 Vendor years control EP report rank/AAL calculations and the YLT
 rank-to-return-period bucket conversion used by EP-derived blending. Blend
-target points, uplift clipping bounds, VOR subregion choices, and fanout
-filename prefixes are config values.
+target points, uplift clipping bounds, and fanout filename prefixes are config
+values. VOR subregion choices are business mappings in `perils.csv` through
+`blend_subregion_peril_id`.
 
 ## Dataiku workspace pattern
 

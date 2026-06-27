@@ -61,6 +61,8 @@ Blending uses the restored old-master method:
 - blending weights from `seeds/vor/blending_factors.csv`
 - `target_loss = verisk_loss * AIRBlend + risklink_loss * RMSBlend`
 - base model comes from `base_model` in `seeds/business/perils.csv`
+- selected VOR subregion comes from `blend_subregion_peril_id` in
+  `seeds/business/perils.csv`
 - `base_model_loss` comes from the chosen base model
 - `uplift_factor_on_base_model = target_loss / base_model_loss`
 - uplift factors are clipped by `[blending].uplift_factor_min` and
@@ -78,8 +80,8 @@ RP >= 1000 -> 1000
 ```
 
 The bucket boundaries come from the configured positive OEP target points. VOR
-subregion choices are configured under `[blending.subregion_selection]`; the
-default keeps Europe Flood `RegionPerilID` `216` on `SubRegionPerilID` `216b`.
+subregion choices are business seed data in `perils.csv`; Europe Flood
+`RegionPerilID` `216` currently maps to `blend_subregion_peril_id` `216b`.
 If one vendor loss is missing for a target point, the pipeline logs a warning
 and falls back to the base-model loss; missing base-model loss remains an error.
 

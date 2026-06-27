@@ -199,11 +199,16 @@ application.
 ### `data/seeds/business/perils.csv`
 
 Peril lookup from GC/vendor `modelled_peril` values to rollup peril labels,
-region/peril labels, `region_peril_id`, and blend `base_model`.
+region/peril labels, `region_peril_id`, selected VOR subregion, and blend
+`base_model`.
 
 `base_model` chooses which vendor YLT stream is used as the base model for EP
 blending. It is data-driven from this seed file; for the current data, Europe
 and UK flood rows use `risklink`, while the other rows use `verisk`.
+
+`blend_subregion_peril_id` chooses the VOR `SubRegionPerilID` used when joining
+blend weights for each rollup peril/region mapping. Europe Flood
+`region_peril_id` `216` currently uses `216b`.
 
 `selection_priority` chooses the main pipeline's preferred modelled peril variant
 when multiple modelled perils map to the same vendor, `rollup_lob`, and
@@ -226,9 +231,8 @@ VOR blend weights by `RegionPerilID` and `SubRegionPerilID`. The EP blend target
 step uses the AIR and RMS weights to create blended loss targets from Verisk and
 RiskLink EP summaries.
 
-Subregion choices are configured in TOML under
-`[blending.subregion_selection]`. The default maps Europe Flood
-`RegionPerilID` `216` to `SubRegionPerilID` `216b`.
+Subregion choices come from `blend_subregion_peril_id` in
+`seeds/business/perils.csv`, not TOML runtime config.
 
 ### `data/seeds/vor/fx_rates.csv`
 
