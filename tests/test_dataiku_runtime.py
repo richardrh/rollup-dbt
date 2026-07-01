@@ -294,6 +294,54 @@ duckdb_file = "rollup.duckdb"
     assert set(dialsup["metric"].unique().to_list()) == {"loss_dialsup_fx_gbp_forecast"}
 
 
+def test_run_rollup_write_duckdb_true_returns_existing_duckdb_file(tmp_path: Path) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    output_root = tmp_path / "output"
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[outputs]
+write_duckdb = true
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = run_rollup(
+        data_root,
+        output_root,
+        config_path=config_path,
+        write_analysis=False,
+    )
+
+    assert result.outputs.duckdb_file == output_root / "rollup.duckdb"
+    assert result.outputs.duckdb_file.is_file()
+
+
+def test_run_rollup_write_duckdb_false_returns_none_and_skips_default_file(tmp_path: Path) -> None:
+    data_root = _write_tiny_input(tmp_path)
+    output_root = tmp_path / "output"
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[outputs]
+write_duckdb = false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    result = run_rollup(
+        data_root,
+        output_root,
+        config_path=config_path,
+        write_analysis=False,
+    )
+
+    assert config.outputs.write_duckdb is False
+    assert result.outputs.duckdb_file is None
+    assert not (output_root / "rollup.duckdb").exists()
+
+
 def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path: Path) -> None:
     data_root = _write_tiny_input(tmp_path)
     seeds = data_root / "seeds"
