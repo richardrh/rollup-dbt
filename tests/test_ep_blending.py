@@ -56,12 +56,13 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
     assert result.select(
         Col.vendor,
         Col.modelled_peril,
+        Col.cds_cat_class_name,
         Col.selection_priority,
         Col.is_dialsup,
         Col.blend_subregion_peril_id,
     ).rows() == [
-        ("risklink", "LOW", 1, 0, "216b"),
-        ("verisk", "LOW", 1, 0, "216b"),
+        ("risklink", "LOW", "FA", 1, 0, "216b"),
+        ("verisk", "LOW", "FA", 1, 0, "216b"),
     ]
 
 

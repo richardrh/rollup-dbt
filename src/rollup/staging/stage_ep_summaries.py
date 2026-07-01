@@ -10,6 +10,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
     lobs = frames.lobs.lazy().select(
         Col.modelled_lob,
         Col.rollup_lob,
+        Col.cds_cat_class_name,
         pl.col(Col.class_).cast(pl.String),
         pl.col(Col.office).cast(pl.String),
         pl.col(Col.currency).cast(pl.String),

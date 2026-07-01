@@ -8,6 +8,7 @@ from rollup.intermediate.apply_euws import apply_euws
 from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
 from rollup.intermediate.build_dialsup import build_dialsup, dialsup_metric
+from rollup.intermediate.build_metric_long import build_metric_long
 
 
 def test_apply_fx_uses_configured_target_currency_rates() -> None:
@@ -238,6 +239,32 @@ def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
     assert result.select(Col.metric, Col.loss).rows() == [
         (dialsup_metric("GBP"), 600.0)
     ]
+    assert result.select(Col.cds_cat_class_name, Col.model_event_id, Col.event_day).rows() == [
+        ("CDS Fine Art", 1, 15)
+    ]
+
+
+def test_build_metric_long_carries_fanout_metadata() -> None:
+    adjusted = blended_frame(
+        [
+            {
+                Col.target_currency: "GBP",
+                Col.forecast_date: "2026-01-01",
+                Col.model_event_id: 410024195,
+                Col.event_day: 15,
+                Col.is_dialsup: 0,
+                "fx_loss": 20.0,
+                "forecast_loss": 30.0,
+                "euws_loss": 30.0,
+            }
+        ]
+    )
+
+    result = build_metric_long(adjusted.lazy()).collect()
+
+    assert result.select(Col.cds_cat_class_name, Col.model_event_id, Col.event_day).unique().rows() == [
+        ("CDS Fine Art", 410024195, 15)
+    ]
 
 
 def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
@@ -262,6 +289,7 @@ def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
         Col.rollup_lob: "Fine Art",
         Col.rollup_peril: "Earthquake",
         Col.region_peril_id: 205,
+        Col.cds_cat_class_name: "CDS Fine Art",
         Col.class_: "ART",
         Col.office: "London",
         Col.currency: "GBP",
