@@ -82,7 +82,9 @@ output/
     mts_tbl_ylt_combined_all_factors_wide.parquet
     mts_tbl_ylt_dialsup.parquet
     HiscoAIR_..._main.parquet
+    HiscoAIR_..._dialsup.parquet
     HiscoRMS_..._main.parquet
+    HiscoRMS_..._dialsup.parquet
   stages/
     staging/
     intermediate/
@@ -93,6 +95,7 @@ output/
 
 - `--no-stage-outputs` disables `output/stages/` writes.
 - `--no-analysis` disables `output/analysis/ep_report.csv`.
+- Fanout outputs include paired `_main.parquet` and `_dialsup.parquet` files.
 
 ## Calculation flow
 
@@ -165,7 +168,8 @@ DuckDB export is optional and disabled by default.
 
 CLI flags:
 
-- `--duckdb` writes the default database.
+- `--duckdb` writes the default database, for example:
+  `uv run python -m rollup run --data-root data --output-root output --config-path config.toml --duckdb`.
 - `--duckdb-file <path>` writes a specific database path and also enables DuckDB.
 
 Config:
@@ -176,11 +180,14 @@ write_duckdb = true
 duckdb_file = "rollup.duckdb"
 ```
 
-Default path: `output/rollup.duckdb`.
+Default path: `output/rollup.duckdb`. A relative `duckdb_file` resolves under
+`output_root`; an absolute path is written as given. Set `write_duckdb = false`
+to skip the export.
 
 Tables included:
 
 - `mts_tbl_ylt_combined_all_factors`
+- `mts_tbl_ylt_dialsup`
 - `input_ylt_verisk`
 - `input_ylt_risklink`
 - `input_ep_summaries`
@@ -192,7 +199,7 @@ Tables included:
 - `seed_euws_rate_factors`
 - `seed_euws_rank_overrides`
 
-Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
+Not included: fanouts, stage/intermediate outputs, and wide mart.
 
 ## Validation behavior
 
@@ -231,6 +238,5 @@ metric names are modernized.
   `modelled_peril` despite EP summaries containing `MGA_Pen` and `MGA_Cherish`.
   Likely follow-up: `build_enriched_ylt` drops those fields from RiskLink EP keys
   before joining by `analysis_id`.
-- DIALSUP fanout files are not emitted separately.
 - Add an explicit error when EP blending weights are missing for a required
   region peril.

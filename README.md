@@ -124,12 +124,14 @@ duckdb_file = "rollup.duckdb"
 
 The default path is `output/rollup.duckdb`.
 
-Included tables: `mts_tbl_ylt_combined_all_factors`, `input_ylt_verisk`,
-`input_ylt_risklink`, `input_ep_summaries`, `seed_lobs`, `seed_perils`,
-`seed_blending_factors`, `seed_fx_rates`, `seed_forecast_factors`,
-`seed_euws_rate_factors`, and `seed_euws_rank_overrides`.
+Included tables: `mts_tbl_ylt_combined_all_factors`, `mts_tbl_ylt_dialsup`,
+`input_ylt_verisk`, `input_ylt_risklink`, `input_ep_summaries`, `seed_lobs`,
+`seed_perils`, `seed_blending_factors`, `seed_fx_rates`,
+`seed_forecast_factors`, `seed_euws_rate_factors`, and
+`seed_euws_rank_overrides`.
 
-Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
+Not included: fanouts, stage/intermediate outputs, and wide mart. Parquet
+fanouts include both `_main.parquet` and `_dialsup.parquet` files.
 
 ## Configuration
 

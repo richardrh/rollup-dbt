@@ -172,7 +172,8 @@ false`. `result.ep_report_path` is `None` when `write_analysis=False`.
 
 ## DuckDB output
 
-DuckDB export is controlled by config:
+DuckDB export is controlled by config. Enable it in the TOML passed through
+`config_path`:
 
 ```toml
 [outputs]
@@ -180,8 +181,20 @@ write_duckdb = true
 duckdb_file = "rollup.duckdb"
 ```
 
+```python
+result = run_rollup(
+    data_root=Path("data"),
+    output_root=Path("output"),
+    config_path=Path("config.toml"),
+)
+```
+
 With the relative path above, the file is written to
 `<output_root>/rollup.duckdb` and returned as `result.outputs.duckdb_file`.
+Use an absolute `duckdb_file` to write outside `output_root`.
+
+The DuckDB export includes `mts_tbl_ylt_combined_all_factors` and
+`mts_tbl_ylt_dialsup`.
 
 To disable DuckDB:
 
