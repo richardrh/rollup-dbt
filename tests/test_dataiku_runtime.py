@@ -162,6 +162,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
                 "combined",
                 "dialsup",
                 config,
+                "verisk_events",
                 "risklink_flood_events",
                 "main_fanout",
                 "dialsup_fanout",
