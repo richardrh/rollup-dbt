@@ -543,3 +543,12 @@ def _write_seeds(data_root: Path) -> None:
             "Day": [10, 20],
         }
     ).write_parquet(validation / "verisk_events.parquet")
+    pl.DataFrame(
+        {
+            "ModelEventID": [1, 2],
+            "RegionPerilID": [205, 205],
+            "ModelOccurrenceDate": ["2026-01-10", "2026-01-20"],
+        }
+    ).with_columns(
+        pl.col("ModelOccurrenceDate").str.to_date()
+    ).write_parquet(validation / "risklink_flood22_model_events.parquet")

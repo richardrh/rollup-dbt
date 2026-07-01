@@ -15,6 +15,7 @@ def build_enriched_ylt(normalized_ylt: pl.LazyFrame, staged_ep: pl.LazyFrame) ->
         Col.rollup_peril,
         Col.region_peril_id,
         Col.blend_subregion_peril_id,
+        Col.cds_cat_class_name,
         Col.base_model,
         Col.class_,
         Col.office,

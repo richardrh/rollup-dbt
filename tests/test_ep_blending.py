@@ -6,6 +6,7 @@ import pytest
 from rollup.columns import Col
 from rollup.config import BlendingConfig, BlendingTargetPoint
 from rollup.intermediate.apply_blending import apply_blending
+from rollup.intermediate.build_enriched_ylt import build_enriched_ylt
 from rollup.staging.load_sources import StagingFrames
 from rollup.staging.stage_ep_summaries import stage_ep_summaries
 
@@ -64,6 +65,66 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
         ("risklink", "LOW", "FA", 1, 0, "216b"),
         ("verisk", "LOW", "FA", 1, 0, "216b"),
     ]
+
+
+def test_build_enriched_ylt_carries_cds_cat_class_name() -> None:
+    normalized = pl.DataFrame(
+        {
+            Col.vendor: ["verisk"],
+            Col.analysis_id: ["A"],
+            Col.modelled_lob: ["ML"],
+            Col.modelled_peril: ["LOW"],
+            Col.model_code: [7],
+            Col.year_id: [1],
+            Col.event_id: [10],
+            Col.loss: [100.0],
+        }
+    ).lazy()
+    staged_ep = stage_ep_summaries(
+        staging_frames(
+            ep_summaries=pl.DataFrame(
+                {
+                    Col.vendor: ["verisk"],
+                    Col.analysis_id: ["A"],
+                    Col.modelled_lob: ["ML"],
+                    Col.modelled_peril: ["LOW"],
+                    Col.ep_type: ["AAL"],
+                    Col.return_period: [0],
+                    Col.loss: [1.0],
+                }
+            ),
+            lobs=pl.DataFrame(
+                {
+                    "lob_id": [1],
+                    Col.modelled_lob: ["ML"],
+                    Col.rollup_lob: ["RL"],
+                    "lob_type": ["property"],
+                    Col.cds_cat_class_name: ["CDS Class"],
+                    Col.class_: ["FA"],
+                    Col.office: ["UK"],
+                    Col.currency: ["GBP"],
+                }
+            ),
+            perils=pl.DataFrame(
+                {
+                    Col.modelled_peril: ["LOW"],
+                    Col.rollup_peril: ["UK_WS"],
+                    "region": ["UK"],
+                    "peril": ["WS"],
+                    Col.region_peril_id: [216],
+                    Col.blend_subregion_peril_id: ["216b"],
+                    Col.base_model: ["verisk"],
+                    Col.selection_priority: [1],
+                    Col.is_dialsup: [0],
+                    Col.is_euws: [0],
+                }
+            ),
+        )
+    )
+
+    result = build_enriched_ylt(normalized, staged_ep).collect()
+
+    assert result.select(Col.cds_cat_class_name).rows() == [("CDS Class",)]
 
 
 def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
