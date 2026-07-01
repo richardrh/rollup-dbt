@@ -10,7 +10,7 @@ from rollup.columns import Col, FanoutCol
 from rollup.config import RollupConfig
 from rollup.intermediate.build_dialsup import dialsup_metric
 from rollup.metrics import final_main_metric, forecast_metric, metric_specs
-from rollup.marts.fanouts import write_fanouts
+from rollup.marts.fanouts import INTERNAL_FANOUT_SOURCE_FILE, write_fanouts
 from rollup.marts.wide import wide_column_name
 from rollup.marts.write_marts import write_marts
 
@@ -86,6 +86,7 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
         "HiscoAIR_20260101_main.parquet",
         "HiscoAIR_20260101_dialsup.parquet",
     ]
+    assert not (tmp_path / "marts" / INTERNAL_FANOUT_SOURCE_FILE).exists()
     assert pl.read_parquet(fanouts[0]).columns == cds_fanout_columns()
     assert pl.read_parquet(fanouts[0]).sort(FanoutCol.ModelYear).rows() == [
         (101, 1, "GBP", 0, 15.0, 0, 10, "CDS Fine Art"),
@@ -143,6 +144,7 @@ def test_write_fanouts_defaults_to_main_suffix_and_metric(tmp_path: Path) -> Non
     )
 
     assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
+    assert not (tmp_path / INTERNAL_FANOUT_SOURCE_FILE).exists()
     output = pl.read_parquet(fanouts[0])
     assert output.columns == cds_fanout_columns()
     assert output.sort(FanoutCol.ModelYear).rows() == [
@@ -161,6 +163,7 @@ def test_write_fanouts_can_write_dialsup_suffix(tmp_path: Path) -> None:
     )
 
     assert [path.name for path in fanouts] == ["HiscoAIR_20260101_dialsup.parquet"]
+    assert not (tmp_path / INTERNAL_FANOUT_SOURCE_FILE).exists()
     output = pl.read_parquet(fanouts[0])
     assert output.columns == cds_fanout_columns()
     assert output.rows() == [(101, 1, "GBP", 0, 10.0, 0, 10, "CDS Fine Art")]

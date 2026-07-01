@@ -7,7 +7,7 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.marts.fanouts import write_fanouts
+from rollup.marts.fanouts import write_materialized_fanouts
 from rollup.marts.wide import wide
 from rollup.metrics import final_main_metric
 
@@ -48,22 +48,14 @@ def write_marts(
     logger.info("writing operational wide mart path=%s", wide_path)
     _write_parquet(wide(combined_scan, target_currency), wide_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
-    fanout_paths = write_fanouts(
+    fanout_paths = write_materialized_fanouts(
         marts_dir,
         final_main,
-        config.outputs.fanout_prefixes,
-        target_currency,
-        risklink_flood_events=risklink_flood_events,
-    )
-    dialsup_fanout_paths = write_fanouts(
-        marts_dir,
         dialsup_fanout if dialsup_fanout is not None else dialsup_scan,
         config.outputs.fanout_prefixes,
         target_currency,
-        suffix="dialsup",
         risklink_flood_events=risklink_flood_events,
     )
-    fanout_paths = (*fanout_paths, *dialsup_fanout_paths)
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {
