@@ -110,6 +110,35 @@ def test_write_fanouts_rejects_unknown_base_model(tmp_path: Path) -> None:
         )
 
 
+def test_write_fanouts_defaults_to_main_suffix_and_metric(tmp_path: Path) -> None:
+    fanouts = write_fanouts(
+        tmp_path,
+        combined_metric_frame().lazy(),
+        {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+        "GBP",
+    )
+
+    assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
+    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
+        FINAL_MAIN_METRIC
+    ]
+
+
+def test_write_fanouts_can_write_dialsup_suffix(tmp_path: Path) -> None:
+    fanouts = write_fanouts(
+        tmp_path,
+        dialsup_metric_frame().lazy(),
+        {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+        "GBP",
+        suffix="dialsup",
+    )
+
+    assert [path.name for path in fanouts] == ["HiscoAIR_20260101_dialsup.parquet"]
+    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
+        DIALSUP_METRIC
+    ]
+
+
 def combined_metric_frame() -> pl.DataFrame:
     base = {
         Col.vendor: "verisk",

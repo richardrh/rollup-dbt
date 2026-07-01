@@ -14,21 +14,22 @@ def write_fanouts(
     frame: pl.DataFrame | pl.LazyFrame,
     fanout_prefixes: Mapping[str, str],
     target_currency: str = "GBP",
+    suffix: str = "main",
 ) -> tuple[Path, ...]:
     paths: list[Path] = []
     source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
-    main = source.filter(pl.col(Col.metric) == final_main_metric(target_currency))
-    keys = main.select(Col.base_model, Col.forecast_date).unique().sort(Col.base_model, Col.forecast_date).collect()
+    fanout = source.filter(pl.col(Col.metric) == final_main_metric(target_currency)) if suffix == "main" else source
+    keys = fanout.select(Col.base_model, Col.forecast_date).unique().sort(Col.base_model, Col.forecast_date).collect()
     if keys.is_empty():
         return ()
     for row in keys.iter_rows(named=True):
-        subset = main.filter(
+        subset = fanout.filter(
             (pl.col(Col.base_model) == row[Col.base_model])
             & (pl.col(Col.forecast_date) == row[Col.forecast_date])
         )
         prefix = fanout_prefix(row[Col.base_model], fanout_prefixes)
         forecast = str(row[Col.forecast_date]).replace("-", "")
-        path = marts_dir / f"{prefix}_{forecast}_main.parquet"
+        path = marts_dir / f"{prefix}_{forecast}_{suffix}.parquet"
         _write_parquet(subset, path)
         paths.append(path)
     return tuple(sorted(paths))
