@@ -35,6 +35,7 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
             "input_ylt_risklink",
             "input_ylt_verisk",
             "mts_tbl_ylt_combined_all_factors",
+            "mts_tbl_ylt_dialsup",
             "seed_blending_factors",
             "seed_euws_rank_overrides",
             "seed_euws_rate_factors",
@@ -44,6 +45,7 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
             "seed_perils",
         }
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
+        assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
         assert row_count(connection, "input_ylt_verisk") == 1
         assert row_count(connection, "input_ylt_risklink") == 1
         assert row_count(connection, "input_ep_summaries") == 2

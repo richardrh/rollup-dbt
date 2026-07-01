@@ -27,6 +27,7 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
             "mts_tbl_ylt_combined_all_factors",
             [marts_dir / config.outputs.combined_file],
         )
+        create_parquet_table(connection, "mts_tbl_ylt_dialsup", [marts_dir / config.outputs.dialsup_file])
         create_parquet_table(connection, "input_ylt_verisk", sorted((data_root / "ylt" / "verisk").glob("*.parquet")))
         create_parquet_table(
             connection,
