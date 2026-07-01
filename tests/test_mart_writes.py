@@ -72,9 +72,15 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
         assert wide_sum == combined_sum
     fanouts = paths["fanouts"]
     assert isinstance(fanouts, tuple)
-    assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
+    assert [path.name for path in fanouts] == [
+        "HiscoAIR_20260101_main.parquet",
+        "HiscoAIR_20260101_dialsup.parquet",
+    ]
     assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
         FINAL_MAIN_METRIC
+    ]
+    assert pl.read_parquet(fanouts[1]).select(Col.metric).unique().to_series().to_list() == [
+        DIALSUP_METRIC
     ]
 
 

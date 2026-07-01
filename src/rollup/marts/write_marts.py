@@ -37,7 +37,6 @@ def write_marts(
 
     dialsup_scan = pl.scan_parquet(dialsup_path)
     final_main = combined_scan.filter(pl.col(Col.metric) == main_metric)
-    final_metrics = pl.concat([final_main, dialsup_scan], how="diagonal_relaxed")
 
     logger.info("writing operational wide mart path=%s", wide_path)
     _write_parquet(wide(combined_scan, target_currency), wide_path)
@@ -48,6 +47,14 @@ def write_marts(
         config.outputs.fanout_prefixes,
         target_currency,
     )
+    dialsup_fanout_paths = write_fanouts(
+        marts_dir,
+        dialsup_scan,
+        config.outputs.fanout_prefixes,
+        target_currency,
+        suffix="dialsup",
+    )
+    fanout_paths = (*fanout_paths, *dialsup_fanout_paths)
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 
     return {
