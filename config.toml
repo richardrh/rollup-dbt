@@ -5,6 +5,7 @@ target_currency = "GBP"
 write_stage_outputs = true
 write_duckdb = false
 duckdb_file = "rollup.duckdb"
+minimum_event_loss_threshold = 1000.0
 
 [outputs.fanout_prefixes]
 verisk = "HiscoAIR"

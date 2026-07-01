@@ -148,6 +148,7 @@ target_currency = "GBP"
 write_stage_outputs = true
 write_duckdb = false
 duckdb_file = "rollup.duckdb"
+minimum_event_loss_threshold = 1000.0
 
 [outputs.fanout_prefixes]
 verisk = "HiscoAIR"
@@ -169,6 +170,10 @@ target_points = [
     { ep_type = "OEP", return_period = 1000 },
 ]
 ```
+
+`minimum_event_loss_threshold` filters final mart and fanout rows before parquet
+writes. Set it to `0.0` to disable the minimum threshold while still excluding
+null final losses.
 
 Vendor years control EP report rank/AAL calculations and YLT rank to
 return-period bucket conversion during EP-derived blending. The blend target

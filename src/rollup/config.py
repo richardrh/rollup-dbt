@@ -48,6 +48,7 @@ class BlendingConfig:
 class OutputConfig:
     write_stage_outputs: bool = True
     write_duckdb: bool = False
+    minimum_event_loss_threshold: float = 1000.0
     stage_output_dir: str = "stages"
     staging_dir: str = "staging"
     intermediate_dir: str = "intermediate"
@@ -185,6 +186,10 @@ def _blending_target_points(values: dict[str, Any]) -> tuple[BlendingTargetPoint
 def _output_values(values: dict[str, Any]) -> dict[str, Any]:
     allowed = OutputConfig.__dataclass_fields__.keys()
     output = {key: value for key, value in values.items() if key in allowed}
+    if "minimum_event_loss_threshold" in output:
+        output["minimum_event_loss_threshold"] = float(
+            output["minimum_event_loss_threshold"]
+        )
     fanout_prefixes = output.get("fanout_prefixes")
     if isinstance(fanout_prefixes, dict):
         output["fanout_prefixes"] = {

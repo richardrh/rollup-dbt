@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 import polars as pl
 
+from rollup.columns import Col
 from rollup.config import RollupConfig, load_config
 from rollup.intermediate import (
     apply_blending,
@@ -62,10 +63,21 @@ def run(
         sources.euws_factors,
         sources.euws_overrides,
     )
-    combined = build_metric_long(euws_applied, config.fx.target_currency)
-    dialsup = build_dialsup(euws_applied, config.fx.target_currency)
-    main_fanout = main_fanout_source(euws_applied, config.fx.target_currency)
-    dialsup_fanout = dialsup_fanout_source(euws_applied, config.fx.target_currency)
+    output_threshold = config.outputs.minimum_event_loss_threshold
+    main_output = _filter_output_threshold(
+        euws_applied,
+        pl.col("euws_loss"),
+        output_threshold,
+    )
+    dialsup_output = _filter_output_threshold(
+        euws_applied,
+        pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col(Col.forecast_factor),
+        output_threshold,
+    )
+    combined = build_metric_long(main_output, config.fx.target_currency)
+    dialsup = build_dialsup(dialsup_output, config.fx.target_currency)
+    main_fanout = main_fanout_source(main_output, config.fx.target_currency)
+    dialsup_fanout = dialsup_fanout_source(dialsup_output, config.fx.target_currency)
 
     stage_paths = (
         *_write_stage_frames(
@@ -112,6 +124,17 @@ def run(
         stage_paths=stage_paths,
         mart_paths=mart_paths,
     )
+
+
+def _filter_output_threshold(
+    frame: pl.LazyFrame,
+    loss_expr: pl.Expr,
+    threshold: float,
+) -> pl.LazyFrame:
+    loss = loss_expr.cast(pl.Float64)
+    if threshold <= 0:
+        return frame.filter(loss.is_not_null())
+    return frame.filter(loss >= float(threshold))
 
 
 def _write_stage_frames(

@@ -69,3 +69,23 @@ def test_load_config_uses_dataclass_defaults_when_config_toml_missing(
     monkeypatch.chdir(tmp_path)
 
     assert load_config() == RollupConfig()
+
+
+def test_output_config_defaults_minimum_event_loss_threshold_to_1000() -> None:
+    assert RollupConfig().outputs.minimum_event_loss_threshold == 1000.0
+
+
+def test_load_config_casts_minimum_event_loss_threshold_override(tmp_path: Path) -> None:
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[outputs]
+minimum_event_loss_threshold = 250
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.outputs.minimum_event_loss_threshold == 250.0
+    assert isinstance(config.outputs.minimum_event_loss_threshold, float)

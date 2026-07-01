@@ -80,7 +80,10 @@ def test_load_risklink_flood_events_maps_min_occurrence_date_to_ordinal_day(tmp_
     assert result.rows() == [(10, 216, 5), (11, 217, 365)]
 
 
-def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_pipeline_inlines_intermediate_orchestration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     from rollup import pipeline
 
     calls: list[tuple[str, object]] = []
@@ -102,9 +105,14 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     blending_config = SimpleNamespace(vendor_years={"verisk": 123, "risklink": 456})
     config = SimpleNamespace(
         blending=blending_config,
-        outputs=SimpleNamespace(staging_dir="staging", intermediate_dir="intermediate"),
+        outputs=SimpleNamespace(
+            staging_dir="staging",
+            intermediate_dir="intermediate",
+            minimum_event_loss_threshold=1000.0,
+        ),
         fx=SimpleNamespace(target_currency="GBP"),
     )
+    threshold_outputs = iter(("main_output", "dialsup_output"))
 
     def record(name: str, result: str):
         def transform(*args: object) -> str:
@@ -122,6 +130,10 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         stage_outputs[section] = tuple(frames)
         return tuple(output_root / section / f"{name}.parquet" for name in frames)
 
+    def filter_output_threshold(frame: object, loss_expr: object, threshold: float) -> str:
+        calls.append(("_filter_output_threshold", (frame, threshold)))
+        return next(threshold_outputs)
+
     monkeypatch.setattr(pipeline, "load_sources", record("load_sources", sources))
     monkeypatch.setattr(pipeline, "normalize_ylt", record("normalize_ylt", "normalized"))
     monkeypatch.setattr(pipeline, "stage_ep_summaries", record("stage_ep_summaries", "staged_ep"))
@@ -134,6 +146,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(pipeline, "build_dialsup", record("build_dialsup", "dialsup"))
     monkeypatch.setattr(pipeline, "main_fanout_source", record("main_fanout_source", "main_fanout"))
     monkeypatch.setattr(pipeline, "dialsup_fanout_source", record("dialsup_fanout_source", "dialsup_fanout"))
+    monkeypatch.setattr(pipeline, "_filter_output_threshold", filter_output_threshold)
     monkeypatch.setattr(pipeline, "_write_stage_frames", write_stage_frames)
     monkeypatch.setattr(pipeline, "write_marts", record("write_marts", {}))
 
@@ -150,11 +163,16 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
-        ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
-        ("build_metric_long", ("euws_applied", "GBP")),
-        ("build_dialsup", ("euws_applied", "GBP")),
-        ("main_fanout_source", ("euws_applied", "GBP")),
-        ("dialsup_fanout_source", ("euws_applied", "GBP")),
+        (
+            "apply_euws",
+            ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides"),
+        ),
+        ("_filter_output_threshold", ("euws_applied", 1000.0)),
+        ("_filter_output_threshold", ("euws_applied", 1000.0)),
+        ("build_metric_long", ("main_output", "GBP")),
+        ("build_dialsup", ("dialsup_output", "GBP")),
+        ("main_fanout_source", ("main_output", "GBP")),
+        ("dialsup_fanout_source", ("dialsup_output", "GBP")),
         (
             "write_marts",
             (
@@ -176,6 +194,151 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         "forecast_applied_ylt",
         "euws_applied_ylt",
     )
+
+
+def test_pipeline_filters_outputs_before_mart_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from rollup import pipeline
+    from rollup.columns import Col
+    from rollup.config import OutputConfig, RollupConfig
+    from rollup.intermediate.build_dialsup import dialsup_metric
+
+    euws_applied = output_threshold_frame()
+    sources = SimpleNamespace(
+        verisk_ylt=pl.DataFrame().lazy(),
+        risklink_ylt=pl.DataFrame().lazy(),
+        verisk_events=pl.DataFrame().lazy(),
+        risklink_flood_events=pl.DataFrame().lazy(),
+        ep_summaries=pl.DataFrame().lazy(),
+        lobs=pl.DataFrame().lazy(),
+        perils=pl.DataFrame().lazy(),
+        blending=pl.DataFrame(),
+        fx_rates=pl.DataFrame().lazy(),
+        forecast_factors=pl.DataFrame().lazy(),
+        euws_factors=pl.DataFrame(),
+        euws_overrides=pl.DataFrame(),
+    )
+    written: dict[str, pl.DataFrame] = {}
+
+    monkeypatch.setattr(pipeline, "load_sources", lambda data_root: sources)
+    monkeypatch.setattr(pipeline, "normalize_ylt", lambda loaded: "normalized")
+    monkeypatch.setattr(pipeline, "stage_ep_summaries", lambda loaded: "staged_ep")
+    monkeypatch.setattr(
+        pipeline,
+        "build_enriched_ylt",
+        lambda normalized, staged: "enriched",
+    )
+    monkeypatch.setattr(pipeline, "apply_blending", lambda *args: "blended")
+    monkeypatch.setattr(pipeline, "apply_fx", lambda *args: "fx_applied")
+    monkeypatch.setattr(pipeline, "apply_forecast", lambda *args: "forecast_applied")
+    monkeypatch.setattr(pipeline, "apply_euws", lambda *args: euws_applied.lazy())
+    monkeypatch.setattr(pipeline, "_write_stage_frames", lambda *args: ())
+
+    def write_marts(
+        output_root: Path,
+        combined: pl.LazyFrame,
+        dialsup: pl.LazyFrame,
+        config: object,
+        verisk_events: object,
+        risklink_flood_events: object,
+        main_fanout: pl.LazyFrame,
+        dialsup_fanout: pl.LazyFrame,
+    ) -> dict[str, Path]:
+        written["combined"] = combined.collect()
+        written["dialsup"] = dialsup.collect()
+        written["main_fanout"] = main_fanout.collect()
+        written["dialsup_fanout"] = dialsup_fanout.collect()
+        return {}
+
+    monkeypatch.setattr(pipeline, "write_marts", write_marts)
+
+    pipeline.run(
+        tmp_path / "data",
+        output_root=tmp_path / "output",
+        config=RollupConfig(),
+    )
+
+    final_metric_rows = written["combined"].filter(
+        pl.col(Col.metric) == final_main_metric("GBP")
+    )
+    assert final_metric_rows.select(Col.event_id).to_series().to_list() == [2, 3]
+    assert written["main_fanout"].select(Col.event_id).to_series().to_list() == [2, 3]
+    assert written["dialsup"].select(Col.event_id, Col.metric, Col.loss).rows() == [
+        (1, dialsup_metric("GBP"), 1200.0)
+    ]
+    assert written["dialsup_fanout"].select(Col.event_id, Col.loss).rows() == [(1, 1200.0)]
+
+    written.clear()
+    pipeline.run(
+        tmp_path / "data",
+        output_root=tmp_path / "output",
+        config=RollupConfig(outputs=OutputConfig(minimum_event_loss_threshold=0.0)),
+    )
+
+    assert written["main_fanout"].select(Col.event_id).to_series().to_list() == [1, 2, 3]
+    assert written["dialsup_fanout"].select(Col.event_id).to_series().to_list() == [1, 3]
+
+
+def output_threshold_frame() -> pl.DataFrame:
+    from rollup.columns import Col
+
+    base = {
+        Col.vendor: "verisk",
+        Col.base_model: "verisk",
+        Col.analysis_id: "EQ",
+        Col.modelled_lob: "Fine Art",
+        Col.modelled_peril: "EQ",
+        Col.rollup_lob: "Fine Art",
+        Col.rollup_peril: "Earthquake",
+        Col.region_peril_id: 205,
+        Col.cds_cat_class_name: "CDS Fine Art",
+        Col.class_: "ART",
+        Col.office: "London",
+        Col.currency: "GBP",
+        Col.target_currency: "GBP",
+        Col.forecast_date: "2026-01-01",
+        Col.fx_rate: 1.0,
+        Col.forecast_factor: 1.0,
+        Col.loss: 100.0,
+        "blended_loss": 100.0,
+        "fx_loss": 100.0,
+        "forecast_loss": 100.0,
+    }
+    rows = [
+        {
+            **base,
+            Col.year_id: 1,
+            Col.event_id: 1,
+            Col.model_event_id: 101,
+            Col.event_day: 10,
+            Col.is_dialsup: 1,
+            Col.loss: 1200.0,
+            "euws_loss": 500.0,
+        },
+        {
+            **base,
+            Col.year_id: 2,
+            Col.event_id: 2,
+            Col.model_event_id: 102,
+            Col.event_day: 20,
+            Col.is_dialsup: 0,
+            Col.loss: 100.0,
+            "euws_loss": 1500.0,
+        },
+        {
+            **base,
+            Col.year_id: 3,
+            Col.event_id: 3,
+            Col.model_event_id: 103,
+            Col.event_day: 30,
+            Col.is_dialsup: 1,
+            Col.loss: 500.0,
+            "euws_loss": 2000.0,
+        },
+    ]
+    return pl.DataFrame(rows)
 
 
 def test_config_loader_drives_counts_return_periods_and_outputs(tmp_path: Path) -> None:
@@ -286,6 +449,7 @@ return_periods = [2]
 write_stage_outputs = true
 write_duckdb = true
 duckdb_file = "rollup.duckdb"
+minimum_event_loss_threshold = 0.0
 """.strip(),
         encoding="utf-8",
     )
@@ -382,6 +546,8 @@ write_duckdb = false
 
 
 def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path: Path) -> None:
+    from rollup.config import OutputConfig, RollupConfig
+
     data_root = _write_tiny_input(tmp_path)
     seeds = data_root / "seeds"
     pl.DataFrame(
@@ -406,7 +572,11 @@ def test_tiny_pipeline_expands_no_factor_hic_fa_uk_style_forecast_dates(tmp_path
         }
     ).write_csv(seeds / "forecast_factors.csv")
 
-    result = run_rollup(data_root, tmp_path / "output")
+    result = run_rollup(
+        data_root,
+        tmp_path / "output",
+        config=RollupConfig(outputs=OutputConfig(minimum_event_loss_threshold=0.0)),
+    )
     combined = pl.read_parquet(result.outputs.mts_combined)
     final_main = combined.filter(
         pl.col("metric") == final_main_metric("GBP")
