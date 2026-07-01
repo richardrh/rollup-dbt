@@ -56,21 +56,16 @@ def run(
     staged_dialsup_ep = stage_dialsup_ep_summaries(sources)
     enriched = build_enriched_ylt(normalized, staged_ep)
     dialsup_enriched = build_enriched_ylt(normalized, staged_dialsup_ep)
+    dialsup_base_model = _prepare_dialsup_base_model_ylt(dialsup_enriched)
     blended = apply_blending(
         enriched,
         staged_ep,
         sources.blending,
         config.blending,
     )
-    dialsup_blended = apply_blending(
-        dialsup_enriched,
-        staged_dialsup_ep,
-        sources.blending,
-        config.blending,
-    )
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
     dialsup_fx_applied = apply_fx(
-        dialsup_blended,
+        dialsup_base_model,
         sources.fx_rates,
         config.fx.target_currency,
     )
@@ -129,8 +124,8 @@ def run(
             {
                 "enriched_ylt": enriched,
                 "dialsup_enriched_ylt": dialsup_enriched,
+                "dialsup_base_model_ylt": dialsup_base_model,
                 "blended_ylt": blended,
-                "dialsup_blended_ylt": dialsup_blended,
                 "fx_applied_ylt": fx_applied,
                 "dialsup_fx_applied_ylt": dialsup_fx_applied,
                 "forecast_applied_ylt": forecast_applied,
@@ -157,6 +152,17 @@ def run(
         config=config,
         stage_paths=stage_paths,
         mart_paths=mart_paths,
+    )
+
+
+def _prepare_dialsup_base_model_ylt(enriched: pl.LazyFrame) -> pl.LazyFrame:
+    return enriched.filter(pl.col(Col.vendor) == pl.col(Col.base_model)).with_columns(
+        pl.col(Col.loss)
+        .rank(method="ordinal", descending=True)
+        .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
+        .cast(pl.Int64)
+        .alias(Col.rnk),
+        pl.col(Col.loss).alias("blended_loss"),
     )
 
 

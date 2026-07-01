@@ -150,6 +150,11 @@ def test_pipeline_inlines_intermediate_orchestration(
         record("stage_dialsup_ep_summaries", "staged_dialsup_ep"),
     )
     monkeypatch.setattr(pipeline, "build_enriched_ylt", record("build_enriched_ylt", "enriched"))
+    monkeypatch.setattr(
+        pipeline,
+        "_prepare_dialsup_base_model_ylt",
+        record("_prepare_dialsup_base_model_ylt", "dialsup_base_model"),
+    )
     monkeypatch.setattr(pipeline, "apply_blending", record("apply_blending", "blended"))
     monkeypatch.setattr(pipeline, "apply_fx", record("apply_fx", "fx_applied"))
     monkeypatch.setattr(pipeline, "apply_forecast", record("apply_forecast", "forecast_applied"))
@@ -171,16 +176,13 @@ def test_pipeline_inlines_intermediate_orchestration(
         ("stage_dialsup_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
         ("build_enriched_ylt", ("normalized", "staged_dialsup_ep")),
+        ("_prepare_dialsup_base_model_ylt", ("enriched",)),
         (
             "apply_blending",
             ("enriched", "staged_ep", "blending", blending_config),
         ),
-        (
-            "apply_blending",
-            ("enriched", "staged_dialsup_ep", "blending", blending_config),
-        ),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
-        ("apply_fx", ("blended", "fx_rates", "GBP")),
+        ("apply_fx", ("dialsup_base_model", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
         (
@@ -214,8 +216,8 @@ def test_pipeline_inlines_intermediate_orchestration(
     assert stage_outputs["intermediate"] == (
         "enriched_ylt",
         "dialsup_enriched_ylt",
+        "dialsup_base_model_ylt",
         "blended_ylt",
-        "dialsup_blended_ylt",
         "fx_applied_ylt",
         "dialsup_fx_applied_ylt",
         "forecast_applied_ylt",
@@ -257,18 +259,19 @@ def test_pipeline_builds_dialsup_outputs_from_dialsup_selected_stream(
     def build_enriched(normalized: object, staged: object) -> str:
         return {"main_ep": "main_enriched", "dialsup_ep": "dialsup_enriched"}[staged]
 
+    blending_calls: list[tuple[object, object]] = []
+
     def apply_blending(enriched: object, staged: object, *args: object) -> str:
-        assert (enriched, staged) in {
-            ("main_enriched", "main_ep"),
-            ("dialsup_enriched", "dialsup_ep"),
-        }
-        return {
-            "main_enriched": "main_blended",
-            "dialsup_enriched": "dialsup_blended",
-        }[enriched]
+        blending_calls.append((enriched, staged))
+        assert (enriched, staged) == ("main_enriched", "main_ep")
+        return "main_blended"
+
+    def prepare_dialsup(enriched: object) -> str:
+        assert enriched == "dialsup_enriched"
+        return "dialsup_base_model"
 
     def apply_fx(frame: object, *args: object) -> str:
-        return {"main_blended": "main_fx", "dialsup_blended": "dialsup_fx"}[frame]
+        return {"main_blended": "main_fx", "dialsup_base_model": "dialsup_fx"}[frame]
 
     def apply_forecast(frame: object, *args: object) -> str:
         return {"main_fx": "main_forecast", "dialsup_fx": "dialsup_forecast"}[frame]
@@ -281,6 +284,7 @@ def test_pipeline_builds_dialsup_outputs_from_dialsup_selected_stream(
         return {"main_euws": "main_output", "dialsup_euws": "dialsup_output"}[frame]
 
     monkeypatch.setattr(pipeline, "build_enriched_ylt", build_enriched)
+    monkeypatch.setattr(pipeline, "_prepare_dialsup_base_model_ylt", prepare_dialsup)
     monkeypatch.setattr(pipeline, "apply_blending", apply_blending)
     monkeypatch.setattr(pipeline, "apply_fx", apply_fx)
     monkeypatch.setattr(pipeline, "apply_forecast", apply_forecast)
@@ -303,11 +307,34 @@ def test_pipeline_builds_dialsup_outputs_from_dialsup_selected_stream(
 
     pipeline.run(tmp_path / "data", output_root=tmp_path / "output", config=RollupConfig())
 
+    assert blending_calls == [("main_enriched", "main_ep")]
     assert threshold_inputs == ["main_euws", "dialsup_euws"]
     assert mart_inputs["combined"] == "combined"
     assert mart_inputs["dialsup"] == ("dialsup_output", "GBP")
     assert mart_inputs["main_fanout"] == ("main_output", "GBP")
     assert mart_inputs["dialsup_fanout"] == ("dialsup_output", "GBP")
+
+
+def test_prepare_dialsup_base_model_ylt_filters_vendor_to_base_model() -> None:
+    from rollup import pipeline
+    from rollup.columns import Col
+
+    frame = pl.DataFrame(
+        {
+            Col.vendor: ["verisk", "risklink", "verisk"],
+            Col.base_model: ["verisk", "verisk", "verisk"],
+            Col.modelled_lob: ["ML", "ML", "ML"],
+            Col.rollup_peril: ["Europe_WS", "Europe_WS", "Europe_WS"],
+            Col.loss: [100.0, 999.0, 50.0],
+        }
+    )
+
+    result = pipeline._prepare_dialsup_base_model_ylt(frame.lazy()).collect()
+
+    assert result.select(Col.vendor, Col.base_model, Col.loss, "blended_loss", Col.rnk).rows() == [
+        ("verisk", "verisk", 100.0, 100.0, 1),
+        ("verisk", "verisk", 50.0, 50.0, 2),
+    ]
 
 
 def test_pipeline_filters_outputs_before_mart_write(
@@ -348,6 +375,11 @@ def test_pipeline_filters_outputs_before_mart_write(
         pipeline,
         "build_enriched_ylt",
         lambda normalized, staged: "enriched",
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "_prepare_dialsup_base_model_ylt",
+        lambda enriched: "dialsup_base_model",
     )
     monkeypatch.setattr(pipeline, "apply_blending", lambda *args: "blended")
     monkeypatch.setattr(pipeline, "apply_fx", lambda *args: "fx_applied")
