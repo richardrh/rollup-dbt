@@ -100,9 +100,10 @@ def run(
         combined,
         dialsup,
         config,
-        sources.risklink_flood_events,
-        main_fanout,
-        dialsup_fanout,
+        verisk_events=sources.verisk_events,
+        risklink_flood_events=sources.risklink_flood_events,
+        main_fanout=main_fanout,
+        dialsup_fanout=dialsup_fanout,
     )
     return PipelineRunResult(
         data_root=data_root,

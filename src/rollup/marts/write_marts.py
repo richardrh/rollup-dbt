@@ -19,6 +19,7 @@ def write_marts(
     combined: pl.LazyFrame,
     dialsup: pl.LazyFrame,
     config: RollupConfig,
+    verisk_events: pl.LazyFrame | None = None,
     risklink_flood_events: pl.LazyFrame | None = None,
     main_fanout: pl.LazyFrame | None = None,
     dialsup_fanout: pl.LazyFrame | None = None,
@@ -54,6 +55,7 @@ def write_marts(
         dialsup_fanout if dialsup_fanout is not None else dialsup_scan,
         config.outputs.fanout_prefixes,
         target_currency,
+        verisk_events=verisk_events,
         risklink_flood_events=risklink_flood_events,
     )
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))

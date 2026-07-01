@@ -10,7 +10,11 @@ from rollup.columns import Col, FanoutCol
 from rollup.config import RollupConfig
 from rollup.intermediate.build_dialsup import dialsup_metric
 from rollup.metrics import final_main_metric, forecast_metric, metric_specs
-from rollup.marts.fanouts import INTERNAL_FANOUT_SOURCE_FILE, write_fanouts
+from rollup.marts.fanouts import (
+    INTERNAL_FANOUT_SOURCE_FILE,
+    validate_cds_fanout_frame,
+    write_fanouts,
+)
 from rollup.marts.wide import wide_column_name
 from rollup.marts.write_marts import write_marts
 
@@ -201,6 +205,86 @@ def test_write_fanouts_uses_risklink_event_id_and_flood_event_day(tmp_path: Path
     ]
 
 
+def test_write_fanouts_validates_air_events_against_verisk_catalogue(tmp_path: Path) -> None:
+    fanouts = write_fanouts(
+        tmp_path,
+        combined_metric_frame().lazy(),
+        {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+        "GBP",
+        verisk_events=verisk_events_frame().lazy(),
+    )
+
+    assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
+
+
+def test_write_fanouts_rejects_air_event_catalogue_mismatch(tmp_path: Path) -> None:
+    verisk_events = verisk_events_frame().with_columns(
+        pl.when(pl.col(Col.model_event_id) == 102)
+        .then(999)
+        .otherwise(pl.col(Col.event_day))
+        .alias(Col.event_day)
+    )
+
+    with pytest.raises(ValueError, match="Verisk fanout event validation failed: 1 mismatch"):
+        write_fanouts(
+            tmp_path,
+            combined_metric_frame().lazy(),
+            {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+            "GBP",
+            verisk_events=verisk_events.lazy(),
+        )
+
+    assert not (tmp_path / INTERNAL_FANOUT_SOURCE_FILE).exists()
+
+
+def test_write_fanouts_rejects_risklink_event_catalogue_mismatch(tmp_path: Path) -> None:
+    frame = combined_metric_frame().filter(pl.col(Col.metric) == FINAL_MAIN_METRIC).with_columns(
+        pl.lit("risklink").alias(Col.base_model),
+        pl.lit(216).alias(Col.region_peril_id),
+        pl.lit(None).cast(pl.Int64).alias(Col.model_event_id),
+        pl.lit(None).cast(pl.Int64).alias(Col.event_day),
+    )
+    risklink_events = pl.DataFrame(
+        {
+            Col.event_id: [1],
+            Col.region_peril_id: [999],
+            Col.risklink_event_day: [42],
+        }
+    )
+
+    with pytest.raises(ValueError, match="RiskLink fanout event validation failed: 2 mismatch"):
+        write_fanouts(
+            tmp_path,
+            frame.lazy(),
+            {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+            "GBP",
+            risklink_flood_events=risklink_events.lazy(),
+        )
+
+    assert not (tmp_path / INTERNAL_FANOUT_SOURCE_FILE).exists()
+
+
+def test_cds_fanout_validation_rejects_schema_mismatch() -> None:
+    bad = pl.DataFrame({FanoutCol.ModelEventID: [101]})
+
+    with pytest.raises(ValueError, match="CDS fanout schema mismatch"):
+        validate_cds_fanout_frame(bad.lazy())
+
+
+def test_write_fanouts_rejects_required_nulls(tmp_path: Path) -> None:
+    frame = combined_metric_frame().with_columns(pl.lit(None).alias(Col.target_currency))
+
+    with pytest.raises(ValueError, match="CDS fanout required field nulls: CurrencyCode=2"):
+        write_fanouts(
+            tmp_path,
+            frame.lazy(),
+            {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+            "GBP",
+        )
+
+    assert not (tmp_path / INTERNAL_FANOUT_SOURCE_FILE).exists()
+
+
 def combined_metric_frame() -> pl.DataFrame:
     base = {
         Col.vendor: "verisk",
@@ -253,6 +337,18 @@ def dialsup_metric_frame() -> pl.DataFrame:
         Col.loss: 10.0,
     }
     return pl.DataFrame([base])
+
+
+def verisk_events_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            Col.model_event_id: [101, 102],
+            Col.model_code: [1, 1],
+            Col.event_id: [1, 2],
+            Col.year_id: [1, 2],
+            Col.event_day: [10, 20],
+        }
+    )
 
 
 def internal_combined_metric_frame() -> pl.DataFrame:
