@@ -132,6 +132,8 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(pipeline, "apply_euws", record("apply_euws", "euws_applied"))
     monkeypatch.setattr(pipeline, "build_metric_long", record("build_metric_long", "combined"))
     monkeypatch.setattr(pipeline, "build_dialsup", record("build_dialsup", "dialsup"))
+    monkeypatch.setattr(pipeline, "main_fanout_source", record("main_fanout_source", "main_fanout"))
+    monkeypatch.setattr(pipeline, "dialsup_fanout_source", record("dialsup_fanout_source", "dialsup_fanout"))
     monkeypatch.setattr(pipeline, "_write_stage_frames", write_stage_frames)
     monkeypatch.setattr(pipeline, "write_marts", record("write_marts", {}))
 
@@ -151,7 +153,20 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
         ("build_metric_long", ("euws_applied", "GBP")),
         ("build_dialsup", ("euws_applied", "GBP")),
-        ("write_marts", (tmp_path / "output", "combined", "dialsup", config, "risklink_flood_events")),
+        ("main_fanout_source", ("euws_applied", "GBP")),
+        ("dialsup_fanout_source", ("euws_applied", "GBP")),
+        (
+            "write_marts",
+            (
+                tmp_path / "output",
+                "combined",
+                "dialsup",
+                config,
+                "risklink_flood_events",
+                "main_fanout",
+                "dialsup_fanout",
+            ),
+        ),
     ]
     assert stage_outputs["intermediate"] == (
         "enriched_ylt",

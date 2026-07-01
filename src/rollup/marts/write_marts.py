@@ -20,6 +20,8 @@ def write_marts(
     dialsup: pl.LazyFrame,
     config: RollupConfig,
     risklink_flood_events: pl.LazyFrame | None = None,
+    main_fanout: pl.LazyFrame | None = None,
+    dialsup_fanout: pl.LazyFrame | None = None,
 ) -> dict[str, Path | tuple[Path, ...]]:
     marts_dir = config.outputs.marts_path(output_root)
     marts_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +39,11 @@ def write_marts(
     _write_parquet(dialsup, dialsup_path)
 
     dialsup_scan = pl.scan_parquet(dialsup_path)
-    final_main = combined_scan.filter(pl.col(Col.metric) == main_metric)
+    final_main = (
+        main_fanout
+        if main_fanout is not None
+        else combined_scan.filter(pl.col(Col.metric) == main_metric)
+    )
 
     logger.info("writing operational wide mart path=%s", wide_path)
     _write_parquet(wide(combined_scan, target_currency), wide_path)
@@ -51,7 +57,7 @@ def write_marts(
     )
     dialsup_fanout_paths = write_fanouts(
         marts_dir,
-        dialsup_scan,
+        dialsup_fanout if dialsup_fanout is not None else dialsup_scan,
         config.outputs.fanout_prefixes,
         target_currency,
         suffix="dialsup",

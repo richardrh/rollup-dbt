@@ -25,7 +25,10 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    combined = combined_metric_frame().lazy()
+    combined = internal_combined_metric_frame().lazy()
+    dialsup = internal_dialsup_metric_frame().lazy()
+    main_fanout = combined_metric_frame().lazy()
+    dialsup_fanout = dialsup_metric_frame().lazy()
     original_collect = pl.LazyFrame.collect
 
     def guarded_collect(self: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.DataFrame:
@@ -36,7 +39,14 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
 
     monkeypatch.setattr(pl.LazyFrame, "collect", guarded_collect)
 
-    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
+    paths = write_marts(
+        tmp_path,
+        combined,
+        dialsup,
+        RollupConfig(),
+        main_fanout=main_fanout,
+        dialsup_fanout=dialsup_fanout,
+    )
     monkeypatch.undo()
 
     combined_out = pl.read_parquet(paths["combined"])
@@ -86,9 +96,16 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
 
 
 def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
-    combined = combined_metric_frame().lazy()
+    combined = internal_combined_metric_frame().lazy()
 
-    paths = write_marts(tmp_path, combined, dialsup_metric_frame().lazy(), RollupConfig())
+    paths = write_marts(
+        tmp_path,
+        combined,
+        internal_dialsup_metric_frame().lazy(),
+        RollupConfig(),
+        main_fanout=combined_metric_frame().lazy(),
+        dialsup_fanout=dialsup_metric_frame().lazy(),
+    )
 
     row_counts = {
         name: pl.scan_parquet(path).select(pl.len()).collect().item()
@@ -233,6 +250,22 @@ def dialsup_metric_frame() -> pl.DataFrame:
         Col.loss: 10.0,
     }
     return pl.DataFrame([base])
+
+
+def internal_combined_metric_frame() -> pl.DataFrame:
+    return combined_metric_frame().drop(
+        Col.cds_cat_class_name,
+        Col.model_event_id,
+        Col.event_day,
+    )
+
+
+def internal_dialsup_metric_frame() -> pl.DataFrame:
+    return dialsup_metric_frame().drop(
+        Col.cds_cat_class_name,
+        Col.model_event_id,
+        Col.event_day,
+    )
 
 
 def cds_fanout_columns() -> list[str]:

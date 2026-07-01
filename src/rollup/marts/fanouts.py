@@ -7,6 +7,7 @@ import polars as pl
 
 from rollup.columns import Col, FanoutCol
 from rollup.metrics import final_main_metric
+from rollup.intermediate.build_dialsup import dialsup_metric
 
 
 CDS_FANOUT_COLUMNS = [
@@ -19,6 +20,48 @@ CDS_FANOUT_COLUMNS = [
     FanoutCol.ModelEventDay,
     FanoutCol.LossClassName,
 ]
+
+
+def main_fanout_source(
+    frame: pl.DataFrame | pl.LazyFrame,
+    target_currency: str = "GBP",
+) -> pl.LazyFrame:
+    source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
+    return source.select(
+        Col.base_model,
+        Col.forecast_date,
+        Col.target_currency,
+        Col.year_id,
+        Col.event_id,
+        Col.model_event_id,
+        Col.event_day,
+        Col.region_peril_id,
+        Col.cds_cat_class_name,
+        pl.lit(final_main_metric(target_currency)).alias(Col.metric),
+        pl.col("euws_loss").cast(pl.Float64).alias(Col.loss),
+    )
+
+
+def dialsup_fanout_source(
+    frame: pl.DataFrame | pl.LazyFrame,
+    target_currency: str = "GBP",
+) -> pl.LazyFrame:
+    source = frame.lazy() if isinstance(frame, pl.DataFrame) else frame
+    return source.filter(pl.col(Col.is_dialsup) == 1).select(
+        Col.base_model,
+        Col.forecast_date,
+        Col.target_currency,
+        Col.year_id,
+        Col.event_id,
+        Col.model_event_id,
+        Col.event_day,
+        Col.region_peril_id,
+        Col.cds_cat_class_name,
+        pl.lit(dialsup_metric(target_currency)).alias(Col.metric),
+        (pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col(Col.forecast_factor))
+        .cast(pl.Float64)
+        .alias(Col.loss),
+    )
 
 
 def write_fanouts(

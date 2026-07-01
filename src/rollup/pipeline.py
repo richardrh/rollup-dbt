@@ -17,6 +17,7 @@ from rollup.intermediate import (
     build_metric_long,
 )
 from rollup.marts import write_marts
+from rollup.marts.fanouts import dialsup_fanout_source, main_fanout_source
 from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,8 @@ def run(
     )
     combined = build_metric_long(euws_applied, config.fx.target_currency)
     dialsup = build_dialsup(euws_applied, config.fx.target_currency)
+    main_fanout = main_fanout_source(euws_applied, config.fx.target_currency)
+    dialsup_fanout = dialsup_fanout_source(euws_applied, config.fx.target_currency)
 
     stage_paths = (
         *_write_stage_frames(
@@ -98,6 +101,8 @@ def run(
         dialsup,
         config,
         sources.risklink_flood_events,
+        main_fanout,
+        dialsup_fanout,
     )
     return PipelineRunResult(
         data_root=data_root,
