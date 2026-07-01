@@ -92,7 +92,13 @@ def run(
             config,
         ),
     )
-    mart_paths = write_marts(output_root, combined, dialsup, config)
+    mart_paths = write_marts(
+        output_root,
+        combined,
+        dialsup,
+        config,
+        sources.risklink_flood_events,
+    )
     return PipelineRunResult(
         data_root=data_root,
         output_root=output_root,

@@ -6,7 +6,7 @@ from typing import Any
 import polars as pl
 import pytest
 
-from rollup.columns import Col
+from rollup.columns import Col, FanoutCol
 from rollup.config import RollupConfig
 from rollup.intermediate.build_dialsup import dialsup_metric
 from rollup.metrics import final_main_metric, forecast_metric, metric_specs
@@ -76,12 +76,13 @@ def test_write_marts_streams_large_outputs_and_writes_operational_final_marts(
         "HiscoAIR_20260101_main.parquet",
         "HiscoAIR_20260101_dialsup.parquet",
     ]
-    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
-        FINAL_MAIN_METRIC
+    assert pl.read_parquet(fanouts[0]).columns == cds_fanout_columns()
+    assert pl.read_parquet(fanouts[0]).sort(FanoutCol.ModelYear).rows() == [
+        (101, 1, "GBP", 0, 15.0, 0, 10, "CDS Fine Art"),
+        (102, 2, "GBP", 0, 25.0, 0, 20, "CDS Fine Art"),
     ]
-    assert pl.read_parquet(fanouts[1]).select(Col.metric).unique().to_series().to_list() == [
-        DIALSUP_METRIC
-    ]
+    assert pl.read_parquet(fanouts[1]).columns == cds_fanout_columns()
+    assert pl.read_parquet(fanouts[1]).rows() == [(101, 1, "GBP", 0, 10.0, 0, 10, "CDS Fine Art")]
 
 
 def test_write_marts_outputs_match_expected_row_counts(tmp_path: Path) -> None:
@@ -125,8 +126,11 @@ def test_write_fanouts_defaults_to_main_suffix_and_metric(tmp_path: Path) -> Non
     )
 
     assert [path.name for path in fanouts] == ["HiscoAIR_20260101_main.parquet"]
-    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
-        FINAL_MAIN_METRIC
+    output = pl.read_parquet(fanouts[0])
+    assert output.columns == cds_fanout_columns()
+    assert output.sort(FanoutCol.ModelYear).rows() == [
+        (101, 1, "GBP", 0, 15.0, 0, 10, "CDS Fine Art"),
+        (102, 2, "GBP", 0, 25.0, 0, 20, "CDS Fine Art"),
     ]
 
 
@@ -140,8 +144,40 @@ def test_write_fanouts_can_write_dialsup_suffix(tmp_path: Path) -> None:
     )
 
     assert [path.name for path in fanouts] == ["HiscoAIR_20260101_dialsup.parquet"]
-    assert pl.read_parquet(fanouts[0]).select(Col.metric).unique().to_series().to_list() == [
-        DIALSUP_METRIC
+    output = pl.read_parquet(fanouts[0])
+    assert output.columns == cds_fanout_columns()
+    assert output.rows() == [(101, 1, "GBP", 0, 10.0, 0, 10, "CDS Fine Art")]
+
+
+def test_write_fanouts_uses_risklink_event_id_and_flood_event_day(tmp_path: Path) -> None:
+    frame = combined_metric_frame().filter(pl.col(Col.metric) == FINAL_MAIN_METRIC).with_columns(
+        pl.lit("risklink").alias(Col.base_model),
+        pl.lit(216).alias(Col.region_peril_id),
+        pl.lit(None).cast(pl.Int64).alias(Col.model_event_id),
+        pl.lit(None).cast(pl.Int64).alias(Col.event_day),
+    )
+    risklink_events = pl.DataFrame(
+        {
+            Col.event_id: [1, 2],
+            Col.region_peril_id: [216, 216],
+            Col.risklink_event_day: [42, 84],
+        }
+    )
+
+    fanouts = write_fanouts(
+        tmp_path,
+        frame.lazy(),
+        {"verisk": "HiscoAIR", "risklink": "HiscoRMS"},
+        "GBP",
+        risklink_flood_events=risklink_events.lazy(),
+    )
+
+    assert [path.name for path in fanouts] == ["HiscoRMS_20260101_main.parquet"]
+    output = pl.read_parquet(fanouts[0])
+    assert output.columns == cds_fanout_columns()
+    assert output.sort(FanoutCol.ModelYear).rows() == [
+        (1, 1, "GBP", 0, 15.0, 0, 42, "CDS Fine Art"),
+        (2, 2, "GBP", 0, 25.0, 0, 84, "CDS Fine Art"),
     ]
 
 
@@ -155,6 +191,7 @@ def combined_metric_frame() -> pl.DataFrame:
         Col.rollup_lob: "Fine Art",
         Col.rollup_peril: "Earthquake",
         Col.region_peril_id: 205,
+        Col.cds_cat_class_name: "CDS Fine Art",
         Col.class_: "ART",
         Col.office: "London",
         Col.currency: "GBP",
@@ -162,11 +199,11 @@ def combined_metric_frame() -> pl.DataFrame:
         Col.forecast_date: "2026-01-01",
     }
     rows = [
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FORECAST_METRIC, Col.loss: 10.0},
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: FINAL_MAIN_METRIC, Col.loss: 15.0},
-        {**base, Col.year_id: 1, Col.event_id: 1, Col.is_dialsup: 1, Col.metric: ORIGINAL_METRIC, Col.loss: 5.0},
-        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FORECAST_METRIC, Col.loss: 20.0},
-        {**base, Col.year_id: 2, Col.event_id: 2, Col.is_dialsup: 0, Col.metric: FINAL_MAIN_METRIC, Col.loss: 25.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.model_event_id: 101, Col.event_day: 10, Col.is_dialsup: 1, Col.metric: FORECAST_METRIC, Col.loss: 10.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.model_event_id: 101, Col.event_day: 10, Col.is_dialsup: 1, Col.metric: FINAL_MAIN_METRIC, Col.loss: 15.0},
+        {**base, Col.year_id: 1, Col.event_id: 1, Col.model_event_id: 101, Col.event_day: 10, Col.is_dialsup: 1, Col.metric: ORIGINAL_METRIC, Col.loss: 5.0},
+        {**base, Col.year_id: 2, Col.event_id: 2, Col.model_event_id: 102, Col.event_day: 20, Col.is_dialsup: 0, Col.metric: FORECAST_METRIC, Col.loss: 20.0},
+        {**base, Col.year_id: 2, Col.event_id: 2, Col.model_event_id: 102, Col.event_day: 20, Col.is_dialsup: 0, Col.metric: FINAL_MAIN_METRIC, Col.loss: 25.0},
     ]
     return pl.DataFrame(rows)
 
@@ -181,15 +218,31 @@ def dialsup_metric_frame() -> pl.DataFrame:
         Col.rollup_lob: "Fine Art",
         Col.rollup_peril: "Earthquake",
         Col.region_peril_id: 205,
+        Col.cds_cat_class_name: "CDS Fine Art",
         Col.class_: "ART",
         Col.office: "London",
         Col.currency: "GBP",
         Col.target_currency: "GBP",
         Col.year_id: 1,
         Col.event_id: 1,
+        Col.model_event_id: 101,
+        Col.event_day: 10,
         Col.forecast_date: "2026-01-01",
         Col.is_dialsup: 1,
         Col.metric: DIALSUP_METRIC,
         Col.loss: 10.0,
     }
     return pl.DataFrame([base])
+
+
+def cds_fanout_columns() -> list[str]:
+    return [
+        FanoutCol.ModelEventID,
+        FanoutCol.ModelYear,
+        FanoutCol.CurrencyCode,
+        FanoutCol.ModelYOA,
+        FanoutCol.ModelGrossLoss,
+        FanoutCol.ModelInwardsReinstatement,
+        FanoutCol.ModelEventDay,
+        FanoutCol.LossClassName,
+    ]

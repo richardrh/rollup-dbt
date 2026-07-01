@@ -19,6 +19,7 @@ def write_marts(
     combined: pl.LazyFrame,
     dialsup: pl.LazyFrame,
     config: RollupConfig,
+    risklink_flood_events: pl.LazyFrame | None = None,
 ) -> dict[str, Path | tuple[Path, ...]]:
     marts_dir = config.outputs.marts_path(output_root)
     marts_dir.mkdir(parents=True, exist_ok=True)
@@ -46,6 +47,7 @@ def write_marts(
         final_main,
         config.outputs.fanout_prefixes,
         target_currency,
+        risklink_flood_events=risklink_flood_events,
     )
     dialsup_fanout_paths = write_fanouts(
         marts_dir,
@@ -53,6 +55,7 @@ def write_marts(
         config.outputs.fanout_prefixes,
         target_currency,
         suffix="dialsup",
+        risklink_flood_events=risklink_flood_events,
     )
     fanout_paths = (*fanout_paths, *dialsup_fanout_paths)
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))

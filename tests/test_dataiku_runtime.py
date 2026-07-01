@@ -89,6 +89,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         verisk_ylt="verisk_ylt",
         risklink_ylt="risklink_ylt",
         verisk_events="verisk_events",
+        risklink_flood_events="risklink_flood_events",
         ep_summaries="ep_summaries",
         lobs="lobs",
         perils="perils",
@@ -150,7 +151,7 @@ def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyP
         ("apply_euws", ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides")),
         ("build_metric_long", ("euws_applied", "GBP")),
         ("build_dialsup", ("euws_applied", "GBP")),
-        ("write_marts", (tmp_path / "output", "combined", "dialsup", config)),
+        ("write_marts", (tmp_path / "output", "combined", "dialsup", config, "risklink_flood_events")),
     ]
     assert stage_outputs["intermediate"] == (
         "enriched_ylt",
