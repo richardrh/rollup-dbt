@@ -19,7 +19,12 @@ from rollup.intermediate import (
 )
 from rollup.marts import write_marts
 from rollup.marts.fanouts import dialsup_fanout_source, main_fanout_source
-from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
+from rollup.staging import (
+    load_sources,
+    normalize_ylt,
+    stage_dialsup_ep_summaries,
+    stage_ep_summaries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +53,40 @@ def run(
     sources = load_sources(data_root)
     normalized = normalize_ylt(sources)
     staged_ep = stage_ep_summaries(sources)
+    staged_dialsup_ep = stage_dialsup_ep_summaries(sources)
     enriched = build_enriched_ylt(normalized, staged_ep)
+    dialsup_enriched = build_enriched_ylt(normalized, staged_dialsup_ep)
     blended = apply_blending(
         enriched,
         staged_ep,
         sources.blending,
         config.blending,
     )
+    dialsup_blended = apply_blending(
+        dialsup_enriched,
+        staged_dialsup_ep,
+        sources.blending,
+        config.blending,
+    )
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
+    dialsup_fx_applied = apply_fx(
+        dialsup_blended,
+        sources.fx_rates,
+        config.fx.target_currency,
+    )
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
+    dialsup_forecast_applied = apply_forecast(
+        dialsup_fx_applied,
+        sources.forecast_factors,
+    )
     euws_applied = apply_euws(
         forecast_applied,
+        sources.verisk_events,
+        sources.euws_factors,
+        sources.euws_overrides,
+    )
+    dialsup_euws_applied = apply_euws(
+        dialsup_forecast_applied,
         sources.verisk_events,
         sources.euws_factors,
         sources.euws_overrides,
@@ -70,7 +98,7 @@ def run(
         output_threshold,
     )
     dialsup_output = _filter_output_threshold(
-        euws_applied,
+        dialsup_euws_applied,
         pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col(Col.forecast_factor),
         output_threshold,
     )
@@ -91,6 +119,7 @@ def run(
                 "perils": sources.perils,
                 "normalized_ylt": normalized,
                 "staged_ep_summaries": staged_ep,
+                "staged_dialsup_ep_summaries": staged_dialsup_ep,
             },
             config,
         ),
@@ -99,10 +128,15 @@ def run(
             config.outputs.intermediate_dir,
             {
                 "enriched_ylt": enriched,
+                "dialsup_enriched_ylt": dialsup_enriched,
                 "blended_ylt": blended,
+                "dialsup_blended_ylt": dialsup_blended,
                 "fx_applied_ylt": fx_applied,
+                "dialsup_fx_applied_ylt": dialsup_fx_applied,
                 "forecast_applied_ylt": forecast_applied,
+                "dialsup_forecast_applied_ylt": dialsup_forecast_applied,
                 "euws_applied_ylt": euws_applied,
+                "dialsup_euws_applied_ylt": dialsup_euws_applied,
             },
             config,
         ),

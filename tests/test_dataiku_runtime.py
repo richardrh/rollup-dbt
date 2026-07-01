@@ -16,34 +16,41 @@ def test_import_surface() -> None:
     import rollup
     from rollup.api import run_rollup as api_run_rollup
     from rollup.pipeline import run
-    from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
+    from rollup.staging import (
+        load_sources,
+        normalize_ylt,
+        stage_dialsup_ep_summaries,
+        stage_ep_summaries,
+    )
 
     assert rollup.run_rollup is api_run_rollup
     assert not hasattr(rollup, "validate_rollup_inputs")
     assert callable(run)
     assert callable(load_sources)
     assert callable(normalize_ylt)
+    assert callable(stage_dialsup_ep_summaries)
     assert callable(stage_ep_summaries)
 
 
 def test_transform_modules_are_split_into_packages() -> None:
-    expected_members = {
-        "rollup.staging.load_sources": "load_sources",
-        "rollup.staging.normalize_ylt": "normalize_ylt",
-        "rollup.staging.stage_ep_summaries": "stage_ep_summaries",
-        "rollup.intermediate.build_enriched_ylt": "build_enriched_ylt",
-        "rollup.intermediate.apply_blending": "apply_blending",
-        "rollup.intermediate.apply_fx": "apply_fx",
-        "rollup.intermediate.apply_forecast": "apply_forecast",
-        "rollup.intermediate.apply_euws": "apply_euws",
-        "rollup.intermediate.build_metric_long": "build_metric_long",
-        "rollup.intermediate.build_dialsup": "build_dialsup",
-        "rollup.marts.write_marts": "write_marts",
-        "rollup.marts.wide": "wide",
-        "rollup.marts.fanouts": "write_fanouts",
-    }
+    expected_members = [
+        ("rollup.staging.load_sources", "load_sources"),
+        ("rollup.staging.normalize_ylt", "normalize_ylt"),
+        ("rollup.staging.stage_ep_summaries", "stage_ep_summaries"),
+        ("rollup.staging.stage_ep_summaries", "stage_dialsup_ep_summaries"),
+        ("rollup.intermediate.build_enriched_ylt", "build_enriched_ylt"),
+        ("rollup.intermediate.apply_blending", "apply_blending"),
+        ("rollup.intermediate.apply_fx", "apply_fx"),
+        ("rollup.intermediate.apply_forecast", "apply_forecast"),
+        ("rollup.intermediate.apply_euws", "apply_euws"),
+        ("rollup.intermediate.build_metric_long", "build_metric_long"),
+        ("rollup.intermediate.build_dialsup", "build_dialsup"),
+        ("rollup.marts.write_marts", "write_marts"),
+        ("rollup.marts.wide", "wide"),
+        ("rollup.marts.fanouts", "write_fanouts"),
+    ]
 
-    for module_name, member_name in expected_members.items():
+    for module_name, member_name in expected_members:
         module = importlib.import_module(module_name)
 
         assert callable(getattr(module, member_name))
@@ -137,6 +144,11 @@ def test_pipeline_inlines_intermediate_orchestration(
     monkeypatch.setattr(pipeline, "load_sources", record("load_sources", sources))
     monkeypatch.setattr(pipeline, "normalize_ylt", record("normalize_ylt", "normalized"))
     monkeypatch.setattr(pipeline, "stage_ep_summaries", record("stage_ep_summaries", "staged_ep"))
+    monkeypatch.setattr(
+        pipeline,
+        "stage_dialsup_ep_summaries",
+        record("stage_dialsup_ep_summaries", "staged_dialsup_ep"),
+    )
     monkeypatch.setattr(pipeline, "build_enriched_ylt", record("build_enriched_ylt", "enriched"))
     monkeypatch.setattr(pipeline, "apply_blending", record("apply_blending", "blended"))
     monkeypatch.setattr(pipeline, "apply_fx", record("apply_fx", "fx_applied"))
@@ -156,13 +168,25 @@ def test_pipeline_inlines_intermediate_orchestration(
         ("load_sources", (tmp_path / "data",)),
         ("normalize_ylt", (sources,)),
         ("stage_ep_summaries", (sources,)),
+        ("stage_dialsup_ep_summaries", (sources,)),
         ("build_enriched_ylt", ("normalized", "staged_ep")),
+        ("build_enriched_ylt", ("normalized", "staged_dialsup_ep")),
         (
             "apply_blending",
             ("enriched", "staged_ep", "blending", blending_config),
         ),
+        (
+            "apply_blending",
+            ("enriched", "staged_dialsup_ep", "blending", blending_config),
+        ),
+        ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_fx", ("blended", "fx_rates", "GBP")),
         ("apply_forecast", ("fx_applied", "forecast_factors")),
+        ("apply_forecast", ("fx_applied", "forecast_factors")),
+        (
+            "apply_euws",
+            ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides"),
+        ),
         (
             "apply_euws",
             ("forecast_applied", "verisk_events", "euws_factors", "euws_overrides"),
@@ -189,11 +213,101 @@ def test_pipeline_inlines_intermediate_orchestration(
     ]
     assert stage_outputs["intermediate"] == (
         "enriched_ylt",
+        "dialsup_enriched_ylt",
         "blended_ylt",
+        "dialsup_blended_ylt",
         "fx_applied_ylt",
+        "dialsup_fx_applied_ylt",
         "forecast_applied_ylt",
+        "dialsup_forecast_applied_ylt",
         "euws_applied_ylt",
+        "dialsup_euws_applied_ylt",
     )
+
+
+def test_pipeline_builds_dialsup_outputs_from_dialsup_selected_stream(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from rollup import pipeline
+    from rollup.config import RollupConfig
+
+    sources = SimpleNamespace(
+        verisk_ylt="verisk_ylt",
+        risklink_ylt="risklink_ylt",
+        verisk_events="verisk_events",
+        risklink_flood_events="risklink_flood_events",
+        ep_summaries="ep_summaries",
+        lobs="lobs",
+        perils="perils",
+        blending="blending",
+        fx_rates="fx_rates",
+        forecast_factors="forecast_factors",
+        euws_factors="euws_factors",
+        euws_overrides="euws_overrides",
+    )
+    threshold_inputs: list[object] = []
+    mart_inputs: dict[str, object] = {}
+
+    monkeypatch.setattr(pipeline, "load_sources", lambda data_root: sources)
+    monkeypatch.setattr(pipeline, "normalize_ylt", lambda loaded: "normalized")
+    monkeypatch.setattr(pipeline, "stage_ep_summaries", lambda loaded: "main_ep")
+    monkeypatch.setattr(pipeline, "stage_dialsup_ep_summaries", lambda loaded: "dialsup_ep")
+
+    def build_enriched(normalized: object, staged: object) -> str:
+        return {"main_ep": "main_enriched", "dialsup_ep": "dialsup_enriched"}[staged]
+
+    def apply_blending(enriched: object, staged: object, *args: object) -> str:
+        assert (enriched, staged) in {
+            ("main_enriched", "main_ep"),
+            ("dialsup_enriched", "dialsup_ep"),
+        }
+        return {
+            "main_enriched": "main_blended",
+            "dialsup_enriched": "dialsup_blended",
+        }[enriched]
+
+    def apply_fx(frame: object, *args: object) -> str:
+        return {"main_blended": "main_fx", "dialsup_blended": "dialsup_fx"}[frame]
+
+    def apply_forecast(frame: object, *args: object) -> str:
+        return {"main_fx": "main_forecast", "dialsup_fx": "dialsup_forecast"}[frame]
+
+    def apply_euws(frame: object, *args: object) -> str:
+        return {"main_forecast": "main_euws", "dialsup_forecast": "dialsup_euws"}[frame]
+
+    def filter_output_threshold(frame: object, *args: object) -> str:
+        threshold_inputs.append(frame)
+        return {"main_euws": "main_output", "dialsup_euws": "dialsup_output"}[frame]
+
+    monkeypatch.setattr(pipeline, "build_enriched_ylt", build_enriched)
+    monkeypatch.setattr(pipeline, "apply_blending", apply_blending)
+    monkeypatch.setattr(pipeline, "apply_fx", apply_fx)
+    monkeypatch.setattr(pipeline, "apply_forecast", apply_forecast)
+    monkeypatch.setattr(pipeline, "apply_euws", apply_euws)
+    monkeypatch.setattr(pipeline, "_filter_output_threshold", filter_output_threshold)
+    monkeypatch.setattr(pipeline, "build_metric_long", lambda frame, currency: "combined")
+    monkeypatch.setattr(pipeline, "build_dialsup", lambda frame, currency: (frame, currency))
+    monkeypatch.setattr(pipeline, "main_fanout_source", lambda frame, currency: (frame, currency))
+    monkeypatch.setattr(pipeline, "dialsup_fanout_source", lambda frame, currency: (frame, currency))
+    monkeypatch.setattr(pipeline, "_write_stage_frames", lambda *args: ())
+
+    def write_marts(output_root: Path, combined: object, dialsup: object, config: object, *args: object) -> dict[str, Path]:
+        mart_inputs["combined"] = combined
+        mart_inputs["dialsup"] = dialsup
+        mart_inputs["main_fanout"] = args[-2]
+        mart_inputs["dialsup_fanout"] = args[-1]
+        return {}
+
+    monkeypatch.setattr(pipeline, "write_marts", write_marts)
+
+    pipeline.run(tmp_path / "data", output_root=tmp_path / "output", config=RollupConfig())
+
+    assert threshold_inputs == ["main_euws", "dialsup_euws"]
+    assert mart_inputs["combined"] == "combined"
+    assert mart_inputs["dialsup"] == ("dialsup_output", "GBP")
+    assert mart_inputs["main_fanout"] == ("main_output", "GBP")
+    assert mart_inputs["dialsup_fanout"] == ("dialsup_output", "GBP")
 
 
 def test_pipeline_filters_outputs_before_mart_write(
@@ -225,6 +339,11 @@ def test_pipeline_filters_outputs_before_mart_write(
     monkeypatch.setattr(pipeline, "load_sources", lambda data_root: sources)
     monkeypatch.setattr(pipeline, "normalize_ylt", lambda loaded: "normalized")
     monkeypatch.setattr(pipeline, "stage_ep_summaries", lambda loaded: "staged_ep")
+    monkeypatch.setattr(
+        pipeline,
+        "stage_dialsup_ep_summaries",
+        lambda loaded: "staged_dialsup_ep",
+    )
     monkeypatch.setattr(
         pipeline,
         "build_enriched_ylt",
