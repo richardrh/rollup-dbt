@@ -419,6 +419,7 @@ def staging_frames(
         verisk_ylt=empty_lazy,
         risklink_ylt=empty_lazy,
         verisk_events=empty_lazy,
+        risklink_flood_events=empty_lazy,
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,

@@ -58,6 +58,28 @@ def test_load_sources_reports_missing_input_files(tmp_path: Path) -> None:
         load_sources(data_root)
 
 
+def test_load_risklink_flood_events_maps_min_occurrence_date_to_ordinal_day(tmp_path: Path) -> None:
+    from rollup.columns import Col
+    from rollup.staging.load_sources import load_risklink_flood_events
+
+    validation = tmp_path / "data" / "seeds" / "validation"
+    validation.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "ModelEventID": [10, 10, 11],
+            "RegionPerilID": [216, 216, 217],
+            "ModelOccurrenceDate": ["2026-02-03", "2026-01-05", "2026-12-31"],
+        }
+    ).with_columns(
+        pl.col("ModelOccurrenceDate").str.to_date()
+    ).write_parquet(validation / "risklink_flood22_model_events.parquet")
+
+    result = load_risklink_flood_events(tmp_path / "data").collect().sort(Col.event_id)
+
+    assert result.columns == [Col.event_id, Col.region_peril_id, Col.risklink_event_day]
+    assert result.rows() == [(10, 216, 5), (11, 217, 365)]
+
+
 def test_pipeline_inlines_intermediate_orchestration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from rollup import pipeline
 

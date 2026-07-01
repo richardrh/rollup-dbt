@@ -5,7 +5,7 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup.columns import Col, RawCol
+from rollup.columns import Col, FanoutCol, RawCol
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,7 @@ class StagingFrames:
     verisk_ylt: pl.LazyFrame
     risklink_ylt: pl.LazyFrame
     verisk_events: pl.LazyFrame
+    risklink_flood_events: pl.LazyFrame
     ep_summaries: pl.DataFrame
     lobs: pl.DataFrame
     perils: pl.DataFrame
@@ -49,6 +50,7 @@ def load_sources(data_root: str | Path) -> StagingFrames:
         verisk_ylt=verisk_ylt,
         risklink_ylt=risklink_ylt,
         verisk_events=load_verisk_events(data_root),
+        risklink_flood_events=load_risklink_flood_events(data_root),
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,
@@ -117,6 +119,29 @@ def load_verisk_events(data_root: Path) -> pl.LazyFrame:
     )
 
 
+def load_risklink_flood_events(data_root: Path) -> pl.LazyFrame:
+    path = data_root / "seeds" / "validation" / "risklink_flood22_model_events.parquet"
+    if not path.exists():
+        if path.parent.exists():
+            raise FileNotFoundError(
+                f"seed file not found: {path.relative_to(data_root)}"
+            )
+        return empty_risklink_flood_events()
+    return (
+        pl.scan_parquet(path)
+        .group_by(FanoutCol.ModelEventID, RawCol.RegionPerilID)
+        .agg(pl.col(RawCol.ModelOccurrenceDate).min().alias(Col.model_occurrence_date))
+        .select(
+            pl.col(FanoutCol.ModelEventID).cast(pl.Int64).alias(Col.event_id),
+            pl.col(RawCol.RegionPerilID).cast(pl.Int64).alias(Col.region_peril_id),
+            pl.col(Col.model_occurrence_date)
+            .dt.ordinal_day()
+            .cast(pl.Int64)
+            .alias(Col.risklink_event_day),
+        )
+    )
+
+
 def read_optional_adjustment(data_root: Path, filename: str) -> pl.DataFrame:
     path = data_root / "seeds" / "adjustments" / filename
     if not path.exists():
@@ -137,5 +162,15 @@ def empty_verisk_events() -> pl.LazyFrame:
             Col.event_id: pl.Int64,
             Col.year_id: pl.Int64,
             Col.event_day: pl.Int64,
+        }
+    ).lazy()
+
+
+def empty_risklink_flood_events() -> pl.LazyFrame:
+    return pl.DataFrame(
+        schema={
+            Col.event_id: pl.Int64,
+            Col.region_peril_id: pl.Int64,
+            Col.risklink_event_day: pl.Int64,
         }
     ).lazy()
