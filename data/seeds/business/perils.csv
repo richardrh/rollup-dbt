@@ -1,27 +1,27 @@
-modelled_peril,rollup_peril,region,peril,region_peril_id,selection_priority,is_dialsup
-BE FL,Belgium_FL,Belgium,FL,216,99,1
-DE FL,Germany_FL,Germany,FL,216,99,1
-EU_EQ,Europe_EQ,Europe,EQ,205,1,1
-EU_FL,Europe_FL,Europe,FL,216,1,1
-EU_WS,Europe_WS,Europe,WS,206,2,1
-EU_WS_GCAdj,Europe_WS,Europe,WS,206,1,0
-EU FL HD,Europe_FL,Europe,FL,216,99,1
-EUxESGB EQ,Europe_EQ,Europe,EQ,205,2,1
-EUxESGB EQ Adj,Europe_EQ,Europe,EQ,205,1,0
-EUxGB WS,Europe_WS,Europe,WS,206,4,1
-EUxGB WS (FlrArea),Europe_WS,Europe,WS,206,3,0
-EUxGB WS CVV,Europe_WS,Europe,WS,206,2,0
-EUxGB WS CVV (FlrArea),Europe_WS,Europe,WS,206,1,0
-GB FL,UK_FL,UK,FL,217,99,1
-GB FL HD,UK_FL,UK,FL,217,99,0
-GB_FL_wPLA,UK_FL,UK,FL,217,99,0
-GB WSSS,UK_WS,UK,WS,206,4,1
-GB WSSS (FlrArea),UK_WS,UK,WS,206,3,0
-GB WSSS CVV,UK_WS,UK,WS,206,2,0
-GB WSSS CVV (FlrArea),UK_WS,UK,WS,206,1,0
-GB_WSSS_wPLA,UK_WS,UK,WS,206,99,0
-GB_WSSS_wPLA_CVV,UK_WS,UK,WS,206,99,0
-UK_FL,UK_FL,UK,FL,217,1,1
-UKFL_HD_V2.1_wPLA,UK_FL,UK,FL,217,99,0
-UK_WSSS,UK_WS,UK,WS,206,2,1
-UK_WSSS_GCAdj,UK_WS,UK,WS,206,1,0
+modelled_peril,rollup_peril,region,peril,region_peril_id,blend_subregion_peril_id,base_model,selection_priority,is_dialsup,is_euws
+BE FL,Europe_FL,Belgium,FL,216,216b,risklink,99,1,0
+DE FL,Europe_FL,Germany,FL,216,216b,risklink,99,1,0
+EU_EQ,Europe_EQ,Europe,EQ,205,205a,verisk,1,1,0
+EU_FL,Europe_FL,Europe,FL,216,216b,risklink,1,1,0
+EU_WS,Europe_WS,Europe,WS,206,206a,verisk,2,1,1
+EU_WS_GCAdj,Europe_WS,Europe,WS,206,206a,verisk,1,0,1
+EU FL HD,Europe_FL,Europe,FL,216,216b,risklink,99,1,0
+EUxESGB EQ,Europe_EQ,Europe,EQ,205,205a,verisk,2,1,0
+EUxESGB EQ Adj,Europe_EQ,Europe,EQ,205,205a,verisk,1,0,0
+EUxGB WS,Europe_WS,Europe,WS,206,206a,verisk,4,1,1
+EUxGB WS (FlrArea),Europe_WS,Europe,WS,206,206a,verisk,3,0,1
+EUxGB WS CVV,Europe_WS,Europe,WS,206,206a,verisk,2,0,1
+EUxGB WS CVV (FlrArea),Europe_WS,Europe,WS,206,206a,verisk,1,0,1
+GB FL,UK_FL,UK,FL,217,217a,risklink,99,1,0
+GB FL HD,UK_FL,UK,FL,217,217a,risklink,99,0,0
+GB_FL_wPLA,UK_FL,UK,FL,217,217a,risklink,99,0,0
+GB WSSS,UK_WS,UK,WS,206,206a,verisk,4,1,0
+GB WSSS (FlrArea),UK_WS,UK,WS,206,206a,verisk,3,0,0
+GB WSSS CVV,UK_WS,UK,WS,206,206a,verisk,2,0,0
+GB WSSS CVV (FlrArea),UK_WS,UK,WS,206,206a,verisk,1,0,0
+GB_WSSS_wPLA,UK_WS,UK,WS,206,206a,verisk,99,0,0
+GB_WSSS_wPLA_CVV,UK_WS,UK,WS,206,206a,verisk,99,0,0
+UK_FL,UK_FL,UK,FL,217,217a,risklink,1,1,0
+UKFL_HD_V2.1_wPLA,UK_FL,UK,FL,217,217a,risklink,99,0,0
+UK_WSSS,UK_WS,UK,WS,206,206a,verisk,2,1,0
+UK_WSSS_GCAdj,UK_WS,UK,WS,206,206a,verisk,1,0,0
