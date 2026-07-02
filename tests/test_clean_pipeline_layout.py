@@ -52,6 +52,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_pipeline_e2e_validation.py",
         "test_pipeline_fuzz.py",
         "test_pipeline_modelled_dimension_coverage.py",
+        "test_perils_seed.py",
         "test_duckdb_export.py",
         "test_logging.py",
         "test_risklink_fanout_join.py",
