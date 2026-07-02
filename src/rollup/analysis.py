@@ -6,10 +6,12 @@ from pathlib import Path
 
 import polars as pl
 
-logger = logging.getLogger(__name__)
-
 from rollup.config import load_config
+
+logger = logging.getLogger(__name__)
 cfg = load_config()
+SIMULATION_COUNTS = cfg.analysis.simulation_counts
+RETURN_PERIODS = cfg.analysis.return_periods
 
 
 def build_ep_report(output_root: Path | str = "output") -> pl.DataFrame:

@@ -1,0 +1,51 @@
+name: Rollup Verisk YLT schema validation
+version: "1.0"
+
+# DataFrame/parquet config: load parquet into Polars/Dataiku and validate with
+# Pipeline.run_with_df(df). Add a separate CSV config/input block for CSV extracts.
+
+rules:
+  - code: VERISK_YLT_SCHEMA
+    name: Verisk YLT required columns and types
+    level: error
+    message: "Verisk YLT input must contain the parquet schema columns expected by rollup"
+    checks:
+      - type: schema_matches
+        mode: strict
+        allow_extra_columns: true
+        columns:
+          Analysis: string
+          ExposureAttribute: string
+          CatalogTypeCode: string
+          EventID: int64
+          ModelCode: int64
+          YearID: int64
+          GroundUpLoss: float64
+
+  - code: VERISK_YLT_REQUIRED_VALUES
+    name: Verisk YLT required values
+    level: error
+    message: "Verisk YLT required fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - Analysis
+          - ExposureAttribute
+          - CatalogTypeCode
+          - EventID
+          - ModelCode
+          - YearID
+          - GroundUpLoss
+
+  - code: VERISK_YLT_NON_NEGATIVE_VALUES
+    name: Verisk YLT non-negative numeric values
+    level: error
+    message: "Verisk YLT identifiers, years, and losses must be non-negative"
+    checks:
+      - type: valid_range
+        columns:
+          - EventID
+          - ModelCode
+          - YearID
+          - GroundUpLoss
+        min: 0

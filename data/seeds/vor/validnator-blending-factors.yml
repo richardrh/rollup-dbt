@@ -1,0 +1,63 @@
+name: Rollup blending factors seed CSV validation
+version: "1.0"
+
+input:
+  type: csv
+  mode: raw_strings
+
+rules:
+  - code: BLENDING_FACTORS_SCHEMA
+    name: Blending factors required columns and types
+    level: error
+    message: "blending_factors.csv must contain the columns required by rollup"
+    checks:
+      - type: schema_matches
+        mode: castable
+        allow_extra_columns: false
+        columns:
+          id: int64
+          BlendSetID: int64
+          RegionPerilID: int64
+          RegionPeril: string
+          SubRegionPerilID: string
+          SubRegionPeril: string
+          AIRBlend: float64
+          RMSBlend: float64
+          KatRiskBlend: float64
+          DateCreated: string
+
+  - code: BLENDING_FACTORS_REQUIRED_VALUES
+    name: Blending factors required values
+    level: error
+    message: "Blending factor key fields must not be blank"
+    checks:
+      - type: not_null
+        columns:
+          - id
+          - BlendSetID
+          - RegionPerilID
+          - RegionPeril
+          - SubRegionPerilID
+          - AIRBlend
+          - RMSBlend
+          - KatRiskBlend
+          - DateCreated
+
+  - code: BLENDING_FACTORS_RANGES
+    name: Blending factors ranges
+    level: error
+    message: "IDs must be non-negative and blend weights must be between 0 and 1"
+    checks:
+      - type: valid_range
+        columns:
+          - id
+          - BlendSetID
+          - RegionPerilID
+        min: 0
+      - type: valid_range
+        columns:
+          - AIRBlend
+          - RMSBlend
+          - KatRiskBlend
+        min: 0
+        max: 1

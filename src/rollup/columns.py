@@ -80,6 +80,7 @@ class Col(StrEnum):
     fx_rate = "fx_rate"
     model_event_id = "model_event_id"
     event_day = "event_day"
+    model_occurrence_year = "model_occurrence_year"
     model_occurrence_date = "model_occurrence_date"
     risklink_event_day = "risklink_event_day"
     row_count = "row_count"
