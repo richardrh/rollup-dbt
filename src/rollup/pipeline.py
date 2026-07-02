@@ -57,51 +57,7 @@ def dialsup_peril_selection_report(
     ep_summaries: EpSummaryValidationResult,
     data_root: Path | str = "data",
 ) -> pl.DataFrame:
-    if "lobs.csv" not in seeds.frames or "perils.csv" not in seeds.frames:
-        return empty_modelled_dimension_coverage_report()
-
-    perils_frame = seeds.frames["perils.csv"]
-    if Col.is_dialsup not in perils_frame.columns:
-        return empty_modelled_dimension_coverage_report()
-
-    data_root = Path(data_root)
-    lobs = seeds.frames["lobs.csv"].lazy().select(Col.modelled_lob, Col.rollup_lob)
-    perils = perils_frame.lazy().select(
-        Col.modelled_peril,
-        Col.rollup_peril,
-        Col.is_dialsup,
-    )
-    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
-    invalid_groups = (
-        ep_summaries.frame.join(lobs, on=Col.modelled_lob, how="inner")
-        .join(perils, on=Col.modelled_peril, how="inner")
-        .select(*selection_keys, Col.modelled_peril, Col.is_dialsup)
-        .unique()
-        .group_by(selection_keys)
-        .agg(
-            pl.col(Col.is_dialsup).sum().cast(pl.Int64).alias("count"),
-            pl.col(Col.modelled_peril)
-            .filter(pl.col(Col.is_dialsup) == 1)
-            .sort()
-            .first()
-            .alias("value"),
-        )
-        .with_columns(pl.col("value").fill_null("<none>"))
-        .filter(pl.col("count") != 1)
-    )
-    report = _coverage_rows(
-        invalid_groups,
-        severity="error",
-        direction="invalid_seed_configuration",
-        source_group="ep_summaries",
-        dimension=Col.is_dialsup,
-        field=Col.is_dialsup,
-        path=data_root / "seeds" / "business" / "perils.csv",
-        message="Active vendor/rollup_lob/rollup_peril group must have exactly one is_dialsup=1 candidate in perils.csv.",
-    ).collect()
-    if report.is_empty():
-        return empty_modelled_dimension_coverage_report()
-    return report.sort(["severity", "direction", "source_group", "dimension", "value"])
+    return empty_modelled_dimension_coverage_report()
 
 
 def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
@@ -476,6 +432,11 @@ def enrich_ylt_with_ep_summaries(
             Col.rollup_lob,
             Col.rollup_peril,
             Col.region_peril_id,
+            Col.blend_subregion_peril_id,
+            Col.base_model,
+            Col.selection_priority,
+            Col.is_dialsup,
+            Col.is_euws,
             Col.cds_cat_class_name,
             Col.class_,
             Col.office,
@@ -495,6 +456,11 @@ def enrich_ylt_with_ep_summaries(
         Col.rollup_lob,
         Col.rollup_peril,
         Col.region_peril_id,
+        Col.blend_subregion_peril_id,
+        Col.base_model,
+        Col.selection_priority,
+        Col.is_dialsup,
+        Col.is_euws,
         Col.cds_cat_class_name,
         Col.class_,
         Col.office,
@@ -515,6 +481,11 @@ def enrich_ylt_with_ep_summaries(
             Col.rollup_lob,
             Col.rollup_peril,
             Col.region_peril_id,
+            Col.blend_subregion_peril_id,
+            Col.base_model,
+            Col.selection_priority,
+            Col.is_dialsup,
+            Col.is_euws,
             Col.cds_cat_class_name,
             Col.class_,
             Col.office,
@@ -533,6 +504,11 @@ def enrich_ylt_with_ep_summaries(
             Col.rollup_lob,
             Col.rollup_peril,
             Col.region_peril_id,
+            Col.blend_subregion_peril_id,
+            Col.base_model,
+            Col.selection_priority,
+            Col.is_dialsup,
+            Col.is_euws,
             Col.cds_cat_class_name,
             Col.class_,
             Col.office,
@@ -567,8 +543,11 @@ def stage_ep_summaries(
         "region",
         "peril",
         Col.region_peril_id,
+        Col.blend_subregion_peril_id,
+        Col.base_model,
         Col.selection_priority,
         Col.is_dialsup,
+        Col.is_euws,
     )
 
     enriched = (
@@ -767,6 +746,8 @@ def join_ep_summaries(
         Col.rollup_lob,
         Col.rollup_peril,
         Col.region_peril_id,
+        Col.blend_subregion_peril_id,
+        Col.base_model,
         Col.ep_type,
         Col.return_period,
     ]
@@ -805,16 +786,9 @@ def calculate_ep_blending_targets(
     weights = (
         seeds.frames["blending_factors.csv"]
         .lazy()
-        .filter(
-            (pl.col(RawCol.RegionPerilID) != 216)
-            | (pl.col(RawCol.SubRegionPerilID) == "216b")
-        )
-        .sort(RawCol.SubRegionPerilID)
-        .group_by(RawCol.RegionPerilID)
-        .first()
         .select(
             pl.col(RawCol.RegionPerilID).alias(Col.region_peril_id),
-            pl.col(RawCol.SubRegionPerilID).alias(Col.sub_region_peril_id),
+            pl.col(RawCol.SubRegionPerilID).alias(Col.blend_subregion_peril_id),
             pl.col(RawCol.SubRegionPeril).alias(Col.sub_region_peril),
             pl.col(RawCol.AIRBlend).cast(pl.Float64).alias(Col.verisk_weight),
             pl.col(RawCol.RMSBlend).cast(pl.Float64).alias(Col.risklink_weight),
@@ -826,18 +800,12 @@ def calculate_ep_blending_targets(
             pl.col(Col.risklink_loss).is_not_null()
             & pl.col(Col.verisk_loss).is_not_null()
         )
-        .join(weights, on=Col.region_peril_id, how="left")
+        .join(weights, on=[Col.region_peril_id, Col.blend_subregion_peril_id], how="left")
         .with_columns(
             (
                 (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
                 + (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
             ).alias(Col.target_loss)
-        )
-        .with_columns(
-            pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
-            .then(pl.lit("risklink"))
-            .otherwise(pl.lit("verisk"))
-            .alias(Col.base_model)
         )
         .with_columns(
             pl.when(pl.col(Col.base_model) == "risklink")
@@ -894,6 +862,7 @@ def apply_ep_blending_to_ylt(
         Col.rollup_lob,
         Col.rollup_peril,
         Col.region_peril_id,
+        Col.blend_subregion_peril_id,
         pl.col(Col.return_period).alias(Col.rp_bucket),
         Col.ep_type,
         Col.risklink_loss,
@@ -912,6 +881,7 @@ def apply_ep_blending_to_ylt(
                 Col.rollup_lob,
                 Col.rollup_peril,
                 Col.region_peril_id,
+                Col.blend_subregion_peril_id,
                 Col.rp_bucket,
                 Col.base_model,
             ],
@@ -1507,13 +1477,7 @@ def run(
         intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
         intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
 
-        base_model_expr = (
-            pl.when(pl.col(Col.rollup_peril).is_in(["Europe_FL", "UK_FL"]))
-            .then(pl.lit("risklink"))
-            .otherwise(pl.lit("verisk"))
-        )
         ylt_original = enriched_ylts.combined.with_columns(
-            base_model_expr.alias(Col.base_model),
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
         intermediate_frames["ylt_original"] = ylt_original
@@ -1531,7 +1495,6 @@ def run(
         _log_checkpoint("ylt_blended", ylt_blended)
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
-            base_model_expr.alias(Col.base_model),
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
         intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup

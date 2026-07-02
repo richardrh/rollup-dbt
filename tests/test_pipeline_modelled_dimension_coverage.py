@@ -7,6 +7,8 @@ import polars as pl
 from rollup import cli
 from rollup.columns import Col, RawCol
 from rollup.pipeline import (
+    calculate_ep_blending_targets,
+    dialsup_peril_selection_report,
     EpSummaryValidationResult,
     PipelineValidationInputs,
     SeedValidationResult,
@@ -14,7 +16,9 @@ from rollup.pipeline import (
     YltValidationResult,
     ensure_modelled_dimension_coverage,
     input_ylt_aal_by_lob_peril_summary,
+    join_ep_summaries,
     modelled_dimension_coverage_report,
+    stage_ep_summaries,
     write_parquet_with_log,
 )
 
@@ -81,8 +85,11 @@ def _summary_seed_result() -> SeedValidationResult:
                     "region": ["Region", "Region", "Region"],
                     "peril": ["EQ", "WS", "FL"],
                     Col.region_peril_id: [101, 102, 103],
+                    Col.blend_subregion_peril_id: ["101", "102", "103"],
+                    Col.base_model: ["verisk", "verisk", "risklink"],
                     Col.selection_priority: [1, 1, 1],
                     Col.is_dialsup: [1, 1, 1],
+                    Col.is_euws: [0, 1, 0],
                 }
             ),
         },
@@ -137,6 +144,55 @@ def _summary_inputs(
     )
 
 
+def _peril_selection_seed_result() -> SeedValidationResult:
+    return SeedValidationResult(
+        frames={
+            "lobs.csv": pl.DataFrame(
+                {
+                    Col.modelled_lob: ["LOB"],
+                    Col.rollup_lob: ["Property"],
+                    Col.cds_cat_class_name: ["Class"],
+                    Col.class_: ["CLASS"],
+                    Col.office: ["Office"],
+                    Col.currency: ["GBP"],
+                }
+            ),
+            "perils.csv": pl.DataFrame(
+                {
+                    Col.modelled_peril: ["HIGH", "LOW", "DIAL_A", "DIAL_B"],
+                    Col.rollup_peril: ["Europe_FL", "Europe_FL", "Europe_FL", "Europe_FL"],
+                    "region": ["Europe"] * 4,
+                    "peril": ["FL"] * 4,
+                    Col.region_peril_id: [216] * 4,
+                    Col.blend_subregion_peril_id: ["216b"] * 4,
+                    Col.base_model: ["risklink"] * 4,
+                    Col.selection_priority: [20, 10, 30, 40],
+                    Col.is_dialsup: [0, 0, 1, 1],
+                    Col.is_euws: [0, 0, 0, 0],
+                }
+            ),
+        },
+        report=_valid_report(),
+    )
+
+
+def _peril_selection_ep_summary_result() -> EpSummaryValidationResult:
+    return EpSummaryValidationResult(
+        frame=pl.DataFrame(
+            {
+                Col.vendor: ["risklink"] * 4,
+                Col.analysis_id: ["1", "2", "3", "4"],
+                Col.modelled_lob: ["LOB"] * 4,
+                Col.modelled_peril: ["HIGH", "LOW", "DIAL_A", "DIAL_B"],
+                Col.ep_type: ["AAL"] * 4,
+                Col.return_period: [0] * 4,
+                Col.loss: [1.0, 2.0, 3.0, 4.0],
+            }
+        ).lazy(),
+        report=_valid_report(),
+    )
+
+
 def test_modelled_dimension_coverage_report_returns_only_input_missing_errors() -> None:
     report = modelled_dimension_coverage_report(
         _seed_result(),
@@ -188,6 +244,95 @@ def test_modelled_dimension_coverage_report_returns_only_input_missing_errors() 
     assert "LOB_UNUSED" not in set(report["value"])
     assert "PERIL_UNUSED" not in set(report["value"])
     assert "LOB_NON_STC" not in set(report["value"])
+
+
+def test_multiple_dialsup_rows_do_not_fail_validation() -> None:
+    report = dialsup_peril_selection_report(
+        _peril_selection_seed_result(),
+        _peril_selection_ep_summary_result(),
+    )
+
+    assert report.is_empty()
+
+
+def test_main_selection_chooses_lowest_selection_priority() -> None:
+    staged = stage_ep_summaries(
+        _peril_selection_ep_summary_result(),
+        _peril_selection_seed_result(),
+    )
+
+    selected = staged.selected.select(Col.modelled_peril).collect().to_series().to_list()
+
+    assert selected == ["LOW"]
+
+
+def test_dialsup_selection_keeps_all_is_dialsup_candidates() -> None:
+    staged = stage_ep_summaries(
+        _peril_selection_ep_summary_result(),
+        _peril_selection_seed_result(),
+    )
+
+    selected = (
+        staged.selected_dialsup.select(Col.modelled_peril)
+        .collect()
+        .to_series()
+        .sort()
+        .to_list()
+    )
+
+    assert selected == ["DIAL_A", "DIAL_B"]
+
+
+def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
+    seeds = SeedValidationResult(
+        frames={
+            "blending_factors.csv": pl.DataFrame(
+                {
+                    RawCol.RegionPerilID: [216, 216],
+                    RawCol.SubRegionPerilID: ["216a", "216b"],
+                    RawCol.SubRegionPeril: ["unused", "selected"],
+                    RawCol.AIRBlend: [1.0, 0.25],
+                    RawCol.RMSBlend: [0.0, 0.75],
+                }
+            )
+        },
+        report=_valid_report(),
+    )
+    selection_seeds = _peril_selection_seed_result()
+    joined = join_ep_summaries(
+        stage_ep_summaries(
+            EpSummaryValidationResult(
+                frame=pl.DataFrame(
+                    {
+                        Col.vendor: ["verisk", "risklink"],
+                        Col.analysis_id: ["AIR", "RMS"],
+                        Col.modelled_lob: ["LOB", "LOB"],
+                        Col.modelled_peril: ["LOW", "LOW"],
+                        Col.ep_type: ["AAL", "AAL"],
+                        Col.return_period: [0, 0],
+                        Col.loss: [100.0, 200.0],
+                    }
+                ).lazy(),
+                report=_valid_report(),
+            ),
+            SeedValidationResult(
+                frames={
+                    "lobs.csv": selection_seeds.frames["lobs.csv"],
+                    "perils.csv": selection_seeds.frames["perils.csv"].filter(
+                        pl.col(Col.modelled_peril) == "LOW"
+                    ),
+                },
+                report=_valid_report(),
+            ),
+        )
+    )
+
+    blended = calculate_ep_blending_targets(joined, seeds).blended.collect()
+
+    assert blended.item(0, Col.blend_subregion_peril_id) == "216b"
+    assert blended.item(0, Col.sub_region_peril) == "selected"
+    assert blended.item(0, Col.target_loss) == 175.0
+    assert blended.item(0, Col.base_model) == "risklink"
 
 
 def test_input_ylt_aal_summary_computes_verisk_raw_aal_sorted_descending() -> None:

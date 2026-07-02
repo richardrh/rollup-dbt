@@ -50,7 +50,11 @@ def _seed_result(lobs: list[str], perils: list[str]) -> SeedValidationResult:
                     "region": ["Region"] * len(perils),
                     "peril": ["Peril"] * len(perils),
                     Col.region_peril_id: list(range(1, len(perils) + 1)),
+                    Col.blend_subregion_peril_id: [str(value) for value in range(1, len(perils) + 1)],
+                    Col.base_model: ["verisk"] * len(perils),
                     Col.selection_priority: [1] * len(perils),
+                    Col.is_dialsup: [1] * len(perils),
+                    Col.is_euws: [0] * len(perils),
                 }
             ),
         },
