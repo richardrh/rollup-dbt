@@ -408,3 +408,7 @@ def _zensical_runner(args: Sequence[str]) -> int:
     from zensical.cli import main as zensical_main
 
     return zensical_main(list(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
