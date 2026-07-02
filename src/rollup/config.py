@@ -47,7 +47,7 @@ class BlendingConfig:
 @dataclass(frozen=True)
 class OutputConfig:
     write_stage_outputs: bool = True
-    write_duckdb: bool = False
+    write_duckdb: bool = True
     minimum_event_loss_threshold: float = 1000.0
     stage_output_dir: str = "stages"
     staging_dir: str = "staging"

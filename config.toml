@@ -3,7 +3,7 @@ target_currency = "GBP"
 
 [outputs]
 write_stage_outputs = true
-write_duckdb = false
+write_duckdb = true
 duckdb_file = "rollup.duckdb"
 minimum_event_loss_threshold = 1000.0
 
