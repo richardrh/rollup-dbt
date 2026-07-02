@@ -204,3 +204,44 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
     assert "rl_blended_contribution" not in wide.columns
     assert "vk_blended_contribution" not in wide.columns
     assert wide.select(pl.sum_horizontal(*loss_columns).sum()).item() == pytest.approx(sum(losses) * 2)
+
+
+def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -> None:
+    ylt = pl.DataFrame(
+        {
+            Col.vendor: ["risklink"],
+            Col.base_model: ["risklink"],
+            Col.region_peril_id: [1],
+            Col.rollup_peril: ["PERIL_A"],
+            Col.rollup_lob: ["LOB_A"],
+            Col.cds_cat_class_name: ["Class"],
+            Col.model_code: [1],
+            Col.year_id: [1],
+            Col.event_id: [1],
+            Col.model_event_id: [1],
+            Col.event_day: [1],
+            Col.target_currency: ["GBP"],
+            Col.metric: ["euws_override"],
+            Col.forecast_date: [date(2026, 1, 1)],
+            Col.loss: [100.0],
+            Col.risklink_blended_contribution: [75.0],
+            Col.verisk_blended_contribution: [25.0],
+            Col.uplift_factor_on_base_model: [2.0],
+        }
+    )
+    dialsup = ylt.drop(
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+
+    with TemporaryDirectory() as temp_dir:
+        _write_combined_outputs(Path(temp_dir), ylt, dialsup)
+        wide = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors_wide.parquet")
+
+    assert Col.risklink_blended_contribution in wide.columns
+    assert Col.verisk_blended_contribution in wide.columns
+    assert Col.uplift_factor_on_base_model in wide.columns
+    assert "rl_blended_contribution" not in wide.columns
+    assert "vk_blended_contribution" not in wide.columns
+    assert wide.filter(pl.col(Col.risklink_blended_contribution) == 75.0).height == 1
