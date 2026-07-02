@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tomllib
 
+from rollup import cli
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,3 +28,18 @@ def test_rollup_cli_module_is_executable() -> None:
 
     assert result.returncode == 0
     assert "Local rollup test runner" in result.stdout
+
+
+def test_run_command_accepts_output_root_after_subcommand(monkeypatch, tmp_path: Path) -> None:
+    calls = []
+
+    def run_command(args):
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(cli, "run_command", run_command)
+
+    assert cli.main(["run", "--output-root", str(tmp_path), "--duckdb"]) == 0
+
+    assert calls[0].output_root == tmp_path
+    assert calls[0].duckdb is True

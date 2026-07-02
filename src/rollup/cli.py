@@ -39,6 +39,8 @@ def build_parser() -> ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="run the rollup pipeline locally")
+    run_parser.add_argument("--data-root", type=Path, default=SUPPRESS)
+    run_parser.add_argument("--output-root", type=Path, default=SUPPRESS)
     run_parser.add_argument("--config-path", type=Path, default=None)
     run_parser.add_argument("--debug", action="store_true")
     run_parser.add_argument("--no-analysis", action="store_false", dest="write_analysis")
