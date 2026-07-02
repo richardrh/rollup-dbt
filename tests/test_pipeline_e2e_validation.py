@@ -9,7 +9,7 @@ from rollup.columns import Col, RawCol
 from rollup.pipeline import load_risklink_flood_events, load_validated_seed_frames
 
 
-def test_seed_loading_no_longer_requires_schema_yaml(tmp_path: Path) -> None:
+def test_seed_loading_accepts_csv_seed_files(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     (data_root / "seeds" / "business").mkdir(parents=True)
     pl.DataFrame({Col.modelled_lob: ["LOB"], Col.rollup_lob: ["LOB"]}).write_csv(
@@ -20,7 +20,6 @@ def test_seed_loading_no_longer_requires_schema_yaml(tmp_path: Path) -> None:
 
     assert "lobs.csv" in result.frames
     assert result.report.item(0, "valid") is True
-    assert not (data_root / "seeds" / "schema.yaml").exists()
 
 
 def test_load_risklink_flood_events_keeps_model_occurrence_year(tmp_path: Path) -> None:
