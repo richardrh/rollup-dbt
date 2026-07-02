@@ -11,6 +11,7 @@ from pathlib import Path
 import polars as pl
 
 from rollup.columns import Col, FanoutCol, RawCol
+from rollup.config import RollupConfig
 
 
 logger = logging.getLogger(__name__)
@@ -1211,6 +1212,26 @@ def build_dialsup_fanout(
     )
 
 
+def apply_event_loss_threshold(
+    frame: pl.DataFrame | pl.LazyFrame,
+    *,
+    metric: str,
+    threshold: float,
+) -> pl.DataFrame | pl.LazyFrame:
+    """Filter final metric rows by configured event loss threshold.
+
+    Non-final metrics are preserved so historical/intermediate rows remain in
+    the combined long outputs, while exported final rows and fanouts can share
+    the same threshold semantics.
+    """
+    loss_is_kept = (
+        pl.col(Col.loss).is_not_null()
+        if threshold <= 0
+        else pl.col(Col.loss) >= threshold
+    )
+    return frame.filter((pl.col(Col.metric) != metric) | loss_is_kept)
+
+
 def build_event_validation_report(
     *fanouts: pl.DataFrame | pl.LazyFrame,
 ) -> pl.DataFrame | pl.LazyFrame:
@@ -1403,10 +1424,12 @@ def run(
     *,
     output_root: Path | str = "output",
     debug: bool = False,
+    config: RollupConfig | None = None,
     validation_inputs: PipelineValidationInputs | None = None,
 ) -> PipelineRunResult:
     data_root = Path(data_root)
     output_root = Path(output_root)
+    config = config or RollupConfig()
     seed_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     staging_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     intermediate_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
@@ -1548,14 +1571,25 @@ def run(
         logger.info("intermediate summary frames=%d", len(intermediate_frames))
 
     with logged_phase("marts"):
+        threshold = config.outputs.minimum_event_loss_threshold
+        ylt_thresholded = apply_event_loss_threshold(
+            ylt,
+            metric="euws_override",
+            threshold=threshold,
+        )
+        ylt_dialsup_thresholded = apply_event_loss_threshold(
+            ylt_dialsup,
+            metric="dialsup_gbp_forecast",
+            threshold=threshold,
+        )
         main_fanout = build_main_fanout(
-            ylt.lazy().filter(pl.col(Col.metric) == "euws_override"),
+            ylt_thresholded.lazy().filter(pl.col(Col.metric) == "euws_override"),
             risklink_events,
         )
         mart_frames["main_fanout"] = main_fanout
 
         dialsup_fanout = build_dialsup_fanout(
-            ylt_dialsup.lazy().filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+            ylt_dialsup_thresholded.lazy().filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
             risklink_events,
         )
         mart_frames["dialsup_fanout"] = dialsup_fanout
@@ -1564,8 +1598,8 @@ def run(
             main_fanout,
             dialsup_fanout,
         )
-        mart_frames["ylt_long"] = ylt
-        mart_frames["ylt_dialsup"] = ylt_dialsup
+        mart_frames["ylt_long"] = ylt_thresholded
+        mart_frames["ylt_dialsup"] = ylt_dialsup_thresholded
 
     result = PipelineRunResult(
         seeds=PipelineStage(seed_frames),

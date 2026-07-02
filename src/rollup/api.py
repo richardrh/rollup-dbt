@@ -67,7 +67,7 @@ def run_rollup(
             write_analysis,
         )
         try:
-            run(data_root, output_root=output_root, debug=debug)
+            run(data_root, output_root=output_root, debug=debug, config=config)
             duckdb_file = None
             if config.outputs.write_duckdb:
                 duckdb_file = export_duckdb(data_root, output_root, config)

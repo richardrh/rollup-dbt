@@ -15,9 +15,10 @@ def test_run_rollup_returns_dataiku_friendly_output_paths(monkeypatch: pytest.Mo
     output_root = tmp_path / "output"
     events: list[str] = []
 
-    def fake_run(data_root_arg: Path, *, output_root: Path, debug: bool) -> object:
+    def fake_run(data_root_arg: Path, *, output_root: Path, debug: bool, config: RollupConfig) -> object:
         assert data_root_arg == data_root
         assert debug is True
+        assert config.outputs.minimum_event_loss_threshold == 1000.0
         events.append("run")
         (output_root / "marts").mkdir(parents=True)
         (output_root / "marts" / "HiscoAIR_202601_main.parquet").write_bytes(b"")
@@ -88,3 +89,17 @@ def test_run_rollup_writes_duckdb_when_configured(monkeypatch: pytest.MonkeyPatc
     )
 
     assert result.outputs.duckdb_file == db_path
+
+
+def test_run_rollup_passes_config_to_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    output_root = tmp_path / "output"
+    configured = RollupConfig(outputs=OutputConfig(minimum_event_loss_threshold=999_999.0))
+
+    def fake_run(*args, **kwargs) -> None:
+        assert kwargs["config"] is configured
+        output_root.mkdir(parents=True)
+
+    monkeypatch.setattr(api, "run", fake_run)
+    monkeypatch.setattr(api, "write_ep_report", lambda output_root_arg: None)
+
+    api.run_rollup(tmp_path / "data", output_root, config=configured)
