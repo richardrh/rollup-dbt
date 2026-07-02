@@ -5,11 +5,12 @@ from rollup.staging.load_sources import (
     load_sources,
 )
 from rollup.staging.normalize_ylt import normalize_ylt
-from rollup.staging.stage_ep_summaries import stage_ep_summaries
+from rollup.staging.stage_ep_summaries import stage_dialsup_ep_summaries, stage_ep_summaries
 
 __all__ = [
     "StagingFrames",
     "load_sources",
     "normalize_ylt",
+    "stage_dialsup_ep_summaries",
     "stage_ep_summaries",
 ]

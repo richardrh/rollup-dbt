@@ -16,8 +16,9 @@ uv run python -m rollup run --data-root data --output-root output --target-curre
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --duckdb
 ```
 
-Logs default to `<output-root>/rollup.log`. Use `--log-file <path>` to write
-somewhere else.
+Logs default to text lines in `<output-root>/rollup.log`. Use `--log-file <path>`
+to write somewhere else, or `--log-format json` to emit JSON lines to both the
+console and log file.
 
 The CLI summary prints absolute paths for the data root, output root, log file,
 mart outputs, parquet counts, analysis report status, stage output status, and
@@ -124,12 +125,14 @@ duckdb_file = "rollup.duckdb"
 
 The default path is `output/rollup.duckdb`.
 
-Included tables: `mts_tbl_ylt_combined_all_factors`, `input_ylt_verisk`,
-`input_ylt_risklink`, `input_ep_summaries`, `seed_lobs`, `seed_perils`,
-`seed_blending_factors`, `seed_fx_rates`, `seed_forecast_factors`,
-`seed_euws_rate_factors`, and `seed_euws_rank_overrides`.
+Included tables: `mts_tbl_ylt_combined_all_factors`, `mts_tbl_ylt_dialsup`,
+`input_ylt_verisk`, `input_ylt_risklink`, `input_ep_summaries`, `seed_lobs`,
+`seed_perils`, `seed_blending_factors`, `seed_fx_rates`,
+`seed_forecast_factors`, `seed_euws_rate_factors`, and
+`seed_euws_rank_overrides`.
 
-Not included: fanouts, stage/intermediate outputs, DIALSUP mart, and wide mart.
+Not included: fanouts, stage/intermediate outputs, and wide mart. Parquet
+fanouts include both `_main.parquet` and `_dialsup.parquet` files.
 
 ## Configuration
 
@@ -146,10 +149,14 @@ target_currency = "GBP"
 write_stage_outputs = true
 write_duckdb = false
 duckdb_file = "rollup.duckdb"
+minimum_event_loss_threshold = 1000.0
 
 [outputs.fanout_prefixes]
 verisk = "HiscoAIR"
 risklink = "HiscoRMS"
+
+[logging]
+format = "text"  # or "json"
 
 [analysis]
 return_periods = [30, 200, 1000]
@@ -167,6 +174,10 @@ target_points = [
     { ep_type = "OEP", return_period = 1000 },
 ]
 ```
+
+`minimum_event_loss_threshold` filters final mart and fanout rows before parquet
+writes. Set it to `0.0` to disable the minimum threshold while still excluding
+null final losses.
 
 Vendor years control EP report rank/AAL calculations and YLT rank to
 return-period bucket conversion during EP-derived blending. The blend target

@@ -7,7 +7,7 @@ import polars as pl
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.marts.fanouts import write_fanouts
+from rollup.marts.fanouts import write_materialized_fanouts
 from rollup.marts.wide import wide
 from rollup.metrics import final_main_metric
 
@@ -19,6 +19,10 @@ def write_marts(
     combined: pl.LazyFrame,
     dialsup: pl.LazyFrame,
     config: RollupConfig,
+    verisk_events: pl.LazyFrame | None = None,
+    risklink_flood_events: pl.LazyFrame | None = None,
+    main_fanout: pl.LazyFrame | None = None,
+    dialsup_fanout: pl.LazyFrame | None = None,
 ) -> dict[str, Path | tuple[Path, ...]]:
     marts_dir = config.outputs.marts_path(output_root)
     marts_dir.mkdir(parents=True, exist_ok=True)
@@ -36,17 +40,23 @@ def write_marts(
     _write_parquet(dialsup, dialsup_path)
 
     dialsup_scan = pl.scan_parquet(dialsup_path)
-    final_main = combined_scan.filter(pl.col(Col.metric) == main_metric)
-    final_metrics = pl.concat([final_main, dialsup_scan], how="diagonal_relaxed")
+    final_main = (
+        main_fanout
+        if main_fanout is not None
+        else combined_scan.filter(pl.col(Col.metric) == main_metric)
+    )
 
     logger.info("writing operational wide mart path=%s", wide_path)
     _write_parquet(wide(combined_scan, target_currency), wide_path)
     logger.info("writing fanout marts dir=%s", marts_dir)
-    fanout_paths = write_fanouts(
+    fanout_paths = write_materialized_fanouts(
         marts_dir,
         final_main,
+        dialsup_fanout if dialsup_fanout is not None else dialsup_scan,
         config.outputs.fanout_prefixes,
         target_currency,
+        verisk_events=verisk_events,
+        risklink_flood_events=risklink_flood_events,
     )
     logger.info("wrote %s fanout mart(s)", len(fanout_paths))
 

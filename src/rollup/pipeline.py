@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 import polars as pl
 
+from rollup.columns import Col
 from rollup.config import RollupConfig, load_config
 from rollup.intermediate import (
     apply_blending,
@@ -17,7 +18,13 @@ from rollup.intermediate import (
     build_metric_long,
 )
 from rollup.marts import write_marts
-from rollup.staging import load_sources, normalize_ylt, stage_ep_summaries
+from rollup.marts.fanouts import dialsup_fanout_source, main_fanout_source
+from rollup.staging import (
+    load_sources,
+    normalize_ylt,
+    stage_dialsup_ep_summaries,
+    stage_ep_summaries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +53,10 @@ def run(
     sources = load_sources(data_root)
     normalized = normalize_ylt(sources)
     staged_ep = stage_ep_summaries(sources)
+    staged_dialsup_ep = stage_dialsup_ep_summaries(sources)
     enriched = build_enriched_ylt(normalized, staged_ep)
+    dialsup_enriched = build_enriched_ylt(normalized, staged_dialsup_ep)
+    dialsup_base_model = _prepare_dialsup_base_model_ylt(dialsup_enriched)
     blended = apply_blending(
         enriched,
         staged_ep,
@@ -54,15 +64,43 @@ def run(
         config.blending,
     )
     fx_applied = apply_fx(blended, sources.fx_rates, config.fx.target_currency)
+    dialsup_fx_applied = apply_fx(
+        dialsup_base_model,
+        sources.fx_rates,
+        config.fx.target_currency,
+    )
     forecast_applied = apply_forecast(fx_applied, sources.forecast_factors)
+    dialsup_forecast_applied = apply_forecast(
+        dialsup_fx_applied,
+        sources.forecast_factors,
+    )
     euws_applied = apply_euws(
         forecast_applied,
         sources.verisk_events,
         sources.euws_factors,
         sources.euws_overrides,
     )
-    combined = build_metric_long(euws_applied, config.fx.target_currency)
-    dialsup = build_dialsup(euws_applied, config.fx.target_currency)
+    dialsup_euws_applied = apply_euws(
+        dialsup_forecast_applied,
+        sources.verisk_events,
+        sources.euws_factors,
+        sources.euws_overrides,
+    )
+    output_threshold = config.outputs.minimum_event_loss_threshold
+    main_output = _filter_output_threshold(
+        euws_applied,
+        pl.col("euws_loss"),
+        output_threshold,
+    )
+    dialsup_output = _filter_output_threshold(
+        dialsup_euws_applied,
+        pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col(Col.forecast_factor),
+        output_threshold,
+    )
+    combined = build_metric_long(main_output, config.fx.target_currency)
+    dialsup = build_dialsup(dialsup_output, config.fx.target_currency)
+    main_fanout = main_fanout_source(main_output, config.fx.target_currency)
+    dialsup_fanout = dialsup_fanout_source(dialsup_output, config.fx.target_currency)
 
     stage_paths = (
         *_write_stage_frames(
@@ -76,6 +114,7 @@ def run(
                 "perils": sources.perils,
                 "normalized_ylt": normalized,
                 "staged_ep_summaries": staged_ep,
+                "staged_dialsup_ep_summaries": staged_dialsup_ep,
             },
             config,
         ),
@@ -84,15 +123,29 @@ def run(
             config.outputs.intermediate_dir,
             {
                 "enriched_ylt": enriched,
+                "dialsup_enriched_ylt": dialsup_enriched,
+                "dialsup_base_model_ylt": dialsup_base_model,
                 "blended_ylt": blended,
                 "fx_applied_ylt": fx_applied,
+                "dialsup_fx_applied_ylt": dialsup_fx_applied,
                 "forecast_applied_ylt": forecast_applied,
+                "dialsup_forecast_applied_ylt": dialsup_forecast_applied,
                 "euws_applied_ylt": euws_applied,
+                "dialsup_euws_applied_ylt": dialsup_euws_applied,
             },
             config,
         ),
     )
-    mart_paths = write_marts(output_root, combined, dialsup, config)
+    mart_paths = write_marts(
+        output_root,
+        combined,
+        dialsup,
+        config,
+        sources.verisk_events,
+        sources.risklink_flood_events,
+        main_fanout,
+        dialsup_fanout,
+    )
     return PipelineRunResult(
         data_root=data_root,
         output_root=output_root,
@@ -100,6 +153,28 @@ def run(
         stage_paths=stage_paths,
         mart_paths=mart_paths,
     )
+
+
+def _prepare_dialsup_base_model_ylt(enriched: pl.LazyFrame) -> pl.LazyFrame:
+    return enriched.filter(pl.col(Col.vendor) == pl.col(Col.base_model)).with_columns(
+        pl.col(Col.loss)
+        .rank(method="ordinal", descending=True)
+        .over(Col.vendor, Col.modelled_lob, Col.rollup_peril)
+        .cast(pl.Int64)
+        .alias(Col.rnk),
+        pl.col(Col.loss).alias("blended_loss"),
+    )
+
+
+def _filter_output_threshold(
+    frame: pl.LazyFrame,
+    loss_expr: pl.Expr,
+    threshold: float,
+) -> pl.LazyFrame:
+    loss = loss_expr.cast(pl.Float64)
+    if threshold <= 0:
+        return frame.filter(loss.is_not_null())
+    return frame.filter(loss >= float(threshold))
 
 
 def _write_stage_frames(

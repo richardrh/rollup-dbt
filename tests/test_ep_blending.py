@@ -6,8 +6,12 @@ import pytest
 from rollup.columns import Col
 from rollup.config import BlendingConfig, BlendingTargetPoint
 from rollup.intermediate.apply_blending import apply_blending
+from rollup.intermediate.build_enriched_ylt import build_enriched_ylt
 from rollup.staging.load_sources import StagingFrames
-from rollup.staging.stage_ep_summaries import stage_ep_summaries
+from rollup.staging.stage_ep_summaries import (
+    stage_dialsup_ep_summaries,
+    stage_ep_summaries,
+)
 
 
 def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
@@ -56,13 +60,133 @@ def test_stage_ep_summaries_selects_lowest_priority_modelled_peril() -> None:
     assert result.select(
         Col.vendor,
         Col.modelled_peril,
+        Col.cds_cat_class_name,
         Col.selection_priority,
         Col.is_dialsup,
         Col.blend_subregion_peril_id,
     ).rows() == [
-        ("risklink", "LOW", 1, 0, "216b"),
-        ("verisk", "LOW", 1, 0, "216b"),
+        ("risklink", "LOW", "FA", 1, 0, "216b"),
+        ("verisk", "LOW", "FA", 1, 0, "216b"),
     ]
+
+
+def test_stage_dialsup_ep_summaries_selects_dialsup_perils_independently() -> None:
+    frames = staging_frames(
+        ep_summaries=pl.DataFrame(
+            {
+                Col.vendor: ["Verisk", "Verisk", "RiskLink", "RiskLink"],
+                Col.analysis_id: ["V1", "V1", "R1", "R1"],
+                Col.modelled_lob: ["ML", "ML", "ML", "ML"],
+                Col.modelled_peril: ["EU_WS_GCAdj", "EU_WS", "UK_WSSS_GCAdj", "UK_WSSS"],
+                Col.ep_type: ["AAL", "AAL", "AAL", "AAL"],
+                Col.return_period: [0, 0, 0, 0],
+                Col.loss: [10.0, 20.0, 30.0, 40.0],
+            }
+        ),
+        lobs=pl.DataFrame(
+            {
+                "lob_id": [1],
+                Col.modelled_lob: ["ML"],
+                Col.rollup_lob: ["RL"],
+                "lob_type": ["property"],
+                Col.cds_cat_class_name: ["FA"],
+                Col.class_: ["FA"],
+                Col.office: ["UK"],
+                Col.currency: ["GBP"],
+            }
+        ),
+        perils=pl.DataFrame(
+            {
+                Col.modelled_peril: [
+                    "EU_WS_GCAdj",
+                    "EU_WS",
+                    "UK_WSSS_GCAdj",
+                    "UK_WSSS",
+                ],
+                Col.rollup_peril: ["WS", "WS", "WSSS", "WSSS"],
+                "region": ["EU", "EU", "UK", "UK"],
+                "peril": ["WS", "WS", "WSSS", "WSSS"],
+                Col.region_peril_id: [216, 216, 217, 217],
+                Col.blend_subregion_peril_id: ["216", "216", "217", "217"],
+                Col.base_model: ["verisk", "verisk", "risklink", "risklink"],
+                Col.selection_priority: [1, 2, 1, 2],
+                Col.is_dialsup: [0, 1, 0, 1],
+                Col.is_euws: [1, 0, 1, 0],
+            }
+        ),
+    )
+
+    main = stage_ep_summaries(frames).collect().sort(Col.vendor)
+    dialsup = stage_dialsup_ep_summaries(frames).collect().sort(Col.vendor)
+
+    assert main.select(Col.vendor, Col.modelled_peril, Col.is_dialsup).rows() == [
+        ("risklink", "UK_WSSS_GCAdj", 0),
+        ("verisk", "EU_WS_GCAdj", 0),
+    ]
+    assert dialsup.select(Col.vendor, Col.modelled_peril, Col.is_dialsup).rows() == [
+        ("risklink", "UK_WSSS", 1),
+        ("verisk", "EU_WS", 1),
+    ]
+
+
+def test_build_enriched_ylt_carries_cds_cat_class_name() -> None:
+    normalized = pl.DataFrame(
+        {
+            Col.vendor: ["verisk"],
+            Col.analysis_id: ["A"],
+            Col.modelled_lob: ["ML"],
+            Col.modelled_peril: ["LOW"],
+            Col.model_code: [7],
+            Col.year_id: [1],
+            Col.event_id: [10],
+            Col.loss: [100.0],
+        }
+    ).lazy()
+    staged_ep = stage_ep_summaries(
+        staging_frames(
+            ep_summaries=pl.DataFrame(
+                {
+                    Col.vendor: ["verisk"],
+                    Col.analysis_id: ["A"],
+                    Col.modelled_lob: ["ML"],
+                    Col.modelled_peril: ["LOW"],
+                    Col.ep_type: ["AAL"],
+                    Col.return_period: [0],
+                    Col.loss: [1.0],
+                }
+            ),
+            lobs=pl.DataFrame(
+                {
+                    "lob_id": [1],
+                    Col.modelled_lob: ["ML"],
+                    Col.rollup_lob: ["RL"],
+                    "lob_type": ["property"],
+                    Col.cds_cat_class_name: ["CDS Class"],
+                    Col.class_: ["FA"],
+                    Col.office: ["UK"],
+                    Col.currency: ["GBP"],
+                }
+            ),
+            perils=pl.DataFrame(
+                {
+                    Col.modelled_peril: ["LOW"],
+                    Col.rollup_peril: ["UK_WS"],
+                    "region": ["UK"],
+                    "peril": ["WS"],
+                    Col.region_peril_id: [216],
+                    Col.blend_subregion_peril_id: ["216b"],
+                    Col.base_model: ["verisk"],
+                    Col.selection_priority: [1],
+                    Col.is_dialsup: [0],
+                    Col.is_euws: [0],
+                }
+            ),
+        )
+    )
+
+    result = build_enriched_ylt(normalized, staged_ep).collect()
+
+    assert result.select(Col.cds_cat_class_name).rows() == [("CDS Class",)]
 
 
 def test_apply_blending_uses_ep_targets_base_model_and_rp_bucket() -> None:
@@ -419,6 +543,7 @@ def staging_frames(
         verisk_ylt=empty_lazy,
         risklink_ylt=empty_lazy,
         verisk_events=empty_lazy,
+        risklink_flood_events=empty_lazy,
         ep_summaries=ep_summaries,
         lobs=lobs,
         perils=perils,

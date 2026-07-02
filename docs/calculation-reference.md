@@ -118,8 +118,8 @@ DIALSUP uses original YLT loss × FX × forecast. It does **not** use blended lo
 or EUWS-adjusted loss. Rows are selected by `is_dialsup == 1` from the selected
 modelled peril mapping.
 
-DIALSUP writes `mts_tbl_ylt_dialsup.parquet`. DIALSUP fanout files are not
-emitted separately today.
+DIALSUP writes `mts_tbl_ylt_dialsup.parquet`. Fanout outputs include separate
+`_main.parquet` and `_dialsup.parquet` files.
 
 ## Metrics
 

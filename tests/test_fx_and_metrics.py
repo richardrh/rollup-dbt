@@ -8,6 +8,9 @@ from rollup.intermediate.apply_euws import apply_euws
 from rollup.intermediate.apply_forecast import apply_forecast
 from rollup.intermediate.apply_fx import apply_fx
 from rollup.intermediate.build_dialsup import build_dialsup, dialsup_metric
+from rollup.intermediate.build_metric_long import build_metric_long
+from rollup.marts.fanouts import dialsup_fanout_source, main_fanout_source
+from rollup.metrics import final_main_metric
 
 
 def test_apply_fx_uses_configured_target_currency_rates() -> None:
@@ -238,6 +241,102 @@ def test_build_dialsup_uses_original_ylt_loss_fx_and_forecast() -> None:
     assert result.select(Col.metric, Col.loss).rows() == [
         (dialsup_metric("GBP"), 600.0)
     ]
+    assert Col.cds_cat_class_name not in result.columns
+    assert Col.model_event_id not in result.columns
+    assert Col.event_day not in result.columns
+
+
+def test_build_metric_long_does_not_carry_fanout_metadata() -> None:
+    adjusted = blended_frame(
+        [
+            {
+                Col.target_currency: "GBP",
+                Col.forecast_date: "2026-01-01",
+                Col.model_event_id: 410024195,
+                Col.event_day: 15,
+                Col.is_dialsup: 0,
+                "fx_loss": 20.0,
+                "forecast_loss": 30.0,
+                "euws_loss": 30.0,
+            }
+        ]
+    )
+
+    result = build_metric_long(adjusted.lazy()).collect()
+
+    assert Col.cds_cat_class_name not in result.columns
+    assert Col.model_event_id not in result.columns
+    assert Col.event_day not in result.columns
+
+
+def test_main_fanout_source_carries_metadata_without_changing_metric_long_shape() -> None:
+    adjusted = blended_frame(
+        [
+            {
+                Col.target_currency: "GBP",
+                Col.forecast_date: "2026-01-01",
+                Col.model_event_id: 410024195,
+                Col.event_day: 15,
+                Col.is_dialsup: 0,
+                "fx_loss": 20.0,
+                "forecast_loss": 30.0,
+                "euws_loss": 27.5,
+            }
+        ]
+    )
+
+    result = main_fanout_source(adjusted.lazy(), "GBP").collect()
+
+    assert result.select(
+        Col.metric,
+        Col.loss,
+        Col.cds_cat_class_name,
+        Col.model_event_id,
+        Col.event_day,
+    ).rows() == [
+        (
+            final_main_metric("GBP"),
+            27.5,
+            "CDS Fine Art",
+            410024195,
+            15,
+        )
+    ]
+
+
+def test_dialsup_fanout_source_carries_metadata_separately_from_dialsup_mart() -> None:
+    adjusted = blended_frame(
+        [
+            {
+                Col.loss: 100.0,
+                Col.fx_rate: 2.0,
+                Col.forecast_factor: 3.0,
+                Col.target_currency: "GBP",
+                Col.forecast_date: "2026-01-01",
+                Col.model_event_id: 410024195,
+                Col.event_day: 15,
+                Col.is_dialsup: 1,
+            }
+        ]
+    )
+
+    result = dialsup_fanout_source(adjusted.lazy(), "GBP").collect()
+
+    assert result.select(
+        Col.metric,
+        Col.loss,
+        Col.cds_cat_class_name,
+        Col.model_event_id,
+        Col.event_day,
+    ).rows() == [
+        (
+            dialsup_metric("GBP"),
+            600.0,
+            "CDS Fine Art",
+            410024195,
+            15,
+        )
+    ]
 
 
 def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
@@ -262,6 +361,7 @@ def blended_frame(overrides: list[dict[str, object]]) -> pl.DataFrame:
         Col.rollup_lob: "Fine Art",
         Col.rollup_peril: "Earthquake",
         Col.region_peril_id: 205,
+        Col.cds_cat_class_name: "CDS Fine Art",
         Col.class_: "ART",
         Col.office: "London",
         Col.currency: "GBP",

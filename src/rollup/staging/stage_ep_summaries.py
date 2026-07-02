@@ -7,9 +7,22 @@ from rollup.staging.load_sources import StagingFrames
 
 
 def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
+    staged = _enriched_ep_summaries(frames)
+    selected_modelled_perils = _select_modelled_perils_by_priority(staged)
+    return _select_ep_summaries(staged, selected_modelled_perils)
+
+
+def stage_dialsup_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
+    staged = _enriched_ep_summaries(frames)
+    selected_modelled_perils = _select_dialsup_modelled_perils(staged)
+    return _select_ep_summaries(staged, selected_modelled_perils)
+
+
+def _enriched_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
     lobs = frames.lobs.lazy().select(
         Col.modelled_lob,
         Col.rollup_lob,
+        Col.cds_cat_class_name,
         pl.col(Col.class_).cast(pl.String),
         pl.col(Col.office).cast(pl.String),
         pl.col(Col.currency).cast(pl.String),
@@ -24,7 +37,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         pl.col(Col.is_dialsup).cast(pl.Int64),
         pl.col(Col.is_euws).cast(pl.Int64),
     )
-    staged = (
+    return (
         frames.ep_summaries.lazy()
         .with_columns(
             pl.col(Col.vendor).cast(pl.String).str.to_lowercase(),
@@ -36,6 +49,9 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         .join(perils, on=Col.modelled_peril, how="left")
         .with_columns(pl.col(Col.selection_priority).fill_null(99))
     )
+
+
+def _select_modelled_perils_by_priority(staged: pl.LazyFrame) -> pl.LazyFrame:
     selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
     selected_candidates = staged.select(
         *selection_keys,
@@ -45,7 +61,7 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
     selected_priorities = selected_candidates.group_by(selection_keys).agg(
         pl.col(Col.selection_priority).min()
     )
-    selected_modelled_perils = (
+    return (
         selected_candidates.join(
             selected_priorities,
             on=[*selection_keys, Col.selection_priority],
@@ -56,9 +72,25 @@ def stage_ep_summaries(frames: StagingFrames) -> pl.LazyFrame:
         .first()
         .select(*selection_keys, Col.modelled_peril)
     )
-    selected = staged.join(
+
+
+def _select_dialsup_modelled_perils(staged: pl.LazyFrame) -> pl.LazyFrame:
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    return (
+        staged.filter(pl.col(Col.is_dialsup) == 1)
+        .select(*selection_keys, Col.modelled_peril)
+        .unique()
+        .sort([*selection_keys, Col.modelled_peril])
+    )
+
+
+def _select_ep_summaries(
+    staged: pl.LazyFrame,
+    selected_modelled_perils: pl.LazyFrame,
+) -> pl.LazyFrame:
+    selection_keys = [Col.vendor, Col.rollup_lob, Col.rollup_peril]
+    return staged.join(
         selected_modelled_perils,
         on=[*selection_keys, Col.modelled_peril],
         how="inner",
     )
-    return selected

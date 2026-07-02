@@ -49,6 +49,12 @@ def build_parser() -> ArgumentParser:
         default="INFO",
     )
     run_parser.add_argument("--log-file", type=Path, default=None)
+    run_parser.add_argument(
+        "--log-format",
+        choices=("text", "json"),
+        default=None,
+        help="log output format (default: text, or [logging].format from config)",
+    )
     run_parser.set_defaults(func=run_command, write_analysis=True)
 
     ep_parser = subparsers.add_parser(
@@ -71,7 +77,9 @@ def build_parser() -> ArgumentParser:
 def run_command(args: Namespace) -> int:
     log_file = args.log_file or args.output_root / "rollup.log"
     config = override_config(args)
-    configure_console_logging(args.log_level, log_file=log_file)
+    logging_config = config or load_config(args.config_path)
+    log_format = args.log_format or logging_config.logging.format
+    configure_console_logging(args.log_level, log_file=log_file, log_format=log_format)
     result = run_rollup(
         args.data_root,
         args.output_root,
@@ -79,6 +87,7 @@ def run_command(args: Namespace) -> int:
         config=config,
         write_analysis=args.write_analysis,
         log_file=log_file,
+        log_format=log_format,
     )
     print_success_summary(result, log_file)
     return 0
@@ -122,6 +131,7 @@ def override_config(args: Namespace) -> RollupConfig | None:
         and args.target_currency is None
         and not args.duckdb
         and args.duckdb_file is None
+        and args.log_format is None
     ):
         return None
     config = load_config(args.config_path)
@@ -141,6 +151,8 @@ def override_config(args: Namespace) -> RollupConfig | None:
             config,
             outputs=replace(config.outputs, write_duckdb=True, duckdb_file=duckdb_file),
         )
+    if args.log_format is not None:
+        config = replace(config, logging=replace(config.logging, format=args.log_format))
     return config
 
 

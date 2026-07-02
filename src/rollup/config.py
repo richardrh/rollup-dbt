@@ -48,6 +48,7 @@ class BlendingConfig:
 class OutputConfig:
     write_stage_outputs: bool = True
     write_duckdb: bool = False
+    minimum_event_loss_threshold: float = 1000.0
     stage_output_dir: str = "stages"
     staging_dir: str = "staging"
     intermediate_dir: str = "intermediate"
@@ -90,11 +91,23 @@ class FXConfig:
 
 
 @dataclass(frozen=True)
+class LoggingConfig:
+    format: str = "text"
+
+    def __post_init__(self) -> None:
+        log_format = str(self.format).lower()
+        if log_format not in {"text", "json"}:
+            raise ValueError("logging format must be 'text' or 'json'")
+        object.__setattr__(self, "format", log_format)
+
+
+@dataclass(frozen=True)
 class RollupConfig:
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
     blending: BlendingConfig = field(default_factory=BlendingConfig)
     outputs: OutputConfig = field(default_factory=OutputConfig)
     fx: FXConfig = field(default_factory=FXConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> RollupConfig:
@@ -110,6 +123,7 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
     blending_raw = _normalise_keys(raw.get("blending", {}))
     outputs_raw = _normalise_keys(raw.get("outputs", {}))
     fx_raw = _normalise_keys(raw.get("fx", {}))
+    logging_raw = _normalise_keys(raw.get("logging", {}))
     vendor_years = _configured_vendor_years(
         _normalise_keys(raw.get("vendor_years", {}))
     )
@@ -129,6 +143,7 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
         ),
         outputs=OutputConfig(**_output_values(outputs_raw)),
         fx=FXConfig(**_fx_values(fx_raw)),
+        logging=LoggingConfig(**_logging_values(logging_raw)),
     )
 
 
@@ -185,6 +200,10 @@ def _blending_target_points(values: dict[str, Any]) -> tuple[BlendingTargetPoint
 def _output_values(values: dict[str, Any]) -> dict[str, Any]:
     allowed = OutputConfig.__dataclass_fields__.keys()
     output = {key: value for key, value in values.items() if key in allowed}
+    if "minimum_event_loss_threshold" in output:
+        output["minimum_event_loss_threshold"] = float(
+            output["minimum_event_loss_threshold"]
+        )
     fanout_prefixes = output.get("fanout_prefixes")
     if isinstance(fanout_prefixes, dict):
         output["fanout_prefixes"] = {
@@ -196,4 +215,9 @@ def _output_values(values: dict[str, Any]) -> dict[str, Any]:
 
 def _fx_values(values: dict[str, Any]) -> dict[str, Any]:
     allowed = FXConfig.__dataclass_fields__.keys()
+    return {key: value for key, value in values.items() if key in allowed}
+
+
+def _logging_values(values: dict[str, Any]) -> dict[str, Any]:
+    allowed = LoggingConfig.__dataclass_fields__.keys()
     return {key: value for key, value in values.items() if key in allowed}

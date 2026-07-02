@@ -14,7 +14,7 @@ from rollup.ep_summary_generator import (
     convert_ep_summaries as convert_all_ep_summaries,
     convert_ep_summary as convert_single_ep_summary,
 )
-from rollup.logging import temporary_file_logging
+from rollup.logging import LogFormat, temporary_file_logging
 from rollup.pipeline import run
 
 logger = logging.getLogger(__name__)
@@ -47,11 +47,12 @@ def run_rollup(
     config: RollupConfig | None = None,
     write_analysis: bool = True,
     log_file: str | Path | None = None,
+    log_format: LogFormat | None = None,
 ) -> RollupRunResult:
-    with temporary_file_logging(log_file):
-        data_root = Path(data_root)
-        output_root = Path(output_root)
-        config = config or load_config(config_path)
+    data_root = Path(data_root)
+    output_root = Path(output_root)
+    config = config or load_config(config_path)
+    with temporary_file_logging(log_file, log_format=log_format or config.logging.format):
         started = time.perf_counter()
         logger.info("start rollup data_root=%s output_root=%s", data_root, output_root)
         run(data_root, output_root=output_root, config=config)
