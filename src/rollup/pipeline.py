@@ -1208,7 +1208,7 @@ def build_event_validation_report(
     reports = []
     for fanout in fanouts:
         reports.append(
-            fanout.group_by(Col.base_model, Col.metric, Col.forecast_date).agg(
+            _as_lazy_frame(fanout).group_by(Col.base_model, Col.metric, Col.forecast_date).agg(
                 pl.len().alias(Col.row_count),
                 pl.col(FanoutCol.ModelEventID)
                 .is_null()
@@ -1221,6 +1221,24 @@ def build_event_validation_report(
             )
         )
     return pl.concat(reports, how="vertical")
+
+
+def _as_lazy_frame(frame: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
+    if isinstance(frame, pl.LazyFrame):
+        return frame
+    return frame.lazy()
+
+
+_CDS_FANOUT_COLUMNS = [
+    FanoutCol.ModelEventID,
+    FanoutCol.ModelYear,
+    FanoutCol.CurrencyCode,
+    FanoutCol.ModelYOA,
+    FanoutCol.ModelGrossLoss,
+    FanoutCol.ModelInwardsReinstatement,
+    FanoutCol.ModelEventDay,
+    FanoutCol.LossClassName,
+]
 
 
 def _mts_output_dimensions(frame: pl.DataFrame | pl.LazyFrame) -> list[str]:
@@ -1308,22 +1326,11 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
     output_dir = output_root / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fanouts: dict[str, pl.DataFrame] = {}
+    fanouts: dict[str, pl.LazyFrame] = {}
     for name, frame in result.marts.frames.items():
         if not name.endswith("fanout"):
             continue
-        started = time.perf_counter()
-        logger.info("collecting fanout=%s", name)
-        if isinstance(frame, pl.LazyFrame):
-            fanouts[name] = frame.collect(no_optimization=True)
-        else:
-            fanouts[name] = frame
-        logger.info(
-            "collected fanout=%s rows=%d elapsed=%.2fs",
-            name,
-            fanouts[name].height,
-            time.perf_counter() - started,
-        )
+        fanouts[name] = _as_lazy_frame(frame)
 
     ylt_long = result.marts.frames.get("ylt_long")
     ylt_dialsup = result.marts.frames.get("ylt_dialsup")
@@ -1337,10 +1344,19 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
         )
 
     for name, frame in fanouts.items():
+        started = time.perf_counter()
+        logger.info("collecting fanout partitions fanout=%s", name)
         partitions = (
             frame.select(Col.forecast_date, Col.base_model, Col.metric)
             .unique()
             .sort(Col.forecast_date, Col.base_model, Col.metric)
+            .collect()
+        )
+        logger.info(
+            "collected fanout partitions fanout=%s partitions=%d elapsed=%.2fs",
+            name,
+            partitions.height,
+            time.perf_counter() - started,
         )
         for row in partitions.iter_rows(named=True):
             tag = forecast_tag(row[Col.forecast_date])
@@ -1352,16 +1368,7 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
                     (pl.col(Col.forecast_date) == row[Col.forecast_date])
                     & (pl.col(Col.base_model) == row[Col.base_model])
                     & (pl.col(Col.metric) == metric)
-                ).select(
-                    FanoutCol.ModelEventID,
-                    FanoutCol.ModelYear,
-                    FanoutCol.CurrencyCode,
-                    FanoutCol.ModelYOA,
-                    FanoutCol.ModelGrossLoss,
-                    FanoutCol.ModelInwardsReinstatement,
-                    FanoutCol.ModelEventDay,
-                    FanoutCol.LossClassName,
-                ),
+                ).select(_CDS_FANOUT_COLUMNS),
                 output_path,
             )
 
