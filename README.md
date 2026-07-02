@@ -16,8 +16,9 @@ uv run python -m rollup run --data-root data --output-root output --target-curre
 uv run python -m rollup run --data-root data --output-root output --target-currency GBP --duckdb
 ```
 
-Logs default to `<output-root>/rollup.log`. Use `--log-file <path>` to write
-somewhere else.
+Logs default to text lines in `<output-root>/rollup.log`. Use `--log-file <path>`
+to write somewhere else, or `--log-format json` to emit JSON lines to both the
+console and log file.
 
 The CLI summary prints absolute paths for the data root, output root, log file,
 mart outputs, parquet counts, analysis report status, stage output status, and
@@ -153,6 +154,9 @@ minimum_event_loss_threshold = 1000.0
 [outputs.fanout_prefixes]
 verisk = "HiscoAIR"
 risklink = "HiscoRMS"
+
+[logging]
+format = "text"  # or "json"
 
 [analysis]
 return_periods = [30, 200, 1000]

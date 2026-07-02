@@ -11,6 +11,9 @@ minimum_event_loss_threshold = 1000.0
 verisk = "HiscoAIR"
 risklink = "HiscoRMS"
 
+[logging]
+format = "text"
+
 [analysis]
 return_periods = [30, 200, 1000]
 

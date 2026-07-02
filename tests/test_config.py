@@ -89,3 +89,18 @@ minimum_event_loss_threshold = 250
 
     assert config.outputs.minimum_event_loss_threshold == 250.0
     assert isinstance(config.outputs.minimum_event_loss_threshold, float)
+
+
+def test_load_config_reads_logging_format(tmp_path: Path) -> None:
+    config_path = tmp_path / "rollup.toml"
+    config_path.write_text(
+        """
+[logging]
+format = "json"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.logging.format == "json"

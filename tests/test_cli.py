@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 
 import polars as pl
@@ -21,9 +23,9 @@ def test_cli_run_uses_local_defaults(
     calls: dict[str, object] = {}
 
     def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
+        log_level: str, *, log_file: Path | None = None, log_format: str = "text"
     ) -> None:
-        calls["logging"] = (log_level, log_file)
+        calls["logging"] = (log_level, log_file, log_format)
 
     def run_rollup(
         data_root: Path,
@@ -33,6 +35,7 @@ def test_cli_run_uses_local_defaults(
         config: object | None,
         write_analysis: bool,
         log_file: Path,
+        log_format: str | None = None,
     ) -> RollupRunResult:
         calls["run"] = {
             "data_root": data_root,
@@ -41,6 +44,7 @@ def test_cli_run_uses_local_defaults(
             "config": config,
             "write_analysis": write_analysis,
             "log_file": log_file,
+            "log_format": log_format,
         }
         return rollup_result(
             data_root,
@@ -53,7 +57,7 @@ def test_cli_run_uses_local_defaults(
 
     assert cli.main(["run"]) == 0
 
-    assert calls["logging"] == ("INFO", Path("output") / "rollup.log")
+    assert calls["logging"] == ("INFO", Path("output") / "rollup.log", "text")
     assert calls["run"] == {
         "data_root": Path("data"),
         "output_root": Path("output"),
@@ -61,6 +65,7 @@ def test_cli_run_uses_local_defaults(
         "config": None,
         "write_analysis": True,
         "log_file": Path("output") / "rollup.log",
+        "log_format": "text",
     }
     summary = capsys.readouterr().out
     assert "Rollup complete" in summary
@@ -73,6 +78,38 @@ def test_cli_run_uses_local_defaults(
         in summary
     )
     assert "WARNING: analysis report missing:" in summary
+
+
+def test_cli_run_log_format_json_writes_json_lines(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    log_file = tmp_path / "logs" / "rollup.log"
+
+    def run_rollup(
+        data_root: Path,
+        output_root: Path,
+        *,
+        config_path: Path | None,
+        config: object | None,
+        write_analysis: bool,
+        log_file: Path,
+        log_format: str | None = None,
+    ) -> RollupRunResult:
+        logging.getLogger("rollup.test").info("json log from cli")
+        return rollup_result(data_root, output_root, ep_report_path=None)
+
+    monkeypatch.setattr(cli, "run_rollup", run_rollup)
+
+    assert cli.main(["run", "--log-file", str(log_file), "--log-format", "json"]) == 0
+
+    line = log_file.read_text(encoding="utf-8").splitlines()[0]
+    payload = json.loads(line)
+    assert payload["level"] == "INFO"
+    assert payload["logger"] == "rollup.test"
+    assert payload["message"] == "json log from cli"
+    assert "timestamp" in payload
 
 
 def test_cli_run_applies_overrides_without_rewriting_config(
@@ -93,9 +130,9 @@ combined_file = "custom-combined.parquet"
     calls: dict[str, object] = {}
 
     def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
+        log_level: str, *, log_file: Path | None = None, log_format: str = "text"
     ) -> None:
-        calls["logging"] = (log_level, log_file)
+        calls["logging"] = (log_level, log_file, log_format)
 
     def run_rollup(
         data_root: Path,
@@ -105,6 +142,7 @@ combined_file = "custom-combined.parquet"
         config: object | None,
         write_analysis: bool,
         log_file: Path,
+        log_format: str | None = None,
     ) -> RollupRunResult:
         calls["run"] = {
             "data_root": data_root,
@@ -113,6 +151,7 @@ combined_file = "custom-combined.parquet"
             "config": config,
             "write_analysis": write_analysis,
             "log_file": log_file,
+            "log_format": log_format,
         }
         return rollup_result(
             data_root, output_root, ep_report_path=None, stage_dir=None
@@ -150,12 +189,13 @@ combined_file = "custom-combined.parquet"
     run_call = calls["run"]
     assert isinstance(run_call, dict)
     config = run_call["config"]
-    assert calls["logging"] == ("DEBUG", log_file)
+    assert calls["logging"] == ("DEBUG", log_file, "text")
     assert run_call["data_root"] == data_root
     assert run_call["output_root"] == output_root
     assert run_call["config_path"] is None
     assert run_call["write_analysis"] is False
     assert run_call["log_file"] == log_file
+    assert run_call["log_format"] == "text"
     assert config is not None
     assert config.outputs.write_stage_outputs is False
     assert config.outputs.combined_file == "custom-combined.parquet"
@@ -174,9 +214,9 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
     calls: dict[str, object] = {}
 
     def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
+        log_level: str, *, log_file: Path | None = None, log_format: str = "text"
     ) -> None:
-        calls["logging"] = (log_level, log_file)
+        calls["logging"] = (log_level, log_file, log_format)
 
     def run_rollup(
         data_root: Path,
@@ -186,6 +226,7 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
         config: object | None,
         write_analysis: bool,
         log_file: Path,
+        log_format: str | None = None,
     ) -> RollupRunResult:
         calls["run"] = {
             "data_root": data_root,
@@ -194,6 +235,7 @@ def test_cli_run_duckdb_flag_enables_default_duckdb_output(
             "config": config,
             "write_analysis": write_analysis,
             "log_file": log_file,
+            "log_format": log_format,
         }
         return rollup_result(
             data_root,
@@ -229,9 +271,9 @@ def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
     calls: dict[str, object] = {}
 
     def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
+        log_level: str, *, log_file: Path | None = None, log_format: str = "text"
     ) -> None:
-        calls["logging"] = (log_level, log_file)
+        calls["logging"] = (log_level, log_file, log_format)
 
     def run_rollup(
         data_root: Path,
@@ -241,6 +283,7 @@ def test_cli_run_duckdb_file_overrides_path_and_implies_enabled(
         config: object | None,
         write_analysis: bool,
         log_file: Path,
+        log_format: str | None = None,
     ) -> RollupRunResult:
         calls["run"] = {"config": config, "config_path": config_path}
         return rollup_result(
@@ -268,7 +311,7 @@ def test_cli_run_error_propagates_without_validation_message(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def configure_console_logging(
-        log_level: str, *, log_file: Path | None = None
+        log_level: str, *, log_file: Path | None = None, log_format: str = "text"
     ) -> None:
         return None
 
@@ -280,6 +323,7 @@ def test_cli_run_error_propagates_without_validation_message(
         config: object | None,
         write_analysis: bool,
         log_file: Path,
+        log_format: str | None = None,
     ) -> RollupRunResult:
         raise RuntimeError("unexpected load bug")
 
