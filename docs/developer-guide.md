@@ -9,7 +9,7 @@ Use this checklist when changing the pipeline shape.
 2. Add shared column names to `src/rollup/columns.py` enums instead of repeating
    string literals.
 3. If the step adds or changes an input, output, stage, or mart contract, update
-   the appropriate colocated `schema.yaml` and validation tests.
+   the appropriate validnator contract and validation tests.
 4. Call the function in the correct `run()` phase: validation, staging,
    intermediate, or marts.
 5. Add the result to `seed_frames`, `staging_frames`, `intermediate_frames`, or

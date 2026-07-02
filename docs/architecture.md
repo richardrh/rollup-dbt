@@ -56,7 +56,7 @@ flowchart TD
 | 9 | Apply forecast | `apply_forecast_to_ylt` | Rows are cross-joined to forecast dates, missing factors default to `1.0`, and `metric` becomes `gbp_forecast`. |
 | 10 | Apply EUWS | `apply_euws_to_ylt` | Europe Windstorm factors are applied, model event fields are attached, and `metric` becomes `euws`. |
 | 11 | Apply EUWS overrides | `apply_euws_overrides_to_ylt` | Configured zero-factor overrides are applied and `metric` becomes `euws_override`. |
-| 12 | Build DIALSUP | `calculate_dialsup` | DIALSUP emits `dialsup_original`, `dialsup_gbp`, and `dialsup_gbp_forecast` metrics. |
+| 12 | Build DIALSUP | `calculate_dialsup` | DIALSUP calculates intermediate metrics internally and exports final `dialsup_gbp_forecast` rows. |
 | 13 | Build fanouts | `build_main_fanout`, `build_dialsup_fanout` | Final main and DIALSUP metrics are shaped into mart-ready fanout columns. |
 | 14 | Write combined outputs | `_write_combined_outputs` | Long all-factor main and DIALSUP parquets are written, then final metrics are pivoted to wide forecast-date columns. |
 
@@ -76,7 +76,7 @@ The pipeline reads source inputs from a configured data directory:
 ## Validation
 
 All inputs are validated before processing. The validation step checks
-file schemas against YAML-defined contracts, confirms that YLT rows have
+file schemas against colocated validnator YAML contracts, confirms that YLT rows have
 matching EP summary entries and seed lookups, and produces a coverage
 report showing any orphaned or missing references. The pipeline stops if
 validation fails.
@@ -132,7 +132,7 @@ GC-adjusted, CVV, floor-area, PLA, or HD should generally be `0` unless an
 adjusted or HD row is the only sensible base candidate.
 
 Because DIALSUP can choose a different source peril from the main pipeline,
-DIALSUP row counts and wide-output density can differ from the main output and
+DIALSUP row counts can differ from the main output and
 from earlier runs. The base model is RiskLink for Europe_FL and UK_FL, and
 Verisk for other perils. This output is used alongside the main pipeline results
 for reporting.
@@ -161,11 +161,17 @@ long data pivoted so each forecast date becomes a separate column per
 metric — e.g. `euws_override_202601_loss`,
 `dialsup_gbp_forecast_202601_loss`. Dimension columns are all non-
 metric, non-forecast-date, non-loss columns present in both the main
-and DIALSUP frames.
+and DIALSUP frames. Blend diagnostics are attached from main rows and are not
+pivot dimensions, so they do not split one logical event into separate main and
+DIALSUP wide rows.
+
+**DIALSUP output** (`mts_tbl_ylt_dialsup.parquet`): final DIALSUP rows only,
+with `metric = dialsup_gbp_forecast`.
 
 **Fanouts**: mart-ready tables with standardised column names (event
 ID, year, currency, gross loss, event day) for the final main metric
-and final DIALSUP metric.
+and final DIALSUP metric. Blend diagnostics are carried from the main final row
+and do not split a logical event into separate wide rows.
 
 **Event validation**: a report grouped by base model, metric, and
 forecast date. For each group it reports row count, missing model event

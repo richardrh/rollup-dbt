@@ -137,6 +137,5 @@ If the anti-join report has rows, either:
 ## See also
 
 - [Data requirements](data-requirements.md#seed-files) — full seed file reference
-- [Schema contracts](schema-contracts.md) — how `schema.yaml` defines required
-  columns and types
+- Validnator YAMLs under `data/` — external required columns and types
 - [Troubleshooting](troubleshooting.md) — common LOB/peril mismatch issues

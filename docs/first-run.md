@@ -95,9 +95,8 @@ This creates `validation_report.csv`,
 `input_ylt_aal_by_lob_peril_summary.csv` under `output/validation/`.
 
 Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
-files, columns, dtypes, and required flags come from the colocated
-[`schema.yaml` contracts](schema-contracts.md). Read the output in four
-sections:
+files, columns, dtypes, and required flags come from the colocated validnator
+contracts under `data/`. Read the output in four sections:
 
 1. `Validation report`: schema, required-column, and type checks. `valid=False`
    means fix the file format before running.
@@ -115,7 +114,9 @@ sections:
 uv run rollup run
 ```
 
-Outputs land in root `output/`, not `data/output/`.
+Outputs land in root `output/`, not `data/output/`. DuckDB export is enabled by
+default; pass `--no-duckdb` when you only need parquet outputs. Final main and
+DIALSUP mart rows use the configured minimum event loss threshold.
 
 ## Step 5. Optional: check SQL Server config
 

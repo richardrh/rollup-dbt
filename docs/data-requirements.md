@@ -1,8 +1,8 @@
 # Data requirements
 
 Inputs live under `data/`. Generated files live under root `output/`.
-Schema contracts for required files, columns, and dtypes live in colocated
-`schema.yaml` files; see [Schema contracts](schema-contracts.md).
+Required external files, columns, and dtypes are described by colocated
+validnator YAML contracts.
 
 ## Required analyst inputs
 
@@ -141,18 +141,17 @@ verisk,ANALYSIS_1,Property,US_WS,AEP,50,1750472.0
 verisk,ANALYSIS_1,Property,US_WS,OEP,100,2250000.0
 ```
 
-### Source schema file
+### Source validation
 
-Do not add a separate YAML schema file for source wide CSVs yet. The converter
+Do not add a separate validation YAML for source wide CSVs yet. The converter
 checks the required identifier columns and at least one EP metric column. The
-existing `data/ep_summaries/schema.yaml` remains the schema contract for the long
-CSV files used by validation and the pipeline.
+validnator contract remains the external contract for the long CSV files used by
+validation and the pipeline.
 
 ## Seed files
 
-Seed schema contracts are defined in `data/seeds/schema.yaml`; see
-[Schema contracts](schema-contracts.md) for how these YAML files anchor required
-columns and validation. `uv run rollup validate` reports schema issues and runs
+Seed contracts are defined by the validnator YAML files under `data/seeds`.
+`uv run rollup validate` reports schema issues and runs
 anti-join validation for LOB/peril coverage. The anti-join report should be
 empty before running the pipeline.
 
@@ -234,7 +233,7 @@ event day fields for RiskLink flood rows.
 
 - Every EP `modelled_lob` and YLT modelled LOB must exist in `lobs.csv`.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
-- Inputs must match their colocated `schema.yaml` contracts for required files,
+- Inputs must match their colocated validnator contracts for required files,
   columns, and types.
 - Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
   strict and should not contain unexpected columns.
