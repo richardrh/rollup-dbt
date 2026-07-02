@@ -1306,12 +1306,15 @@ def write_debug_frame(
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
     if isinstance(frame, pl.LazyFrame):
-        frame = frame.collect(no_optimization=True)
-    frame.write_parquet(output_path)
+        frame.sink_parquet(output_path, mkdir=True)
+        row_count = -1
+    else:
+        frame.write_parquet(output_path)
+        row_count = frame.height
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
-        frame.height,
+        row_count,
         time.perf_counter() - started,
     )
 

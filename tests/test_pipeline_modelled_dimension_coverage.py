@@ -462,3 +462,19 @@ def test_write_parquet_with_log_emits_one_completion_record(tmp_path, caplog) ->
     assert len(messages) == 1
     assert messages[0].startswith(f"wrote output={output_path} rows=2 elapsed=")
     assert not any(message.startswith("writing output=") for message in messages)
+
+
+def test_write_parquet_with_log_sinks_lazy_frame_with_unknown_rows(tmp_path, caplog) -> None:
+    output_path = tmp_path / "nested" / "output.parquet"
+    caplog.set_level("INFO", logger="rollup.pipeline")
+
+    write_parquet_with_log(pl.DataFrame({"value": [1, 2]}).lazy(), output_path)
+
+    assert pl.read_parquet(output_path).to_dict(as_series=False) == {"value": [1, 2]}
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "rollup.pipeline"
+    ]
+    assert len(messages) == 1
+    assert messages[0].startswith(f"wrote output={output_path} rows=-1 elapsed=")
