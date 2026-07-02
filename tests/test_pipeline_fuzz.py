@@ -181,9 +181,16 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
             Col.metric: ["euws_override"] * len(losses),
             Col.forecast_date: [date(2026, 1, 1)] * len(losses),
             Col.loss: losses,
+            Col.risklink_blended_contribution: [10.0] * len(losses),
+            Col.verisk_blended_contribution: [20.0] * len(losses),
+            Col.uplift_factor_on_base_model: [1.5] * len(losses),
         }
     )
-    dialsup = ylt.with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+    dialsup = ylt.drop(
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
 
     with TemporaryDirectory() as temp_dir:
         _write_combined_outputs(Path(temp_dir), ylt, dialsup)
@@ -191,4 +198,9 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
 
     loss_columns = ["euws_override_202601_loss", "dialsup_gbp_forecast_202601_loss"]
     assert set(loss_columns).issubset(wide.columns)
+    assert Col.risklink_blended_contribution in wide.columns
+    assert Col.verisk_blended_contribution in wide.columns
+    assert Col.uplift_factor_on_base_model in wide.columns
+    assert "rl_blended_contribution" not in wide.columns
+    assert "vk_blended_contribution" not in wide.columns
     assert wide.select(pl.sum_horizontal(*loss_columns).sum()).item() == pytest.approx(sum(losses) * 2)

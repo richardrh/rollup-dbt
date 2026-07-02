@@ -67,6 +67,8 @@ class Col(StrEnum):
     verisk_loss = "verisk_loss"
     risklink_weight = "risklink_weight"
     verisk_weight = "verisk_weight"
+    risklink_blended_contribution = "risklink_blended_contribution"
+    verisk_blended_contribution = "verisk_blended_contribution"
     target_loss = "target_loss"
     uplift_factor_on_base_model = "uplift_factor_on_base_model"
     sub_region_peril_id = "sub_region_peril_id"

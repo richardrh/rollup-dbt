@@ -7,6 +7,7 @@ import polars as pl
 from rollup import cli
 from rollup.columns import Col, RawCol
 from rollup.pipeline import (
+    apply_ep_blending_to_ylt,
     calculate_ep_blending_targets,
     dialsup_peril_selection_report,
     EpSummaryValidationResult,
@@ -331,8 +332,80 @@ def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
 
     assert blended.item(0, Col.blend_subregion_peril_id) == "216b"
     assert blended.item(0, Col.sub_region_peril) == "selected"
+    assert blended.item(0, Col.risklink_blended_contribution) == 150.0
+    assert blended.item(0, Col.verisk_blended_contribution) == 25.0
     assert blended.item(0, Col.target_loss) == 175.0
     assert blended.item(0, Col.base_model) == "risklink"
+
+
+def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
+    seeds = SeedValidationResult(
+        frames={
+            "blending_factors.csv": pl.DataFrame(
+                {
+                    RawCol.RegionPerilID: [216],
+                    RawCol.SubRegionPerilID: ["216b"],
+                    RawCol.SubRegionPeril: ["selected"],
+                    RawCol.AIRBlend: [0.25],
+                    RawCol.RMSBlend: [0.75],
+                }
+            )
+        },
+        report=_valid_report(),
+    )
+    selection_seeds = _peril_selection_seed_result()
+    targets = calculate_ep_blending_targets(
+        join_ep_summaries(
+            stage_ep_summaries(
+                EpSummaryValidationResult(
+                    frame=pl.DataFrame(
+                        {
+                            Col.vendor: ["verisk", "risklink"],
+                            Col.analysis_id: ["AIR", "RMS"],
+                            Col.modelled_lob: ["LOB", "LOB"],
+                            Col.modelled_peril: ["LOW", "LOW"],
+                            Col.ep_type: ["AAL", "AAL"],
+                            Col.return_period: [0, 0],
+                            Col.loss: [100.0, 200.0],
+                        }
+                    ).lazy(),
+                    report=_valid_report(),
+                ),
+                SeedValidationResult(
+                    frames={
+                        "lobs.csv": selection_seeds.frames["lobs.csv"],
+                        "perils.csv": selection_seeds.frames["perils.csv"].filter(
+                            pl.col(Col.modelled_peril) == "LOW"
+                        ),
+                    },
+                    report=_valid_report(),
+                ),
+            )
+        ),
+        seeds,
+    )
+    ylt = pl.DataFrame(
+        {
+            Col.rollup_lob: ["Property"],
+            Col.rollup_peril: ["Europe_FL"],
+            Col.region_peril_id: [216],
+            Col.blend_subregion_peril_id: ["216b"],
+            Col.rp_bucket: [0],
+            Col.base_model: ["risklink"],
+            Col.loss: [10.0],
+            Col.metric: ["original"],
+        }
+    ).lazy()
+
+    blended_ylt = apply_ep_blending_to_ylt(ylt, targets).collect()
+
+    assert Col.risklink_blended_contribution in blended_ylt.columns
+    assert Col.verisk_blended_contribution in blended_ylt.columns
+    assert Col.uplift_factor_on_base_model in blended_ylt.columns
+    assert blended_ylt.item(0, Col.risklink_blended_contribution) == 150.0
+    assert blended_ylt.item(0, Col.verisk_blended_contribution) == 25.0
+    assert blended_ylt.item(0, Col.uplift_factor_on_base_model) == 0.875
+    assert blended_ylt.item(0, Col.loss) == 8.75
 
 
 def test_input_ylt_aal_summary_computes_verisk_raw_aal_sorted_descending() -> None:

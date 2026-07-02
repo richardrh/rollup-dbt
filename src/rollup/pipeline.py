@@ -802,9 +802,17 @@ def calculate_ep_blending_targets(
         )
         .join(weights, on=[Col.region_peril_id, Col.blend_subregion_peril_id], how="left")
         .with_columns(
+            (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight)).alias(
+                Col.risklink_blended_contribution
+            ),
+            (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight)).alias(
+                Col.verisk_blended_contribution
+            ),
+        )
+        .with_columns(
             (
-                (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
-                + (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
+                pl.col(Col.risklink_blended_contribution)
+                + pl.col(Col.verisk_blended_contribution)
             ).alias(Col.target_loss)
         )
         .with_columns(
@@ -867,6 +875,8 @@ def apply_ep_blending_to_ylt(
         Col.ep_type,
         Col.risklink_loss,
         Col.verisk_loss,
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
         Col.target_loss,
         Col.base_model,
         Col.base_model_loss,
@@ -874,6 +884,11 @@ def apply_ep_blending_to_ylt(
     )
 
     ylt_cols = ylt.collect_schema().names()
+    diagnostic_cols = [
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    ]
     return (
         ylt.join(
             factors,
@@ -891,7 +906,7 @@ def apply_ep_blending_to_ylt(
             (pl.col(Col.loss) * pl.col(Col.uplift_factor_on_base_model)).alias(Col.loss),
             pl.lit("blended").alias(Col.metric),
         )
-        .select(ylt_cols)
+        .select([*ylt_cols, *diagnostic_cols])
     )
 
 
@@ -1257,13 +1272,16 @@ def _write_combined_outputs(
     write_parquet_with_log(ylt, output_root / "mts_tbl_ylt_combined_all_factors.parquet")
     write_parquet_with_log(ylt_dialsup, output_root / "mts_tbl_ylt_dialsup.parquet")
 
-    common_cols = [c for c in ylt.columns if c in ylt_dialsup.columns]
-    dims = _mts_output_dimensions(ylt.select(common_cols))
+    dims = _mts_output_dimensions(ylt)
     sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
+    dialsup_sel = [
+        pl.col(col) if col in ylt_dialsup.columns else pl.lit(None).alias(col)
+        for col in sel
+    ]
 
     combined = pl.concat(
         [ylt.filter(pl.col(Col.metric) == "euws_override").select(sel),
-         ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(sel)],
+         ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(dialsup_sel)],
     ).with_columns(
         pl.concat_str(
             [pl.col(Col.metric), pl.col(Col.forecast_date).cast(pl.String).str.replace("-", "").str.slice(0, 6), pl.lit("loss")],
