@@ -41,20 +41,7 @@ staging. Non-long CSV files (e.g. source wide CSVs) are ignored.
 ## Creating long CSVs from wide CSV exports
 
 When an analyst or vendor provides a **wide** CSV (one row per analysis, with
-EP losses in metric columns), convert that single file with the public API:
-
-```python
-from rollup import convert_ep_summary
-
-frame = convert_ep_summary(
-    input_csv="data/ep_summaries/verisk/verisk_clean.csv",
-    vendor="verisk",
-    output_csv="data/ep_summaries/verisk/verisk_ep_summary.long.csv",
-)
-```
-
-The function returns a Polars `DataFrame`. The `output_csv` argument is optional;
-omit it when you only need the in-memory rows.
+EP losses in metric columns), use `rollup generate-ep-summaries` to convert it.
 
 ### Step 1. Place the source CSV
 
@@ -63,20 +50,18 @@ data/ep_summaries/verisk/verisk_clean.csv
 data/ep_summaries/risklink/risklink_clean.csv
 ```
 
-### Step 2. Run the local converter command
+### Step 2. Run the converter
 
-For local operation, the CLI can scan and convert one source wide CSV per
-configured vendor:
+Interactive — picks up all unmatched source CSVs:
 
 ```bash
 uv run rollup generate-ep-summaries
 ```
 
-Explicit selection — required when a vendor folder contains multiple source wide
-CSVs:
+Non-interactive — for a specific vendor and file:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
 ### Step 3. Verify the output
@@ -91,28 +76,11 @@ data/ep_summaries/risklink/rms_ep_summary.long.csv
 ### Step 4. Validate
 
 ```bash
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
+uv run rollup validate
 ```
 
-Validnator owns EP summary schema/input validation, including strict columns and
-required values. Rollup smoke runs exercise runtime/calculation behavior only.
-
-To validate just the long EP summary CSV shape and value constraints with
-Validnator, run the colocated pipeline config from an environment that provides
-Validnator:
-
-```bash
-validnator validate \
-  -p data/ep_summaries/validnator.yml \
-  -i data/ep_summaries/verisk/verisk_ep_summary.long.csv \
-  -o validation-output/ep-summary
-```
-
-The `-o` directory receives the Validnator output files for that input. Use a
-separate output directory per vendor/file when validating multiple EP summaries.
-The source files for this check are
-[`data/ep_summaries/validnator.yml`](../data/ep_summaries/validnator.yml) and
-[`data/ep_summaries/README.md`](../data/ep_summaries/README.md).
+The validation step checks that all EP summary LOBs and perils exist in the
+business seed files. Fix any anti-join failures before running the pipeline.
 
 ## How the pipeline uses EP summaries
 
@@ -130,11 +98,11 @@ The pipeline stages, enriches, and blends EP summaries during the run:
 ## Pipeline outputs
 
 The final EP report is written to `output/analysis/ep_report.csv` by both
-`run_rollup(..., write_analysis=True)` or a normal CLI run:
+`rollup run` and `rollup analyze`:
 
 ```bash
-uv run rollup run       # full pipeline, includes EP report when installed as a script
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP
+uv run rollup run       # full pipeline — includes EP report
+uv run rollup analyze   # EP report only from existing outputs
 ```
 
 The report contains 2,100 rows (typical) with columns:

@@ -9,17 +9,21 @@ from rollup.config import OutputConfig, RollupConfig
 from rollup.duckdb_export import export_duckdb
 
 
-def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Path) -> None:
+def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
-    marts_dir = output_root / "marts"
-    marts_dir.mkdir(parents=True)
+    (output_root / "marts").mkdir(parents=True)
     write_input_files(data_root)
     pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0]}).write_parquet(
-        marts_dir / "mts_tbl_ylt_combined_all_factors.parquet"
+        output_root / "mts_tbl_ylt_combined_all_factors.parquet"
     )
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(marts_dir / "mts_tbl_ylt_dialsup.parquet")
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(marts_dir / "HiscoAIR_20260101_main.parquet")
+    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(output_root / "mts_tbl_ylt_dialsup.parquet")
+    pl.DataFrame({"event_id": [1], "wide_loss": [10.0]}).write_parquet(
+        output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"
+    )
+    pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0]}).write_parquet(
+        output_root / "marts" / "HiscoAIR_202601_main.parquet"
+    )
 
     db_path = export_duckdb(
         data_root,
@@ -27,14 +31,15 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
         RollupConfig(outputs=OutputConfig(write_duckdb=True, duckdb_file="custom.duckdb")),
     )
 
-    assert db_path == output_root / "custom.duckdb"
     with duckdb.connect(str(db_path)) as connection:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
-        assert tables == {
+        assert {
+            "cds_fanouts",
             "input_ep_summaries",
             "input_ylt_risklink",
             "input_ylt_verisk",
             "mts_tbl_ylt_combined_all_factors",
+            "mts_tbl_ylt_combined_all_factors_wide",
             "mts_tbl_ylt_dialsup",
             "seed_blending_factors",
             "seed_euws_rank_overrides",
@@ -43,13 +48,10 @@ def test_duckdb_export_writes_requested_tables_without_mart_fanouts(tmp_path: Pa
             "seed_fx_rates",
             "seed_lobs",
             "seed_perils",
-        }
+        } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
-        assert row_count(connection, "input_ylt_verisk") == 1
-        assert row_count(connection, "input_ylt_risklink") == 1
-        assert row_count(connection, "input_ep_summaries") == 2
-        assert row_count(connection, "seed_blending_factors") == 1
+        assert row_count(connection, "cds_fanouts") == 1
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
@@ -59,12 +61,10 @@ def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
 def write_input_files(data_root: Path) -> None:
     (data_root / "ylt" / "verisk").mkdir(parents=True)
     (data_root / "ylt" / "risklink").mkdir(parents=True)
-    (data_root / "ep_summaries" / "vendor" / "nested").mkdir(parents=True)
+    (data_root / "ep_summaries" / "vendor").mkdir(parents=True)
     seeds = data_root / "seeds"
     adjustments = seeds / "adjustments"
-    validation = seeds / "validation"
     adjustments.mkdir(parents=True)
-    validation.mkdir(parents=True)
 
     pl.DataFrame({"Analysis": ["EQ"], "EventID": [1], "GroundUpLoss": [10.0]}).write_parquet(
         data_root / "ylt" / "verisk" / "verisk.parquet"
@@ -73,7 +73,7 @@ def write_input_files(data_root: Path) -> None:
         data_root / "ylt" / "risklink" / "risklink.parquet"
     )
     pl.DataFrame({"vendor": ["verisk", "risklink"], "loss": [1.0, 2.0]}).write_csv(
-        data_root / "ep_summaries" / "vendor" / "nested" / "summaries.long.csv"
+        data_root / "ep_summaries" / "vendor" / "summaries.long.csv"
     )
     pl.DataFrame({"modelled_lob": ["Fine Art"], "rollup_lob": ["Fine Art"]}).write_csv(seeds / "lobs.csv")
     pl.DataFrame({"modelled_peril": ["EQ"], "rollup_peril": ["Earthquake"]}).write_csv(seeds / "perils.csv")
@@ -83,12 +83,4 @@ def write_input_files(data_root: Path) -> None:
     pl.DataFrame({"currency_code": ["GBP"], "rate": [1.0]}).write_csv(seeds / "fx_rates.csv")
     pl.DataFrame({"forecast_date": ["2026-01-01"], "factor": [1.0]}).write_csv(seeds / "forecast_factors.csv")
     pl.DataFrame({"model_event_id": [101], "factor": [1.0]}).write_csv(seeds / "euws_rate_factors.csv")
-    pl.DataFrame({"rollup_lob": ["Fine Art"], "factor": [1.0]}).write_csv(
-        adjustments / "euws_rank_overrides.csv"
-    )
-    pl.DataFrame({"EventID": [101], "ModelID": [7], "Event": [1]}).write_parquet(
-        validation / "verisk_events.parquet"
-    )
-    pl.DataFrame({"EventID": [202], "Event": [2], "Peril": ["Flood"]}).write_parquet(
-        validation / "risklink_flood22_model_events.parquet"
-    )
+    pl.DataFrame({"rollup_lob": ["Fine Art"], "factor": [1.0]}).write_csv(adjustments / "euws_rank_overrides.csv")

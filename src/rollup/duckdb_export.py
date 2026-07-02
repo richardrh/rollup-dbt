@@ -21,13 +21,22 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
     logger.info("writing duckdb export path=%s", db_path)
     connection = duckdb.connect(str(db_path))
     try:
-        marts_dir = config.outputs.marts_path(output_root)
         create_parquet_table(
             connection,
             "mts_tbl_ylt_combined_all_factors",
-            [marts_dir / config.outputs.combined_file],
+            [output_root / config.outputs.combined_file],
         )
-        create_parquet_table(connection, "mts_tbl_ylt_dialsup", [marts_dir / config.outputs.dialsup_file])
+        create_parquet_table(connection, "mts_tbl_ylt_dialsup", [output_root / config.outputs.dialsup_file])
+        create_parquet_table(
+            connection,
+            "mts_tbl_ylt_combined_all_factors_wide",
+            [output_root / config.outputs.wide_file],
+        )
+        create_optional_parquet_table(
+            connection,
+            "cds_fanouts",
+            sorted((output_root / config.outputs.marts_dir).glob("*.parquet")),
+        )
         create_parquet_table(connection, "input_ylt_verisk", sorted((data_root / "ylt" / "verisk").glob("*.parquet")))
         create_parquet_table(
             connection,
@@ -74,6 +83,11 @@ def create_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str,
     connection.execute(
         f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet({path_list(paths)}, union_by_name = true)"
     )
+
+
+def create_optional_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
+    if paths:
+        create_parquet_table(connection, table_name, paths)
 
 
 def create_csv_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:

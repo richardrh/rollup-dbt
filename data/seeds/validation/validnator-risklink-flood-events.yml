@@ -17,6 +17,7 @@ rules:
         allow_extra_columns: true
         columns:
           ModelEventID: int64
+          ModelOccurrenceYear: int64
           RegionPerilID: int64
           ModelOccurrenceDate: date
 
@@ -28,6 +29,7 @@ rules:
       - type: not_null
         columns:
           - ModelEventID
+          - ModelOccurrenceYear
           - RegionPerilID
           - ModelOccurrenceDate
 
@@ -39,5 +41,6 @@ rules:
       - type: valid_range
         columns:
           - ModelEventID
+          - ModelOccurrenceYear
           - RegionPerilID
         min: 0

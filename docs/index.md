@@ -1,54 +1,40 @@
 # Rollup Pipeline
 
-The rollup pipeline converts Verisk and RiskLink catastrophe YLTs, EP summaries,
-and business seed data into Hiscox mart parquets and optional analysis exports.
-The current runtime is Dataiku-first, with a small local CLI for validation and
-smoke testing.
+The rollup pipeline converts analyst-supplied catastrophe inputs into Hiscox mart
+parquets and analysis reports.
 
-## Start here
+## Command summary
+
+Use `uv run rollup ...` from a fresh checkout. After installing the project and
+activating the virtual environment, use `rollup ...` directly.
 
 ```bash
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP --duckdb
+uv run rollup validate        # check inputs before a run
+uv run rollup run             # write normal outputs and analysis/ep_report.csv
+uv run rollup run --debug     # also write intermediate frames to output/debug/
+uv run rollup analyze         # write output/analysis/ep_report.csv
+uv run rollup docs            # serve these docs locally
+uv run rollup docs --host localhost --port 4322
 ```
 
-Logs default to `output/rollup.log`. The CLI summary prints absolute output
-paths, mart parquet counts, analysis status, stage-output status, and DuckDB
-status.
+## Inputs and outputs
 
-## Main outputs
+- Analyst inputs live under `data/`.
+- Generated outputs default to root `output/`.
+- Mart fanouts are written to `output/marts/`.
+- Wide/report parquets are written to `output/`.
+- `output/mts_tbl_ylt_combined_all_factors_wide.parquet` includes forecast loss
+  columns such as `euws_override_YYYYMM_loss` and
+  `dialsup_gbp_forecast_YYYYMM_loss`.
+- `output/analysis/ep_report.csv` is written by `rollup run` and can be
+  regenerated with `rollup analyze`.
+- Debug frames are written to `output/debug/` only when `--debug` is used.
 
-```text
-output/
-  marts/
-    mts_tbl_ylt_combined_all_factors.parquet
-    mts_tbl_ylt_combined_all_factors_wide.parquet
-    mts_tbl_ylt_dialsup.parquet
-    HiscoAIR_..._main.parquet
-    HiscoRMS_..._main.parquet
-  stages/
-    staging/
-    intermediate/
-  analysis/
-    ep_report.csv
-  rollup.log
-```
-
-Use `--no-stage-outputs` to skip `stages/`. Use `--no-analysis` to skip
-`analysis/ep_report.csv`.
-
-## Documentation map
-
-- [Runtime guide](runtime.md) — end-to-end runtime, calculation flow, output
-  contracts, DuckDB, smoke values, and known follow-ups.
-- [Data requirements](data-requirements.md) — required input folder layout and
-  seed files.
-- [Calculation reference](calculation-reference.md) — EP selection, blending,
-  FX, forecast, EUWS, DIALSUP, and metrics.
-- [Programmatic API](programmatic-api.md) — Python entry points for Dataiku and
-  other callers.
-- [Troubleshooting](troubleshooting.md) — common validation and runtime issues.
-
-Older guides remain for analyst setup, EP-summary conversion, Windows install,
-and bundle-building workflows.
+Start with [Quickstart](first-run.md). On Windows, use the
+[Windows install guide](windows-install.md) first to install `uv` and build a
+local environment. Then use [Loading your data](load-data.md) for exact file
+locations and [EP summaries](ep-summaries.md) when converting wide vendor CSVs
+to `.long.csv` inputs. If a YLT arrives as CSV, see [Utilities](utilities.md)
+for the DuckDB CSV-to-Parquet command. For reference details, see the
+[data-flow architecture](architecture.md), [calculation reference](calculation-reference.md),
+[schema contracts](schema-contracts.md), and [seed files](data-requirements.md#seed-files).

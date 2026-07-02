@@ -1,167 +1,117 @@
 # Calculation reference
 
-This page documents the current calculation contracts behind the runtime guide.
-
-## Stage order
-
-The pipeline runs:
-
-1. `load_sources`
-2. `normalize_ylt`
-3. `stage_ep_summaries`
-4. `build_enriched_ylt`
-5. `apply_blending`
-6. `apply_fx`
-7. `apply_forecast`
-8. `apply_euws`
-9. `build_metric_long`
-10. `build_dialsup`
-11. `write_marts`
+This page explains the calculation flow for EP summaries and YLT blending.
 
 ## EP summary staging
 
-EP summaries are read from `data/ep_summaries/**/*.long.csv` with columns:
+The pipeline reads canonical long CSVs from `data/ep_summaries/**/*.long.csv`.
+Each file must contain:
 
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-`stage_ep_summaries` enriches them by joining:
+During staging, EP summaries are enriched by joining `modelled_lob` to
+`lobs.csv` and `modelled_peril` to `perils.csv`.
 
-- `modelled_lob` to `seeds/business/lobs.csv`
-- `modelled_peril` to `seeds/business/perils.csv`
+For the **main branch**, the pipeline selects one modelled peril per
+`vendor + rollup_lob + rollup_peril`. The selected candidate is the one with the
+lowest `selection_priority`; missing priorities are treated as `99`.
 
-For the main branch, it selects the lowest `selection_priority` per:
+For **DIALSUP**, selection is independent of the main branch. It uses candidates
+where `is_dialsup = 1` in `perils.csv`.
 
-```text
-vendor, rollup_lob, rollup_peril
-```
+## Vendor EP summary join
 
-It also preserves `is_dialsup` and `is_euws` from the selected modelled peril
-row. `is_dialsup` drives the separate DIALSUP branch and does not change
-main-branch selection; `is_euws` controls EUWS factor application.
-
-## YLT enrichment
-
-`normalize_ylt` converts vendor YLTs into a canonical shape. Verisk carries
-modelled dimensions in the YLT. RiskLink raw YLT is keyed by analysis id, so
-modelled LOB/peril should come from the EP summary enrichment.
-
-Known follow-up: `Pen` and `Cherish` RiskLink rows currently have null
-`modelled_lob` and `modelled_peril` even though EP summaries contain `MGA_Pen`
-and `MGA_Cherish`; this is likely due to dropping those fields before the
-RiskLink `analysis_id` join in `build_enriched_ylt`.
-
-## EP-derived blending
-
-Blending uses the restored old-master method:
-
-- target points from `[blending].target_points`, defaulting to `AAL`, `OEP 200`,
-  and `OEP 1000`
-- blending weights from `seeds/vor/blending_factors.csv`
-- `target_loss = verisk_loss * AIRBlend + risklink_loss * RMSBlend`
-- base model comes from `base_model` in `seeds/business/perils.csv`
-- selected VOR subregion comes from `blend_subregion_peril_id` in
-  `seeds/business/perils.csv`
-- `base_model_loss` comes from the chosen base model
-- `uplift_factor_on_base_model = target_loss / base_model_loss`
-- uplift factors are clipped by `[blending].uplift_factor_min` and
-  `[blending].uplift_factor_max`, defaulting to `0.1..10.0`
-- YLT rows join targets by rank-derived return-period bucket
-
-Rank-derived buckets:
+After main-branch selection, Verisk and RiskLink losses are aggregated by:
 
 ```text
-vendor RP = configured vendor years / rank
-
-RP < 200   -> 0
-RP < 1000  -> 200
-RP >= 1000 -> 1000
+rollup_lob, rollup_peril, region_peril_id, ep_type, return_period
 ```
 
-The bucket boundaries come from the configured positive OEP target points. VOR
-subregion choices are configured under `[blending.subregion_selection]`; the
-default keeps Europe Flood `RegionPerilID` `216` on `SubRegionPerilID` `216b`.
-This chooses the Germany Flood row from `blending_factors.csv` when Europe Flood
-has multiple subregion rows (`216a`, `216b`, `216c`) and uses that row's AIR/RMS
-weights. It does not change the base model: `perils.csv` maps Europe Flood
-modelled flood perils to `Europe_FL` with `base_model=risklink`, so uplift is
-applied to RiskLink YLT.
-If the peer vendor loss is missing for a target point but the base-model loss
-exists, the pipeline logs a warning and falls back to `base_model_loss` with an
-uplift factor of `1.0`. If the base-model loss is missing, the pipeline logs a
-warning and skips that unblendable target point.
+Verisk rows produce `verisk_loss`; RiskLink rows produce `risklink_loss`. The two
+aggregates are full/coalesced joined so either vendor can be present in the
+joined EP view.
 
-## FX
+## Blending target calculation
 
-The target currency is explicit and defaults to `GBP`. A non-empty FX seed must
-include the requested `target_currency`; missing non-target rates fail rather
-than silently defaulting. Metric names include the target currency tag, for
-example `loss_blended_fx_gbp` or `loss_blended_fx_usd`.
+Blending targets are calculated only for:
 
-## Forecast
+- `AAL` with `return_period = 0`
+- `OEP` with `return_period = 200`
+- `OEP` with `return_period = 1000`
 
-Forecast expands each row across all forecast dates from
-`seeds/vor/forecast_factors.csv`. The join is by class, office, and forecast
-date. Missing class/office/date factors default to `1.0`.
+Target blend rows require both `verisk_loss` and `risklink_loss`. Blend weights
+come from `blending_factors.csv` by `region_peril_id`. Europe Flood `216` is
+special-cased to use subregion `216b`.
 
-## EUWS and overrides
+```text
+target_loss = (verisk_loss * AIRBlend) + (risklink_loss * RMSBlend)
+```
 
-EUWS factors are event based. The runtime uses Verisk event catalogues,
-`euws_rate_factors.csv`, and `euws_rank_overrides.csv` to restore the old-master
-EUWS adjustment and rank override behavior. EUWS factors are applied when the
-selected peril mapping has `is_euws == 1`; unflagged rows use factor `1.0`.
+The base model is `risklink` for `Europe_FL` and `UK_FL`, and `verisk` otherwise.
 
-## DIALSUP
+```text
+base_model_loss = risklink_loss when base_model = risklink, else verisk_loss
+uplift_factor_on_base_model = target_loss / base_model_loss
+```
 
-DIALSUP uses original YLT loss × FX × forecast. It does **not** use blended loss
-or EUWS-adjusted loss. Rows are selected by `is_dialsup == 1` from the selected
-modelled peril mapping.
+The uplift factor is clipped to `0.1`–`10.0`.
 
-DIALSUP writes `mts_tbl_ylt_dialsup.parquet`. Fanout outputs include separate
-`_main.parquet` and `_dialsup.parquet` files.
+## Applying blending to YLT rows
 
-## Metrics
+YLT rows are enriched from the selected EP summary mapping. Base-model rows are
+selected before blending.
 
-Combined long metrics:
+Events are ranked within `vendor + modelled_lob + rollup_peril` by descending
+loss. Return period is inferred from rank:
 
-- `loss_original_ylt`
-- `loss_blended`
-- `loss_blended_fx_gbp`
-- `loss_blended_fx_gbp_forecast`
-- `loss_blended_fx_gbp_forecast_euws_override`
+```text
+RiskLink RP = 100,000 / rank
+Verisk RP   = 10,000 / rank
+```
 
-DIALSUP metric:
+RP bucket assignment:
 
-- `loss_dialsup_fx_gbp_forecast`
+```text
+RP < 200      -> 0
+RP < 1000     -> 200
+RP >= 1000    -> 1000
+```
 
-When target currency changes, the metric tag changes too, e.g.
-`_fx_usd_...`.
+Each YLT row is inner-joined to the blending target by:
 
-## Wide mart
+```text
+rollup_lob, rollup_peril, region_peril_id, rp_bucket, base_model
+```
 
-`mts_tbl_ylt_combined_all_factors_wide.parquet` is a pivot of the combined
-all-factors long mart only. It has no `metric`, `forecast_date`, or `loss`
-columns. Value columns are named `{metric}_{forecast_date_without_hyphens}`.
+Then:
 
-DIALSUP stays in `mts_tbl_ylt_dialsup.parquet` and is not included in combined
-wide.
+```text
+loss = original_loss * uplift_factor_on_base_model
+```
 
-## Reference smoke values
+## Output flow
 
-Against real `./data`, combined sums are approximately:
+The main branch continues after blending through FX conversion, forecast factor
+expansion, EUWS factors, and EUWS rank overrides.
 
-- `loss_original_ylt`: `595,127,587,394.46`
-- `loss_blended`: `579,116,007,376.25`
-- `loss_blended_fx_gbp`: `577,222,053,036.84`
-- `loss_blended_fx_gbp_forecast`: `566,796,627,725.94`
-- `loss_blended_fx_gbp_forecast_euws_override`: `566,250,261,028.68`
+DIALSUP uses the independent `is_dialsup = 1` selection and applies base-model
+loss, FX, and forecast factors. It does not apply blending or EUWS.
 
-EP AAL smoke values:
+## Common surprises and row-count changes
 
-- main/EUWS: `11,175,803.275055`
-- DIALSUP: `12,772,490.495922`
+- Inner joins can drop rows when mappings, FX rates, or blending targets are
+  absent. Validation aims to catch high-risk missing inputs, but not every
+  downstream row-count change is a validation failure.
+- DIALSUP can have different row counts from main because it may select a
+  different modelled peril.
+- Wide output can be sparse when main and DIALSUP use different source perils.
+  The pivot keeps lineage-preserving dimensions, so non-matching source
+  dimensions do not collapse into the same row.
 
-These are smoke references, not hard guarantees. Current calculations match the
-Jun6 master within float noise while using the modernized output shape and metric
-names.
+## See also
+
+- [EP summaries](ep-summaries.md)
+- [Architecture](architecture.md)
+- [Schema contracts](schema-contracts.md)

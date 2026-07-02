@@ -22,7 +22,7 @@ duckdb -c "COPY (SELECT * FROM read_csv_auto('source_ylt.csv')) TO 'data/ylt/ver
 Run this from the repository root, then validate the converted file:
 
 ```bash
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP --no-stage-outputs --no-analysis
+uv run rollup validate
 ```
 
 Keep source CSVs outside `output/`; `output/` is reserved for generated pipeline

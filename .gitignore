@@ -21,27 +21,24 @@ site/
 
 .DS_Store
 
+.data/risklink
 
-# Local config overrides (tracked defaults live in /config.toml)
-# Scoped to repo root only so src/rollup/config.py remains tracked.
-/config.py
-!/config.toml
-/rollup.local.toml
+# Local config (never commit — contains connection strings etc.)
+config.py
+rollup.local.toml
 .dual-graph/
 
 # Synthetic test fixture output (regenerated on each pytest run)
 tests/data/
+jan-rollup/combined_table
 
 # Generated artefacts (regenerable via CLI subcommands)
 output/
-validation-output/
 
 # Local runtime state
 /.tmp/
 
-# Ignore everything inside data/ except section contracts and docs
+# Ignore everything inside data/ except schema.yaml files
 data/**
 !data/**/
-!data/**/README.md
 !data/**/schema.y*ml
-!data/**/validnator*.yml

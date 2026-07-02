@@ -7,12 +7,20 @@ import logging
 from pathlib import Path
 import sys
 from collections.abc import Iterator
-from typing import Literal
 
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S"
-LogFormat = Literal["text", "json"]
+LogFormat = str
+
+
+def normalize_log_format(log_format: str | None = None) -> str:
+    value = (log_format or "text").lower()
+    if value == "json":
+        return "jsonl"
+    if value not in {"text", "jsonl"}:
+        raise ValueError("log format must be 'text' or 'jsonl'")
+    return value
 
 
 class JsonLineFormatter(logging.Formatter):
@@ -20,9 +28,7 @@ class JsonLineFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.fromtimestamp(
-                record.created, tz=timezone.utc
-            ).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -36,11 +42,10 @@ class JsonLineFormatter(logging.Formatter):
 
 
 def make_formatter(log_format: LogFormat = "text") -> logging.Formatter:
-    if log_format == "json":
+    normalized = normalize_log_format(log_format)
+    if normalized == "jsonl":
         return JsonLineFormatter()
-    if log_format == "text":
-        return logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT)
-    raise ValueError(f"unsupported log format: {log_format}")
+    return logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT)
 
 
 def _matching_file_handler(logger: logging.Logger, log_file: Path) -> logging.FileHandler | None:
@@ -91,9 +96,7 @@ def configure_console_logging(
     if log_file is not None:
         root = logging.getLogger()
         if _matching_file_handler(root, Path(log_file)) is None:
-            root.addHandler(
-                make_file_handler(log_file, level=level, log_format=log_format)
-            )
+            root.addHandler(make_file_handler(log_file, level=level, log_format=log_format))
 
 
 @contextmanager

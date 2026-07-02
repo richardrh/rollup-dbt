@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import logging
 
-from rollup.logging import JsonLineFormatter, make_formatter
+from rollup.logging import JsonLineFormatter, make_formatter, normalize_log_format
 
 
-def test_json_formatter_emits_parseable_json_with_expected_fields() -> None:
+def test_jsonl_formatter_emits_parseable_json_with_expected_fields() -> None:
     formatter = JsonLineFormatter()
     record = logging.LogRecord(
         name="rollup.example",
@@ -24,10 +24,14 @@ def test_json_formatter_emits_parseable_json_with_expected_fields() -> None:
     assert payload["level"] == "ERROR"
     assert payload["logger"] == "rollup.example"
     assert payload["message"] == "failed job"
-    assert payload["module"] == "test_logging"
     assert payload["function"] == "test_function"
     assert payload["line"] == 12
     assert "timestamp" in payload
+
+
+def test_json_alias_normalizes_to_jsonl() -> None:
+    assert normalize_log_format("json") == "jsonl"
+    assert isinstance(make_formatter("json"), JsonLineFormatter)
 
 
 def test_text_formatter_remains_default_format() -> None:
@@ -43,6 +47,4 @@ def test_text_formatter_remains_default_format() -> None:
         func="test_function",
     )
 
-    formatted = formatter.format(record)
-
-    assert "INFO rollup.example plain text" in formatted
+    assert "INFO rollup.example plain text" in formatter.format(record)

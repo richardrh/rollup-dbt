@@ -1,60 +1,109 @@
 # Operating modes
 
-## Dataiku-first mode
+## With and without uv
 
-Use `rollup.api.run_rollup` from Python/Dataiku. This is the primary runtime
-contract and uses the same calculation path as the CLI. Dataiku callers should
-not rely on current-working-directory defaults; pass an explicit job/workspace
-`config_path`.
-
-```python
-from pathlib import Path
-from rollup.api import run_rollup
-
-workspace = Path("/tmp/rollup-job")
-data_root = workspace / "data"
-output_root = workspace / "output"
-config_path = workspace / "config.toml"
-
-result = run_rollup(
-    data_root=data_root,
-    output_root=output_root,
-    config_path=config_path,
-    write_analysis=False,
-    log_file=output_root / "rollup.log",
-)
-```
-
-In Dataiku, prefer an explicit `config_path` in the job workspace or managed
-folder. The repository default is the tracked `config.toml`; a job can copy or
-write its own `config.toml` and pass it explicitly. Pass a managed-folder path
-directly as `data_root` when it already matches the required layout; otherwise
-materialize inputs into a temporary workspace and persist the returned
-`result.outputs` files before cleanup. The `/tmp/rollup-job` path above is only
-an example; real Dataiku managed-folder and temp paths vary.
-
-## Local CLI mode
-
-Use the CLI for smoke testing and local operation:
+From a checkout, use `uv run`:
 
 ```bash
-uv run python -m rollup run --data-root data --output-root output --target-currency GBP
+uv run rollup validate
+uv run rollup run
 ```
 
-Useful flags:
+After installing the project and activating the virtual environment, `uv` is not
+required:
 
-- `--no-stage-outputs` skips `output/stages/`.
-- `--no-analysis` skips `output/analysis/ep_report.csv`.
-- `--duckdb` writes `output/rollup.duckdb`.
-- `--duckdb-file <path>` writes DuckDB to a custom path.
-- `--log-file <path>` overrides the default `<output-root>/rollup.log`.
+```bash
+rollup validate
+rollup run
+```
 
-## Config mode
+## Normal run
 
-`config.toml` is tracked and loaded when no explicit config object or
-`config_path` is supplied. Dataiku callers should pass `config_path` explicitly
-for job-specific configs. `rollup.local.toml` can still be passed explicitly but
-is no longer the runtime default. See
-[Programmatic API](programmatic-api.md#config-loading) and
-[Runtime guide](runtime.md#duckdb-export) for supported keys and runtime
-behavior.
+```bash
+uv run rollup run
+uv run rollup --log-file output/run.log run
+```
+
+Writes mart fanouts to `output/marts/`, wide/report parquets to `output/`, and
+`output/analysis/ep_report.csv`. The wide combined-all-factors parquet is
+`output/mts_tbl_ylt_combined_all_factors_wide.parquet` with forecast loss
+columns such as `euws_override_YYYYMM_loss` and
+`dialsup_gbp_forecast_YYYYMM_loss`.
+
+Use global `--log-file` before the subcommand to keep an operational run log
+while still printing the same logs to the console/stdout. Parent directories are
+created automatically:
+
+```bash
+uv run rollup --log-file output/run.log run
+uv run rollup --log-file output/validate.log validate
+```
+
+Logging and debug output are separate controls:
+
+- `--debug` on `rollup run` writes intermediate parquet frames under
+  `output/debug/` for data inspection.
+- `--log-level DEBUG` increases log verbosity.
+- `--log-file output/run.log` writes logs to a file as well as stdout.
+
+## SQL Server check and push
+
+Copy `rollup.example.toml` to gitignored `rollup.local.toml`, then fill in the
+`[sql]` connection string, schema, push mode, and optional table prefix.
+
+Check SQL Server connectivity without running the pipeline:
+
+```bash
+uv run rollup sql-check --config rollup.local.toml
+uv run rollup test-sql --config rollup.local.toml
+```
+
+`rollup run` writes files only. It no longer pushes marts to SQL Server as part
+of the run command. Load `output/marts/*.parquet` through Dataiku or a separate
+SQL-loading process after the pipeline finishes.
+
+## Validation reports
+
+```bash
+uv run rollup validate --report-dir output/validation
+```
+
+Use `--report-dir` when you need to share validation evidence or attach outputs
+to a ticket. The command still prints the normal console report and also writes
+one CSV per validation table under the chosen directory.
+
+## Debug run
+
+```bash
+uv run rollup run --debug
+```
+
+Writes stage frames to `output/debug/` with prefixes:
+
+- `seed_*`
+- `stg_*`
+- `int_*`
+- `mts_*`
+
+## Analyze
+
+```bash
+uv run rollup analyze
+```
+
+Regenerates `output/analysis/ep_report.csv` from existing pipeline outputs
+without rerunning the pipeline.
+
+## Serve docs
+
+```bash
+uv run rollup docs
+uv run rollup docs --host localhost --port 4322
+```
+
+The command starts Zensical docs in the foreground and prints the URL. Direct
+Zensical use is also available:
+
+```bash
+uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
+```

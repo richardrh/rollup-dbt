@@ -47,7 +47,7 @@ class BlendingConfig:
 @dataclass(frozen=True)
 class OutputConfig:
     write_stage_outputs: bool = True
-    write_duckdb: bool = False
+    write_duckdb: bool = True
     minimum_event_loss_threshold: float = 1000.0
     stage_output_dir: str = "stages"
     staging_dir: str = "staging"
@@ -96,8 +96,10 @@ class LoggingConfig:
 
     def __post_init__(self) -> None:
         log_format = str(self.format).lower()
-        if log_format not in {"text", "json"}:
-            raise ValueError("logging format must be 'text' or 'json'")
+        if log_format == "json":
+            log_format = "jsonl"
+        if log_format not in {"text", "jsonl"}:
+            raise ValueError("logging format must be 'text' or 'jsonl'")
         object.__setattr__(self, "format", log_format)
 
 
