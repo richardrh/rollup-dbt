@@ -34,9 +34,8 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
             "mts_tbl_ylt_combined_all_factors_wide",
             [output_root / config.outputs.wide_file],
         )
-        create_optional_parquet_table(
+        create_optional_cds_fanouts_table(
             connection,
-            "cds_fanouts",
             sorted((output_root / config.outputs.marts_dir).glob("*.parquet")),
         )
         create_parquet_table(connection, "input_ylt_verisk", sorted((data_root / "ylt" / "verisk").glob("*.parquet")))
@@ -103,6 +102,49 @@ def create_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str,
 def create_optional_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
     if paths:
         create_parquet_table(connection, table_name, paths)
+
+
+def create_optional_cds_fanouts_table(connection: duckdb.DuckDBPyConnection, paths: list[Path]) -> None:
+    if not paths:
+        return
+    logger.info(
+        "creating duckdb cds fanouts table files=%d",
+        len(paths),
+        extra={"event": "duckdb_create_table", "table": "cds_fanouts", "files": len(paths), "source_format": "parquet"},
+    )
+    valid_stem_pattern = r"^[^_]+_[0-9]{6}_.+$"
+    connection.execute(
+        f"""
+        CREATE OR REPLACE TABLE cds_fanouts AS
+        WITH fanout_files AS (
+            SELECT
+                * EXCLUDE (filename),
+                regexp_extract(filename, '[^/\\\\]+$') AS fanout_source_file
+            FROM read_parquet({path_list(paths)}, filename = true, union_by_name = true)
+        ),
+        fanout_stems AS (
+            SELECT
+                *,
+                regexp_replace(fanout_source_file, '\\.parquet$', '') AS fanout_source_stem
+            FROM fanout_files
+        )
+        SELECT
+            * EXCLUDE (fanout_source_stem),
+            CASE
+                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN split_part(fanout_source_stem, '_', 1)
+                ELSE NULL
+            END AS fanout_name,
+            CASE
+                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN split_part(fanout_source_stem, '_', 2)
+                ELSE NULL
+            END AS forecast_yyyymm,
+            CASE
+                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN regexp_extract(fanout_source_stem, '^[^_]+_[0-9]{{6}}_(.+)$', 1)
+                ELSE NULL
+            END AS fanout_metric
+        FROM fanout_stems
+        """
+    )
 
 
 def create_csv_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:

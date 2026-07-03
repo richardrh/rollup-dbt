@@ -21,8 +21,11 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     pl.DataFrame({"event_id": [1], "wide_loss": [10.0]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"
     )
-    pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0]}).write_parquet(
-        output_root / "marts" / "HiscoAIR_202601_main.parquet"
+    pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0], "source_row": ["air"]}).write_parquet(
+        output_root / "marts" / "HiscoAIR_202601_euws_override.parquet"
+    )
+    pl.DataFrame({"ModelEventID": [2], "ModelGrossLoss": [20.0], "source_row": ["rms"]}).write_parquet(
+        output_root / "marts" / "HiscoRMS_202602_dialsup_gbp_forecast.parquet"
     )
 
     db_path = export_duckdb(
@@ -51,7 +54,40 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
-        assert row_count(connection, "cds_fanouts") == 1
+        assert row_count(connection, "cds_fanouts") == 2
+        cds_fanout_columns = {row[1] for row in connection.execute("PRAGMA table_info('cds_fanouts')").fetchall()}
+        assert {
+            "fanout_source_file",
+            "fanout_name",
+            "forecast_yyyymm",
+            "fanout_metric",
+        } <= cds_fanout_columns
+        fanout_rows = connection.execute(
+            """
+            SELECT
+                fanout_source_file,
+                fanout_name,
+                forecast_yyyymm,
+                fanout_metric,
+                ModelEventID,
+                ModelGrossLoss,
+                source_row
+            FROM cds_fanouts
+            ORDER BY fanout_source_file
+            """
+        ).fetchall()
+        assert fanout_rows == [
+            ("HiscoAIR_202601_euws_override.parquet", "HiscoAIR", "202601", "euws_override", 1, 10.0, "air"),
+            (
+                "HiscoRMS_202602_dialsup_gbp_forecast.parquet",
+                "HiscoRMS",
+                "202602",
+                "dialsup_gbp_forecast",
+                2,
+                20.0,
+                "rms",
+            ),
+        ]
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
