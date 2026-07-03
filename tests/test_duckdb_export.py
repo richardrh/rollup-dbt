@@ -14,15 +14,20 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     output_root = tmp_path / "output"
     (output_root / "marts").mkdir(parents=True)
     write_input_files(data_root)
-    pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0]}).write_parquet(
+    pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0], "output_use": ["intermediate_audit", "cds_main"]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors.parquet"
     )
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(output_root / "mts_tbl_ylt_dialsup.parquet")
-    pl.DataFrame({"event_id": [1], "wide_loss": [10.0]}).write_parquet(
+    pl.DataFrame({"event_id": [1], "loss": [10.0], "output_use": ["cds_dialsup"]}).write_parquet(
+        output_root / "mts_tbl_ylt_dialsup.parquet"
+    )
+    pl.DataFrame({"event_id": [1], "wide_loss": [10.0], "output_use": ["cds_wide_analysis"]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"
     )
-    pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0]}).write_parquet(
-        output_root / "marts" / "HiscoAIR_202601_main.parquet"
+    pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0], "source_row": ["air"]}).write_parquet(
+        output_root / "marts" / "HiscoAIR_202601_euws_override.parquet"
+    )
+    pl.DataFrame({"ModelEventID": [2], "ModelGrossLoss": [20.0], "source_row": ["rms"]}).write_parquet(
+        output_root / "marts" / "HiscoRMS_202602_dialsup_gbp_forecast.parquet"
     )
 
     db_path = export_duckdb(
@@ -51,11 +56,58 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
-        assert row_count(connection, "cds_fanouts") == 1
+        assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors") >= {"output_use"}
+        assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors_wide") >= {"output_use"}
+        assert duckdb_columns(connection, "mts_tbl_ylt_dialsup") >= {"output_use"}
+        assert connection.execute(
+            "SELECT output_use FROM mts_tbl_ylt_combined_all_factors ORDER BY event_id"
+        ).fetchall() == [("intermediate_audit",), ("cds_main",)]
+        assert connection.execute("SELECT output_use FROM mts_tbl_ylt_dialsup").fetchone() == ("cds_dialsup",)
+        assert connection.execute("SELECT output_use FROM mts_tbl_ylt_combined_all_factors_wide").fetchone() == (
+            "cds_wide_analysis",
+        )
+        assert row_count(connection, "cds_fanouts") == 2
+        cds_fanout_columns = duckdb_columns(connection, "cds_fanouts")
+        assert {
+            "fanout_source_file",
+            "fanout_name",
+            "forecast_yyyymm",
+            "fanout_metric",
+        } <= cds_fanout_columns
+        fanout_rows = connection.execute(
+            """
+            SELECT
+                fanout_source_file,
+                fanout_name,
+                forecast_yyyymm,
+                fanout_metric,
+                ModelEventID,
+                ModelGrossLoss,
+                source_row
+            FROM cds_fanouts
+            ORDER BY fanout_source_file
+            """
+        ).fetchall()
+        assert fanout_rows == [
+            ("HiscoAIR_202601_euws_override.parquet", "HiscoAIR", "202601", "euws_override", 1, 10.0, "air"),
+            (
+                "HiscoRMS_202602_dialsup_gbp_forecast.parquet",
+                "HiscoRMS",
+                "202602",
+                "dialsup_gbp_forecast",
+                2,
+                20.0,
+                "rms",
+            ),
+        ]
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
     return connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
+
+
+def duckdb_columns(connection: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:
+    return {row[1] for row in connection.execute(f"PRAGMA table_info('{table_name}')").fetchall()}
 
 
 def write_input_files(data_root: Path) -> None:
