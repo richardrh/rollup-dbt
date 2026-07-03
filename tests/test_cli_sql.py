@@ -115,12 +115,6 @@ def test_run_command_writes_analysis_without_sql_push(
     output_root = tmp_path / "output"
     events: list[str] = []
 
-    monkeypatch.setattr(
-        cli,
-        "print_validation_reports",
-        lambda reports_arg: events.append("print_validation"),
-    )
-
     def run_rollup(
         data_root_arg: Path,
         *,
@@ -149,6 +143,5 @@ def test_run_command_writes_analysis_without_sql_push(
 
     assert exit_code == 0
     assert events == [
-        "print_validation",
         "run_rollup",
     ]

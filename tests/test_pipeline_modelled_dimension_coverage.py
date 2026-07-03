@@ -794,15 +794,14 @@ def test_validate_parser_accepts_report_dir_only_on_validate_command() -> None:
     assert args.report_dir == Path("output/validation")
 
 
-def test_validate_command_prints_input_ylt_aal_report(monkeypatch, capsys) -> None:
+def test_validate_command_is_quiet_by_default(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "collect_validation_reports", lambda data_root: _cli_reports())
 
     assert cli.validate_command("data") == 0
-    captured = capsys.readouterr().out
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
 
 
-def test_validate_command_writes_csv_reports_and_preserves_console_output(
+def test_validate_command_writes_csv_reports_without_console_chatter(
     monkeypatch,
     capsys,
     tmp_path,
@@ -823,12 +822,7 @@ def test_validate_command_writes_csv_reports_and_preserves_console_output(
         assert output_path.is_file()
         assert output_path.read_text(encoding="utf-8")
 
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
-    assert f"Validation CSV reports written to {report_dir}" in captured
+    assert capsys.readouterr().out == ""
 
 
 def test_validate_command_report_dir_preserves_validation_exit_code(
@@ -883,7 +877,7 @@ def _cli_reports(*, valid: bool = True, coverage_error: bool = False) -> cli.Val
     )
 
 
-def test_run_command_prints_validation_reports_from_api_result(
+def test_run_command_is_quiet_for_validation_reports_from_api_result(
     monkeypatch,
     capsys,
     tmp_path,
@@ -907,11 +901,7 @@ def test_run_command_prints_validation_reports_from_api_result(
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
 
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
     assert calls == {
         "data_root": "data",
         "output_root": output_root,
@@ -933,11 +923,7 @@ def test_run_command_returns_nonzero_without_running_pipeline_on_validation_fail
     monkeypatch.setattr(cli, "run_rollup", fail_validation)
 
     assert cli.run_command("data", output_root=tmp_path / "output") == 1
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
 
 
 def test_write_parquet_with_log_emits_one_completion_record(tmp_path, caplog) -> None:

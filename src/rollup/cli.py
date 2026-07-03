@@ -11,9 +11,8 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 
-from rollup.api import RollupRunResult, run_rollup
+from rollup.api import run_rollup
 from rollup.config import RollupConfig, load_config
 from rollup.ep_summary_generator import ep_summary_vendor_names, get_ep_summary_vendor_config
 from rollup.api import generate_ep_summary
@@ -96,16 +95,16 @@ def build_parser() -> ArgumentParser:
 
 def run_command(args: Namespace | str | Path, *, output_root: Path | None = None, debug: bool = False) -> int:
     if not isinstance(args, Namespace):
-        reports_holder = {}
-        def callback(reports):
-            reports_holder["reports"] = reports
-            print_validation_reports(reports)
         try:
-            result = run_rollup(args, output_root=output_root or Path("output"), debug=debug, validation_callback=callback)
+            result = run_rollup(
+                args,
+                output_root=output_root or Path("output"),
+                debug=debug,
+                validation_callback=lambda reports: None,
+            )
         except TypeError:
             result = run_rollup(args, output_root=output_root or Path("output"), debug=debug)
-        except RollupValidationError as exc:
-            print_validation_reports(exc.reports)
+        except RollupValidationError:
             return 1
         return 0 if result is not None else 1
     log_file = args.log_file or args.output_root / "rollup.log"
@@ -129,9 +128,8 @@ def run_command(args: Namespace | str | Path, *, output_root: Path | None = None
             args.data_root,
             output_root=args.output_root,
             debug=args.debug,
-            validation_callback=print_validation_reports,
+            validation_callback=lambda reports: None,
         )
-    print_success_summary(result, log_file)
     return 0
 
 
@@ -149,12 +147,12 @@ def generate_ep_summaries_command(args: Namespace) -> int:
             if output_path.exists() and input(f"Overwrite {output_path}? [y/N] ").lower() != "y":
                 print("EP summary generation skipped; existing output preserved.")
                 return 0
-            output_paths = [_generate_one(args.data_root, vendor, csv_path)]
+            _generate_one(args.data_root, vendor, csv_path)
         elif args.vendor is not None and args.csv is not None:
             csv_path = resolve_ep_summary_csv_path(args.data_root, args.vendor, args.csv)
             if not csv_path.exists():
                 raise FileNotFoundError(f"CSV file not found: {args.csv}")
-            output_paths = [_generate_one(args.data_root, args.vendor, csv_path)]
+            _generate_one(args.data_root, args.vendor, csv_path)
         else:
             raise ValueError("--vendor and --csv must be passed together")
     except EOFError:
@@ -166,10 +164,6 @@ def generate_ep_summaries_command(args: Namespace) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"EP summary generation failed: {exc}", file=sys.stderr)
         return 1
-
-    print("EP summary conversion complete")
-    for output_path in output_paths:
-        print(f"EP summary written to {_display_path(output_path)}")
     return 0
 
 
@@ -182,39 +176,7 @@ def _prompt_choice(prompt: str, options: list):
 
 
 def _generate_one(data_root: Path, vendor: str, csv_path: Path) -> Path:
-    output_path = get_ep_summary_vendor_config(vendor).output_path(data_root)
-    statuses: list[str] = []
-    started = time.perf_counter()
-    print("EP summary generation:")
-    print(f"Vendor: {vendor}")
-    print(f"CSV: {csv_path}")
-    print(f"Output: {output_path}")
-    def status_callback(message: str) -> None:
-        statuses.append(message)
-        print(message)
-
-    path = generate_ep_summary(data_root, vendor, csv_path, status_callback=status_callback)
-    print(f"Done in {time.perf_counter() - started:.2f}s")
-    frame = pl_read_csv(path)
-    print("EP summary overview:")
-    print(f"Rows: {frame.height}")
-    print(f"Columns ({len(frame.columns)}): {', '.join(frame.columns)}")
-    if "vendor" in frame.columns:
-        print(f"Vendors: {', '.join(sorted(set(frame['vendor'].to_list())))}")
-    if "ep_type" in frame.columns:
-        counts = frame.group_by("ep_type").len().sort("ep_type")
-        print("EP type counts: " + ", ".join(f"{r['ep_type']}={r['len']}" for r in counts.iter_rows(named=True)))
-    if {"modelled_lob", "modelled_peril"} <= set(frame.columns):
-        print(f"Modelled LOB/peril pairs: {frame.select('modelled_lob', 'modelled_peril').unique().height}")
-    if "return_period" in frame.columns:
-        print(f"Return period range: {frame['return_period'].min()}-{frame['return_period'].max()}")
-    return path
-
-
-def pl_read_csv(path: Path):
-    import polars as pl
-
-    return pl.read_csv(path)
+    return generate_ep_summary(data_root, vendor, csv_path)
 
 
 def resolve_ep_summary_csv_path(data_root: Path, vendor: str, csv_path: Path) -> Path:
@@ -241,28 +203,6 @@ def override_config(args: Namespace) -> RollupConfig | None:
     if log_format is not None:
         config = replace(config, logging=replace(config.logging, format=log_format))
     return config
-
-
-def print_success_summary(result: RollupRunResult, log_file: Path) -> None:
-    print("Rollup complete")
-    if not hasattr(result, "data_root"):
-        return
-    print(f"  data root: {_display_path(result.data_root)}")
-    print(f"  output root: {_display_path(result.output_root)} ({_exists_status(result.output_root)})")
-    print(f"  log file: {_display_path(log_file)} ({_exists_status(log_file)})")
-    print(f"  marts dir: {_display_path(result.outputs.marts_dir)} ({_exists_status(result.outputs.marts_dir)})")
-    print(f"  combined mart: {_display_path(result.outputs.mts_combined)}")
-    print(f"  wide mart: {_display_path(result.outputs.mts_wide)}")
-    print(f"  dialsup mart: {_display_path(result.outputs.mts_dialsup)}")
-    print(f"  duckdb: {_display_path(result.outputs.duckdb_file) if result.outputs.duckdb_file else '(disabled)'}")
-
-
-def _display_path(path: Path) -> str:
-    return str(path.expanduser().resolve(strict=False))
-
-
-def _exists_status(path: Path) -> str:
-    return "exists" if path.exists() else "missing"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -334,16 +274,6 @@ def _has_errors(frame: object) -> bool:
     return "severity" in frame.columns and frame.filter(pl.col("severity") == "error").height > 0
 
 
-def print_validation_reports(reports: ValidationReports) -> None:
-    for title in (
-        "Validation report",
-        "Modelled LOB/peril anti-join report",
-        "YLT loss validation summary",
-        "Input YLT AAL by LOB/peril summary",
-    ):
-        print(title)
-
-
 def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -> None:
     report_dir.mkdir(parents=True, exist_ok=True)
     for filename, frame in reports.report_frames().items():
@@ -352,14 +282,12 @@ def write_validation_csv_reports(reports: ValidationReports, report_dir: Path) -
 
 def validate_command(data_root: str | Path, *, report_dir: Path | None = None) -> int:
     reports = collect_validation_reports(data_root)
-    print_validation_reports(reports)
     if report_dir is not None:
         try:
             write_validation_csv_reports(reports, report_dir)
         except OSError as exc:
             print(f"Failed to write validation CSV reports: {exc}", file=sys.stderr)
             return 1
-        print(f"Validation CSV reports written to {report_dir}")
     return 0 if reports.is_valid else 1
 
 

@@ -991,11 +991,6 @@ def apply_forecast_to_ylt(
             how="left",
         )
     )
-    _log_defaulted_rows(
-        forecasted,
-        pl.col("_forecast_factor_raw").is_null(),
-        "forecast factor defaulted rows=%d",
-    )
     return (
         forecasted
         .with_columns(
@@ -1024,11 +1019,6 @@ def apply_euws_to_ylt(
             how="left",
         )
         .join(euws_factors, on=Col.model_event_id, how="left")
-    )
-    _log_defaulted_rows(
-        joined,
-        pl.col("_euws_factor_raw_source").is_null(),
-        "euws factor defaulted rows=%d",
     )
     return (
         joined
@@ -1131,12 +1121,6 @@ def calculate_dialsup(
             pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor"),
         )
     )
-    _log_defaulted_rows(
-        base,
-        pl.col("_forecast_factor_raw").is_null(),
-        "dialsup forecast factor defaulted rows=%d",
-    )
-
     output_cols = [c for c in base.collect_schema().names() if c not in ("_forecast_factor_raw", "_forecast_factor")]
 
     dialsup_original = base.with_columns(
@@ -1177,7 +1161,7 @@ def enrich_risklink_event_days(
     return pl.concat([non_risklink, risklink], how="diagonal_relaxed")
 
 
-def build_main_fanout(
+def build_fanout(
     ylt: pl.LazyFrame,
     risklink_events: pl.LazyFrame,
 ) -> pl.LazyFrame:
@@ -1205,56 +1189,6 @@ def build_main_fanout(
         .alias(FanoutCol.ModelEventDay),
         pl.col(Col.cds_cat_class_name).alias(FanoutCol.LossClassName),
     )
-
-
-def build_dialsup_fanout(
-    ylt: pl.LazyFrame,
-    risklink_events: pl.LazyFrame,
-) -> pl.LazyFrame:
-    ylt = enrich_risklink_event_days(ylt, risklink_events)
-    return ylt.select(
-        Col.forecast_date,
-        Col.base_model,
-        pl.col(Col.metric),
-        pl.when(pl.col(Col.base_model) == "risklink")
-        .then(pl.col(Col.event_id))
-        .otherwise(pl.col(Col.model_event_id))
-        .cast(pl.Int64)
-        .alias(FanoutCol.ModelEventID),
-        pl.col(Col.year_id).cast(pl.Int64).alias(FanoutCol.ModelYear),
-        pl.col(Col.target_currency).alias(FanoutCol.CurrencyCode),
-        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelYOA),
-        pl.col(Col.loss)
-        .cast(pl.Float64)
-        .alias(FanoutCol.ModelGrossLoss),
-        pl.lit(0).cast(pl.Int64).alias(FanoutCol.ModelInwardsReinstatement),
-        pl.when(pl.col(Col.base_model) == "risklink")
-        .then(pl.col(Col.risklink_event_day))
-        .otherwise(pl.col(Col.event_day))
-        .cast(pl.Int64)
-        .alias(FanoutCol.ModelEventDay),
-        pl.col(Col.cds_cat_class_name).alias(FanoutCol.LossClassName),
-    )
-
-
-def apply_event_loss_threshold(
-    frame: pl.DataFrame | pl.LazyFrame,
-    *,
-    metric: str,
-    threshold: float,
-) -> pl.DataFrame | pl.LazyFrame:
-    """Filter final metric rows by configured event loss threshold.
-
-    Non-final metrics are preserved so historical/intermediate rows remain in
-    the combined long outputs, while exported final rows and fanouts can share
-    the same threshold semantics.
-    """
-    loss_is_kept = (
-        pl.col(Col.loss).is_not_null()
-        if threshold <= 0
-        else pl.col(Col.loss) >= threshold
-    )
-    return frame.filter((pl.col(Col.metric) != metric) | loss_is_kept)
 
 
 def build_event_validation_report(
@@ -1781,52 +1715,6 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
     )
 
 
-def lazy_row_count(frame: pl.LazyFrame) -> int:
-    return -1
-
-
-def log_lazy_checkpoint(name: str, frame: pl.LazyFrame) -> int:
-    rows = lazy_row_count(frame)
-    logger.info(
-        "checkpoint=%s rows=%d",
-        name,
-        rows,
-        extra={"event": "checkpoint", "checkpoint": name, "rows": rows},
-    )
-    return rows
-
-
-def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
-    logger.info(
-        "checkpoint=%s rows=%d",
-        name,
-        frame.height,
-        extra={"event": "checkpoint", "checkpoint": name, "rows": frame.height},
-    )
-
-
-def _warn_row_drop(name: str, before: int, after: int) -> None:
-    if before >= 0 and after >= 0 and after < before:
-        logger.warning(
-            "%s join dropped rows before=%d after=%d dropped=%d",
-            name,
-            before,
-            after,
-            before - after,
-            extra={
-                "event": "row_drop",
-                "join": name,
-                "before_rows": before,
-                "after_rows": after,
-                "dropped_rows": before - after,
-            },
-        )
-
-
-def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
-    return None
-
-
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
     output_dir = output_root / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2048,19 +1936,10 @@ def run(
         intermediate_frames["ylt_original"] = ylt_original
 
         ylt_ranked = _add_rank_columns(ylt_original, config)
-        ylt_ranked_path = work_dir / "ylt_ranked.parquet"
-        write_parquet_with_log(ylt_ranked, ylt_ranked_path)
-        ylt_ranked = pl.scan_parquet(ylt_ranked_path)
         intermediate_frames["ylt_ranked"] = ylt_ranked
-        ylt_ranked_count = log_lazy_checkpoint("ylt_ranked", ylt_ranked)
 
         ylt_blended = apply_ep_blending_to_ylt(ylt_ranked, ep_blending_targets)
-        ylt_blended_path = work_dir / "ylt_blended.parquet"
-        write_parquet_with_log(ylt_blended, ylt_blended_path)
-        ylt_blended = pl.scan_parquet(ylt_blended_path)
         intermediate_frames["ylt_blending_applied"] = ylt_blended
-        ylt_blended_count = log_lazy_checkpoint("ylt_blended", ylt_blended)
-        _warn_row_drop("blending", ylt_ranked_count, ylt_blended_count)
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
@@ -2068,43 +1947,24 @@ def run(
         intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
         ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
         intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
-        log_lazy_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
 
         ylt_dialsup = calculate_dialsup(ylt_ranked_dialsup, verisk_events, seeds)
         ylt_dialsup_path = work_dir / "ylt_dialsup.parquet"
         write_parquet_with_log(ylt_dialsup, ylt_dialsup_path)
         ylt_dialsup = pl.scan_parquet(ylt_dialsup_path)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
-        log_lazy_checkpoint("ylt_dialsup", ylt_dialsup)
 
         ylt_localccy = apply_fx_to_ylt(ylt_blended, seeds)
-        ylt_localccy_path = work_dir / "ylt_localccy.parquet"
-        write_parquet_with_log(ylt_localccy, ylt_localccy_path)
-        ylt_localccy = pl.scan_parquet(ylt_localccy_path)
         intermediate_frames["ylt_fx_applied"] = ylt_localccy
-        ylt_localccy_count = log_lazy_checkpoint("ylt_localccy", ylt_localccy)
-        _warn_row_drop("fx", ylt_blended_count, ylt_localccy_count)
 
         ylt_localccy_forecast = apply_forecast_to_ylt(ylt_localccy, seeds)
-        ylt_localccy_forecast_path = work_dir / "ylt_localccy_forecast.parquet"
-        write_parquet_with_log(ylt_localccy_forecast, ylt_localccy_forecast_path)
-        ylt_localccy_forecast = pl.scan_parquet(ylt_localccy_forecast_path)
         intermediate_frames["ylt_forecast_applied"] = ylt_localccy_forecast
-        log_lazy_checkpoint("ylt_localccy_forecast", ylt_localccy_forecast)
 
         ylt_euws = apply_euws_to_ylt(ylt_localccy_forecast, verisk_events, seeds)
-        ylt_euws_path = work_dir / "ylt_euws.parquet"
-        write_parquet_with_log(ylt_euws, ylt_euws_path)
-        ylt_euws = pl.scan_parquet(ylt_euws_path)
         intermediate_frames["ylt_euws_applied"] = ylt_euws
-        log_lazy_checkpoint("ylt_euws", ylt_euws)
 
         ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws, seeds)
-        ylt_euws_override_path = work_dir / "ylt_euws_override.parquet"
-        write_parquet_with_log(ylt_euws_override, ylt_euws_override_path)
-        ylt_euws_override = pl.scan_parquet(ylt_euws_override_path)
         intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override
-        log_lazy_checkpoint("ylt_euws_override", ylt_euws_override)
 
         ylt = pl.concat(
             [ylt_ranked, ylt_blended, ylt_localccy, ylt_localccy_forecast, ylt_euws, ylt_euws_override],
@@ -2121,23 +1981,21 @@ def run(
 
     with logged_phase("marts"):
         threshold = config.outputs.minimum_event_loss_threshold
-        ylt_thresholded = apply_event_loss_threshold(
-            ylt,
-            metric="euws_override",
-            threshold=threshold,
+        ylt_thresholded = ylt.filter(
+            (pl.col(Col.metric) != "euws_override")
+            | (pl.col(Col.loss).is_not_null() if threshold <= 0 else pl.col(Col.loss) >= threshold)
         )
-        ylt_dialsup_thresholded = apply_event_loss_threshold(
-            ylt_dialsup,
-            metric="dialsup_localccy_forecast",
-            threshold=threshold,
+        ylt_dialsup_thresholded = ylt_dialsup.filter(
+            (pl.col(Col.metric) != "dialsup_localccy_forecast")
+            | (pl.col(Col.loss).is_not_null() if threshold <= 0 else pl.col(Col.loss) >= threshold)
         )
-        main_fanout = build_main_fanout(
+        main_fanout = build_fanout(
             _as_lazy_frame(ylt_thresholded).filter(pl.col(Col.metric) == "euws_override"),
             risklink_events,
         )
         mart_frames["main_fanout"] = main_fanout
 
-        dialsup_fanout = build_dialsup_fanout(
+        dialsup_fanout = build_fanout(
             _as_lazy_frame(ylt_dialsup_thresholded).filter(pl.col(Col.metric) == "dialsup_localccy_forecast"),
             risklink_events,
         )

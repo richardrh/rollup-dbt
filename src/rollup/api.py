@@ -88,14 +88,14 @@ def run_rollup(
         except Exception:
             elapsed_seconds = time.perf_counter() - started
             logger.exception(
-                "failed rollup elapsed=%.2fs",
+                "failed rollup elapsed_seconds=%.2f",
                 elapsed_seconds,
                 extra={"event": "rollup_failed", "elapsed_seconds": elapsed_seconds},
             )
             raise
         elapsed_seconds = time.perf_counter() - started
         logger.info(
-            "done rollup output_root=%s elapsed=%.2fs",
+            "done rollup output_root=%s elapsed_seconds=%.2f",
             output_root,
             elapsed_seconds,
             extra={"event": "rollup_done", "output_root": output_root, "elapsed_seconds": elapsed_seconds},

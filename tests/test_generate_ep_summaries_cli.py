@@ -84,7 +84,8 @@ def test_generate_ep_summaries_interactive_selects_file_and_overwrites_output(
     captured = capsys.readouterr().out
     assert "Select EP summary vendor:" in captured
     assert "Select source wide CSV:" in captured
-    assert "EP summary written to" in captured
+    assert "EP summary written to" not in captured
+    assert "EP summary conversion complete" not in captured
 
 
 def test_generate_ep_summaries_interactive_writes_new_output_without_confirmation(
@@ -133,22 +134,7 @@ def test_generate_ep_summaries_non_interactive_accepts_csv_filename(
 
     assert exit_code == 0
     assert pl.read_csv(output_path).item(0, "loss") == 25.0
-    captured = capsys.readouterr().out
-    assert "EP summary written to" in captured
-    assert "EP summary generation:" in captured
-    assert "Vendor: verisk" in captured
-    assert f"CSV: {csv_path}" in captured
-    assert f"Output: {output_path}" in captured
-    assert "Reading CSV..." in captured
-    assert "Writing canonical long CSV..." in captured
-    assert "Done in " in captured
-    assert "EP summary overview:" in captured
-    assert "Rows: 2" in captured
-    assert "Columns (7): vendor, analysis_id, modelled_lob, modelled_peril, ep_type, return_period, loss" in captured
-    assert "Vendors: verisk" in captured
-    assert "EP type counts: AAL=1, AEP=1" in captured
-    assert "Modelled LOB/peril pairs: 1" in captured
-    assert "Return period range: 0-100" in captured
+    assert capsys.readouterr().out == ""
 
 
 def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_output(
