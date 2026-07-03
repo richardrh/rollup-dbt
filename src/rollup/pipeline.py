@@ -303,6 +303,10 @@ def _coverage_rows(groups: pl.LazyFrame, **values: object) -> pl.LazyFrame:
     )
 
 
+def _verisk_string(column: RawCol) -> pl.Expr:
+    return pl.col(column).cast(pl.String).str.strip_chars()
+
+
 def modelled_dimension_coverage_report(
     seeds: SeedValidationResult,
     ylt: YltValidationResult,
@@ -319,9 +323,9 @@ def modelled_dimension_coverage_report(
     sources = [
         (
             "verisk_ylt",
-            ylt.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
-                pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
-                pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
+            ylt.frames.verisk.filter(_verisk_string(RawCol.CatalogTypeCode) == "STC").select(
+                _verisk_string(RawCol.ExposureAttribute).alias(Col.modelled_lob),
+                _verisk_string(RawCol.Analysis).alias(Col.modelled_peril),
             ),
         ),
         (
@@ -389,11 +393,11 @@ def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
 
 
 def normalize_ylt(ylt: YltValidationResult) -> NormalizedYltFrames:
-    verisk = ylt.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC").select(
+    verisk = ylt.frames.verisk.filter(_verisk_string(RawCol.CatalogTypeCode) == "STC").select(
         pl.lit("verisk").alias(Col.vendor),
-        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.analysis_id),
-        pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
-        pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
+        _verisk_string(RawCol.Analysis).alias(Col.analysis_id),
+        _verisk_string(RawCol.Analysis).alias(Col.modelled_peril),
+        _verisk_string(RawCol.ExposureAttribute).alias(Col.modelled_lob),
         pl.col(RawCol.ModelCode).cast(pl.Int64).alias(Col.model_code),
         pl.col(RawCol.YearID).cast(pl.Int64).alias(Col.year_id),
         pl.col(RawCol.EventID).cast(pl.Int64).alias(Col.event_id),
@@ -676,11 +680,11 @@ def input_ylt_aal_by_lob_peril_summary(inputs: PipelineValidationInputs) -> pl.D
         Col.rollup_peril,
     )
     verisk = (
-        inputs.ylts.frames.verisk.filter(pl.col(RawCol.CatalogTypeCode) == "STC")
+        inputs.ylts.frames.verisk.filter(_verisk_string(RawCol.CatalogTypeCode) == "STC")
         .select(
             pl.lit("verisk").alias(Col.vendor),
-            pl.col(RawCol.ExposureAttribute).cast(pl.String).alias(Col.modelled_lob),
-            pl.col(RawCol.Analysis).cast(pl.String).alias(Col.modelled_peril),
+            _verisk_string(RawCol.ExposureAttribute).alias(Col.modelled_lob),
+            _verisk_string(RawCol.Analysis).alias(Col.modelled_peril),
             pl.col(RawCol.GroundUpLoss).cast(pl.Float64).alias(Col.loss),
         )
         .join(lobs, on=Col.modelled_lob, how="inner")
@@ -969,7 +973,7 @@ def apply_forecast_to_ylt(
     forecast_dates = forecast_factors.select(Col.forecast_date).unique()
     forecast_factors = forecast_factors.select(
         Col.class_,
-        Col.office,
+        pl.col("office_iso2").alias(Col.office),
         Col.forecast_date,
         pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )
@@ -1004,7 +1008,6 @@ def apply_euws_to_ylt(
 ) -> pl.LazyFrame:
     euws_factors = seeds.frames["euws_rate_factors.csv"].lazy().select(
         Col.model_event_id,
-        pl.col(RawCol.occ_year).alias(Col.year_id),
         pl.col(RawCol.factor).alias("_euws_factor_raw_source"),
     )
 
@@ -1015,20 +1018,17 @@ def apply_euws_to_ylt(
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
         )
-        .join(euws_factors, on=[Col.model_event_id, Col.year_id], how="left")
+        .join(euws_factors, on=Col.model_event_id, how="left")
     )
     _log_defaulted_rows(
         joined,
-        (pl.col(Col.rollup_peril) == "Europe_WS") & pl.col("_euws_factor_raw_source").is_null(),
+        pl.col("_euws_factor_raw_source").is_null(),
         "euws factor defaulted rows=%d",
     )
     return (
         joined
         .with_columns(
-            pl.when(pl.col(Col.rollup_peril) == "Europe_WS")
-            .then(pl.col("_euws_factor_raw_source").fill_null(1.0))
-            .otherwise(pl.lit(1.0))
-            .alias("_euws_factor_raw")
+            pl.col("_euws_factor_raw_source").fill_null(1.0).alias("_euws_factor_raw")
         )
         .with_columns(
             pl.col(Col.loss).alias("_gbp_forecast_loss"),
@@ -1096,7 +1096,7 @@ def calculate_dialsup(
     forecast_dates = forecast_factors.select(Col.forecast_date).unique()
     forecast_factors = forecast_factors.select(
         Col.class_,
-        Col.office,
+        pl.col("office_iso2").alias(Col.office),
         Col.forecast_date,
         pl.col(RawCol.factor).alias("_forecast_factor_raw"),
     )

@@ -9,6 +9,9 @@ from rollup.columns import Col, RawCol
 from rollup.config import BlendingConfig, BlendingTargetPoint, RollupConfig
 from rollup.pipeline import (
     apply_ep_blending_to_ylt,
+    apply_euws_overrides_to_ylt,
+    apply_euws_to_ylt,
+    apply_forecast_to_ylt,
     calculate_ep_blending_targets,
     EpSummaryValidationResult,
     PipelineValidationInputs,
@@ -20,6 +23,7 @@ from rollup.pipeline import (
     _add_rank_columns,
     join_ep_summaries,
     modelled_dimension_coverage_report,
+    normalize_ylt,
     stage_ep_summaries,
     write_parquet_with_log,
 )
@@ -44,9 +48,9 @@ def _ylt_result() -> YltValidationResult:
         frames=YltFrames(
             verisk=pl.DataFrame(
                 {
-                    RawCol.CatalogTypeCode: ["STC", "STC", "NON_STC"],
-                    RawCol.ExposureAttribute: ["LOB_A", "LOB_MISSING", "LOB_NON_STC"],
-                    RawCol.Analysis: ["PERIL_A", "PERIL_MISSING", "PERIL_NON_STC"],
+                    RawCol.CatalogTypeCode: ["STC     ", "STC", "NON_STC"],
+                    RawCol.ExposureAttribute: ["LOB_A   ", "LOB_MISSING", "LOB_NON_STC"],
+                    RawCol.Analysis: ["PERIL_A   ", "PERIL_MISSING", "PERIL_NON_STC"],
                 }
             ).lazy(),
             risklink=pl.DataFrame({RawCol.anlsid: [1]}).lazy(),
@@ -112,6 +116,131 @@ def _empty_verisk_ylt() -> pl.LazyFrame:
             RawCol.GroundUpLoss: pl.Float64,
         }
     ).lazy()
+
+
+def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> None:
+    ylt = YltValidationResult(
+        frames=YltFrames(
+            verisk=pl.DataFrame(
+                {
+                    RawCol.CatalogTypeCode: ["STC     ", "HIST    "],
+                    RawCol.ExposureAttribute: ["HIC_HH_UK   ", "HIC_HH_UK   "],
+                    RawCol.Analysis: ["UK_WSSS   ", "UK_WSSS   "],
+                    RawCol.ModelCode: [1, 1],
+                    RawCol.YearID: [2026, 2026],
+                    RawCol.EventID: [100, 101],
+                    RawCol.GroundUpLoss: [10.0, 20.0],
+                }
+            ).lazy(),
+            risklink=_empty_risklink_ylt(),
+        ),
+        report=_valid_report(),
+    )
+
+    normalized = normalize_ylt(ylt).verisk.collect()
+
+    assert normalized.to_dict(as_series=False) == {
+        Col.vendor: ["verisk"],
+        Col.analysis_id: ["UK_WSSS"],
+        Col.modelled_peril: ["UK_WSSS"],
+        Col.modelled_lob: ["HIC_HH_UK"],
+        Col.model_code: [1],
+        Col.year_id: [2026],
+        Col.event_id: [100],
+        Col.loss: [10.0],
+    }
+
+
+def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -> None:
+    gbp_forecast = pl.DataFrame(
+        {
+            Col.vendor: ["verisk", "verisk"],
+            Col.base_model: ["verisk", "verisk"],
+            Col.rollup_lob: ["HIC_HH_UK", "HIC_HH_UK"],
+            Col.rollup_peril: ["UK_WS", "UK_WS"],
+            Col.model_code: [41, 41],
+            Col.year_id: [2026, 2026],
+            Col.event_id: [10, 20],
+            Col.rnk: [50, 101],
+            Col.metric: ["gbp_forecast", "gbp_forecast"],
+            Col.loss: [100.0, 100.0],
+        }
+    ).lazy()
+    verisk_events = pl.DataFrame(
+        {
+            RawCol.EventID: [1001, 1002],
+            RawCol.ModelID: [41, 41],
+            RawCol.Event: [10, 20],
+            RawCol.Year: [2026, 2026],
+            RawCol.Day: [1, 2],
+        }
+    ).lazy().select(
+        pl.col(RawCol.EventID).alias(Col.model_event_id),
+        pl.col(RawCol.ModelID).alias(Col.model_code),
+        pl.col(RawCol.Event).alias(Col.event_id),
+        pl.col(RawCol.Year).alias(Col.year_id),
+        pl.col(RawCol.Day).alias(Col.event_day),
+    )
+    seeds = SeedValidationResult(
+        frames={
+            "euws_rate_factors.csv": pl.DataFrame(
+                {
+                    Col.model_event_id: [1001, 1002],
+                    RawCol.occ_year: [2026, 2026],
+                    RawCol.factor: [0.0, 0.0],
+                }
+            ),
+            "euws_rank_overrides.csv": pl.DataFrame(
+                {
+                    Col.rollup_lob: ["HIC_HH_UK"],
+                    RawCol.max_rank: [100],
+                    RawCol.factor: [1.0],
+                }
+            ),
+        },
+        report=_valid_report(),
+    )
+
+    euws = apply_euws_to_ylt(gbp_forecast, verisk_events, seeds)
+    overridden = apply_euws_overrides_to_ylt(euws, seeds).collect().sort(Col.rnk)
+
+    assert overridden.select(Col.rnk, "_euws_factor_raw", Col.loss).to_dict(as_series=False) == {
+        Col.rnk: [50, 101],
+        "_euws_factor_raw": [0.0, 0.0],
+        Col.loss: [100.0, 0.0],
+    }
+
+
+def test_forecast_factors_join_lob_office_to_factor_office_iso2() -> None:
+    gbp = pl.DataFrame(
+        {
+            Col.class_: ["COMM"],
+            Col.office: ["DE"],
+            Col.metric: ["gbp"],
+            Col.loss: [100.0],
+        }
+    ).lazy()
+    seeds = SeedValidationResult(
+        frames={
+            "forecast_factors.csv": pl.DataFrame(
+                {
+                    Col.class_: ["COMM"],
+                    Col.office: ["Germany"],
+                    "office_iso2": ["DE"],
+                    Col.forecast_date: ["2026-12-31"],
+                    RawCol.factor: [2.5],
+                }
+            ),
+        },
+        report=_valid_report(),
+    )
+
+    forecasted = apply_forecast_to_ylt(gbp, seeds).collect()
+
+    assert forecasted.select(Col.forecast_date, Col.loss).to_dict(as_series=False) == {
+        Col.forecast_date: ["2026-12-31"],
+        Col.loss: [250.0],
+    }
 
 
 def _summary_inputs(
@@ -527,9 +656,9 @@ def test_input_ylt_aal_summary_computes_verisk_raw_aal_sorted_descending() -> No
     inputs = _summary_inputs(
         verisk=pl.DataFrame(
             {
-                RawCol.CatalogTypeCode: ["STC", "STC", "STC", "NON_STC"],
-                RawCol.ExposureAttribute: ["LOB_A", "LOB_A", "LOB_B", "LOB_B"],
-                RawCol.Analysis: ["PERIL_A", "PERIL_A", "PERIL_B", "PERIL_B"],
+                RawCol.CatalogTypeCode: ["STC     ", "STC", "STC", "NON_STC"],
+                RawCol.ExposureAttribute: ["LOB_A   ", "LOB_A", "LOB_B", "LOB_B"],
+                RawCol.Analysis: ["PERIL_A   ", "PERIL_A", "PERIL_B", "PERIL_B"],
                 RawCol.GroundUpLoss: [15_000.0, 5_000.0, 10_000.0, 90_000.0],
             }
         ).lazy()
