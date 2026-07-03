@@ -201,6 +201,7 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
     assert Col.risklink_blended_contribution in wide.columns
     assert Col.verisk_blended_contribution in wide.columns
     assert Col.uplift_factor_on_base_model in wide.columns
+    assert wide.get_column(Col.output_use).unique().to_list() == ["cds_wide_analysis"]
     assert "rl_blended_contribution" not in wide.columns
     assert "vk_blended_contribution" not in wide.columns
     assert wide.select(pl.sum_horizontal(*loss_columns).sum()).item() == pytest.approx(sum(losses) * 2)
@@ -242,6 +243,7 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
     assert Col.risklink_blended_contribution in wide.columns
     assert Col.verisk_blended_contribution in wide.columns
     assert Col.uplift_factor_on_base_model in wide.columns
+    assert wide.item(0, Col.output_use) == "cds_wide_analysis"
     assert "rl_blended_contribution" not in wide.columns
     assert "vk_blended_contribution" not in wide.columns
     assert wide.filter(pl.col(Col.risklink_blended_contribution) == 75.0).height == 1
@@ -250,24 +252,24 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
     assert wide.item(0, "dialsup_gbp_forecast_202601_loss") == 100.0
 
 
-def test_dialsup_export_contains_final_forecast_metric_only() -> None:
+def test_combined_outputs_label_output_use() -> None:
     ylt = pl.DataFrame(
         {
-            Col.vendor: ["verisk"],
-            Col.base_model: ["verisk"],
-            Col.region_peril_id: [1],
-            Col.rollup_peril: ["PERIL_A"],
-            Col.rollup_lob: ["LOB_A"],
-            Col.cds_cat_class_name: ["Class"],
-            Col.model_code: [1],
-            Col.year_id: [1],
-            Col.event_id: [1],
-            Col.model_event_id: [1],
-            Col.event_day: [1],
-            Col.target_currency: ["GBP"],
-            Col.metric: ["euws_override"],
-            Col.forecast_date: [date(2026, 1, 1)],
-            Col.loss: [100.0],
+            Col.vendor: ["verisk", "verisk"],
+            Col.base_model: ["verisk", "verisk"],
+            Col.region_peril_id: [1, 1],
+            Col.rollup_peril: ["PERIL_A", "PERIL_A"],
+            Col.rollup_lob: ["LOB_A", "LOB_A"],
+            Col.cds_cat_class_name: ["Class", "Class"],
+            Col.model_code: [1, 1],
+            Col.year_id: [1, 1],
+            Col.event_id: [1, 1],
+            Col.model_event_id: [1, 1],
+            Col.event_day: [1, 1],
+            Col.target_currency: ["GBP", "GBP"],
+            Col.metric: ["original", "euws_override"],
+            Col.forecast_date: [date(2026, 1, 1), date(2026, 1, 1)],
+            Col.loss: [90.0, 100.0],
         }
     )
     dialsup = pl.concat(
@@ -280,6 +282,16 @@ def test_dialsup_export_contains_final_forecast_metric_only() -> None:
 
     with TemporaryDirectory() as temp_dir:
         _write_combined_outputs(Path(temp_dir), ylt, dialsup)
+        main = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors.parquet")
         exported = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_dialsup.parquet")
+        wide = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
+    output_use_by_metric = dict(main.select(Col.metric, Col.output_use).iter_rows())
+    assert output_use_by_metric == {
+        "original": "intermediate_audit",
+        "euws_override": "cds_main",
+    }
     assert exported[Col.metric].unique().to_list() == ["dialsup_gbp_forecast"]
+    assert exported[Col.output_use].unique().to_list() == ["cds_dialsup"]
+    assert wide[Col.output_use].unique().to_list() == ["cds_wide_analysis"]
+    assert wide.height == 1

@@ -14,11 +14,13 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     output_root = tmp_path / "output"
     (output_root / "marts").mkdir(parents=True)
     write_input_files(data_root)
-    pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0]}).write_parquet(
+    pl.DataFrame({"event_id": [1, 2], "loss": [10.0, 20.0], "output_use": ["intermediate_audit", "cds_main"]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors.parquet"
     )
-    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(output_root / "mts_tbl_ylt_dialsup.parquet")
-    pl.DataFrame({"event_id": [1], "wide_loss": [10.0]}).write_parquet(
+    pl.DataFrame({"event_id": [1], "loss": [10.0], "output_use": ["cds_dialsup"]}).write_parquet(
+        output_root / "mts_tbl_ylt_dialsup.parquet"
+    )
+    pl.DataFrame({"event_id": [1], "wide_loss": [10.0], "output_use": ["cds_wide_analysis"]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"
     )
     pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0], "source_row": ["air"]}).write_parquet(
@@ -54,8 +56,18 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
+        assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors") >= {"output_use"}
+        assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors_wide") >= {"output_use"}
+        assert duckdb_columns(connection, "mts_tbl_ylt_dialsup") >= {"output_use"}
+        assert connection.execute(
+            "SELECT output_use FROM mts_tbl_ylt_combined_all_factors ORDER BY event_id"
+        ).fetchall() == [("intermediate_audit",), ("cds_main",)]
+        assert connection.execute("SELECT output_use FROM mts_tbl_ylt_dialsup").fetchone() == ("cds_dialsup",)
+        assert connection.execute("SELECT output_use FROM mts_tbl_ylt_combined_all_factors_wide").fetchone() == (
+            "cds_wide_analysis",
+        )
         assert row_count(connection, "cds_fanouts") == 2
-        cds_fanout_columns = {row[1] for row in connection.execute("PRAGMA table_info('cds_fanouts')").fetchall()}
+        cds_fanout_columns = duckdb_columns(connection, "cds_fanouts")
         assert {
             "fanout_source_file",
             "fanout_name",
@@ -92,6 +104,10 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
     return connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
+
+
+def duckdb_columns(connection: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:
+    return {row[1] for row in connection.execute(f"PRAGMA table_info('{table_name}')").fetchall()}
 
 
 def write_input_files(data_root: Path) -> None:

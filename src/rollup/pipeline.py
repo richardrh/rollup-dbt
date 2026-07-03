@@ -1310,9 +1310,16 @@ def _write_combined_outputs(
     ylt: pl.DataFrame,
     ylt_dialsup: pl.DataFrame,
 ) -> None:
-    write_parquet_with_log(ylt, output_root / "mts_tbl_ylt_combined_all_factors.parquet")
     write_parquet_with_log(
-        ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+        _with_metric_output_use(ylt, final_metric="euws_override", final_output_use="cds_main"),
+        output_root / "mts_tbl_ylt_combined_all_factors.parquet",
+    )
+    write_parquet_with_log(
+        _with_metric_output_use(
+            ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+            final_metric="dialsup_gbp_forecast",
+            final_output_use="cds_dialsup",
+        ),
         output_root / "mts_tbl_ylt_dialsup.parquet",
     )
 
@@ -1351,7 +1358,23 @@ def _write_combined_outputs(
     if len(diagnostics.columns) > len(dims):
         wide = wide.join(diagnostics, on=dims, how="left")
 
+    wide = wide.with_columns(pl.lit("cds_wide_analysis").alias(Col.output_use))
+
     write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
+
+
+def _with_metric_output_use(
+    frame: pl.DataFrame,
+    *,
+    final_metric: str,
+    final_output_use: str,
+) -> pl.DataFrame:
+    return frame.with_columns(
+        pl.when(pl.col(Col.metric) == final_metric)
+        .then(pl.lit(final_output_use))
+        .otherwise(pl.lit("intermediate_audit"))
+        .alias(Col.output_use)
+    )
 
 
 def write_debug_frame(

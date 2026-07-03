@@ -58,6 +58,7 @@ class Col(StrEnum):
     base_model = "base_model"
     base_model_loss = "base_model_loss"
     metric = "metric"
+    output_use = "output_use"
     ep_type = "ep_type"
     return_period = "return_period"
     selection_priority = "selection_priority"
