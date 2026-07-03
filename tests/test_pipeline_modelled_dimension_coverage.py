@@ -243,7 +243,6 @@ def test_forecast_factors_join_lob_office_to_factor_office_iso2() -> None:
         Col.loss: [250.0],
     }
 
-
 def test_fx_converts_gbp_input_to_local_currency() -> None:
     blended = pl.DataFrame(
         {
