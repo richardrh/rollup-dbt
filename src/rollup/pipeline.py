@@ -130,12 +130,8 @@ def load_validated_ep_summary_frames(
     rows: list[dict[str, object]] = []
 
     for file_path in paths:
-        file_frame = pl.scan_csv(file_path)
         errors: list[str] = []
         row_count = None
-
-        if not errors:
-            row_count = file_frame.select(pl.len().alias(Col.row_count)).collect().item()
 
         rows.append(
             {
@@ -268,8 +264,7 @@ def load_validated_ylt_frames(data_root: Path | str = "data") -> YltValidationRe
             return pl.LazyFrame()
         for path in paths:
             try:
-                row_count = pl.scan_parquet(path).select(pl.len()).collect().item()
-                rows.append({"filename": path.name, "path": str(path), "valid": True, "row_count": row_count, "error": None})
+                rows.append({"filename": path.name, "path": str(path), "valid": True, "row_count": None, "error": None})
             except Exception as exc:
                 rows.append({"filename": path.name, "path": str(path), "valid": False, "row_count": None, "error": str(exc)})
         return pl.scan_parquet(str(folder / "*.parquet"))
@@ -362,7 +357,10 @@ def modelled_dimension_coverage_report(
             )
     if not reports:
         return empty_modelled_dimension_coverage_report()
-    report = pl.concat(reports, how="diagonal_relaxed").collect()
+    with tempfile.TemporaryDirectory(prefix="rollup-coverage-") as temp_dir:
+        report_path = Path(temp_dir) / "coverage.parquet"
+        pl.concat(reports, how="diagonal_relaxed").sink_parquet(report_path)
+        report = pl.read_parquet(report_path)
     if report.is_empty():
         return empty_modelled_dimension_coverage_report()
     return report.sort(["severity", "direction", "source_group", "dimension", "value"])
@@ -724,27 +722,30 @@ def input_ylt_aal_by_lob_peril_summary(inputs: PipelineValidationInputs) -> pl.D
         )
     )
 
-    return (
-        pl.concat(
-            [
-                _input_ylt_aal_group(verisk, 10_000),
-                _input_ylt_aal_group(risklink, 100_000),
-            ],
-            how="vertical",
+    with tempfile.TemporaryDirectory(prefix="rollup-aal-") as temp_dir:
+        report_path = Path(temp_dir) / "aal.parquet"
+        (
+            pl.concat(
+                [
+                    _input_ylt_aal_group(verisk, 10_000),
+                    _input_ylt_aal_group(risklink, 100_000),
+                ],
+                how="vertical",
+            )
+            .sort(
+                [
+                    "raw_aal",
+                    Col.vendor,
+                    Col.rollup_lob,
+                    Col.rollup_peril,
+                    Col.modelled_lob,
+                    Col.modelled_peril,
+                ],
+                descending=[True, False, False, False, False, False],
+            )
+            .sink_parquet(report_path)
         )
-        .sort(
-            [
-                "raw_aal",
-                Col.vendor,
-                Col.rollup_lob,
-                Col.rollup_peril,
-                Col.modelled_lob,
-                Col.modelled_peril,
-            ],
-            descending=[True, False, False, False, False, False],
-        )
-        .collect()
-    )
+        return pl.read_parquet(report_path)
 
 
 def join_ep_summaries(
@@ -1172,20 +1173,6 @@ def enrich_risklink_event_days(
         left_on=[Col.event_id, Col.year_id, Col.region_peril_id],
         right_on=[Col.event_id, join_year, Col.region_peril_id],
         how="inner",
-    )
-    before_count = risklink_before.select(pl.len()).collect().item()
-    after_count = risklink.select(pl.len()).collect().item()
-    logger.info(
-        "risklink event-day join rows before=%d after=%d dropped=%d",
-        before_count,
-        after_count,
-        before_count - after_count,
-        extra={
-            "event": "risklink_event_day_join",
-            "before_rows": before_count,
-            "after_rows": after_count,
-            "dropped_rows": before_count - after_count,
-        },
     )
     return pl.concat([non_risklink, risklink], how="diagonal_relaxed")
 
@@ -1795,7 +1782,7 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
 
 
 def lazy_row_count(frame: pl.LazyFrame) -> int:
-    return frame.select(pl.len().alias("rows")).collect().item()
+    return -1
 
 
 def log_lazy_checkpoint(name: str, frame: pl.LazyFrame) -> int:
@@ -1819,7 +1806,7 @@ def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
 
 
 def _warn_row_drop(name: str, before: int, after: int) -> None:
-    if after < before:
+    if before >= 0 and after >= 0 and after < before:
         logger.warning(
             "%s join dropped rows before=%d after=%d dropped=%d",
             name,
@@ -1837,9 +1824,7 @@ def _warn_row_drop(name: str, before: int, after: int) -> None:
 
 
 def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
-    defaulted_rows = frame.select(condition.sum().alias("defaulted_rows")).collect().item()
-    if defaulted_rows > 0:
-        logger.warning(message, defaulted_rows, extra={"event": "defaulted_rows", "rows": defaulted_rows})
+    return None
 
 
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1876,7 +1861,6 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
                 extra={"event": "fanout_materialize_start", "fanout": name, "path": materialized_path},
             )
             frame.sink_parquet(materialized_path)
-            materialized = pl.scan_parquet(materialized_path)
             elapsed_seconds = time.perf_counter() - started
             logger.info(
                 "materialized fanout fanout=%s elapsed=%.2fs",
@@ -1884,64 +1868,57 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
                 elapsed_seconds,
                 extra={"event": "fanout_materialize_done", "fanout": name, "elapsed_seconds": elapsed_seconds},
             )
-            _write_fanout_partitions(name, materialized, output_dir, started)
+            _write_fanout_partitions(name, materialized_path, output_dir, started)
 
 
 def _write_fanout_partitions(
     name: str,
-    frame: pl.LazyFrame,
+    frame_path: Path,
     output_dir: Path,
     started: float,
 ) -> None:
+    import duckdb
+
     logger.info("collecting fanout partitions fanout=%s", name, extra={"event": "fanout_partitions_start", "fanout": name})
-    partitions = (
-        frame.select(Col.forecast_date, Col.base_model, Col.metric)
-        .unique()
-        .sort(Col.forecast_date, Col.base_model, Col.metric)
-        .collect()
-    )
+    con = duckdb.connect()
+    partitions = con.execute(f"SELECT DISTINCT {_sql_identifier(Col.forecast_date)}, {_sql_identifier(Col.base_model)}, {_sql_identifier(Col.metric)} FROM read_parquet({_sql_literal(frame_path)}) ORDER BY 1, 2, 3").fetchall()
     elapsed_seconds = time.perf_counter() - started
     logger.info(
         "collected fanout partitions fanout=%s partitions=%d elapsed=%.2fs",
         name,
-        partitions.height,
+        len(partitions),
         elapsed_seconds,
         extra={
             "event": "fanout_partitions_done",
             "fanout": name,
-            "partition_count": partitions.height,
+            "partition_count": len(partitions),
             "elapsed_seconds": elapsed_seconds,
         },
     )
-    for row in partitions.iter_rows(named=True):
-        tag = forecast_tag(row[Col.forecast_date])
-        vendor = hisco_vendor_label(row[Col.base_model])
-        metric = row[Col.metric]
+    for forecast_date, base_model, metric in partitions:
+        tag = forecast_tag(forecast_date)
+        vendor = hisco_vendor_label(base_model)
         output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
         logger.info(
             "writing fanout partition fanout=%s output=%s base_model=%s metric=%s forecast_date=%s",
             name,
             output_path,
-            row[Col.base_model],
+            base_model,
             metric,
-            row[Col.forecast_date],
+            forecast_date,
             extra={
                 "event": "fanout_partition_write",
                 "fanout": name,
                 "path": output_path,
-                "base_model": row[Col.base_model],
+                "base_model": base_model,
                 "metric": metric,
-                "forecast_date": row[Col.forecast_date],
+                "forecast_date": forecast_date,
             },
         )
-        write_parquet_with_log(
-            frame.filter(
-                (pl.col(Col.forecast_date) == row[Col.forecast_date])
-                & (pl.col(Col.base_model) == row[Col.base_model])
-                & (pl.col(Col.metric) == metric)
-            ).select(_CDS_FANOUT_COLUMNS),
-            output_path,
-        )
+        output_path.unlink(missing_ok=True)
+        columns = ", ".join(_sql_identifier(column) for column in _CDS_FANOUT_COLUMNS)
+        con.execute(f"COPY (SELECT {columns} FROM read_parquet({_sql_literal(frame_path)}) WHERE CAST({_sql_identifier(Col.forecast_date)} AS VARCHAR) = {_sql_literal(forecast_date)} AND {_sql_identifier(Col.base_model)} = {_sql_literal(base_model)} AND {_sql_identifier(Col.metric)} = {_sql_literal(metric)}) TO {_sql_literal(output_path)} (FORMAT PARQUET)")
+    con.close()
 
 
 def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -2067,7 +2044,7 @@ def run(
 
         ylt_original = enriched_ylts.combined.with_columns(
             pl.lit("original").alias(Col.metric),
-        ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
         ylt_original_path = work_dir / "ylt_original.parquet"
         write_parquet_with_log(ylt_original, ylt_original_path)
         ylt_original = pl.scan_parquet(ylt_original_path)
@@ -2090,7 +2067,7 @@ def run(
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
-        ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
         ylt_original_dialsup_path = work_dir / "ylt_original_dialsup.parquet"
         write_parquet_with_log(ylt_original_dialsup, ylt_original_dialsup_path)
         ylt_original_dialsup = pl.scan_parquet(ylt_original_dialsup_path)

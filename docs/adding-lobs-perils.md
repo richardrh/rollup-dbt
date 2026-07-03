@@ -34,7 +34,7 @@ Peril lookup. Columns:
 | `peril` | Base peril code | `FL` |
 | `region_peril_id` | Integer identifier for region-peril combination used in blend weight joins | `216` |
 | `selection_priority` | Main-pipeline precedence for choosing among multiple modelled perils that map to the same vendor, `rollup_lob`, and `rollup_peril`. Lower numbers win. Missing values default to `99`. | `99` |
-| `is_dialsup` | DIALSUP-only selection flag. Exactly one active candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted alternatives should usually be `0`. | `1` |
+| `is_dialsup` | DIALSUP-only selection flag. Active base candidates should be `1`; adjusted alternatives should usually be `0`. | `1` |
 
 ## Adding a new LOB
 
@@ -76,9 +76,8 @@ does not yet exist in `perils.csv`.
     - `selection_priority` of `99` is the normal fallback for the main pipeline.
       Set a lower number (e.g. `1`) if this modelled peril should be preferred
       over other modelled perils that target the same `rollup_peril`.
-    - `is_dialsup` should be `1` for the least-adjusted/base peril that DIALSUP
-      should use, and `0` for adjusted alternatives. Validation requires exactly
-      one active DIALSUP candidate per vendor/rollup LOB/rollup peril group.
+    - `is_dialsup` should be `1` for least-adjusted/base perils that DIALSUP
+      should use, and `0` for adjusted alternatives.
 
 3.  If your EP data uses a different column name for perils (e.g. `Analysis`
       instead of `modelled_peril`), the EP summary converter accepts that alias
