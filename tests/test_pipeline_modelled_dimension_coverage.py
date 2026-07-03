@@ -11,6 +11,7 @@ from rollup.pipeline import (
     apply_ep_blending_to_ylt,
     apply_euws_overrides_to_ylt,
     apply_euws_to_ylt,
+    apply_fx_to_ylt,
     apply_forecast_to_ylt,
     calculate_ep_blending_targets,
     EpSummaryValidationResult,
@@ -152,7 +153,7 @@ def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> Non
 
 
 def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -> None:
-    gbp_forecast = pl.DataFrame(
+    localccy_forecast = pl.DataFrame(
         {
             Col.vendor: ["verisk", "verisk"],
             Col.base_model: ["verisk", "verisk"],
@@ -162,7 +163,7 @@ def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -
             Col.year_id: [2026, 2026],
             Col.event_id: [10, 20],
             Col.rnk: [50, 101],
-            Col.metric: ["gbp_forecast", "gbp_forecast"],
+            Col.metric: ["localccy_forecast", "localccy_forecast"],
             Col.loss: [100.0, 100.0],
         }
     ).lazy()
@@ -201,7 +202,7 @@ def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -
         report=_valid_report(),
     )
 
-    euws = apply_euws_to_ylt(gbp_forecast, verisk_events, seeds)
+    euws = apply_euws_to_ylt(localccy_forecast, verisk_events, seeds)
     overridden = apply_euws_overrides_to_ylt(euws, seeds).collect().sort(Col.rnk)
 
     assert overridden.select(Col.rnk, "_euws_factor_raw", Col.loss).to_dict(as_series=False) == {
@@ -240,6 +241,35 @@ def test_forecast_factors_join_lob_office_to_factor_office_iso2() -> None:
     assert forecasted.select(Col.forecast_date, Col.loss).to_dict(as_series=False) == {
         Col.forecast_date: ["2026-12-31"],
         Col.loss: [250.0],
+    }
+
+def test_fx_converts_gbp_input_to_local_currency() -> None:
+    blended = pl.DataFrame(
+        {
+            Col.currency: ["EUR"],
+            Col.metric: ["blended"],
+            Col.loss: [88.0],
+        }
+    ).lazy()
+    seeds = SeedValidationResult(
+        frames={
+            "fx_rates.csv": pl.DataFrame(
+                {
+                    RawCol.currency_code: ["EUR"],
+                    Col.target_currency: ["GBP"],
+                    RawCol.rate_date: ["2026-01-01"],
+                    RawCol.rate: [0.88],
+                }
+            ),
+        },
+        report=_valid_report(),
+    )
+
+    converted = apply_fx_to_ylt(blended, seeds).collect()
+
+    assert converted.select(Col.loss, Col.target_currency).to_dict(as_series=False) == {
+        Col.loss: [100.0],
+        Col.target_currency: ["EUR"],
     }
 
 

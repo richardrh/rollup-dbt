@@ -94,10 +94,10 @@ class Col(StrEnum):
     missing_model_event_day = "missing_model_event_day"
     original_ylt_loss = "original_ylt_loss"
     original_ylt_loss_blended = "original_ylt_loss_blended"
-    original_ylt_loss_blended_gbp = "original_ylt_loss_blended_gbp"
-    original_ylt_loss_blended_gbp_forecast = "original_ylt_loss_blended_gbp_forecast"
-    original_ylt_loss_blended_gbp_forecast_euws_raw = "original_ylt_loss_blended_gbp_forecast_euws_raw"
-    original_ylt_loss_blended_gbp_forecast_euws = "original_ylt_loss_blended_gbp_forecast_euws"
+    original_ylt_loss_blended_localccy = "original_ylt_loss_blended_localccy"
+    original_ylt_loss_blended_localccy_forecast = "original_ylt_loss_blended_localccy_forecast"
+    original_ylt_loss_blended_localccy_forecast_euws_raw = "original_ylt_loss_blended_localccy_forecast_euws_raw"
+    original_ylt_loss_blended_localccy_forecast_euws = "original_ylt_loss_blended_localccy_forecast_euws"
     euws_factor_raw_source = "euws_factor_raw_source"
     euws_factor_raw = "euws_factor_raw"
     euws_factor = "euws_factor"
@@ -105,8 +105,8 @@ class Col(StrEnum):
     euws_override_factor = "euws_override_factor"
     euws_override_applied = "euws_override_applied"
     dialsup_original_ylt_loss = "dialsup_original_ylt_loss"
-    dialsup_loss_gbp = "dialsup_loss_gbp"
-    dialsup_loss_gbp_forecast = "dialsup_loss_gbp_forecast"
+    dialsup_loss_localccy = "dialsup_loss_localccy"
+    dialsup_loss_localccy_forecast = "dialsup_loss_localccy_forecast"
 
 
 class FanoutCol(StrEnum):

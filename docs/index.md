@@ -26,13 +26,15 @@ uv run rollup docs --host localhost --port 4322
 - DuckDB export is enabled by default; pass `--no-duckdb` to disable it.
 - Final event rows below `minimum_event_loss_threshold` are excluded from final
   marts. `mts_tbl_ylt_dialsup.parquet` contains only final
-  `dialsup_gbp_forecast` rows.
+  `dialsup_localccy_forecast` rows.
 - `output/mts_tbl_ylt_combined_all_factors_wide.parquet` includes forecast loss
   columns such as `euws_override_YYYYMM_loss` and
-  `dialsup_gbp_forecast_YYYYMM_loss`.
+  `dialsup_localccy_forecast_YYYYMM_loss`.
 - `output/analysis/ep_report.csv` is written by `rollup run` and can be
   regenerated with `rollup analyze`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
+- Reusable DuckDB SQL templates for analysts live in the top-level `sql/`
+  directory.
 
 Start with [Quickstart](first-run.md). On Windows, use the
 [Windows install guide](windows-install.md) first to install `uv` and build a

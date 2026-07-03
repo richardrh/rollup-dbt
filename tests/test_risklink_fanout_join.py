@@ -118,7 +118,7 @@ def test_thresholded_main_and_dialsup_rows_drive_fanouts() -> None:
             Col.event_day: [1, 2, 3],
             Col.model_event_id: [1000, 2000, 3000],
             Col.forecast_date: ["2026-01-01", "2026-01-01", "2026-01-01"],
-            Col.metric: ["euws_override", "euws_override", "dialsup_gbp_forecast"],
+            Col.metric: ["euws_override", "euws_override", "dialsup_localccy_forecast"],
             Col.target_currency: ["GBP", "GBP", "GBP"],
             Col.loss: [999.0, 1000.0, 1000.0],
             Col.cds_cat_class_name: ["Wind", "Wind", "Wind"],
@@ -139,8 +139,8 @@ def test_thresholded_main_and_dialsup_rows_drive_fanouts() -> None:
         threshold=1000.0,
     )
     dialsup = apply_event_loss_threshold(
-        ylt.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
-        metric="dialsup_gbp_forecast",
+        ylt.filter(pl.col(Col.metric) == "dialsup_localccy_forecast"),
+        metric="dialsup_localccy_forecast",
         threshold=1000.0,
     )
     main_fanout = build_main_fanout(main.lazy(), risklink_events).collect()
@@ -155,7 +155,7 @@ def test_write_mart_outputs_lazily_writes_fanout_partitions(tmp_path) -> None:
         {
             Col.forecast_date: ["2026-01-01", "2026-01-01", "2026-02-01"],
             Col.base_model: ["verisk", "verisk", "risklink"],
-            Col.metric: ["euws_override", "euws_override", "dialsup_gbp_forecast"],
+            Col.metric: ["euws_override", "euws_override", "dialsup_localccy_forecast"],
             FanoutCol.ModelEventID: [100, 200, 300],
             FanoutCol.ModelYear: [2025, 2025, 2026],
             FanoutCol.CurrencyCode: ["GBP", "GBP", "GBP"],
@@ -176,7 +176,7 @@ def test_write_mart_outputs_lazily_writes_fanout_partitions(tmp_path) -> None:
     write_mart_outputs(tmp_path, result)
 
     air = pl.read_parquet(tmp_path / "marts" / "HiscoAIR_202601_euws_override.parquet")
-    rms = pl.read_parquet(tmp_path / "marts" / "HiscoRMS_202602_dialsup_gbp_forecast.parquet")
+    rms = pl.read_parquet(tmp_path / "marts" / "HiscoRMS_202602_dialsup_localccy_forecast.parquet")
     validation = pl.read_parquet(tmp_path / "mts_event_validation.parquet").sort(
         Col.forecast_date, Col.base_model, Col.metric
     )
@@ -202,5 +202,5 @@ def test_write_mart_outputs_lazily_writes_fanout_partitions(tmp_path) -> None:
         Col.missing_model_event_day,
     ).rows() == [
         ("verisk", "euws_override", "2026-01-01", 2, 0, 1),
-        ("risklink", "dialsup_gbp_forecast", "2026-02-01", 1, 0, 0),
+        ("risklink", "dialsup_localccy_forecast", "2026-02-01", 1, 0, 0),
     ]

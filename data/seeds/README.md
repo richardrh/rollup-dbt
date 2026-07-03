@@ -13,7 +13,8 @@ VOR/adjustment seeds:
 
 - `vor/blending_factors.csv`: blend weights by rollup peril and return-period
   bucket.
-- `vor/fx_rates.csv`: currency conversion rates into GBP.
+- `vor/fx_rates.csv`: local-currency-to-GBP conversion rates. YLT losses are
+  expected in GBP; the pipeline inverts these rates for local-currency outputs.
 - `vor/forecast_factors.csv`: forecast-date factors by class and office.
 - `vor/euws_rate_factors.csv`: Europe Windstorm event-level rate factors.
 - `adjustments/euws_rank_overrides.csv`: configured overrides for selected
