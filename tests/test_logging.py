@@ -63,8 +63,27 @@ def test_json_alias_normalizes_to_jsonl() -> None:
     assert isinstance(make_formatter("json"), JsonLineFormatter)
 
 
-def test_text_formatter_remains_default_format() -> None:
+def test_jsonl_formatter_is_default_format() -> None:
     formatter = make_formatter()
+    record = logging.LogRecord(
+        name="rollup.example",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=34,
+        msg="plain text",
+        args=(),
+        exc_info=None,
+        func="test_function",
+    )
+
+    payload = json.loads(formatter.format(record))
+    assert payload["level"] == "INFO"
+    assert payload["logger"] == "rollup.example"
+    assert payload["message"] == "plain text"
+
+
+def test_text_formatter_remains_available() -> None:
+    formatter = make_formatter("text")
     record = logging.LogRecord(
         name="rollup.example",
         level=logging.INFO,

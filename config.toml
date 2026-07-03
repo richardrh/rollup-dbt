@@ -12,7 +12,7 @@ verisk = "HiscoAIR"
 risklink = "HiscoRMS"
 
 [logging]
-format = "text"
+format = "jsonl"
 
 [analysis]
 return_periods = [30, 200, 1000]
