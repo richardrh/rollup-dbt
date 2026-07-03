@@ -65,10 +65,12 @@ class SeedValidationResult:
     frames: dict[str, pl.DataFrame]
     report: pl.DataFrame
 
-def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
-    return pl.scan_parquet(
-        Path(data_root) / "seeds" / "validation" / "verisk_events.parquet"
-    ).select(
+def load_verisk_events(
+    data_root: Path | str = "data",
+    config: RollupConfig | None = None,
+) -> pl.LazyFrame:
+    config = config or RollupConfig()
+    return pl.scan_parquet(config.inputs.verisk_events_path(data_root)).select(
         pl.col(RawCol.EventID).alias(Col.model_event_id),
         pl.col(RawCol.ModelID).alias(Col.model_code),
         pl.col(RawCol.Event).alias(Col.event_id),
@@ -77,11 +79,13 @@ def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
     )
 
 
-def load_risklink_flood_events(data_root: Path | str = "data") -> pl.LazyFrame:
+def load_risklink_flood_events(
+    data_root: Path | str = "data",
+    config: RollupConfig | None = None,
+) -> pl.LazyFrame:
+    config = config or RollupConfig()
     return (
-        pl.scan_parquet(
-            Path(data_root) / "seeds" / "validation" / "risklink_flood22_model_events.parquet"
-        )
+        pl.scan_parquet(config.inputs.risklink_events_path(data_root))
         .group_by(FanoutCol.ModelEventID, RawCol.ModelOccurrenceYear, RawCol.RegionPerilID)
         .agg(pl.col(RawCol.ModelOccurrenceDate).min().alias(Col.model_occurrence_date))
         .select(
@@ -1748,9 +1752,9 @@ def run(
     with logged_phase("staging"):
         for filename, frame in seeds.frames.items():
             seed_frames[Path(filename).stem] = frame
-        verisk_events = load_verisk_events(data_root)
+        verisk_events = load_verisk_events(data_root, config)
         seed_frames["verisk_events"] = verisk_events
-        risklink_events = load_risklink_flood_events(data_root)
+        risklink_events = load_risklink_flood_events(data_root, config)
         seed_frames["risklink_flood_events"] = risklink_events
         staging_frames["validation_seeds"] = seeds.report
 
