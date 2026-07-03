@@ -33,6 +33,8 @@ uv run rollup docs --host localhost --port 4322
 - `output/analysis/ep_report.csv` is written by `rollup run` and can be
   regenerated with `rollup analyze`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
+- Reusable DuckDB SQL templates for analysts live in the top-level `sql/`
+  directory.
 
 Start with [Quickstart](first-run.md). On Windows, use the
 [Windows install guide](windows-install.md) first to install `uv` and build a

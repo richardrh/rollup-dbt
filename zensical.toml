@@ -12,9 +12,6 @@ nav = [
   { "Loading your data" = "load-data.md" },
   { "EP Summaries" = "ep-summaries.md" },
   { "Troubleshooting" = "troubleshooting.md" },
-  { "Analysis" = [
-    { "Analysis scripts" = "analysis-scripts.md" },
-  ]},
   { "Reference" = [
     { "Calculation reference" = "calculation-reference.md" },
     { "Data requirements" = "data-requirements.md" },
