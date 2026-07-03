@@ -23,6 +23,8 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     pl.DataFrame({"event_id": [1], "wide_loss": [10.0], "output_use": ["cds_wide_analysis"]}).write_parquet(
         output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"
     )
+    (output_root / "analysis").mkdir()
+    pl.DataFrame({"metric": ["main"], "loss": [10.0]}).write_csv(output_root / "analysis" / "ep_report.csv")
     pl.DataFrame({"ModelEventID": [1], "ModelGrossLoss": [10.0], "source_row": ["air"]}).write_parquet(
         output_root / "marts" / "HiscoAIR_202601_euws_override.parquet"
     )
@@ -39,20 +41,11 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     with duckdb.connect(str(db_path)) as connection:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert {
-            "cds_fanouts",
-            "input_ep_summaries",
-            "input_ylt_risklink",
-            "input_ylt_verisk",
+            "ep_report",
             "mts_tbl_ylt_combined_all_factors",
             "mts_tbl_ylt_combined_all_factors_wide",
             "mts_tbl_ylt_dialsup",
-            "seed_blending_factors",
-            "seed_euws_rank_overrides",
-            "seed_euws_rate_factors",
-            "seed_forecast_factors",
-            "seed_fx_rates",
-            "seed_lobs",
-            "seed_perils",
+            "seeds",
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
@@ -66,40 +59,11 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         assert connection.execute("SELECT output_use FROM mts_tbl_ylt_combined_all_factors_wide").fetchone() == (
             "cds_wide_analysis",
         )
-        assert row_count(connection, "cds_fanouts") == 2
-        cds_fanout_columns = duckdb_columns(connection, "cds_fanouts")
-        assert {
-            "fanout_source_file",
-            "fanout_name",
-            "forecast_yyyymm",
-            "fanout_metric",
-        } <= cds_fanout_columns
-        fanout_rows = connection.execute(
-            """
-            SELECT
-                fanout_source_file,
-                fanout_name,
-                forecast_yyyymm,
-                fanout_metric,
-                ModelEventID,
-                ModelGrossLoss,
-                source_row
-            FROM cds_fanouts
-            ORDER BY fanout_source_file
-            """
-        ).fetchall()
-        assert fanout_rows == [
-            ("HiscoAIR_202601_euws_override.parquet", "HiscoAIR", "202601", "euws_override", 1, 10.0, "air"),
-            (
-                "HiscoRMS_202602_dialsup_localccy_forecast.parquet",
-                "HiscoRMS",
-                "202602",
-                "dialsup_localccy_forecast",
-                2,
-                20.0,
-                "rms",
-            ),
-        ]
+        assert connection.execute("SELECT metric, loss FROM ep_report").fetchone() == ("main", 10.0)
+        assert row_count(connection, "seeds") == 7
+        assert "cds_fanouts" not in tables
+        assert "input_ylt_verisk" not in tables
+        assert "seed_lobs" not in tables
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:

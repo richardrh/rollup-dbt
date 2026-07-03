@@ -2045,9 +2045,6 @@ def run(
         ylt_original = enriched_ylts.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        ylt_original_path = work_dir / "ylt_original.parquet"
-        write_parquet_with_log(ylt_original, ylt_original_path)
-        ylt_original = pl.scan_parquet(ylt_original_path)
         intermediate_frames["ylt_original"] = ylt_original
 
         ylt_ranked = _add_rank_columns(ylt_original, config)
@@ -2068,14 +2065,8 @@ def run(
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        ylt_original_dialsup_path = work_dir / "ylt_original_dialsup.parquet"
-        write_parquet_with_log(ylt_original_dialsup, ylt_original_dialsup_path)
-        ylt_original_dialsup = pl.scan_parquet(ylt_original_dialsup_path)
         intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
         ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
-        ylt_ranked_dialsup_path = work_dir / "ylt_ranked_dialsup.parquet"
-        write_parquet_with_log(ylt_ranked_dialsup, ylt_ranked_dialsup_path)
-        ylt_ranked_dialsup = pl.scan_parquet(ylt_ranked_dialsup_path)
         intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
         log_lazy_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
 

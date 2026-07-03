@@ -23,56 +23,10 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
     logger.info("writing duckdb export path=%s", db_path, extra={"event": "duckdb_export_start", "path": db_path})
     connection = duckdb.connect(str(db_path))
     try:
-        create_parquet_table(
-            connection,
-            "mts_tbl_ylt_combined_all_factors",
-            [output_root / config.outputs.combined_file],
-        )
-        create_parquet_table(connection, "mts_tbl_ylt_dialsup", [output_root / config.outputs.dialsup_file])
-        create_parquet_table(
-            connection,
-            "mts_tbl_ylt_combined_all_factors_wide",
-            [output_root / config.outputs.wide_file],
-        )
-        create_optional_cds_fanouts_table(
-            connection,
-            sorted((output_root / config.outputs.marts_dir).glob("*.parquet")),
-        )
-        create_parquet_table(connection, "input_ylt_verisk", sorted((data_root / "ylt" / "verisk").glob("*.parquet")))
-        create_parquet_table(
-            connection,
-            "input_ylt_risklink",
-            sorted((data_root / "ylt" / "risklink").glob("*.parquet")),
-        )
-        create_csv_table(
-            connection,
-            "input_ep_summaries",
-            sorted((data_root / "ep_summaries").rglob("*.long.csv")),
-        )
-
-        create_optional_csv_table(connection, "seed_lobs", discover_seed_file(data_root, ("lobs.csv",)))
-        create_optional_csv_table(connection, "seed_perils", discover_seed_file(data_root, ("perils.csv",)))
-        create_optional_csv_table(
-            connection,
-            "seed_blending_factors",
-            discover_seed_file(data_root, ("blending_factors.csv", "blending_weights.csv")),
-        )
-        create_optional_csv_table(connection, "seed_fx_rates", discover_seed_file(data_root, ("fx_rates.csv",)))
-        create_optional_csv_table(
-            connection,
-            "seed_forecast_factors",
-            discover_seed_file(data_root, ("forecast_factors.csv",)),
-        )
-        create_optional_csv_table(
-            connection,
-            "seed_euws_rate_factors",
-            discover_seed_file(data_root, ("euws_rate_factors.csv",)),
-        )
-        create_optional_csv_table(
-            connection,
-            "seed_euws_rank_overrides",
-            data_root / "seeds" / "adjustments" / "euws_rank_overrides.csv",
-        )
+        for path in sorted(output_root.glob("mts_tbl_*.parquet")):
+            create_parquet_table(connection, path.stem, [path])
+        create_optional_csv_glob_table(connection, "ep_report", output_root / config.outputs.analysis_dir / config.outputs.ep_report_file)
+        create_csv_glob_table(connection, "seeds", data_root / "seeds" / "**" / "*.csv")
     finally:
         connection.close()
     elapsed_seconds = time.perf_counter() - started
@@ -99,83 +53,22 @@ def create_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str,
     )
 
 
-def create_optional_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
-    if paths:
-        create_parquet_table(connection, table_name, paths)
-
-
-def create_optional_cds_fanouts_table(connection: duckdb.DuckDBPyConnection, paths: list[Path]) -> None:
-    if not paths:
-        return
+def create_csv_glob_table(connection: duckdb.DuckDBPyConnection, table_name: str, path: Path) -> None:
+    glob_path = str(path.expanduser().resolve(strict=False))
     logger.info(
-        "creating duckdb cds fanouts table files=%d",
-        len(paths),
-        extra={"event": "duckdb_create_table", "table": "cds_fanouts", "files": len(paths), "source_format": "parquet"},
-    )
-    valid_stem_pattern = r"^[^_]+_[0-9]{6}_.+$"
-    connection.execute(
-        f"""
-        CREATE OR REPLACE TABLE cds_fanouts AS
-        WITH fanout_files AS (
-            SELECT
-                * EXCLUDE (filename),
-                regexp_extract(filename, '[^/\\\\]+$') AS fanout_source_file
-            FROM read_parquet({path_list(paths)}, filename = true, union_by_name = true)
-        ),
-        fanout_stems AS (
-            SELECT
-                *,
-                regexp_replace(fanout_source_file, '\\.parquet$', '') AS fanout_source_stem
-            FROM fanout_files
-        )
-        SELECT
-            * EXCLUDE (fanout_source_stem),
-            CASE
-                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN split_part(fanout_source_stem, '_', 1)
-                ELSE NULL
-            END AS fanout_name,
-            CASE
-                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN split_part(fanout_source_stem, '_', 2)
-                ELSE NULL
-            END AS forecast_yyyymm,
-            CASE
-                WHEN regexp_matches(fanout_source_stem, '{valid_stem_pattern}') THEN regexp_extract(fanout_source_stem, '^[^_]+_[0-9]{{6}}_(.+)$', 1)
-                ELSE NULL
-            END AS fanout_metric
-        FROM fanout_stems
-        """
-    )
-
-
-def create_csv_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
-    if not paths:
-        raise FileNotFoundError(f"no CSV files found for DuckDB table {table_name}")
-    logger.info(
-        "creating duckdb csv table table=%s files=%d",
+        "creating duckdb csv table table=%s glob=%s",
         table_name,
-        len(paths),
-        extra={"event": "duckdb_create_table", "table": table_name, "files": len(paths), "source_format": "csv"},
+        glob_path,
+        extra={"event": "duckdb_create_table", "table": table_name, "glob": glob_path, "source_format": "csv"},
     )
     connection.execute(
-        f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto({path_list(paths)}, union_by_name = true)"
+        f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto({sql_string(path)}, filename = true, union_by_name = true)"
     )
 
 
-def create_optional_csv_table(
-    connection: duckdb.DuckDBPyConnection,
-    table_name: str,
-    path: Path | None,
-) -> None:
-    if path is not None and path.exists():
-        create_csv_table(connection, table_name, [path])
-
-
-def discover_seed_file(data_root: Path, filenames: tuple[str, ...]) -> Path | None:
-    for filename in filenames:
-        paths = sorted((data_root / "seeds").rglob(filename), key=lambda path: (len(path.parts), str(path)))
-        if paths:
-            return paths[0]
-    return None
+def create_optional_csv_glob_table(connection: duckdb.DuckDBPyConnection, table_name: str, path: Path) -> None:
+    if path.exists():
+        create_csv_glob_table(connection, table_name, path)
 
 
 def path_list(paths: list[Path]) -> str:

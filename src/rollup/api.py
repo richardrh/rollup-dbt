@@ -75,10 +75,10 @@ def run_rollup(
         )
         try:
             run(data_root, output_root=output_root, debug=debug, config=config)
+            ep_report_path = write_ep_report(output_root) if write_analysis else None
             duckdb_file = None
             if config.outputs.write_duckdb:
                 duckdb_file = export_duckdb(data_root, output_root, config)
-            ep_report_path = write_ep_report(output_root) if write_analysis else None
             result = RollupRunResult(
                 data_root=data_root,
                 output_root=output_root,
