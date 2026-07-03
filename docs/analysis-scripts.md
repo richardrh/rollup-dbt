@@ -21,7 +21,7 @@ COPY (
 
 The main final metric is `euws_override` in
 `mts_tbl_ylt_combined_all_factors`. The DIALSUP final metric is
-`dialsup_gbp_forecast` in `mts_tbl_ylt_dialsup`.
+`dialsup_localccy_forecast` in `mts_tbl_ylt_dialsup`.
 
 ## Inventory
 
@@ -93,7 +93,7 @@ SELECT
   rollup_peril,
   SUM(loss) AS loss
 FROM mts_tbl_ylt_dialsup
-WHERE metric = 'dialsup_gbp_forecast'
+WHERE metric = 'dialsup_localccy_forecast'
 GROUP BY 1, 2, 3, 4
 ORDER BY forecast_date, loss DESC;
 ```
@@ -120,7 +120,7 @@ dialsup AS (
     rollup_peril,
     SUM(loss) AS dialsup_loss
   FROM mts_tbl_ylt_dialsup
-  WHERE metric = 'dialsup_gbp_forecast'
+  WHERE metric = 'dialsup_localccy_forecast'
   GROUP BY 1, 2, 3, 4
 )
 SELECT
@@ -175,7 +175,7 @@ SELECT
   rp,
   loss
 FROM mts_tbl_ylt_dialsup
-WHERE metric = 'dialsup_gbp_forecast'
+WHERE metric = 'dialsup_localccy_forecast'
 ORDER BY loss DESC
 LIMIT 100;
 ```
@@ -230,9 +230,9 @@ SELECT
   SUM(euws_override_202601_loss) AS main_202601,
   SUM(euws_override_202607_loss) AS main_202607,
   SUM(euws_override_202612_loss) AS main_202612,
-  SUM(dialsup_gbp_forecast_202601_loss) AS dialsup_202601,
-  SUM(dialsup_gbp_forecast_202607_loss) AS dialsup_202607,
-  SUM(dialsup_gbp_forecast_202612_loss) AS dialsup_202612
+  SUM(dialsup_localccy_forecast_202601_loss) AS dialsup_202601,
+  SUM(dialsup_localccy_forecast_202607_loss) AS dialsup_202607,
+  SUM(dialsup_localccy_forecast_202612_loss) AS dialsup_202612
 FROM mts_tbl_ylt_combined_all_factors_wide
 GROUP BY 1, 2, 3
 ORDER BY main_202601 DESC NULLS LAST;
@@ -246,9 +246,9 @@ SELECT
   COUNT(euws_override_202601_loss) AS main_202601_populated,
   COUNT(euws_override_202607_loss) AS main_202607_populated,
   COUNT(euws_override_202612_loss) AS main_202612_populated,
-  COUNT(dialsup_gbp_forecast_202601_loss) AS dialsup_202601_populated,
-  COUNT(dialsup_gbp_forecast_202607_loss) AS dialsup_202607_populated,
-  COUNT(dialsup_gbp_forecast_202612_loss) AS dialsup_202612_populated
+  COUNT(dialsup_localccy_forecast_202601_loss) AS dialsup_202601_populated,
+  COUNT(dialsup_localccy_forecast_202607_loss) AS dialsup_202607_populated,
+  COUNT(dialsup_localccy_forecast_202612_loss) AS dialsup_202612_populated
 FROM mts_tbl_ylt_combined_all_factors_wide;
 ```
 

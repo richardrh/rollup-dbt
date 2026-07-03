@@ -28,7 +28,7 @@ Writes mart fanouts to `output/marts/`, wide/report parquets to `output/`, and
 `output/analysis/ep_report.csv`. The wide combined-all-factors parquet is
 `output/mts_tbl_ylt_combined_all_factors_wide.parquet` with forecast loss
 columns such as `euws_override_YYYYMM_loss` and
-`dialsup_gbp_forecast_YYYYMM_loss`.
+`dialsup_localccy_forecast_YYYYMM_loss`.
 
 DuckDB export is on by default and writes `output/rollup.duckdb` unless
 configured otherwise. Use `uv run rollup run --no-duckdb` to disable it. The CLI
@@ -37,7 +37,7 @@ an export.
 
 The main and DIALSUP fanouts include only final metric rows at or above the
 configured minimum event loss threshold. The standalone DIALSUP parquet
-`mts_tbl_ylt_dialsup.parquet` contains only final `dialsup_gbp_forecast` rows;
+`mts_tbl_ylt_dialsup.parquet` contains only final `dialsup_localccy_forecast` rows;
 intermediate DIALSUP metrics are internal/debug data.
 
 Use global `--log-file` before the subcommand to keep an operational run log

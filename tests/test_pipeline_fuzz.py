@@ -191,13 +191,13 @@ def test_fuzz_wide_output_preserves_total_loss(losses: list[float]) -> None:
         Col.risklink_blended_contribution,
         Col.verisk_blended_contribution,
         Col.uplift_factor_on_base_model,
-    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+    ).with_columns(pl.lit("dialsup_localccy_forecast").alias(Col.metric))
 
     with TemporaryDirectory() as temp_dir:
         _write_combined_outputs(Path(temp_dir), ylt, dialsup)
         wide = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
-    loss_columns = ["euws_override_202601_loss", "dialsup_gbp_forecast_202601_loss"]
+    loss_columns = ["euws_override_202601_loss", "dialsup_localccy_forecast_202601_loss"]
     assert set(loss_columns).issubset(wide.columns)
     assert Col.risklink_blended_contribution in wide.columns
     assert Col.verisk_blended_contribution in wide.columns
@@ -235,7 +235,7 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
         Col.risklink_blended_contribution,
         Col.verisk_blended_contribution,
         Col.uplift_factor_on_base_model,
-    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+    ).with_columns(pl.lit("dialsup_localccy_forecast").alias(Col.metric))
 
     with TemporaryDirectory() as temp_dir:
         _write_combined_outputs(Path(temp_dir), ylt, dialsup)
@@ -250,7 +250,7 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
     assert wide.filter(pl.col(Col.risklink_blended_contribution) == 75.0).height == 1
     assert wide.height == 1
     assert wide.item(0, "euws_override_202601_loss") == 100.0
-    assert wide.item(0, "dialsup_gbp_forecast_202601_loss") == 100.0
+    assert wide.item(0, "dialsup_localccy_forecast_202601_loss") == 100.0
 
 
 def test_wide_output_orders_output_use_diagnostics_final_and_dialsup() -> None:
@@ -284,7 +284,7 @@ def test_wide_output_orders_output_use_diagnostics_final_and_dialsup() -> None:
         Col.risklink_blended_contribution,
         Col.verisk_blended_contribution,
         Col.uplift_factor_on_base_model,
-    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+    ).with_columns(pl.lit("dialsup_localccy_forecast").alias(Col.metric))
 
     with TemporaryDirectory() as temp_dir:
         _write_combined_outputs(Path(temp_dir), ylt, dialsup)
@@ -297,15 +297,15 @@ def test_wide_output_orders_output_use_diagnostics_final_and_dialsup() -> None:
     assert columns.index(Col.risklink_loss) < columns.index(Col.risklink_blended_contribution)
     assert columns.index(Col.verisk_loss) < columns.index(Col.verisk_blended_contribution)
     assert columns.index(Col.uplift_factor_on_base_model) < columns.index("euws_override_202601_loss")
-    assert columns.index("euws_override_202601_loss") < columns.index("dialsup_gbp_forecast_202601_loss")
-    assert columns[-1] == "dialsup_gbp_forecast_202601_loss"
+    assert columns.index("euws_override_202601_loss") < columns.index("dialsup_localccy_forecast_202601_loss")
+    assert columns[-1] == "dialsup_localccy_forecast_202601_loss"
     assert len(columns) == len(set(columns))
     assert wide.item(0, Col.output_use) == "cds_wide_analysis"
 
 
 def test_ordered_mts_wide_columns_preserves_all_columns_once() -> None:
     columns = [
-        "dialsup_gbp_forecast_202601_loss",
+        "dialsup_localccy_forecast_202601_loss",
         "euws_override_202601_loss",
         Col.risklink_blended_contribution,
         Col.base_model,
@@ -326,7 +326,7 @@ def test_ordered_mts_wide_columns_preserves_all_columns_once() -> None:
     assert ordered.index(Col.output_use) < ordered.index(Col.risklink_loss)
     assert ordered.index(Col.risklink_loss) < ordered.index(Col.risklink_blended_contribution)
     assert ordered.index(Col.uplift_factor_on_base_model) < ordered.index("euws_override_202601_loss")
-    assert ordered[-1] == "dialsup_gbp_forecast_202601_loss"
+    assert ordered[-1] == "dialsup_localccy_forecast_202601_loss"
 
 
 def test_combined_outputs_label_output_use() -> None:
@@ -352,8 +352,8 @@ def test_combined_outputs_label_output_use() -> None:
     dialsup = pl.concat(
         [
             ylt.with_columns(pl.lit("dialsup_original").alias(Col.metric)),
-            ylt.with_columns(pl.lit("dialsup_gbp").alias(Col.metric)),
-            ylt.with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric)),
+            ylt.with_columns(pl.lit("dialsup_localccy").alias(Col.metric)),
+            ylt.with_columns(pl.lit("dialsup_localccy_forecast").alias(Col.metric)),
         ]
     )
 
@@ -368,7 +368,7 @@ def test_combined_outputs_label_output_use() -> None:
         "original": "intermediate_audit",
         "euws_override": "cds_main",
     }
-    assert exported[Col.metric].unique().to_list() == ["dialsup_gbp_forecast"]
+    assert exported[Col.metric].unique().to_list() == ["dialsup_localccy_forecast"]
     assert exported[Col.output_use].unique().to_list() == ["cds_dialsup"]
     assert wide[Col.output_use].unique().to_list() == ["cds_wide_analysis"]
     assert wide.height == 1

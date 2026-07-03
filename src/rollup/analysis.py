@@ -95,7 +95,7 @@ def _main_losses(path: Path) -> pl.LazyFrame:
 
 def _dialsup_losses(path: Path) -> pl.LazyFrame:
     return pl.scan_parquet(path).filter(
-        pl.col("metric") == "dialsup_gbp_forecast"
+        pl.col("metric") == "dialsup_localccy_forecast"
     ).select(
         "forecast_date",
         "base_model",

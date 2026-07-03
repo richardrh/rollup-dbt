@@ -1,7 +1,10 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+import json
 import logging
+import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator
@@ -958,15 +961,16 @@ def apply_fx_to_ylt(
     return (
         blended.join(fx_rates, on=Col.currency, how="inner")
         .with_columns(
-            (pl.col(Col.loss) * pl.col(Col.fx_rate)).alias(Col.loss),
-            pl.lit("gbp").alias(Col.metric),
+            (pl.col(Col.loss) / pl.col(Col.fx_rate)).alias(Col.loss),
+            pl.col(Col.currency).alias(Col.target_currency),
+            pl.lit("localccy").alias(Col.metric),
         )
         .select([*blended_cols, Col.target_currency])
     )
 
 
 def apply_forecast_to_ylt(
-    gbp: pl.LazyFrame,
+    localccy: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
     forecast_factors = seeds.frames["forecast_factors.csv"].lazy()
@@ -979,7 +983,7 @@ def apply_forecast_to_ylt(
     )
 
     forecasted = (
-        gbp.join(forecast_dates, how="cross")
+        localccy.join(forecast_dates, how="cross")
         .join(
             forecast_factors,
             on=[Col.class_, Col.office, Col.forecast_date],
@@ -995,14 +999,14 @@ def apply_forecast_to_ylt(
         forecasted
         .with_columns(
             (pl.col(Col.loss) * pl.col("_forecast_factor_raw").fill_null(1.0)).alias(Col.loss),
-            pl.lit("gbp_forecast").alias(Col.metric),
+            pl.lit("localccy_forecast").alias(Col.metric),
         )
         .drop("_forecast_factor_raw")
     )
 
 
 def apply_euws_to_ylt(
-    gbp_forecast: pl.LazyFrame,
+    localccy_forecast: pl.LazyFrame,
     verisk_events: pl.LazyFrame,
     seeds: SeedValidationResult,
 ) -> pl.LazyFrame:
@@ -1011,9 +1015,9 @@ def apply_euws_to_ylt(
         pl.col(RawCol.factor).alias("_euws_factor_raw_source"),
     )
 
-    gbp_forecast_cols = gbp_forecast.collect_schema().names()
+    localccy_forecast_cols = localccy_forecast.collect_schema().names()
     joined = (
-        gbp_forecast.join(
+        localccy_forecast.join(
             verisk_events,
             on=[Col.event_id, Col.year_id, Col.model_code],
             how="left",
@@ -1031,12 +1035,20 @@ def apply_euws_to_ylt(
             pl.col("_euws_factor_raw_source").fill_null(1.0).alias("_euws_factor_raw")
         )
         .with_columns(
-            pl.col(Col.loss).alias("_gbp_forecast_loss"),
+            pl.col(Col.loss).alias("_localccy_forecast_loss"),
             (pl.col(Col.loss) * pl.col("_euws_factor_raw")).alias(Col.loss),
             pl.lit("euws").alias(Col.metric),
         )
         .drop("_euws_factor_raw_source")
-        .select([*gbp_forecast_cols, "_euws_factor_raw", "_gbp_forecast_loss", Col.model_event_id, Col.event_day])
+        .select(
+            [
+                *localccy_forecast_cols,
+                "_euws_factor_raw",
+                "_localccy_forecast_loss",
+                Col.model_event_id,
+                Col.event_day,
+            ]
+        )
     )
 
 
@@ -1066,7 +1078,7 @@ def apply_euws_overrides_to_ylt(
         )
         .with_columns(
             pl.when(override_condition)
-            .then(pl.col("_gbp_forecast_loss") * pl.col("_euws_override_factor"))
+            .then(pl.col("_localccy_forecast_loss") * pl.col("_euws_override_factor"))
             .otherwise(pl.col(Col.loss))
             .alias(Col.loss),
             pl.lit("euws_override").alias(Col.metric),
@@ -1130,17 +1142,19 @@ def calculate_dialsup(
         pl.lit("dialsup_original").alias(Col.metric),
     ).select(output_cols)
 
-    dialsup_gbp = base.with_columns(
-        (pl.col(Col.loss) * pl.col(Col.fx_rate)).alias(Col.loss),
-        pl.lit("dialsup_gbp").alias(Col.metric),
+    dialsup_localccy = base.with_columns(
+        (pl.col(Col.loss) / pl.col(Col.fx_rate)).alias(Col.loss),
+        pl.col(Col.currency).alias(Col.target_currency),
+        pl.lit("dialsup_localccy").alias(Col.metric),
     ).select(output_cols)
 
-    dialsup_gbp_forecast = base.with_columns(
-        (pl.col(Col.loss) * pl.col(Col.fx_rate) * pl.col("_forecast_factor")).alias(Col.loss),
-        pl.lit("dialsup_gbp_forecast").alias(Col.metric),
+    dialsup_localccy_forecast = base.with_columns(
+        (pl.col(Col.loss) / pl.col(Col.fx_rate) * pl.col("_forecast_factor")).alias(Col.loss),
+        pl.col(Col.currency).alias(Col.target_currency),
+        pl.lit("dialsup_localccy_forecast").alias(Col.metric),
     ).select(output_cols)
 
-    return pl.concat([dialsup_original, dialsup_gbp, dialsup_gbp_forecast])
+    return pl.concat([dialsup_original, dialsup_localccy, dialsup_localccy_forecast])
 
 
 def enrich_risklink_event_days(
@@ -1370,12 +1384,12 @@ _MTS_WIDE_MAIN_LOSS_PREFIX_ORDER = [
     "original",
     Col.original_ylt_loss_blended,
     "blended",
-    Col.original_ylt_loss_blended_gbp,
-    "gbp",
-    Col.original_ylt_loss_blended_gbp_forecast,
-    "gbp_forecast",
-    Col.original_ylt_loss_blended_gbp_forecast_euws_raw,
-    Col.original_ylt_loss_blended_gbp_forecast_euws,
+    Col.original_ylt_loss_blended_localccy,
+    "localccy",
+    Col.original_ylt_loss_blended_localccy_forecast,
+    "localccy_forecast",
+    Col.original_ylt_loss_blended_localccy_forecast_euws_raw,
+    Col.original_ylt_loss_blended_localccy_forecast_euws,
     "euws",
     "euws_override",
 ]
@@ -1444,81 +1458,299 @@ def _ordered_mts_wide_columns(columns: list[str]) -> list[str]:
 
 def _write_combined_outputs(
     output_root: Path,
-    ylt: pl.DataFrame,
-    ylt_dialsup: pl.DataFrame,
+    ylt: pl.DataFrame | pl.LazyFrame,
+    ylt_dialsup: pl.DataFrame | pl.LazyFrame,
 ) -> None:
+    ylt_lazy = _as_lazy_frame(ylt)
+    ylt_dialsup_lazy = _as_lazy_frame(ylt_dialsup)
+    ylt_columns = ylt_lazy.collect_schema().names()
+    dialsup_columns = ylt_dialsup_lazy.collect_schema().names()
+    ylt_path = output_root / "mts_tbl_ylt_combined_all_factors.parquet"
+    dialsup_path = output_root / "mts_tbl_ylt_dialsup.parquet"
     write_parquet_with_log(
-        _with_metric_output_use(ylt, final_metric="euws_override", final_output_use="cds_main"),
-        output_root / "mts_tbl_ylt_combined_all_factors.parquet",
+        _with_metric_output_use(ylt_lazy, final_metric="euws_override", final_output_use="cds_main"),
+        ylt_path,
     )
     write_parquet_with_log(
         _with_metric_output_use(
-            ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
-            final_metric="dialsup_gbp_forecast",
+            ylt_dialsup_lazy.filter(pl.col(Col.metric) == "dialsup_localccy_forecast"),
+            final_metric="dialsup_localccy_forecast",
             final_output_use="cds_dialsup",
         ),
-        output_root / "mts_tbl_ylt_dialsup.parquet",
+        dialsup_path,
     )
 
-    dims = _mts_output_dimensions(ylt)
+    dims = _mts_output_dimensions(pl.DataFrame(schema={column: pl.Null for column in ylt_columns}))
     diagnostic_cols = [
         Col.risklink_blended_contribution,
         Col.verisk_blended_contribution,
         Col.uplift_factor_on_base_model,
     ]
-    selected_main = ylt.lazy().filter(pl.col(Col.metric) == "euws_override")
-    selected_dialsup = (
-        ylt_dialsup.lazy()
-        .filter(pl.col(Col.metric) == "dialsup_gbp_forecast")
-        .with_columns([pl.lit(None).alias(col) for col in dims if col not in ylt_dialsup.columns])
+    wide_args = {
+        "output_path": output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet",
+        "ylt_path": ylt_path,
+        "dialsup_path": dialsup_path,
+        "dims": dims,
+        "diagnostic_cols": [col for col in diagnostic_cols if col in ylt_columns],
+        "dialsup_columns": dialsup_columns,
+    }
+    _write_wide_output_duckdb_subprocess(**wide_args)
+
+
+def _sql_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _sql_literal(value: str | Path) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _write_wide_output_duckdb_subprocess(
+    output_path: Path,
+    ylt_path: Path,
+    dialsup_path: Path,
+    dims: list[str],
+    diagnostic_cols: list[str],
+    *,
+    dialsup_columns: list[str],
+) -> None:
+    payload = {
+        "output_path": str(output_path),
+        "ylt_path": str(ylt_path),
+        "dialsup_path": str(dialsup_path),
+        "dims": dims,
+        "diagnostic_cols": diagnostic_cols,
+        "dialsup_columns": dialsup_columns,
+    }
+    code = """
+import json
+import logging
+from pathlib import Path
+from rollup.pipeline import _write_wide_output_duckdb
+
+logging.basicConfig(level=logging.INFO)
+payload = json.loads(__import__('sys').argv[1])
+_write_wide_output_duckdb(
+    Path(payload['output_path']),
+    Path(payload['ylt_path']),
+    Path(payload['dialsup_path']),
+    payload['dims'],
+    payload['diagnostic_cols'],
+    dialsup_columns=payload['dialsup_columns'],
+)
+"""
+    subprocess.run(
+        [sys.executable, "-c", code, json.dumps(payload)],
+        check=True,
     )
 
-    def loss_column(frame: pl.LazyFrame, metric: str, forecast_date: object) -> pl.LazyFrame:
-        month = str(forecast_date).replace("-", "")[:6]
-        return (
-            frame.filter(pl.col(Col.forecast_date) == forecast_date)
-            .group_by(dims)
-            .agg(pl.col(Col.loss).first().alias(f"{metric}_{month}_loss"))
-        )
 
-    forecast_dates = (
-        pl.concat(
-            [
-                selected_main.select(Col.forecast_date),
-                selected_dialsup.select(Col.forecast_date),
-            ]
-        )
-        .unique()
-        .sort(Col.forecast_date)
-        .collect()[Col.forecast_date]
-        .to_list()
+def _write_wide_output_duckdb(
+    output_path: Path,
+    ylt_path: Path,
+    dialsup_path: Path,
+    dims: list[str],
+    diagnostic_cols: list[str],
+    *,
+    dialsup_columns: list[str],
+) -> None:
+    import duckdb
+
+    started = time.perf_counter()
+    logger.info(
+        "building wide output=%s",
+        output_path,
+        extra={"event": "wide_output_start", "path": output_path},
     )
-    wide = pl.concat(
-        [selected_main.select(dims), selected_dialsup.select(dims)],
-        how="diagonal_relaxed",
-    ).unique()
-    for forecast_date in forecast_dates:
-        wide = wide.join(loss_column(selected_main, "euws_override", forecast_date), on=dims, how="left")
-        wide = wide.join(loss_column(selected_dialsup, "dialsup_gbp_forecast", forecast_date), on=dims, how="left")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.unlink(missing_ok=True)
 
-    diagnostics = ylt.lazy().filter(pl.col(Col.metric) == "euws_override").select(
-        [*dims, *[col for col in diagnostic_cols if col in ylt.columns]]
-    ).unique(subset=dims, keep="first")
-    if len(diagnostics.collect_schema().names()) > len(dims):
-        wide = wide.join(diagnostics, on=dims, how="left")
+    dim_select = ", ".join(_sql_identifier(col) for col in dims)
+    dialsup_dim_select = ", ".join(
+        _sql_identifier(col) if col in dialsup_columns else f"NULL AS {_sql_identifier(col)}"
+        for col in dims
+    )
+    con = duckdb.connect()
+    try:
+        temp_dir = output_path.parent / ".duckdb_tmp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        con.execute(f"SET temp_directory={_sql_literal(temp_dir)}")
+        con.execute("SET memory_limit='8GB'")
+        forecast_dates = [
+            row[0]
+            for row in con.execute(
+                f"""
+                SELECT DISTINCT CAST({_sql_identifier(Col.forecast_date)} AS VARCHAR) AS forecast_date
+                FROM (
+                    SELECT {_sql_identifier(Col.forecast_date)}
+                    FROM read_parquet({_sql_literal(ylt_path)})
+                    WHERE {_sql_identifier(Col.metric)} = 'euws_override'
+                    UNION ALL
+                    SELECT {_sql_identifier(Col.forecast_date)}
+                    FROM read_parquet({_sql_literal(dialsup_path)})
+                    WHERE {_sql_identifier(Col.metric)} = 'dialsup_localccy_forecast'
+                )
+                WHERE forecast_date IS NOT NULL
+                ORDER BY forecast_date
+                """
+            ).fetchall()
+        ]
+        loss_column_names: list[str] = []
+        logger.info(
+            "building wide base dimensions",
+            extra={"event": "wide_base_dimensions_start"},
+        )
+        con.execute(
+            f"""
+            CREATE TEMP TABLE wide_output AS
+            SELECT DISTINCT {dim_select}
+            FROM read_parquet({_sql_literal(ylt_path)})
+            WHERE {_sql_identifier(Col.metric)} = 'euws_override'
+            UNION
+            SELECT DISTINCT {dialsup_dim_select}
+            FROM read_parquet({_sql_literal(dialsup_path)})
+            WHERE {_sql_identifier(Col.metric)} = 'dialsup_localccy_forecast'
+            """
+        )
+        logger.info(
+            "built wide base dimensions",
+            extra={"event": "wide_base_dimensions_done"},
+        )
+        join_condition = " AND ".join(
+            f"w.{_sql_identifier(col)} IS NOT DISTINCT FROM c.{_sql_identifier(col)}" for col in dims
+        )
+        for forecast_date in forecast_dates:
+            month = forecast_date.replace("-", "")[:6]
+            date_predicate = f"CAST({_sql_identifier(Col.forecast_date)} AS VARCHAR) = {_sql_literal(forecast_date)}"
+            for metric, source_path, source_dims in [
+                ("euws_override", ylt_path, dim_select),
+                ("dialsup_localccy_forecast", dialsup_path, dialsup_dim_select),
+            ]:
+                column_name = f"{metric}_{month}_loss"
+                table_name = "wide_col_current"
+                logger.info(
+                    "building wide column=%s",
+                    column_name,
+                    extra={"event": "wide_column_start", "column": column_name},
+                )
+                con.execute(
+                    f"""
+                    CREATE TEMP TABLE {_sql_identifier(table_name)} AS
+                    SELECT
+                        {source_dims},
+                        ANY_VALUE({_sql_identifier(Col.loss)}) AS {_sql_identifier(column_name)}
+                    FROM read_parquet({_sql_literal(source_path)})
+                    WHERE {_sql_identifier(Col.metric)} = {_sql_literal(metric)}
+                      AND {date_predicate}
+                    GROUP BY ALL
+                    """
+                )
+                logger.info(
+                    "built wide column=%s",
+                    column_name,
+                    extra={"event": "wide_column_done", "column": column_name},
+                )
+                loss_column_names.append(column_name)
+                existing_columns = ", ".join(
+                    f"w.{_sql_identifier(col)}" for col in [*dims, *loss_column_names[:-1]]
+                )
+                logger.info(
+                    "joining wide column=%s",
+                    column_name,
+                    extra={"event": "wide_column_join_start", "column": column_name},
+                )
+                con.execute(
+                    f"""
+                    CREATE TEMP TABLE wide_next AS
+                    SELECT
+                        {existing_columns},
+                        c.{_sql_identifier(column_name)}
+                    FROM wide_output w
+                    LEFT JOIN {_sql_identifier(table_name)} c
+                      ON {join_condition}
+                    """
+                )
+                con.execute("DROP TABLE wide_output")
+                con.execute(f"DROP TABLE {_sql_identifier(table_name)}")
+                con.execute("ALTER TABLE wide_next RENAME TO wide_output")
+                logger.info(
+                    "joined wide column=%s",
+                    column_name,
+                    extra={"event": "wide_column_join_done", "column": column_name},
+                )
+        if not loss_column_names:
+            raise ValueError("wide output has no forecast loss columns")
 
-    wide = wide.with_columns(pl.lit("cds_wide_analysis").alias(Col.output_use))
-    wide = wide.select(_ordered_mts_wide_columns(wide.collect_schema().names()))
+        if diagnostic_cols:
+            diagnostic_select = ", ".join(
+                f"ANY_VALUE({_sql_identifier(col)}) FILTER (WHERE {_sql_identifier(col)} IS NOT NULL) AS {_sql_identifier(col)}"
+                for col in diagnostic_cols
+            )
+            con.execute(
+                f"""
+                CREATE TEMP TABLE wide_diagnostics AS
+                SELECT {dim_select}, {diagnostic_select}
+                FROM read_parquet({_sql_literal(ylt_path)})
+                WHERE {_sql_identifier(Col.metric)} = 'euws_override'
+                GROUP BY {dim_select}
+                """
+            )
+            diagnostic_join = " AND ".join(
+                f"w.{_sql_identifier(col)} IS NOT DISTINCT FROM d.{_sql_identifier(col)}" for col in dims
+            )
+            diagnostic_projection = ", ".join(f"d.{_sql_identifier(col)}" for col in diagnostic_cols)
+            con.execute(
+                f"""
+                CREATE TEMP TABLE wide_with_diagnostics AS
+                SELECT w.*, {diagnostic_projection}
+                FROM wide_output w
+                LEFT JOIN wide_diagnostics d
+                  ON {diagnostic_join}
+                """
+            )
+            con.execute("DROP TABLE wide_output")
+            con.execute("ALTER TABLE wide_with_diagnostics RENAME TO wide_output")
 
-    write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
+        con.execute(
+            f"""
+            CREATE TEMP TABLE wide_with_output_use AS
+            SELECT *, 'cds_wide_analysis' AS {_sql_identifier(Col.output_use)}
+            FROM wide_output
+            """
+        )
+        con.execute("DROP TABLE wide_output")
+        con.execute("ALTER TABLE wide_with_output_use RENAME TO wide_output")
+
+        grouped_columns = [*dims, *loss_column_names, *diagnostic_cols, Col.output_use]
+        ordered_columns = _ordered_mts_wide_columns(grouped_columns)
+        ordered_select = ", ".join(_sql_identifier(col) for col in ordered_columns)
+        row_count = con.execute("SELECT COUNT(*) FROM wide_output").fetchone()[0]
+        con.execute(f"COPY (SELECT {ordered_select} FROM wide_output) TO {_sql_literal(output_path)} (FORMAT PARQUET)")
+    finally:
+        con.close()
+
+    elapsed_seconds = time.perf_counter() - started
+    logger.info(
+        "wrote output=%s rows=%d elapsed=%.2fs",
+        output_path,
+        row_count,
+        elapsed_seconds,
+        extra={
+            "event": "write_output",
+            "path": output_path,
+            "rows": row_count,
+            "elapsed_seconds": elapsed_seconds,
+            "lazy": False,
+        },
+    )
 
 
 def _with_metric_output_use(
-    frame: pl.DataFrame,
+    frame: pl.DataFrame | pl.LazyFrame,
     *,
     final_metric: str,
     final_output_use: str,
-) -> pl.DataFrame:
+) -> pl.DataFrame | pl.LazyFrame:
     return frame.with_columns(
         pl.when(pl.col(Col.metric) == final_metric)
         .then(pl.lit(final_output_use))
@@ -1562,6 +1794,21 @@ def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path
     )
 
 
+def lazy_row_count(frame: pl.LazyFrame) -> int:
+    return frame.select(pl.len().alias("rows")).collect().item()
+
+
+def log_lazy_checkpoint(name: str, frame: pl.LazyFrame) -> int:
+    rows = lazy_row_count(frame)
+    logger.info(
+        "checkpoint=%s rows=%d",
+        name,
+        rows,
+        extra={"event": "checkpoint", "checkpoint": name, "rows": rows},
+    )
+    return rows
+
+
 def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
     logger.info(
         "checkpoint=%s rows=%d",
@@ -1598,6 +1845,8 @@ def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
     output_dir = output_root / "marts"
     output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_mart in output_dir.glob("*.parquet"):
+        stale_mart.unlink()
 
     fanouts: dict[str, pl.LazyFrame] = {}
     for name, frame in result.marts.frames.items():
@@ -1731,6 +1980,8 @@ def run(
 ) -> PipelineRunResult:
     data_root = Path(data_root)
     output_root = Path(output_root)
+    work_dir = output_root / ".rollup_work"
+    work_dir.mkdir(parents=True, exist_ok=True)
     config = config or RollupConfig()
     seed_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
     staging_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {}
@@ -1817,60 +2068,83 @@ def run(
         ylt_original = enriched_ylts.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        ylt_original_path = work_dir / "ylt_original.parquet"
+        write_parquet_with_log(ylt_original, ylt_original_path)
+        ylt_original = pl.scan_parquet(ylt_original_path)
         intermediate_frames["ylt_original"] = ylt_original
 
         ylt_ranked = _add_rank_columns(ylt_original, config)
+        ylt_ranked_path = work_dir / "ylt_ranked.parquet"
+        write_parquet_with_log(ylt_ranked, ylt_ranked_path)
+        ylt_ranked = pl.scan_parquet(ylt_ranked_path)
         intermediate_frames["ylt_ranked"] = ylt_ranked
-        ylt_ranked = ylt_ranked.collect()
-        _log_checkpoint("ylt_original", ylt_ranked)
-        _log_checkpoint("ylt_ranked", ylt_ranked)
+        ylt_ranked_count = log_lazy_checkpoint("ylt_ranked", ylt_ranked)
 
-        ylt_blended = apply_ep_blending_to_ylt(ylt_ranked.lazy(), ep_blending_targets)
+        ylt_blended = apply_ep_blending_to_ylt(ylt_ranked, ep_blending_targets)
+        ylt_blended_path = work_dir / "ylt_blended.parquet"
+        write_parquet_with_log(ylt_blended, ylt_blended_path)
+        ylt_blended = pl.scan_parquet(ylt_blended_path)
         intermediate_frames["ylt_blending_applied"] = ylt_blended
-        ylt_blended = ylt_blended.collect()
-        _warn_row_drop("blending", ylt_ranked.height, ylt_blended.height)
-        _log_checkpoint("ylt_blended", ylt_blended)
+        ylt_blended_count = log_lazy_checkpoint("ylt_blended", ylt_blended)
+        _warn_row_drop("blending", ylt_ranked_count, ylt_blended_count)
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
+        ylt_original_dialsup_path = work_dir / "ylt_original_dialsup.parquet"
+        write_parquet_with_log(ylt_original_dialsup, ylt_original_dialsup_path)
+        ylt_original_dialsup = pl.scan_parquet(ylt_original_dialsup_path)
         intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
         ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
+        ylt_ranked_dialsup_path = work_dir / "ylt_ranked_dialsup.parquet"
+        write_parquet_with_log(ylt_ranked_dialsup, ylt_ranked_dialsup_path)
+        ylt_ranked_dialsup = pl.scan_parquet(ylt_ranked_dialsup_path)
         intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
-        ylt_ranked_dialsup = ylt_ranked_dialsup.collect()
-        _log_checkpoint("ylt_original_dialsup", ylt_ranked_dialsup)
-        _log_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
+        log_lazy_checkpoint("ylt_ranked_dialsup", ylt_ranked_dialsup)
 
-        ylt_dialsup = calculate_dialsup(ylt_ranked_dialsup.lazy(), verisk_events, seeds)
+        ylt_dialsup = calculate_dialsup(ylt_ranked_dialsup, verisk_events, seeds)
+        ylt_dialsup_path = work_dir / "ylt_dialsup.parquet"
+        write_parquet_with_log(ylt_dialsup, ylt_dialsup_path)
+        ylt_dialsup = pl.scan_parquet(ylt_dialsup_path)
         intermediate_frames["ylt_dialsup"] = ylt_dialsup
-        ylt_dialsup = ylt_dialsup.collect()
-        _log_checkpoint("ylt_dialsup", ylt_dialsup)
+        log_lazy_checkpoint("ylt_dialsup", ylt_dialsup)
 
-        ylt_gbp = apply_fx_to_ylt(ylt_blended.lazy(), seeds)
-        intermediate_frames["ylt_fx_applied"] = ylt_gbp
-        ylt_gbp = ylt_gbp.collect()
-        _warn_row_drop("fx", ylt_blended.height, ylt_gbp.height)
-        _log_checkpoint("ylt_gbp", ylt_gbp)
+        ylt_localccy = apply_fx_to_ylt(ylt_blended, seeds)
+        ylt_localccy_path = work_dir / "ylt_localccy.parquet"
+        write_parquet_with_log(ylt_localccy, ylt_localccy_path)
+        ylt_localccy = pl.scan_parquet(ylt_localccy_path)
+        intermediate_frames["ylt_fx_applied"] = ylt_localccy
+        ylt_localccy_count = log_lazy_checkpoint("ylt_localccy", ylt_localccy)
+        _warn_row_drop("fx", ylt_blended_count, ylt_localccy_count)
 
-        ylt_gbp_forecast = apply_forecast_to_ylt(ylt_gbp.lazy(), seeds)
-        intermediate_frames["ylt_forecast_applied"] = ylt_gbp_forecast
-        ylt_gbp_forecast = ylt_gbp_forecast.collect()
-        _log_checkpoint("ylt_gbp_forecast", ylt_gbp_forecast)
+        ylt_localccy_forecast = apply_forecast_to_ylt(ylt_localccy, seeds)
+        ylt_localccy_forecast_path = work_dir / "ylt_localccy_forecast.parquet"
+        write_parquet_with_log(ylt_localccy_forecast, ylt_localccy_forecast_path)
+        ylt_localccy_forecast = pl.scan_parquet(ylt_localccy_forecast_path)
+        intermediate_frames["ylt_forecast_applied"] = ylt_localccy_forecast
+        log_lazy_checkpoint("ylt_localccy_forecast", ylt_localccy_forecast)
 
-        ylt_euws = apply_euws_to_ylt(ylt_gbp_forecast.lazy(), verisk_events, seeds)
+        ylt_euws = apply_euws_to_ylt(ylt_localccy_forecast, verisk_events, seeds)
+        ylt_euws_path = work_dir / "ylt_euws.parquet"
+        write_parquet_with_log(ylt_euws, ylt_euws_path)
+        ylt_euws = pl.scan_parquet(ylt_euws_path)
         intermediate_frames["ylt_euws_applied"] = ylt_euws
-        ylt_euws = ylt_euws.collect()
-        _log_checkpoint("ylt_euws", ylt_euws)
+        log_lazy_checkpoint("ylt_euws", ylt_euws)
 
-        ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws.lazy(), seeds)
+        ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws, seeds)
+        ylt_euws_override_path = work_dir / "ylt_euws_override.parquet"
+        write_parquet_with_log(ylt_euws_override, ylt_euws_override_path)
+        ylt_euws_override = pl.scan_parquet(ylt_euws_override_path)
         intermediate_frames["ylt_euws_override_applied"] = ylt_euws_override
-        ylt_euws_override = ylt_euws_override.collect()
-        _log_checkpoint("ylt_euws_override", ylt_euws_override)
+        log_lazy_checkpoint("ylt_euws_override", ylt_euws_override)
 
         ylt = pl.concat(
-            [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
+            [ylt_ranked, ylt_blended, ylt_localccy, ylt_localccy_forecast, ylt_euws, ylt_euws_override],
             how="diagonal",
         )
+        ylt_path = work_dir / "ylt_combined_all_factors.parquet"
+        write_parquet_with_log(ylt, ylt_path)
+        ylt = pl.scan_parquet(ylt_path)
         logger.info(
             "intermediate summary frames=%d",
             len(intermediate_frames),
@@ -1886,17 +2160,17 @@ def run(
         )
         ylt_dialsup_thresholded = apply_event_loss_threshold(
             ylt_dialsup,
-            metric="dialsup_gbp_forecast",
+            metric="dialsup_localccy_forecast",
             threshold=threshold,
         )
         main_fanout = build_main_fanout(
-            ylt_thresholded.lazy().filter(pl.col(Col.metric) == "euws_override"),
+            _as_lazy_frame(ylt_thresholded).filter(pl.col(Col.metric) == "euws_override"),
             risklink_events,
         )
         mart_frames["main_fanout"] = main_fanout
 
         dialsup_fanout = build_dialsup_fanout(
-            ylt_dialsup_thresholded.lazy().filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+            _as_lazy_frame(ylt_dialsup_thresholded).filter(pl.col(Col.metric) == "dialsup_localccy_forecast"),
             risklink_events,
         )
         mart_frames["dialsup_fanout"] = dialsup_fanout

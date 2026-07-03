@@ -27,7 +27,7 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         output_root / "marts" / "HiscoAIR_202601_euws_override.parquet"
     )
     pl.DataFrame({"ModelEventID": [2], "ModelGrossLoss": [20.0], "source_row": ["rms"]}).write_parquet(
-        output_root / "marts" / "HiscoRMS_202602_dialsup_gbp_forecast.parquet"
+        output_root / "marts" / "HiscoRMS_202602_dialsup_localccy_forecast.parquet"
     )
 
     db_path = export_duckdb(
@@ -91,10 +91,10 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         assert fanout_rows == [
             ("HiscoAIR_202601_euws_override.parquet", "HiscoAIR", "202601", "euws_override", 1, 10.0, "air"),
             (
-                "HiscoRMS_202602_dialsup_gbp_forecast.parquet",
+                "HiscoRMS_202602_dialsup_localccy_forecast.parquet",
                 "HiscoRMS",
                 "202602",
-                "dialsup_gbp_forecast",
+                "dialsup_localccy_forecast",
                 2,
                 20.0,
                 "rms",

@@ -52,11 +52,11 @@ flowchart TD
 | 5 | Enrich YLT | `enrich_ylt_with_ep_summaries` | YLT rows receive rollup LOB/peril, class, office, currency, and region/peril metadata. |
 | 6 | Rank base-model YLT | `_add_rank_columns` | Base-model rows receive `rnk`, `rp`, and `rp_bucket` for blending. |
 | 7 | Blend YLT | `apply_ep_blending_to_ylt` | `loss` is uplifted and `metric` becomes `blended`. |
-| 8 | Apply FX | `apply_fx_to_ylt` | `loss` is converted to GBP, `target_currency` is attached, and `metric` becomes `gbp`. |
-| 9 | Apply forecast | `apply_forecast_to_ylt` | Rows are cross-joined to forecast dates, missing factors default to `1.0`, and `metric` becomes `gbp_forecast`. |
+| 8 | Apply FX | `apply_fx_to_ylt` | Input `loss` is expected to be GBP and is converted to the LOB local currency using `currency -> GBP` seed rates, and `metric` becomes `localccy`. |
+| 9 | Apply forecast | `apply_forecast_to_ylt` | Rows are cross-joined to forecast dates, missing factors default to `1.0`, and `metric` becomes `localccy_forecast`. |
 | 10 | Apply EUWS | `apply_euws_to_ylt` | Europe Windstorm factors are applied, model event fields are attached, and `metric` becomes `euws`. |
 | 11 | Apply EUWS overrides | `apply_euws_overrides_to_ylt` | Configured zero-factor overrides are applied and `metric` becomes `euws_override`. |
-| 12 | Build DIALSUP | `calculate_dialsup` | DIALSUP calculates intermediate metrics internally and exports final `dialsup_gbp_forecast` rows. |
+| 12 | Build DIALSUP | `calculate_dialsup` | DIALSUP calculates intermediate metrics internally and exports final `dialsup_localccy_forecast` rows. |
 | 13 | Build fanouts | `build_main_fanout`, `build_dialsup_fanout` | Final main and DIALSUP metrics are shaped into mart-ready fanout columns. |
 | 14 | Write combined outputs | `_write_combined_outputs` | Long all-factor main and DIALSUP parquets are written, then final metrics are pivoted to wide forecast-date columns. |
 
@@ -105,9 +105,11 @@ For calculation details, see the [calculation reference](calculation-reference.m
 
 ## FX
 
-The blended loss (in the YLT's original currency) is converted to GBP
-using configured FX rates joined on currency. This is applied to both
-the main pipeline and the DIALSUP branch.
+YLT losses are expected to arrive in GBP. The FX step converts those GBP losses
+to the LOB local currency from `business/lobs.csv`. The seed rates in
+`vor/fx_rates.csv` are stored as `currency -> GBP`; the pipeline inverts that
+rate when outputting local currency. This is applied to both the main pipeline
+and the DIALSUP branch.
 
 ## Forecast
 
@@ -159,14 +161,14 @@ and the available contributing factor columns.
 **Wide output** (`mts_tbl_ylt_combined_all_factors_wide.parquet`): the
 long data pivoted so each forecast date becomes a separate column per
 metric — e.g. `euws_override_202601_loss`,
-`dialsup_gbp_forecast_202601_loss`. Dimension columns are all non-
+`dialsup_localccy_forecast_202601_loss`. Dimension columns are all non-
 metric, non-forecast-date, non-loss columns present in both the main
 and DIALSUP frames. Blend diagnostics are attached from main rows and are not
 pivot dimensions, so they do not split one logical event into separate main and
 DIALSUP wide rows.
 
 **DIALSUP output** (`mts_tbl_ylt_dialsup.parquet`): final DIALSUP rows only,
-with `metric = dialsup_gbp_forecast`.
+with `metric = dialsup_localccy_forecast`.
 
 **Fanouts**: mart-ready tables with standardised column names (event
 ID, year, currency, gross loss, event day) for the final main metric

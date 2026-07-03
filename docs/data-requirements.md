@@ -193,11 +193,12 @@ Europe Flood `RegionPerilID` `216` is special-cased to use
 
 ### `data/seeds/vor/fx_rates.csv`
 
-FX lookup from source currency to target currency. The pipeline filters this file
-to GBP targets and joins by source currency to produce GBP losses.
+FX lookup from local currency to GBP. YLT loss inputs are expected to already be
+in GBP; the pipeline filters this file to GBP targets, joins by LOB local
+currency, and inverts the rate to produce local-currency losses in the output.
 
-Missing FX rows are not defaulted: the join is inner, so rows without a GBP FX
-rate are dropped rather than carried forward with `1.0`.
+Missing FX rows are not defaulted: the join is inner, so rows without a local
+currency to GBP FX rate are dropped rather than carried forward with `1.0`.
 
 ### `data/seeds/vor/forecast_factors.csv`
 

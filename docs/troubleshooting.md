@@ -45,8 +45,9 @@ duckdb -c "SELECT vendor, rollup_peril, COUNT(*) rows FROM 'output/debug/mts_ylt
 
 ## Missing FX or forecast factors
 
-- Missing FX rows are not defaulted. Add the required currency-to-GBP rate in
-  `data/seeds/vor/fx_rates.csv`.
+- Missing FX rows are not defaulted. Add the required local-currency-to-GBP rate
+  in `data/seeds/vor/fx_rates.csv`; the pipeline inverts this rate to convert
+  GBP input losses to local-currency output losses.
 - Missing forecast factors default to `1.0`.
 
 ## EP report missing
