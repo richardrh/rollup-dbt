@@ -13,8 +13,8 @@ appear in the report and are silently ignored downstream.
 
 ## Common validation failures
 
-- Missing, extra, or wrong-type columns versus the relevant `schema.yaml`. Fix
-  the file before running when the `Validation report` shows `valid=False`.
+- Missing, extra, or wrong-type columns versus the relevant validnator contract.
+  Fix the file before running when the `Validation report` shows `valid=False`.
 - EP summary `modelled_lob` missing from `data/seeds/business/lobs.csv`.
 - EP summary `modelled_peril` missing from `data/seeds/business/perils.csv`.
 - Verisk YLT `ExposureAttribute` missing from `lobs.csv`.

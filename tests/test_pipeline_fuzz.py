@@ -245,3 +245,41 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
     assert "rl_blended_contribution" not in wide.columns
     assert "vk_blended_contribution" not in wide.columns
     assert wide.filter(pl.col(Col.risklink_blended_contribution) == 75.0).height == 1
+    assert wide.height == 1
+    assert wide.item(0, "euws_override_202601_loss") == 100.0
+    assert wide.item(0, "dialsup_gbp_forecast_202601_loss") == 100.0
+
+
+def test_dialsup_export_contains_final_forecast_metric_only() -> None:
+    ylt = pl.DataFrame(
+        {
+            Col.vendor: ["verisk"],
+            Col.base_model: ["verisk"],
+            Col.region_peril_id: [1],
+            Col.rollup_peril: ["PERIL_A"],
+            Col.rollup_lob: ["LOB_A"],
+            Col.cds_cat_class_name: ["Class"],
+            Col.model_code: [1],
+            Col.year_id: [1],
+            Col.event_id: [1],
+            Col.model_event_id: [1],
+            Col.event_day: [1],
+            Col.target_currency: ["GBP"],
+            Col.metric: ["euws_override"],
+            Col.forecast_date: [date(2026, 1, 1)],
+            Col.loss: [100.0],
+        }
+    )
+    dialsup = pl.concat(
+        [
+            ylt.with_columns(pl.lit("dialsup_original").alias(Col.metric)),
+            ylt.with_columns(pl.lit("dialsup_gbp").alias(Col.metric)),
+            ylt.with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric)),
+        ]
+    )
+
+    with TemporaryDirectory() as temp_dir:
+        _write_combined_outputs(Path(temp_dir), ylt, dialsup)
+        exported = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_dialsup.parquet")
+
+    assert exported[Col.metric].unique().to_list() == ["dialsup_gbp_forecast"]

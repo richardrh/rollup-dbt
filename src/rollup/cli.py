@@ -44,7 +44,9 @@ def build_parser() -> ArgumentParser:
     run_parser.add_argument("--config-path", type=Path, default=None)
     run_parser.add_argument("--debug", action="store_true")
     run_parser.add_argument("--no-analysis", action="store_false", dest="write_analysis")
-    run_parser.add_argument("--duckdb", action="store_true", help="write a DuckDB export")
+    duckdb_group = run_parser.add_mutually_exclusive_group()
+    duckdb_group.add_argument("--duckdb", action="store_true", help="write a DuckDB export")
+    duckdb_group.add_argument("--no-duckdb", action="store_true", help="disable DuckDB export")
     run_parser.add_argument("--duckdb-file", type=Path, default=None, help="DuckDB output file path")
     run_parser.add_argument(
         "--log-level",
@@ -220,16 +222,24 @@ def resolve_ep_summary_csv_path(data_root: Path, vendor: str, csv_path: Path) ->
 
 
 def override_config(args: Namespace) -> RollupConfig | None:
-    if not args.duckdb and args.duckdb_file is None and args.log_format is None:
+    no_duckdb = getattr(args, "no_duckdb", False)
+    duckdb = getattr(args, "duckdb", False)
+    duckdb_file_arg = getattr(args, "duckdb_file", None)
+    log_format = getattr(args, "log_format", None)
+    if no_duckdb and duckdb_file_arg is not None:
+        raise ValueError("--no-duckdb cannot be combined with --duckdb-file")
+    if not duckdb and not no_duckdb and duckdb_file_arg is None and log_format is None:
         return None
     config = load_config(args.config_path)
-    if args.duckdb or args.duckdb_file is not None:
+    if no_duckdb:
+        config = replace(config, outputs=replace(config.outputs, write_duckdb=False, duckdb_file=None))
+    if duckdb or duckdb_file_arg is not None:
         duckdb_file = config.outputs.duckdb_file
-        if args.duckdb_file is not None:
-            duckdb_file = str(args.duckdb_file.expanduser().resolve(strict=False))
+        if duckdb_file_arg is not None:
+            duckdb_file = str(duckdb_file_arg.expanduser().resolve(strict=False))
         config = replace(config, outputs=replace(config.outputs, write_duckdb=True, duckdb_file=duckdb_file))
-    if args.log_format is not None:
-        config = replace(config, logging=replace(config.logging, format=args.log_format))
+    if log_format is not None:
+        config = replace(config, logging=replace(config.logging, format=log_format))
     return config
 
 
@@ -258,6 +268,8 @@ def _exists_status(path: Path) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "no_duckdb", False) and getattr(args, "duckdb_file", None) is not None:
+        parser.error("--no-duckdb cannot be combined with --duckdb-file")
     argv_list = list(argv or [])
     for opt, dest in (("--config", "config"), ("--log-file", "log_file"), ("--data-root", "data_root"), ("--output-root", "output_root")):
         if opt in argv_list:

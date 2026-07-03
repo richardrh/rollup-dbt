@@ -14,7 +14,8 @@ from rollup.pipeline import (
 )
 
 
-def test_risklink_event_enrichment_drops_unmatched_risklink_and_preserves_verisk() -> None:
+def test_risklink_event_enrichment_logs_dropped_rows_and_preserves_verisk(caplog) -> None:
+    caplog.set_level("INFO", logger="rollup.pipeline")
     ylt = pl.DataFrame(
         {
             Col.base_model: ["risklink", "risklink", "verisk"],
@@ -43,6 +44,10 @@ def test_risklink_event_enrichment_drops_unmatched_risklink_and_preserves_verisk
 
     assert result.get_column(Col.base_model).to_list() == ["risklink", "verisk"]
     assert result.filter(pl.col(Col.base_model) == "risklink").get_column(Col.risklink_event_day).to_list() == [42]
+    assert any(
+        "risklink event-day join rows before=2 after=1 dropped=1" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_cds_fanout_uses_historical_columns_after_risklink_year_join() -> None:

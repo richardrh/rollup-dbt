@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
+import time
 
 import duckdb
 
@@ -18,7 +19,8 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
     if db_path.exists():
         db_path.unlink()
 
-    logger.info("writing duckdb export path=%s", db_path)
+    started = time.perf_counter()
+    logger.info("writing duckdb export path=%s", db_path, extra={"event": "duckdb_export_start", "path": db_path})
     connection = duckdb.connect(str(db_path))
     try:
         create_parquet_table(
@@ -74,12 +76,25 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
         )
     finally:
         connection.close()
+    elapsed_seconds = time.perf_counter() - started
+    logger.info(
+        "wrote duckdb export path=%s elapsed=%.2fs",
+        db_path,
+        elapsed_seconds,
+        extra={"event": "duckdb_export_done", "path": db_path, "elapsed_seconds": elapsed_seconds},
+    )
     return db_path
 
 
 def create_parquet_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
     if not paths:
         raise FileNotFoundError(f"no parquet files found for DuckDB table {table_name}")
+    logger.info(
+        "creating duckdb parquet table table=%s files=%d",
+        table_name,
+        len(paths),
+        extra={"event": "duckdb_create_table", "table": table_name, "files": len(paths), "source_format": "parquet"},
+    )
     connection.execute(
         f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet({path_list(paths)}, union_by_name = true)"
     )
@@ -93,6 +108,12 @@ def create_optional_parquet_table(connection: duckdb.DuckDBPyConnection, table_n
 def create_csv_table(connection: duckdb.DuckDBPyConnection, table_name: str, paths: list[Path]) -> None:
     if not paths:
         raise FileNotFoundError(f"no CSV files found for DuckDB table {table_name}")
+    logger.info(
+        "creating duckdb csv table table=%s files=%d",
+        table_name,
+        len(paths),
+        extra={"event": "duckdb_create_table", "table": table_name, "files": len(paths), "source_format": "csv"},
+    )
     connection.execute(
         f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto({path_list(paths)}, union_by_name = true)"
     )

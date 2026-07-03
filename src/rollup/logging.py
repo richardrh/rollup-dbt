@@ -13,9 +13,23 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S"
 LogFormat = str
 
+_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+
+
+def _json_safe(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    return str(value)
+
 
 def normalize_log_format(log_format: str | None = None) -> str:
-    value = (log_format or "text").lower()
+    value = (log_format or "jsonl").lower()
     if value == "json":
         return "jsonl"
     if value not in {"text", "jsonl"}:
@@ -38,10 +52,14 @@ class JsonLineFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+        for key, value in record.__dict__.items():
+            if key in _LOG_RECORD_FIELDS or key.startswith("_"):
+                continue
+            payload[key] = _json_safe(value)
         return json.dumps(payload, ensure_ascii=False)
 
 
-def make_formatter(log_format: LogFormat = "text") -> logging.Formatter:
+def make_formatter(log_format: LogFormat = "jsonl") -> logging.Formatter:
     normalized = normalize_log_format(log_format)
     if normalized == "jsonl":
         return JsonLineFormatter()
@@ -69,7 +87,7 @@ def make_file_handler(
     log_file: str | Path,
     *,
     level: int = logging.INFO,
-    log_format: LogFormat = "text",
+    log_format: LogFormat = "jsonl",
 ) -> logging.FileHandler:
     path = Path(log_file)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +101,7 @@ def configure_console_logging(
     log_level: str,
     *,
     log_file: str | Path | None = None,
-    log_format: LogFormat = "text",
+    log_format: LogFormat = "jsonl",
 ) -> None:
     level = getattr(logging, log_level)
     logging.basicConfig(
@@ -103,7 +121,7 @@ def configure_console_logging(
 def temporary_file_logging(
     log_file: str | Path | None,
     *,
-    log_format: LogFormat = "text",
+    log_format: LogFormat = "jsonl",
 ) -> Iterator[None]:
     if log_file is None:
         yield

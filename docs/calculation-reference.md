@@ -114,4 +114,4 @@ loss, FX, and forecast factors. It does not apply blending or EUWS.
 
 - [EP summaries](ep-summaries.md)
 - [Architecture](architecture.md)
-- [Schema contracts](schema-contracts.md)
+- Validnator YAML contracts under `data/`

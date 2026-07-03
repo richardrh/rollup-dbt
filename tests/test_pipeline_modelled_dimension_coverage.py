@@ -6,10 +6,10 @@ import polars as pl
 
 from rollup import cli
 from rollup.columns import Col, RawCol
+from rollup.config import BlendingConfig, BlendingTargetPoint, RollupConfig
 from rollup.pipeline import (
     apply_ep_blending_to_ylt,
     calculate_ep_blending_targets,
-    dialsup_peril_selection_report,
     EpSummaryValidationResult,
     PipelineValidationInputs,
     SeedValidationResult,
@@ -17,6 +17,7 @@ from rollup.pipeline import (
     YltValidationResult,
     ensure_modelled_dimension_coverage,
     input_ylt_aal_by_lob_peril_summary,
+    _add_rank_columns,
     join_ep_summaries,
     modelled_dimension_coverage_report,
     stage_ep_summaries,
@@ -247,15 +248,6 @@ def test_modelled_dimension_coverage_report_returns_only_input_missing_errors() 
     assert "LOB_NON_STC" not in set(report["value"])
 
 
-def test_multiple_dialsup_rows_do_not_fail_validation() -> None:
-    report = dialsup_peril_selection_report(
-        _peril_selection_seed_result(),
-        _peril_selection_ep_summary_result(),
-    )
-
-    assert report.is_empty()
-
-
 def test_main_selection_chooses_lowest_selection_priority() -> None:
     staged = stage_ep_summaries(
         _peril_selection_ep_summary_result(),
@@ -406,6 +398,129 @@ def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
     assert blended_ylt.item(0, Col.verisk_blended_contribution) == 25.0
     assert blended_ylt.item(0, Col.uplift_factor_on_base_model) == 0.875
     assert blended_ylt.item(0, Col.loss) == 8.75
+
+
+def test_blending_falls_back_to_base_model_loss_when_counterparty_missing() -> None:
+    seeds = SeedValidationResult(
+        frames={
+            "blending_factors.csv": pl.DataFrame(
+                {
+                    RawCol.RegionPerilID: [216],
+                    RawCol.SubRegionPerilID: ["216b"],
+                    RawCol.SubRegionPeril: ["selected"],
+                    RawCol.AIRBlend: [0.25],
+                    RawCol.RMSBlend: [0.75],
+                }
+            )
+        },
+        report=_valid_report(),
+    )
+    joined = join_ep_summaries(
+        stage_ep_summaries(
+            EpSummaryValidationResult(
+                frame=pl.DataFrame(
+                    {
+                        Col.vendor: ["risklink"],
+                        Col.analysis_id: ["RMS"],
+                        Col.modelled_lob: ["LOB"],
+                        Col.modelled_peril: ["LOW"],
+                        Col.ep_type: ["AAL"],
+                        Col.return_period: [0],
+                        Col.loss: [200.0],
+                    }
+                ).lazy(),
+                report=_valid_report(),
+            ),
+            SeedValidationResult(
+                frames={
+                    "lobs.csv": _peril_selection_seed_result().frames["lobs.csv"],
+                    "perils.csv": _peril_selection_seed_result().frames["perils.csv"].filter(pl.col(Col.modelled_peril) == "LOW"),
+                },
+                report=_valid_report(),
+            ),
+        )
+    )
+
+    blended = calculate_ep_blending_targets(joined, seeds).blended.collect()
+
+    assert blended.height == 1
+    assert blended.item(0, Col.target_loss) == 200.0
+    assert blended.item(0, Col.uplift_factor_on_base_model) == 1.0
+    assert blended.item(0, Col.risklink_blended_contribution) == 200.0
+    assert blended.item(0, Col.verisk_blended_contribution) == 0.0
+
+
+def test_blending_uses_configured_target_points_caps_and_vendor_years() -> None:
+    config = RollupConfig(
+        blending=BlendingConfig(
+            vendor_years={"verisk": 4, "risklink": 8},
+            target_points=(BlendingTargetPoint("AAL", 0), BlendingTargetPoint("OEP", 2)),
+            uplift_factor_min=0.5,
+            uplift_factor_max=2.0,
+        )
+    )
+    ranked = _add_rank_columns(
+        pl.DataFrame(
+            {
+                Col.vendor: ["verisk", "verisk"],
+                Col.modelled_lob: ["LOB", "LOB"],
+                Col.rollup_peril: ["PERIL", "PERIL"],
+                Col.loss: [100.0, 50.0],
+            }
+        ).lazy(),
+        config,
+    ).collect()
+    assert ranked.sort(Col.loss, descending=True)[Col.rp].to_list() == [4.0, 2.0]
+    assert ranked.sort(Col.loss, descending=True)[Col.rp_bucket].to_list() == [2, 2]
+
+    # Configured caps are applied to target/base ratios.
+    seeds = SeedValidationResult(
+        frames={
+            "blending_factors.csv": pl.DataFrame(
+                {
+                    RawCol.RegionPerilID: [1],
+                    RawCol.SubRegionPerilID: ["1"],
+                    RawCol.SubRegionPeril: ["x"],
+                    RawCol.AIRBlend: [10.0],
+                    RawCol.RMSBlend: [10.0],
+                }
+            )
+        },
+        report=_valid_report(),
+    )
+    joined = join_ep_summaries(
+        stage_ep_summaries(
+            EpSummaryValidationResult(
+                frame=pl.DataFrame(
+                    {
+                        Col.vendor: ["verisk", "risklink"],
+                        Col.analysis_id: ["AIR", "RMS"],
+                        Col.modelled_lob: ["LOB", "LOB"],
+                        Col.modelled_peril: ["LOW", "LOW"],
+                        Col.ep_type: ["OEP", "OEP"],
+                        Col.return_period: [2, 2],
+                        Col.loss: [100.0, 1000.0],
+                    }
+                ).lazy(),
+                report=_valid_report(),
+            ),
+            SeedValidationResult(
+                frames={
+                    "lobs.csv": _peril_selection_seed_result().frames["lobs.csv"],
+                    "perils.csv": _peril_selection_seed_result()
+                    .frames["perils.csv"]
+                    .filter(pl.col(Col.modelled_peril) == "LOW")
+                    .with_columns(
+                        pl.lit(1).alias(Col.region_peril_id),
+                        pl.lit("1").alias(Col.blend_subregion_peril_id),
+                    ),
+                },
+                report=_valid_report(),
+            ),
+        )
+    )
+    blended = calculate_ep_blending_targets(joined, seeds, config).blended.collect()
+    assert blended.item(0, Col.uplift_factor_on_base_model) == 2.0
 
 
 def test_input_ylt_aal_summary_computes_verisk_raw_aal_sorted_descending() -> None:

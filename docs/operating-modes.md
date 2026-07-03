@@ -30,6 +30,16 @@ Writes mart fanouts to `output/marts/`, wide/report parquets to `output/`, and
 columns such as `euws_override_YYYYMM_loss` and
 `dialsup_gbp_forecast_YYYYMM_loss`.
 
+DuckDB export is on by default and writes `output/rollup.duckdb` unless
+configured otherwise. Use `uv run rollup run --no-duckdb` to disable it. The CLI
+rejects `--no-duckdb` with `--duckdb-file` because an explicit file path implies
+an export.
+
+The main and DIALSUP fanouts include only final metric rows at or above the
+configured minimum event loss threshold. The standalone DIALSUP parquet
+`mts_tbl_ylt_dialsup.parquet` contains only final `dialsup_gbp_forecast` rows;
+intermediate DIALSUP metrics are internal/debug data.
+
 Use global `--log-file` before the subcommand to keep an operational run log
 while still printing the same logs to the console/stdout. Parent directories are
 created automatically:

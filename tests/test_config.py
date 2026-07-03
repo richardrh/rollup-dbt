@@ -29,10 +29,21 @@ def test_load_config_without_path_reads_config_toml_from_cwd(
         "verisk": "HiscoAIR",
         "risklink": "HiscoRMS",
     }
-    assert config.logging.format == "text"
+    assert config.logging.format == "jsonl"
 
 
 def test_rollup_config_defaults_enable_duckdb_export() -> None:
     config = RollupConfig()
 
     assert config.outputs.write_duckdb is True
+
+
+def test_load_config_defaults_to_jsonl_when_config_file_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    config = load_config()
+
+    assert config.logging.format == "jsonl"

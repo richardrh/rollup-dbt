@@ -92,7 +92,7 @@ class FXConfig:
 
 @dataclass(frozen=True)
 class LoggingConfig:
-    format: str = "text"
+    format: str = "jsonl"
 
     def __post_init__(self) -> None:
         log_format = str(self.format).lower()

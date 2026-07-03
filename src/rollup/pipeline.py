@@ -2,6 +2,7 @@ from __future__ import annotations
 # mypy: ignore-errors
 
 import logging
+import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -20,13 +21,25 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def logged_phase(phase: str) -> Iterator[None]:
     started = time.perf_counter()
-    logger.info("start phase=%s", phase)
+    logger.info("start phase=%s", phase, extra={"event": "phase_start", "phase": phase})
     try:
         yield
     except Exception:
-        logger.exception("failed phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
+        elapsed_seconds = time.perf_counter() - started
+        logger.exception(
+            "failed phase=%s elapsed=%.2fs",
+            phase,
+            elapsed_seconds,
+            extra={"event": "phase_failed", "phase": phase, "elapsed_seconds": elapsed_seconds},
+        )
         raise
-    logger.info("done phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
+    elapsed_seconds = time.perf_counter() - started
+    logger.info(
+        "done phase=%s elapsed=%.2fs",
+        phase,
+        elapsed_seconds,
+        extra={"event": "phase_done", "phase": phase, "elapsed_seconds": elapsed_seconds},
+    )
 
 
 @dataclass(frozen=True)
@@ -51,14 +64,6 @@ class EpSummaryValidationResult:
 class SeedValidationResult:
     frames: dict[str, pl.DataFrame]
     report: pl.DataFrame
-
-def dialsup_peril_selection_report(
-    seeds: SeedValidationResult,
-    ep_summaries: EpSummaryValidationResult,
-    data_root: Path | str = "data",
-) -> pl.DataFrame:
-    return empty_modelled_dimension_coverage_report()
-
 
 def load_verisk_events(data_root: Path | str = "data") -> pl.LazyFrame:
     return pl.scan_parquet(
@@ -361,13 +366,7 @@ def load_pipeline_validation_inputs(data_root: Path | str = "data") -> PipelineV
     seeds = load_validated_seed_frames(data_root)
     ylts = load_validated_ylt_frames(data_root)
     ep_summaries = load_validated_ep_summary_frames(data_root)
-    coverage_report = pl.concat(
-        [
-            modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root),
-            dialsup_peril_selection_report(seeds, ep_summaries, data_root),
-        ],
-        how="diagonal_relaxed",
-    )
+    coverage_report = modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
     return PipelineValidationInputs(
         seeds=seeds,
         ylts=ylts,
@@ -774,13 +773,17 @@ def join_ep_summaries(
 def calculate_ep_blending_targets(
     joined_ep_summaries: JoinedEpSummaries,
     seeds: SeedValidationResult,
+    config: RollupConfig | None = None,
 ) -> EpBlendingTargets:
-    target_points = joined_ep_summaries.joined.filter(
-        ((pl.col(Col.ep_type) == "AAL") & (pl.col(Col.return_period) == 0))
-        | (
-            (pl.col(Col.ep_type) == "OEP")
-            & (pl.col(Col.return_period).is_in([200, 1000]))
+    config = config or RollupConfig()
+    target_predicate = pl.lit(False)
+    for point in config.blending.target_points:
+        target_predicate = target_predicate | (
+            (pl.col(Col.ep_type) == point.ep_type)
+            & (pl.col(Col.return_period) == point.return_period)
         )
+    target_points = joined_ep_summaries.joined.filter(
+        target_predicate
     )
 
     weights = (
@@ -796,30 +799,43 @@ def calculate_ep_blending_targets(
     )
 
     blended = (
-        target_points.filter(
-            pl.col(Col.risklink_loss).is_not_null()
-            & pl.col(Col.verisk_loss).is_not_null()
-        )
+        target_points
         .join(weights, on=[Col.region_peril_id, Col.blend_subregion_peril_id], how="left")
-        .with_columns(
-            (pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight)).alias(
-                Col.risklink_blended_contribution
-            ),
-            (pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight)).alias(
-                Col.verisk_blended_contribution
-            ),
-        )
-        .with_columns(
-            (
-                pl.col(Col.risklink_blended_contribution)
-                + pl.col(Col.verisk_blended_contribution)
-            ).alias(Col.target_loss)
-        )
         .with_columns(
             pl.when(pl.col(Col.base_model) == "risklink")
             .then(pl.col(Col.risklink_loss))
             .otherwise(pl.col(Col.verisk_loss))
             .alias(Col.base_model_loss)
+        )
+        .filter(pl.col(Col.base_model_loss).is_not_null())
+        .with_columns(
+            (
+                pl.col(Col.risklink_loss).is_not_null()
+                & pl.col(Col.verisk_loss).is_not_null()
+            ).alias("_has_both_vendor_losses")
+        )
+        .with_columns(
+            pl.when(pl.col("_has_both_vendor_losses"))
+            .then(pl.col(Col.risklink_loss) * pl.col(Col.risklink_weight))
+            .when(pl.col(Col.base_model) == "risklink")
+            .then(pl.col(Col.base_model_loss))
+            .otherwise(pl.lit(0.0))
+            .alias(Col.risklink_blended_contribution),
+            pl.when(pl.col("_has_both_vendor_losses"))
+            .then(pl.col(Col.verisk_loss) * pl.col(Col.verisk_weight))
+            .when(pl.col(Col.base_model) == "verisk")
+            .then(pl.col(Col.base_model_loss))
+            .otherwise(pl.lit(0.0))
+            .alias(Col.verisk_blended_contribution),
+        )
+        .with_columns(
+            pl.when(pl.col("_has_both_vendor_losses"))
+            .then(
+                pl.col(Col.risklink_blended_contribution)
+                + pl.col(Col.verisk_blended_contribution)
+            )
+            .otherwise(pl.col(Col.base_model_loss))
+            .alias(Col.target_loss)
         )
         .with_columns(
             (pl.col(Col.target_loss) / pl.col(Col.base_model_loss)).alias(
@@ -828,9 +844,10 @@ def calculate_ep_blending_targets(
         )
         .with_columns(
             pl.col(Col.uplift_factor_on_base_model)
-            .clip(lower_bound=0.1, upper_bound=10.0)
+            .clip(lower_bound=config.blending.uplift_factor_min, upper_bound=config.blending.uplift_factor_max)
             .alias(Col.uplift_factor_on_base_model)
         )
+        .drop("_has_both_vendor_losses")
     )
 
     return EpBlendingTargets(
@@ -840,7 +857,17 @@ def calculate_ep_blending_targets(
     )
 
 
-def _add_rank_columns(ylt: pl.LazyFrame) -> pl.LazyFrame:
+def _add_rank_columns(ylt: pl.LazyFrame, config: RollupConfig | None = None) -> pl.LazyFrame:
+    config = config or RollupConfig()
+    vendor_year_expr = pl.lit(None, dtype=pl.Float64)
+    for vendor, years in config.blending.vendor_years.items():
+        vendor_year_expr = pl.when(pl.col(Col.vendor) == vendor).then(float(years)).otherwise(vendor_year_expr)
+    bucket_expr = pl.lit(0)
+    for point in sorted(
+        (p for p in config.blending.target_points if p.ep_type == "OEP"),
+        key=lambda p: p.return_period,
+    ):
+        bucket_expr = pl.when(pl.col(Col.rp) >= point.return_period).then(point.return_period).otherwise(bucket_expr)
     return ylt.with_columns(
         pl.col(Col.loss)
         .rank(method="ordinal", descending=True)
@@ -848,17 +875,10 @@ def _add_rank_columns(ylt: pl.LazyFrame) -> pl.LazyFrame:
         .cast(pl.Int64)
         .alias(Col.rnk)
     ).with_columns(
-        pl.when(pl.col(Col.vendor) == "risklink")
-        .then(100_000.0 / pl.col(Col.rnk))
-        .otherwise(10_000.0 / pl.col(Col.rnk))
+        (vendor_year_expr / pl.col(Col.rnk))
         .alias(Col.rp)
     ).with_columns(
-        pl.when(pl.col(Col.rp) < 200)
-        .then(pl.lit(0))
-        .when(pl.col(Col.rp) < 1000)
-        .then(pl.lit(200))
-        .otherwise(pl.lit(1000))
-        .alias(Col.rp_bucket)
+        bucket_expr.alias(Col.rp_bucket)
     )
 
 
@@ -1128,11 +1148,26 @@ def enrich_risklink_event_days(
         pl.lit(None).cast(pl.Int64).alias(Col.model_occurrence_year),
         pl.lit(None).cast(pl.Int64).alias(Col.risklink_event_day),
     )
-    risklink = ylt.filter(pl.col(Col.base_model) == "risklink").join(
+    risklink_before = ylt.filter(pl.col(Col.base_model) == "risklink")
+    risklink = risklink_before.join(
         risklink_events.with_columns(pl.col(Col.model_occurrence_year).alias(join_year)),
         left_on=[Col.event_id, Col.year_id, Col.region_peril_id],
         right_on=[Col.event_id, join_year, Col.region_peril_id],
         how="inner",
+    )
+    before_count = risklink_before.select(pl.len()).collect().item()
+    after_count = risklink.select(pl.len()).collect().item()
+    logger.info(
+        "risklink event-day join rows before=%d after=%d dropped=%d",
+        before_count,
+        after_count,
+        before_count - after_count,
+        extra={
+            "event": "risklink_event_day_join",
+            "before_rows": before_count,
+            "after_rows": after_count,
+            "dropped_rows": before_count - after_count,
+        },
     )
     return pl.concat([non_risklink, risklink], how="diagonal_relaxed")
 
@@ -1257,9 +1292,15 @@ _CDS_FANOUT_COLUMNS = [
 
 
 def _mts_output_dimensions(frame: pl.DataFrame | pl.LazyFrame) -> list[str]:
+    diagnostic_cols = {
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    }
     return [
         col for col in frame.columns
         if col not in (Col.metric, Col.forecast_date, Col.loss)
+        and col not in diagnostic_cols
         and not col.startswith("_")
     ]
 
@@ -1270,9 +1311,17 @@ def _write_combined_outputs(
     ylt_dialsup: pl.DataFrame,
 ) -> None:
     write_parquet_with_log(ylt, output_root / "mts_tbl_ylt_combined_all_factors.parquet")
-    write_parquet_with_log(ylt_dialsup, output_root / "mts_tbl_ylt_dialsup.parquet")
+    write_parquet_with_log(
+        ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast"),
+        output_root / "mts_tbl_ylt_dialsup.parquet",
+    )
 
     dims = _mts_output_dimensions(ylt)
+    diagnostic_cols = [
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    ]
     sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
     dialsup_sel = [
         pl.col(col) if col in ylt_dialsup.columns else pl.lit(None).alias(col)
@@ -1296,6 +1345,12 @@ def _write_combined_outputs(
         aggregate_function="first",
     )
 
+    diagnostics = ylt.filter(pl.col(Col.metric) == "euws_override").select(
+        [*dims, *[col for col in diagnostic_cols if col in ylt.columns]]
+    ).unique(subset=dims, keep="first")
+    if len(diagnostics.columns) > len(dims):
+        wide = wide.join(diagnostics, on=dims, how="left")
+
     write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
 
@@ -1311,33 +1366,60 @@ def write_debug_frame(
 
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
+    lazy = isinstance(frame, pl.LazyFrame)
     if isinstance(frame, pl.LazyFrame):
         frame.sink_parquet(output_path, mkdir=True)
         row_count = -1
     else:
         frame.write_parquet(output_path)
         row_count = frame.height
+    elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
         row_count,
-        time.perf_counter() - started,
+        elapsed_seconds,
+        extra={
+            "event": "write_output",
+            "path": output_path,
+            "rows": row_count,
+            "elapsed_seconds": elapsed_seconds,
+            "lazy": lazy,
+        },
     )
 
 
 def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
-    logger.info("checkpoint=%s rows=%d", name, frame.height)
+    logger.info(
+        "checkpoint=%s rows=%d",
+        name,
+        frame.height,
+        extra={"event": "checkpoint", "checkpoint": name, "rows": frame.height},
+    )
 
 
 def _warn_row_drop(name: str, before: int, after: int) -> None:
     if after < before:
-        logger.warning("%s join dropped rows before=%d after=%d dropped=%d", name, before, after, before - after)
+        logger.warning(
+            "%s join dropped rows before=%d after=%d dropped=%d",
+            name,
+            before,
+            after,
+            before - after,
+            extra={
+                "event": "row_drop",
+                "join": name,
+                "before_rows": before,
+                "after_rows": after,
+                "dropped_rows": before - after,
+            },
+        )
 
 
 def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
     defaulted_rows = frame.select(condition.sum().alias("defaulted_rows")).collect().item()
     if defaulted_rows > 0:
-        logger.warning(message, defaulted_rows)
+        logger.warning(message, defaulted_rows, extra={"event": "defaulted_rows", "rows": defaulted_rows})
 
 
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1363,32 +1445,81 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
 
     for name, frame in fanouts.items():
         started = time.perf_counter()
-        logger.info("collecting fanout partitions fanout=%s", name)
-        partitions = (
-            frame.select(Col.forecast_date, Col.base_model, Col.metric)
-            .unique()
-            .sort(Col.forecast_date, Col.base_model, Col.metric)
-            .collect()
-        )
-        logger.info(
-            "collected fanout partitions fanout=%s partitions=%d elapsed=%.2fs",
-            name,
-            partitions.height,
-            time.perf_counter() - started,
-        )
-        for row in partitions.iter_rows(named=True):
-            tag = forecast_tag(row[Col.forecast_date])
-            vendor = hisco_vendor_label(row[Col.base_model])
-            metric = row[Col.metric]
-            output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
-            write_parquet_with_log(
-                frame.filter(
-                    (pl.col(Col.forecast_date) == row[Col.forecast_date])
-                    & (pl.col(Col.base_model) == row[Col.base_model])
-                    & (pl.col(Col.metric) == metric)
-                ).select(_CDS_FANOUT_COLUMNS),
-                output_path,
+        with tempfile.TemporaryDirectory(prefix=f"rollup-{name}-") as temp_dir:
+            materialized_path = Path(temp_dir) / f"{name}.parquet"
+            logger.info(
+                "materializing fanout once fanout=%s output=%s",
+                name,
+                materialized_path,
+                extra={"event": "fanout_materialize_start", "fanout": name, "path": materialized_path},
             )
+            frame.sink_parquet(materialized_path)
+            materialized = pl.scan_parquet(materialized_path)
+            elapsed_seconds = time.perf_counter() - started
+            logger.info(
+                "materialized fanout fanout=%s elapsed=%.2fs",
+                name,
+                elapsed_seconds,
+                extra={"event": "fanout_materialize_done", "fanout": name, "elapsed_seconds": elapsed_seconds},
+            )
+            _write_fanout_partitions(name, materialized, output_dir, started)
+
+
+def _write_fanout_partitions(
+    name: str,
+    frame: pl.LazyFrame,
+    output_dir: Path,
+    started: float,
+) -> None:
+    logger.info("collecting fanout partitions fanout=%s", name, extra={"event": "fanout_partitions_start", "fanout": name})
+    partitions = (
+        frame.select(Col.forecast_date, Col.base_model, Col.metric)
+        .unique()
+        .sort(Col.forecast_date, Col.base_model, Col.metric)
+        .collect()
+    )
+    elapsed_seconds = time.perf_counter() - started
+    logger.info(
+        "collected fanout partitions fanout=%s partitions=%d elapsed=%.2fs",
+        name,
+        partitions.height,
+        elapsed_seconds,
+        extra={
+            "event": "fanout_partitions_done",
+            "fanout": name,
+            "partition_count": partitions.height,
+            "elapsed_seconds": elapsed_seconds,
+        },
+    )
+    for row in partitions.iter_rows(named=True):
+        tag = forecast_tag(row[Col.forecast_date])
+        vendor = hisco_vendor_label(row[Col.base_model])
+        metric = row[Col.metric]
+        output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
+        logger.info(
+            "writing fanout partition fanout=%s output=%s base_model=%s metric=%s forecast_date=%s",
+            name,
+            output_path,
+            row[Col.base_model],
+            metric,
+            row[Col.forecast_date],
+            extra={
+                "event": "fanout_partition_write",
+                "fanout": name,
+                "path": output_path,
+                "base_model": row[Col.base_model],
+                "metric": metric,
+                "forecast_date": row[Col.forecast_date],
+            },
+        )
+        write_parquet_with_log(
+            frame.filter(
+                (pl.col(Col.forecast_date) == row[Col.forecast_date])
+                & (pl.col(Col.base_model) == row[Col.base_model])
+                & (pl.col(Col.metric) == metric)
+            ).select(_CDS_FANOUT_COLUMNS),
+            output_path,
+        )
 
 
 def write_debug_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1448,6 +1579,13 @@ def run(
             ylts.report.height,
             ep_summaries.report.height,
             coverage_report.filter(pl.col("severity") == "error").height,
+            extra={
+                "event": "validation_summary",
+                "seed_files": seeds.report.height,
+                "ylt_files": ylts.report.height,
+                "ep_summary_files": ep_summaries.report.height,
+                "coverage_errors": coverage_report.filter(pl.col("severity") == "error").height,
+            },
         )
 
     with logged_phase("staging"):
@@ -1477,6 +1615,7 @@ def run(
             "staging summary seed_frames=%d staging_frames=%d",
             len(seed_frames),
             len(staging_frames),
+            extra={"event": "staging_summary", "seed_frames": len(seed_frames), "staging_frames": len(staging_frames)},
         )
 
     with logged_phase("intermediate"):
@@ -1497,7 +1636,7 @@ def run(
         intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
         intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
 
-        ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds)
+        ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds, config)
         intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
         intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
         intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
@@ -1507,7 +1646,7 @@ def run(
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
         intermediate_frames["ylt_original"] = ylt_original
 
-        ylt_ranked = _add_rank_columns(ylt_original)
+        ylt_ranked = _add_rank_columns(ylt_original, config)
         intermediate_frames["ylt_ranked"] = ylt_ranked
         ylt_ranked = ylt_ranked.collect()
         _log_checkpoint("ylt_original", ylt_ranked)
@@ -1523,7 +1662,7 @@ def run(
             pl.lit("original").alias(Col.metric),
         ).filter(pl.col(Col.vendor) == pl.col(Col.base_model))
         intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
-        ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup)
+        ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
         intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
         ylt_ranked_dialsup = ylt_ranked_dialsup.collect()
         _log_checkpoint("ylt_original_dialsup", ylt_ranked_dialsup)
@@ -1559,7 +1698,11 @@ def run(
             [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
             how="diagonal",
         )
-        logger.info("intermediate summary frames=%d", len(intermediate_frames))
+        logger.info(
+            "intermediate summary frames=%d",
+            len(intermediate_frames),
+            extra={"event": "intermediate_summary", "frames": len(intermediate_frames)},
+        )
 
     with logged_phase("marts"):
         threshold = config.outputs.minimum_event_loss_threshold

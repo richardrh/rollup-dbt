@@ -1,6 +1,6 @@
 # data/seeds
 
-Seed inputs are CSV files validated against `data/seeds/schema.yaml`.
+Seed inputs are CSV files validated against the validnator YAML contracts in this tree.
 
 Business seeds:
 
