@@ -16,6 +16,7 @@ from rollup.pipeline import (
     SeedValidationResult,
     YltFrames,
     YltValidationResult,
+    _ordered_mts_wide_columns,
     _write_combined_outputs,
     input_ylt_aal_by_lob_peril_summary,
     modelled_dimension_coverage_report,
@@ -250,6 +251,82 @@ def test_wide_output_includes_main_blend_diagnostics_when_dialsup_lacks_them() -
     assert wide.height == 1
     assert wide.item(0, "euws_override_202601_loss") == 100.0
     assert wide.item(0, "dialsup_gbp_forecast_202601_loss") == 100.0
+
+
+def test_wide_output_orders_output_use_diagnostics_final_and_dialsup() -> None:
+    ylt = pl.DataFrame(
+        {
+            Col.vendor: ["risklink"],
+            Col.base_model: ["risklink"],
+            Col.region_peril_id: [1],
+            Col.rollup_peril: ["PERIL_A"],
+            Col.rollup_lob: ["LOB_A"],
+            Col.cds_cat_class_name: ["Class"],
+            Col.model_code: [1],
+            Col.year_id: [1],
+            Col.event_id: [1],
+            Col.model_event_id: [1],
+            Col.event_day: [1],
+            Col.target_currency: ["GBP"],
+            Col.risklink_loss: [80.0],
+            Col.verisk_loss: [20.0],
+            Col.base_model_loss: [80.0],
+            Col.target_loss: [100.0],
+            Col.metric: ["euws_override"],
+            Col.forecast_date: [date(2026, 1, 1)],
+            Col.loss: [125.0],
+            Col.risklink_blended_contribution: [75.0],
+            Col.verisk_blended_contribution: [25.0],
+            Col.uplift_factor_on_base_model: [1.25],
+        }
+    )
+    dialsup = ylt.drop(
+        Col.risklink_blended_contribution,
+        Col.verisk_blended_contribution,
+        Col.uplift_factor_on_base_model,
+    ).with_columns(pl.lit("dialsup_gbp_forecast").alias(Col.metric))
+
+    with TemporaryDirectory() as temp_dir:
+        _write_combined_outputs(Path(temp_dir), ylt, dialsup)
+        wide = pl.read_parquet(Path(temp_dir) / "mts_tbl_ylt_combined_all_factors_wide.parquet")
+
+    columns = wide.columns
+    assert columns.count(Col.output_use) == 1
+    assert columns.index(Col.output_use) < columns.index(Col.risklink_loss)
+    assert columns.index(Col.output_use) < columns.index("euws_override_202601_loss")
+    assert columns.index(Col.risklink_loss) < columns.index(Col.risklink_blended_contribution)
+    assert columns.index(Col.verisk_loss) < columns.index(Col.verisk_blended_contribution)
+    assert columns.index(Col.uplift_factor_on_base_model) < columns.index("euws_override_202601_loss")
+    assert columns.index("euws_override_202601_loss") < columns.index("dialsup_gbp_forecast_202601_loss")
+    assert columns[-1] == "dialsup_gbp_forecast_202601_loss"
+    assert len(columns) == len(set(columns))
+    assert wide.item(0, Col.output_use) == "cds_wide_analysis"
+
+
+def test_ordered_mts_wide_columns_preserves_all_columns_once() -> None:
+    columns = [
+        "dialsup_gbp_forecast_202601_loss",
+        "euws_override_202601_loss",
+        Col.risklink_blended_contribution,
+        Col.base_model,
+        Col.output_use,
+        "unknown_context",
+        Col.uplift_factor_on_base_model,
+        Col.verisk_blended_contribution,
+        Col.risklink_loss,
+        Col.vendor,
+    ]
+
+    ordered = _ordered_mts_wide_columns(columns)
+
+    assert sorted(ordered) == sorted(columns)
+    assert len(ordered) == len(set(ordered)) == len(columns)
+    assert ordered.count(Col.output_use) == 1
+    assert ordered.index(Col.vendor) < ordered.index(Col.base_model)
+    assert ordered.index(Col.output_use) < ordered.index(Col.risklink_loss)
+    assert ordered.index(Col.risklink_loss) < ordered.index(Col.risklink_blended_contribution)
+    assert ordered.index(Col.uplift_factor_on_base_model) < ordered.index("euws_override_202601_loss")
+    assert ordered[-1] == "dialsup_gbp_forecast_202601_loss"
 
 
 def test_combined_outputs_label_output_use() -> None:
