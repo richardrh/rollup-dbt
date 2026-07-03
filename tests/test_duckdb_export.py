@@ -66,8 +66,30 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         assert "seed_lobs" not in tables
 
 
+def test_duckdb_export_skips_missing_ep_report_and_quotes_paths(tmp_path: Path) -> None:
+    data_root = tmp_path / "data's root"
+    output_root = tmp_path / "output's root"
+    seeds = data_root / "seeds"
+    seeds.mkdir(parents=True)
+    output_root.mkdir(parents=True)
+    parquet_table = "mts_tbl_owner's_losses"
+    pl.DataFrame({"event_id": [1], "loss": [10.0]}).write_parquet(output_root / f"{parquet_table}.parquet")
+    pl.DataFrame({"seed_id": [1], "seed_value": ["ok"]}).write_csv(seeds / "seed's.csv")
+
+    db_path = export_duckdb(data_root, output_root, RollupConfig())
+
+    with duckdb.connect(str(db_path)) as connection:
+        tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
+        assert parquet_table in tables
+        assert "seeds" in tables
+        assert "ep_report" not in tables
+        assert row_count(connection, parquet_table) == 1
+        assert row_count(connection, "seeds") == 1
+
+
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
-    return connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
+    quoted_table_name = '"' + table_name.replace('"', '""') + '"'
+    return connection.execute(f"SELECT count(*) FROM {quoted_table_name}").fetchone()[0]
 
 
 def duckdb_columns(connection: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:

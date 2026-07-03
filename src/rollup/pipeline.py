@@ -1497,10 +1497,6 @@ def _write_wide_output_duckdb(
             ).fetchall()
         ]
         loss_column_names: list[str] = []
-        logger.info(
-            "building wide base dimensions",
-            extra={"event": "wide_base_dimensions_start"},
-        )
         con.execute(
             f"""
             CREATE TEMP TABLE wide_output AS
@@ -1512,10 +1508,6 @@ def _write_wide_output_duckdb(
             FROM read_parquet({_sql_literal(dialsup_path)})
             WHERE {_sql_identifier(Col.metric)} = 'dialsup_localccy_forecast'
             """
-        )
-        logger.info(
-            "built wide base dimensions",
-            extra={"event": "wide_base_dimensions_done"},
         )
         join_condition = " AND ".join(
             f"w.{_sql_identifier(col)} IS NOT DISTINCT FROM c.{_sql_identifier(col)}" for col in dims
@@ -1529,11 +1521,6 @@ def _write_wide_output_duckdb(
             ]:
                 column_name = f"{metric}_{month}_loss"
                 table_name = "wide_col_current"
-                logger.info(
-                    "building wide column=%s",
-                    column_name,
-                    extra={"event": "wide_column_start", "column": column_name},
-                )
                 con.execute(
                     f"""
                     CREATE TEMP TABLE {_sql_identifier(table_name)} AS
@@ -1546,19 +1533,9 @@ def _write_wide_output_duckdb(
                     GROUP BY ALL
                     """
                 )
-                logger.info(
-                    "built wide column=%s",
-                    column_name,
-                    extra={"event": "wide_column_done", "column": column_name},
-                )
                 loss_column_names.append(column_name)
                 existing_columns = ", ".join(
                     f"w.{_sql_identifier(col)}" for col in [*dims, *loss_column_names[:-1]]
-                )
-                logger.info(
-                    "joining wide column=%s",
-                    column_name,
-                    extra={"event": "wide_column_join_start", "column": column_name},
                 )
                 con.execute(
                     f"""
@@ -1574,11 +1551,6 @@ def _write_wide_output_duckdb(
                 con.execute("DROP TABLE wide_output")
                 con.execute(f"DROP TABLE {_sql_identifier(table_name)}")
                 con.execute("ALTER TABLE wide_next RENAME TO wide_output")
-                logger.info(
-                    "joined wide column=%s",
-                    column_name,
-                    extra={"event": "wide_column_join_done", "column": column_name},
-                )
         if not loss_column_names:
             raise ValueError("wide output has no forecast loss columns")
 
