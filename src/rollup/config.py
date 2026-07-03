@@ -83,6 +83,25 @@ class OutputConfig:
 
 
 @dataclass(frozen=True)
+class InputConfig:
+    verisk_events_file: str = "seeds/validation/verisk_events.parquet"
+    risklink_events_file: str = "seeds/validation/risklink_flood22_model_events.parquet"
+
+    def verisk_events_path(self, data_root: Path | str) -> Path:
+        return self._resolve(data_root, self.verisk_events_file)
+
+    def risklink_events_path(self, data_root: Path | str) -> Path:
+        return self._resolve(data_root, self.risklink_events_file)
+
+    @staticmethod
+    def _resolve(data_root: Path | str, configured_path: str) -> Path:
+        path = Path(configured_path)
+        if path.is_absolute():
+            return path
+        return Path(data_root) / path
+
+
+@dataclass(frozen=True)
 class FXConfig:
     target_currency: str = "GBP"
 
@@ -107,6 +126,7 @@ class LoggingConfig:
 class RollupConfig:
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
     blending: BlendingConfig = field(default_factory=BlendingConfig)
+    inputs: InputConfig = field(default_factory=InputConfig)
     outputs: OutputConfig = field(default_factory=OutputConfig)
     fx: FXConfig = field(default_factory=FXConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -123,6 +143,7 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
 
     analysis_raw = _normalise_keys(raw.get("analysis", {}))
     blending_raw = _normalise_keys(raw.get("blending", {}))
+    inputs_raw = _normalise_keys(raw.get("inputs", {}))
     outputs_raw = _normalise_keys(raw.get("outputs", {}))
     fx_raw = _normalise_keys(raw.get("fx", {}))
     logging_raw = _normalise_keys(raw.get("logging", {}))
@@ -143,6 +164,7 @@ def load_config(config_path: str | Path | None = None) -> RollupConfig:
             uplift_factor_min=float(blending_raw.get("uplift_factor_min", 0.1)),
             uplift_factor_max=float(blending_raw.get("uplift_factor_max", 10.0)),
         ),
+        inputs=InputConfig(**_input_values(inputs_raw)),
         outputs=OutputConfig(**_output_values(outputs_raw)),
         fx=FXConfig(**_fx_values(fx_raw)),
         logging=LoggingConfig(**_logging_values(logging_raw)),
@@ -213,6 +235,11 @@ def _output_values(values: dict[str, Any]) -> dict[str, Any]:
             for base_model, prefix in fanout_prefixes.items()
         }
     return output
+
+
+def _input_values(values: dict[str, Any]) -> dict[str, Any]:
+    allowed = InputConfig.__dataclass_fields__.keys()
+    return {key: value for key, value in values.items() if key in allowed}
 
 
 def _fx_values(values: dict[str, Any]) -> dict[str, Any]:
