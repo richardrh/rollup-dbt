@@ -21,13 +21,25 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def logged_phase(phase: str) -> Iterator[None]:
     started = time.perf_counter()
-    logger.info("start phase=%s", phase)
+    logger.info("start phase=%s", phase, extra={"event": "phase_start", "phase": phase})
     try:
         yield
     except Exception:
-        logger.exception("failed phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
+        elapsed_seconds = time.perf_counter() - started
+        logger.exception(
+            "failed phase=%s elapsed=%.2fs",
+            phase,
+            elapsed_seconds,
+            extra={"event": "phase_failed", "phase": phase, "elapsed_seconds": elapsed_seconds},
+        )
         raise
-    logger.info("done phase=%s elapsed=%.2fs", phase, time.perf_counter() - started)
+    elapsed_seconds = time.perf_counter() - started
+    logger.info(
+        "done phase=%s elapsed=%.2fs",
+        phase,
+        elapsed_seconds,
+        extra={"event": "phase_done", "phase": phase, "elapsed_seconds": elapsed_seconds},
+    )
 
 
 @dataclass(frozen=True)
@@ -1150,6 +1162,12 @@ def enrich_risklink_event_days(
         before_count,
         after_count,
         before_count - after_count,
+        extra={
+            "event": "risklink_event_day_join",
+            "before_rows": before_count,
+            "after_rows": after_count,
+            "dropped_rows": before_count - after_count,
+        },
     )
     return pl.concat([non_risklink, risklink], how="diagonal_relaxed")
 
@@ -1348,33 +1366,60 @@ def write_debug_frame(
 
 def write_parquet_with_log(frame: pl.DataFrame | pl.LazyFrame, output_path: Path) -> None:
     started = time.perf_counter()
+    lazy = isinstance(frame, pl.LazyFrame)
     if isinstance(frame, pl.LazyFrame):
         frame.sink_parquet(output_path, mkdir=True)
         row_count = -1
     else:
         frame.write_parquet(output_path)
         row_count = frame.height
+    elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
         row_count,
-        time.perf_counter() - started,
+        elapsed_seconds,
+        extra={
+            "event": "write_output",
+            "path": output_path,
+            "rows": row_count,
+            "elapsed_seconds": elapsed_seconds,
+            "lazy": lazy,
+        },
     )
 
 
 def _log_checkpoint(name: str, frame: pl.DataFrame) -> None:
-    logger.info("checkpoint=%s rows=%d", name, frame.height)
+    logger.info(
+        "checkpoint=%s rows=%d",
+        name,
+        frame.height,
+        extra={"event": "checkpoint", "checkpoint": name, "rows": frame.height},
+    )
 
 
 def _warn_row_drop(name: str, before: int, after: int) -> None:
     if after < before:
-        logger.warning("%s join dropped rows before=%d after=%d dropped=%d", name, before, after, before - after)
+        logger.warning(
+            "%s join dropped rows before=%d after=%d dropped=%d",
+            name,
+            before,
+            after,
+            before - after,
+            extra={
+                "event": "row_drop",
+                "join": name,
+                "before_rows": before,
+                "after_rows": after,
+                "dropped_rows": before - after,
+            },
+        )
 
 
 def _log_defaulted_rows(frame: pl.LazyFrame, condition: pl.Expr, message: str) -> None:
     defaulted_rows = frame.select(condition.sum().alias("defaulted_rows")).collect().item()
     if defaulted_rows > 0:
-        logger.warning(message, defaulted_rows)
+        logger.warning(message, defaulted_rows, extra={"event": "defaulted_rows", "rows": defaulted_rows})
 
 
 def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
@@ -1402,13 +1447,20 @@ def write_mart_outputs(output_root: Path, result: PipelineRunResult) -> None:
         started = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix=f"rollup-{name}-") as temp_dir:
             materialized_path = Path(temp_dir) / f"{name}.parquet"
-            logger.info("materializing fanout once fanout=%s output=%s", name, materialized_path)
+            logger.info(
+                "materializing fanout once fanout=%s output=%s",
+                name,
+                materialized_path,
+                extra={"event": "fanout_materialize_start", "fanout": name, "path": materialized_path},
+            )
             frame.sink_parquet(materialized_path)
             materialized = pl.scan_parquet(materialized_path)
+            elapsed_seconds = time.perf_counter() - started
             logger.info(
                 "materialized fanout fanout=%s elapsed=%.2fs",
                 name,
-                time.perf_counter() - started,
+                elapsed_seconds,
+                extra={"event": "fanout_materialize_done", "fanout": name, "elapsed_seconds": elapsed_seconds},
             )
             _write_fanout_partitions(name, materialized, output_dir, started)
 
@@ -1419,24 +1471,47 @@ def _write_fanout_partitions(
     output_dir: Path,
     started: float,
 ) -> None:
-    logger.info("collecting fanout partitions fanout=%s", name)
+    logger.info("collecting fanout partitions fanout=%s", name, extra={"event": "fanout_partitions_start", "fanout": name})
     partitions = (
         frame.select(Col.forecast_date, Col.base_model, Col.metric)
         .unique()
         .sort(Col.forecast_date, Col.base_model, Col.metric)
         .collect()
     )
+    elapsed_seconds = time.perf_counter() - started
     logger.info(
         "collected fanout partitions fanout=%s partitions=%d elapsed=%.2fs",
         name,
         partitions.height,
-        time.perf_counter() - started,
+        elapsed_seconds,
+        extra={
+            "event": "fanout_partitions_done",
+            "fanout": name,
+            "partition_count": partitions.height,
+            "elapsed_seconds": elapsed_seconds,
+        },
     )
     for row in partitions.iter_rows(named=True):
         tag = forecast_tag(row[Col.forecast_date])
         vendor = hisco_vendor_label(row[Col.base_model])
         metric = row[Col.metric]
         output_path = output_dir / f"Hisco{vendor}_{tag}_{metric}.parquet"
+        logger.info(
+            "writing fanout partition fanout=%s output=%s base_model=%s metric=%s forecast_date=%s",
+            name,
+            output_path,
+            row[Col.base_model],
+            metric,
+            row[Col.forecast_date],
+            extra={
+                "event": "fanout_partition_write",
+                "fanout": name,
+                "path": output_path,
+                "base_model": row[Col.base_model],
+                "metric": metric,
+                "forecast_date": row[Col.forecast_date],
+            },
+        )
         write_parquet_with_log(
             frame.filter(
                 (pl.col(Col.forecast_date) == row[Col.forecast_date])
@@ -1504,6 +1579,13 @@ def run(
             ylts.report.height,
             ep_summaries.report.height,
             coverage_report.filter(pl.col("severity") == "error").height,
+            extra={
+                "event": "validation_summary",
+                "seed_files": seeds.report.height,
+                "ylt_files": ylts.report.height,
+                "ep_summary_files": ep_summaries.report.height,
+                "coverage_errors": coverage_report.filter(pl.col("severity") == "error").height,
+            },
         )
 
     with logged_phase("staging"):
@@ -1533,6 +1615,7 @@ def run(
             "staging summary seed_frames=%d staging_frames=%d",
             len(seed_frames),
             len(staging_frames),
+            extra={"event": "staging_summary", "seed_frames": len(seed_frames), "staging_frames": len(staging_frames)},
         )
 
     with logged_phase("intermediate"):
@@ -1615,7 +1698,11 @@ def run(
             [ylt_ranked, ylt_blended, ylt_gbp, ylt_gbp_forecast, ylt_euws, ylt_euws_override],
             how="diagonal",
         )
-        logger.info("intermediate summary frames=%d", len(intermediate_frames))
+        logger.info(
+            "intermediate summary frames=%d",
+            len(intermediate_frames),
+            extra={"event": "intermediate_summary", "frames": len(intermediate_frames)},
+        )
 
     with logged_phase("marts"):
         threshold = config.outputs.minimum_event_loss_threshold

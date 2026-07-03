@@ -65,6 +65,13 @@ def run_rollup(
             output_root,
             debug,
             write_analysis,
+            extra={
+                "event": "rollup_start",
+                "data_root": data_root,
+                "output_root": output_root,
+                "debug": debug,
+                "write_analysis": write_analysis,
+            },
         )
         try:
             run(data_root, output_root=output_root, debug=debug, config=config)
@@ -79,9 +86,20 @@ def run_rollup(
                 ep_report_path=ep_report_path,
             )
         except Exception:
-            logger.exception("failed rollup elapsed=%.2fs", time.perf_counter() - started)
+            elapsed_seconds = time.perf_counter() - started
+            logger.exception(
+                "failed rollup elapsed=%.2fs",
+                elapsed_seconds,
+                extra={"event": "rollup_failed", "elapsed_seconds": elapsed_seconds},
+            )
             raise
-        logger.info("done rollup output_root=%s elapsed=%.2fs", output_root, time.perf_counter() - started)
+        elapsed_seconds = time.perf_counter() - started
+        logger.info(
+            "done rollup output_root=%s elapsed=%.2fs",
+            output_root,
+            elapsed_seconds,
+            extra={"event": "rollup_done", "output_root": output_root, "elapsed_seconds": elapsed_seconds},
+        )
         return result
 
 

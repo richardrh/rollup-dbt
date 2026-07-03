@@ -60,14 +60,21 @@ def write_ep_report(output_root: Path | str = "output") -> Path:
     output_path = output_root / "analysis" / "ep_report.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
-    logger.info("writing output=%s", output_path)
+    logger.info("writing output=%s", output_path, extra={"event": "analysis_report_start", "path": output_path})
     report = build_ep_report(output_root)
     report.write_csv(output_path)
+    elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
         report.height,
-        time.perf_counter() - started,
+        elapsed_seconds,
+        extra={
+            "event": "analysis_report_write",
+            "path": output_path,
+            "rows": report.height,
+            "elapsed_seconds": elapsed_seconds,
+        },
     )
     return output_path
 

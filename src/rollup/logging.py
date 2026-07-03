@@ -13,6 +13,20 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S"
 LogFormat = str
 
+_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+
+
+def _json_safe(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    return str(value)
+
 
 def normalize_log_format(log_format: str | None = None) -> str:
     value = (log_format or "text").lower()
@@ -38,6 +52,10 @@ class JsonLineFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+        for key, value in record.__dict__.items():
+            if key in _LOG_RECORD_FIELDS or key.startswith("_"):
+                continue
+            payload[key] = _json_safe(value)
         return json.dumps(payload, ensure_ascii=False)
 
 

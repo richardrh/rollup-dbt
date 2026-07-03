@@ -169,13 +169,15 @@ def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
 def _write_ep_summary(frame: pl.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
-    logger.info("writing output=%s", output_path)
+    logger.info("writing output=%s", output_path, extra={"event": "ep_summary_write_start", "path": output_path})
     frame.write_csv(output_path)
+    elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
         frame.height,
-        time.perf_counter() - started,
+        elapsed_seconds,
+        extra={"event": "ep_summary_write", "path": output_path, "rows": frame.height, "elapsed_seconds": elapsed_seconds},
     )
     return output_path
 
