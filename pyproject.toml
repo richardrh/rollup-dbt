@@ -38,8 +38,10 @@ build = [
 dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
+    "hypothesis>=6.148.0",
     "mypy>=2.1.0",
     "ruff>=0.15.13",
+    "sqlalchemy>=2.0.0",
     "build>=1.5.0",
     "validnator",
 ]
