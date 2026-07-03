@@ -60,6 +60,7 @@ def test_reduced_test_suite_contains_only_pipeline_tests() -> None:
         "test_resources.py",
         "test_sql.py",
         "test_sql_integration.py",
+        "test_validation_catalogue_inputs.py",
     }
 
     tests_dir = REPO_ROOT / "tests"
