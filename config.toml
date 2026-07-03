@@ -11,6 +11,10 @@ minimum_event_loss_threshold = 1000.0
 verisk = "HiscoAIR"
 risklink = "HiscoRMS"
 
+[inputs]
+verisk_events_file = "seeds/validation/verisk_events.parquet"
+risklink_events_file = "seeds/validation/risklink_flood22_model_events.parquet"
+
 [logging]
 format = "jsonl"
 
