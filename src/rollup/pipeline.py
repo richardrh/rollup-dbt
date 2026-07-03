@@ -1466,37 +1466,49 @@ def _write_combined_outputs(
         Col.verisk_blended_contribution,
         Col.uplift_factor_on_base_model,
     ]
-    sel = [*dims, Col.metric, Col.forecast_date, Col.loss]
-    dialsup_sel = [
-        pl.col(col) if col in ylt_dialsup.columns else pl.lit(None).alias(col)
-        for col in sel
-    ]
-
-    combined = pl.concat(
-        [ylt.filter(pl.col(Col.metric) == "euws_override").select(sel),
-         ylt_dialsup.filter(pl.col(Col.metric) == "dialsup_gbp_forecast").select(dialsup_sel)],
-    ).with_columns(
-        pl.concat_str(
-            [pl.col(Col.metric), pl.col(Col.forecast_date).cast(pl.String).str.replace("-", "").str.slice(0, 6), pl.lit("loss")],
-            separator="_",
-        ).alias("_wide_column"),
+    selected_main = ylt.lazy().filter(pl.col(Col.metric) == "euws_override")
+    selected_dialsup = (
+        ylt_dialsup.lazy()
+        .filter(pl.col(Col.metric) == "dialsup_gbp_forecast")
+        .with_columns([pl.lit(None).alias(col) for col in dims if col not in ylt_dialsup.columns])
     )
 
-    wide = combined.pivot(
-        index=dims,
-        on="_wide_column",
-        values=Col.loss,
-        aggregate_function="first",
-    )
+    def loss_column(frame: pl.LazyFrame, metric: str, forecast_date: object) -> pl.LazyFrame:
+        month = str(forecast_date).replace("-", "")[:6]
+        return (
+            frame.filter(pl.col(Col.forecast_date) == forecast_date)
+            .group_by(dims)
+            .agg(pl.col(Col.loss).first().alias(f"{metric}_{month}_loss"))
+        )
 
-    diagnostics = ylt.filter(pl.col(Col.metric) == "euws_override").select(
+    forecast_dates = (
+        pl.concat(
+            [
+                selected_main.select(Col.forecast_date),
+                selected_dialsup.select(Col.forecast_date),
+            ]
+        )
+        .unique()
+        .sort(Col.forecast_date)
+        .collect()[Col.forecast_date]
+        .to_list()
+    )
+    wide = pl.concat(
+        [selected_main.select(dims), selected_dialsup.select(dims)],
+        how="diagonal_relaxed",
+    ).unique()
+    for forecast_date in forecast_dates:
+        wide = wide.join(loss_column(selected_main, "euws_override", forecast_date), on=dims, how="left")
+        wide = wide.join(loss_column(selected_dialsup, "dialsup_gbp_forecast", forecast_date), on=dims, how="left")
+
+    diagnostics = ylt.lazy().filter(pl.col(Col.metric) == "euws_override").select(
         [*dims, *[col for col in diagnostic_cols if col in ylt.columns]]
     ).unique(subset=dims, keep="first")
-    if len(diagnostics.columns) > len(dims):
+    if len(diagnostics.collect_schema().names()) > len(dims):
         wide = wide.join(diagnostics, on=dims, how="left")
 
     wide = wide.with_columns(pl.lit("cds_wide_analysis").alias(Col.output_use))
-    wide = wide.select(_ordered_mts_wide_columns(wide.columns))
+    wide = wide.select(_ordered_mts_wide_columns(wide.collect_schema().names()))
 
     write_parquet_with_log(wide, output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet")
 
