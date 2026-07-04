@@ -104,10 +104,6 @@ class Col(StrEnum):
     euws_override_max_rank = "euws_override_max_rank"
     euws_override_factor = "euws_override_factor"
     euws_override_applied = "euws_override_applied"
-    dialsup_original_ylt_loss = "dialsup_original_ylt_loss"
-    dialsup_loss_localccy = "dialsup_loss_localccy"
-    dialsup_loss_localccy_forecast = "dialsup_loss_localccy_forecast"
-
 
 class FanoutCol(StrEnum):
     ModelEventID = "ModelEventID"
