@@ -65,4 +65,4 @@ markers = [
 ]
 
 [tool.ruff]
-exclude = ["jan-rollup", "utils", "scripts/build.py"]
+exclude = ["scripts/build.py"]
