@@ -1868,50 +1868,23 @@ def run(
             staged_ep_summaries,
             use_dialsup_selection=True,
         )
-        if debug:
-            intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
-            intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
-            intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
-            intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
-
         joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
-        if debug:
-            intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
-            intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
-            intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
-            intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
-
         ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds, config)
-        if debug:
-            intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
-            intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
-            intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
-
         ylt_original = enriched_ylts.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        if debug:
-            intermediate_frames["ylt_original"] = ylt_original
 
         ylt_ranked = _add_rank_columns(ylt_original, config)
-        if debug:
-            intermediate_frames["ylt_ranked"] = ylt_ranked
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        if debug:
-            intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
         ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
-        if debug:
-            intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
 
         ylt_dialsup = build_dialsup_ylt_metrics(ylt_ranked_dialsup, verisk_events, seeds)
         ylt_dialsup_path = work_dir / "ylt_dialsup.parquet"
         write_parquet_with_log(ylt_dialsup, ylt_dialsup_path)
         ylt_dialsup = pl.scan_parquet(ylt_dialsup_path)
-        if debug:
-            intermediate_frames["ylt_dialsup"] = ylt_dialsup
 
         ylt, main_metric_frames = build_main_ylt_metrics(
             ylt_ranked,
@@ -1920,11 +1893,27 @@ def run(
             seeds,
             include_metrics=debug,
         )
-        if debug:
-            intermediate_frames.update(main_metric_frames)
         ylt_path = work_dir / "ylt_combined_all_factors.parquet"
         write_parquet_with_log(ylt, ylt_path)
         ylt = pl.scan_parquet(ylt_path)
+        if debug:
+            intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
+            intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
+            intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
+            intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
+            intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
+            intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
+            intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
+            intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
+            intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
+            intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
+            intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
+            intermediate_frames["ylt_original"] = ylt_original
+            intermediate_frames["ylt_ranked"] = ylt_ranked
+            intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
+            intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
+            intermediate_frames["ylt_dialsup"] = ylt_dialsup
+            intermediate_frames.update(main_metric_frames)
         logger.info(
             "intermediate summary frames=%d",
             len(intermediate_frames),
