@@ -9,11 +9,9 @@ from rollup.columns import Col, RawCol
 from rollup.config import BlendingConfig, BlendingTargetPoint, RollupConfig
 from rollup.pipeline import (
     apply_ep_blending_to_ylt,
-    apply_euws_overrides_to_ylt,
-    apply_euws_to_ylt,
-    apply_fx_to_ylt,
-    apply_forecast_to_ylt,
     calculate_ep_blending_targets,
+    build_main_ylt_metrics,
+    EpBlendingTargets,
     EpSummaryValidationResult,
     PipelineValidationInputs,
     SeedValidationResult,
@@ -152,28 +150,59 @@ def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> Non
     }
 
 
-def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -> None:
-    localccy_forecast = pl.DataFrame(
+def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
+    ylt_ranked = pl.DataFrame(
         {
-            Col.vendor: ["verisk", "verisk"],
-            Col.base_model: ["verisk", "verisk"],
-            Col.rollup_lob: ["HIC_HH_UK", "HIC_HH_UK"],
-            Col.rollup_peril: ["UK_WS", "UK_WS"],
-            Col.model_code: [41, 41],
-            Col.year_id: [2026, 2026],
-            Col.event_id: [10, 20],
-            Col.rnk: [50, 101],
-            Col.metric: ["localccy_forecast", "localccy_forecast"],
-            Col.loss: [100.0, 100.0],
+            Col.vendor: ["verisk"],
+            Col.modelled_lob: ["LOB"],
+            Col.modelled_peril: ["PERIL"],
+            Col.rollup_lob: ["HIC_HH_UK"],
+            Col.rollup_peril: ["UK_WS"],
+            Col.region_peril_id: [101],
+            Col.blend_subregion_peril_id: ["101"],
+            Col.base_model: ["verisk"],
+            Col.class_: ["COMM"],
+            Col.office: ["DE"],
+            Col.currency: ["EUR"],
+            Col.model_code: [41],
+            Col.year_id: [2026],
+            Col.event_id: [10],
+            Col.rnk: [50],
+            Col.rp: [1.0],
+            Col.rp_bucket: [0],
+            Col.metric: ["original"],
+            Col.loss: [88.0],
         }
     ).lazy()
+    ep_blending_targets = EpBlendingTargets(
+        target_points=pl.LazyFrame(),
+        weights=pl.LazyFrame(),
+        blended=pl.DataFrame(
+            {
+                Col.rollup_lob: ["HIC_HH_UK"],
+                Col.rollup_peril: ["UK_WS"],
+                Col.region_peril_id: [101],
+                Col.blend_subregion_peril_id: ["101"],
+                Col.return_period: [0],
+                Col.ep_type: ["AAL"],
+                Col.risklink_loss: [0.0],
+                Col.verisk_loss: [88.0],
+                Col.risklink_blended_contribution: [0.0],
+                Col.verisk_blended_contribution: [88.0],
+                Col.target_loss: [88.0],
+                Col.base_model: ["verisk"],
+                Col.base_model_loss: [88.0],
+                Col.uplift_factor_on_base_model: [1.0],
+            }
+        ).lazy(),
+    )
     verisk_events = pl.DataFrame(
         {
-            RawCol.EventID: [1001, 1002],
-            RawCol.ModelID: [41, 41],
-            RawCol.Event: [10, 20],
-            RawCol.Year: [2026, 2026],
-            RawCol.Day: [1, 2],
+            RawCol.EventID: [1001],
+            RawCol.ModelID: [41],
+            RawCol.Event: [10],
+            RawCol.Year: [2026],
+            RawCol.Day: [1],
         }
     ).lazy().select(
         pl.col(RawCol.EventID).alias(Col.model_event_id),
@@ -184,11 +213,28 @@ def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -
     )
     seeds = SeedValidationResult(
         frames={
+            "fx_rates.csv": pl.DataFrame(
+                {
+                    RawCol.currency_code: ["EUR"],
+                    Col.target_currency: ["GBP"],
+                    RawCol.rate_date: ["2026-01-01"],
+                    RawCol.rate: [0.88],
+                }
+            ),
+            "forecast_factors.csv": pl.DataFrame(
+                {
+                    Col.class_: ["COMM"],
+                    Col.office: ["Germany"],
+                    "office_iso2": ["DE"],
+                    Col.forecast_date: ["2026-12-31"],
+                    RawCol.factor: [2.5],
+                }
+            ),
             "euws_rate_factors.csv": pl.DataFrame(
                 {
-                    Col.model_event_id: [1001, 1002],
-                    RawCol.occ_year: [2026, 2026],
-                    RawCol.factor: [0.0, 0.0],
+                    Col.model_event_id: [1001],
+                    RawCol.occ_year: [2026],
+                    RawCol.factor: [0.0],
                 }
             ),
             "euws_rank_overrides.csv": pl.DataFrame(
@@ -202,74 +248,28 @@ def test_euws_applies_model_event_factors_to_uk_ws_with_hic_hh_rank_override() -
         report=_valid_report(),
     )
 
-    euws = apply_euws_to_ylt(localccy_forecast, verisk_events, seeds)
-    overridden = apply_euws_overrides_to_ylt(euws, seeds).collect().sort(Col.rnk)
+    combined, metrics = build_main_ylt_metrics(ylt_ranked, ep_blending_targets, verisk_events, seeds)
 
-    assert overridden.select(Col.rnk, "_euws_factor_raw", Col.loss).to_dict(as_series=False) == {
-        Col.rnk: [50, 101],
-        "_euws_factor_raw": [0.0, 0.0],
-        Col.loss: [100.0, 0.0],
+    assert set(combined.select(Col.metric).collect().to_series().to_list()) == {
+        "original",
+        "blended",
+        "localccy",
+        "localccy_forecast",
+        "euws",
+        "euws_override",
     }
-
-
-def test_forecast_factors_join_lob_office_to_factor_office_iso2() -> None:
-    gbp = pl.DataFrame(
-        {
-            Col.class_: ["COMM"],
-            Col.office: ["DE"],
-            Col.metric: ["gbp"],
-            Col.loss: [100.0],
-        }
-    ).lazy()
-    seeds = SeedValidationResult(
-        frames={
-            "forecast_factors.csv": pl.DataFrame(
-                {
-                    Col.class_: ["COMM"],
-                    Col.office: ["Germany"],
-                    "office_iso2": ["DE"],
-                    Col.forecast_date: ["2026-12-31"],
-                    RawCol.factor: [2.5],
-                }
-            ),
-        },
-        report=_valid_report(),
-    )
-
-    forecasted = apply_forecast_to_ylt(gbp, seeds).collect()
-
-    assert forecasted.select(Col.forecast_date, Col.loss).to_dict(as_series=False) == {
+    assert metrics["ylt_fx_applied"].select(Col.loss, Col.target_currency).collect().to_dict(as_series=False) == {
+        Col.loss: [100.0],
+        Col.target_currency: ["EUR"],
+    }
+    assert metrics["ylt_forecast_applied"].select(Col.forecast_date, Col.loss).collect().to_dict(as_series=False) == {
         Col.forecast_date: ["2026-12-31"],
         Col.loss: [250.0],
     }
-
-def test_fx_converts_gbp_input_to_local_currency() -> None:
-    blended = pl.DataFrame(
-        {
-            Col.currency: ["EUR"],
-            Col.metric: ["blended"],
-            Col.loss: [88.0],
-        }
-    ).lazy()
-    seeds = SeedValidationResult(
-        frames={
-            "fx_rates.csv": pl.DataFrame(
-                {
-                    RawCol.currency_code: ["EUR"],
-                    Col.target_currency: ["GBP"],
-                    RawCol.rate_date: ["2026-01-01"],
-                    RawCol.rate: [0.88],
-                }
-            ),
-        },
-        report=_valid_report(),
-    )
-
-    converted = apply_fx_to_ylt(blended, seeds).collect()
-
-    assert converted.select(Col.loss, Col.target_currency).to_dict(as_series=False) == {
-        Col.loss: [100.0],
-        Col.target_currency: ["EUR"],
+    assert metrics["ylt_euws_override_applied"].select(Col.rnk, "_euws_factor_raw", Col.loss).collect().to_dict(as_series=False) == {
+        Col.rnk: [50],
+        "_euws_factor_raw": [0.0],
+        Col.loss: [250.0],
     }
 
 
@@ -794,15 +794,14 @@ def test_validate_parser_accepts_report_dir_only_on_validate_command() -> None:
     assert args.report_dir == Path("output/validation")
 
 
-def test_validate_command_prints_input_ylt_aal_report(monkeypatch, capsys) -> None:
+def test_validate_command_is_quiet_by_default(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "collect_validation_reports", lambda data_root: _cli_reports())
 
     assert cli.validate_command("data") == 0
-    captured = capsys.readouterr().out
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
 
 
-def test_validate_command_writes_csv_reports_and_preserves_console_output(
+def test_validate_command_writes_csv_reports_without_console_chatter(
     monkeypatch,
     capsys,
     tmp_path,
@@ -823,12 +822,7 @@ def test_validate_command_writes_csv_reports_and_preserves_console_output(
         assert output_path.is_file()
         assert output_path.read_text(encoding="utf-8")
 
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
-    assert f"Validation CSV reports written to {report_dir}" in captured
+    assert capsys.readouterr().out == ""
 
 
 def test_validate_command_report_dir_preserves_validation_exit_code(
@@ -883,7 +877,7 @@ def _cli_reports(*, valid: bool = True, coverage_error: bool = False) -> cli.Val
     )
 
 
-def test_run_command_prints_validation_reports_from_api_result(
+def test_run_command_is_quiet_for_validation_reports_from_api_result(
     monkeypatch,
     capsys,
     tmp_path,
@@ -907,11 +901,7 @@ def test_run_command_prints_validation_reports_from_api_result(
     output_root = tmp_path / "output"
     assert cli.run_command("data", output_root=output_root, debug=True) == 0
 
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
     assert calls == {
         "data_root": "data",
         "output_root": output_root,
@@ -933,11 +923,7 @@ def test_run_command_returns_nonzero_without_running_pipeline_on_validation_fail
     monkeypatch.setattr(cli, "run_rollup", fail_validation)
 
     assert cli.run_command("data", output_root=tmp_path / "output") == 1
-    captured = capsys.readouterr().out
-    assert "Validation report" in captured
-    assert "Modelled LOB/peril anti-join report" in captured
-    assert "YLT loss validation summary" in captured
-    assert "Input YLT AAL by LOB/peril summary" in captured
+    assert capsys.readouterr().out == ""
 
 
 def test_write_parquet_with_log_emits_one_completion_record(tmp_path, caplog) -> None:

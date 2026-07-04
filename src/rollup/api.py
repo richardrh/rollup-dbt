@@ -75,10 +75,10 @@ def run_rollup(
         )
         try:
             run(data_root, output_root=output_root, debug=debug, config=config)
+            ep_report_path = write_ep_report(output_root) if write_analysis else None
             duckdb_file = None
             if config.outputs.write_duckdb:
                 duckdb_file = export_duckdb(data_root, output_root, config)
-            ep_report_path = write_ep_report(output_root) if write_analysis else None
             result = RollupRunResult(
                 data_root=data_root,
                 output_root=output_root,
@@ -88,14 +88,14 @@ def run_rollup(
         except Exception:
             elapsed_seconds = time.perf_counter() - started
             logger.exception(
-                "failed rollup elapsed=%.2fs",
+                "failed rollup elapsed_seconds=%.2f",
                 elapsed_seconds,
                 extra={"event": "rollup_failed", "elapsed_seconds": elapsed_seconds},
             )
             raise
         elapsed_seconds = time.perf_counter() - started
         logger.info(
-            "done rollup output_root=%s elapsed=%.2fs",
+            "done rollup output_root=%s elapsed_seconds=%.2f",
             output_root,
             elapsed_seconds,
             extra={"event": "rollup_done", "output_root": output_root, "elapsed_seconds": elapsed_seconds},

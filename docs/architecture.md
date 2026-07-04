@@ -127,9 +127,8 @@ forecast factors, and produces an independent loss stream.
 
 DIALSUP does not inherit the main pipeline's `selection_priority` winner.
 Instead, it uses the active candidate marked `is_dialsup = 1` in
-`perils.csv` for each vendor, rollup LOB, and rollup peril group. Validation
-fails if an active group has zero or multiple DIALSUP candidates. Mark the
-least-adjusted/base peril where possible; adjusted variants such as
+`perils.csv` for each vendor, rollup LOB, and rollup peril group. Mark the
+least-adjusted/base peril candidates where possible; adjusted variants such as
 GC-adjusted, CVV, floor-area, PLA, or HD should generally be `0` unless an
 adjusted or HD row is the only sensible base candidate.
 

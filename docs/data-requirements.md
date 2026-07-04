@@ -175,8 +175,8 @@ when multiple modelled perils map to the same vendor, `rollup_lob`, and
 EP staging; schema text uses `99` as the normal fallback priority, and some
 calling contexts treat the fallback/default as `99`/`100`.
 
-`is_dialsup` is the independent DIALSUP peril-selection flag. Exactly one active
-candidate per vendor, `rollup_lob`, and `rollup_peril` must be `1`; adjusted
+`is_dialsup` is the independent DIALSUP peril-selection flag. Active base
+candidates per vendor, `rollup_lob`, and `rollup_peril` should be `1`; adjusted
 alternatives should generally be `0` unless they are the only sensible base
 candidate. The main pipeline ignores this flag and continues to use
 `selection_priority`. DIALSUP output can differ from the main output when this

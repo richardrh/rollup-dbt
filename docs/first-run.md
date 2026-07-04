@@ -18,8 +18,9 @@ data/seeds/**
 
 Generated outputs land in root `output/`; do not put analyst inputs there.
 
-YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first with
-the [DuckDB utility command](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb).
+YLT files must be Parquet. If a YLT extract arrives as CSV, convert it first
+with DuckDB; see [Utilities](utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb)
+for high-level guidance.
 You can provide one or more YLT parquet files per vendor. The pipeline loads every
 direct `*.parquet` file in `data/ylt/verisk/` and `data/ylt/risklink/`; there is
 no required filename pattern beyond the extension. Use clear names, and do not
@@ -64,13 +65,8 @@ Check these files before validation:
   to rollup LOB, class, office, currency, and CDS class metadata.
 - `data/seeds/business/perils.csv`: must contain every EP/YLT modelled peril;
   maps to rollup peril, region/peril labels, `region_peril_id`, and main-pipeline
-  `selection_priority`. It also includes DIALSUP-only `is_dialsup`, which must
-  mark exactly one active base/least-adjusted DIALSUP candidate per vendor,
-  rollup LOB, and rollup peril.
-
-The anti-join validation only flags the reverse: input values missing from seed
-files. Adding a seed entry without matching data will not cause errors, but it
-will also not be used by the pipeline.
+  `selection_priority`. It also includes DIALSUP-only `is_dialsup`, which marks
+  active base/least-adjusted DIALSUP candidates.
 
 The anti-join validation only flags the reverse: input values missing from seed
 files. Adding a seed entry without matching data will not cause errors, but it
@@ -133,21 +129,22 @@ the pipeline run completes.
 
 ## Step 6. Inspect outputs
 
-```bash
-duckdb -c "SELECT COUNT(*) FROM 'output/mts_tbl_ylt_combined_all_factors.parquet';"
-duckdb -c "SELECT * FROM 'output/mts_event_validation.parquet' LIMIT 20;"
-```
+Review the generated output files, especially the combined YLT parquet and event
+validation parquet.
 
 ## Step 7. Debug if needed
 
 ```bash
 uv run rollup run --debug
-duckdb -c "SELECT * FROM 'output/debug/int_ylt_blending_applied.parquet' LIMIT 10;"
 ```
+
+Then inspect the debug frames under `output/debug/`, starting with the YLT
+blending output.
 
 ## Step 8. Generate EP report
 
 ```bash
 uv run rollup analyze
-duckdb -c "SELECT * FROM read_csv_auto('output/analysis/ep_report.csv') LIMIT 20;"
 ```
+
+Review `output/analysis/ep_report.csv` after generation.

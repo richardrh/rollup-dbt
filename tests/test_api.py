@@ -46,7 +46,7 @@ def test_run_rollup_returns_dataiku_friendly_output_paths(monkeypatch: pytest.Mo
 
     result = api.run_rollup(data_root, output_root, debug=True)
 
-    assert events == ["run", "export_duckdb", "write_ep_report"]
+    assert events == ["run", "write_ep_report", "export_duckdb"]
     assert result.data_root == data_root
     assert result.output_root == output_root
     assert result.outputs.mts_wide == output_root / "mts_tbl_ylt_combined_all_factors_wide.parquet"

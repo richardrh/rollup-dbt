@@ -13,13 +13,8 @@ Useful DuckDB references:
 - [CSV import](https://duckdb.org/docs/stable/data/csv/overview.html)
 - [Parquet overview](https://duckdb.org/docs/stable/data/parquet/overview.html)
 
-Example for a Verisk YLT extract:
-
-```bash
-duckdb -c "COPY (SELECT * FROM read_csv_auto('source_ylt.csv')) TO 'data/ylt/verisk/source_ylt.parquet' (FORMAT PARQUET);"
-```
-
-Run this from the repository root, then validate the converted file:
+Run the conversion from the repository root, writing the Parquet file into the
+appropriate vendor folder, then validate the converted file:
 
 ```bash
 uv run rollup validate

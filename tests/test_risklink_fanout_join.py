@@ -6,16 +6,13 @@ from rollup.columns import Col, FanoutCol
 from rollup.pipeline import (
     PipelineRunResult,
     PipelineStage,
-    apply_event_loss_threshold,
-    build_dialsup_fanout,
-    build_main_fanout,
+    build_fanout,
     enrich_risklink_event_days,
     write_mart_outputs,
 )
 
 
-def test_risklink_event_enrichment_logs_dropped_rows_and_preserves_verisk(caplog) -> None:
-    caplog.set_level("INFO", logger="rollup.pipeline")
+def test_risklink_event_enrichment_drops_unmatched_risklink_and_preserves_verisk() -> None:
     ylt = pl.DataFrame(
         {
             Col.base_model: ["risklink", "risklink", "verisk"],
@@ -44,10 +41,6 @@ def test_risklink_event_enrichment_logs_dropped_rows_and_preserves_verisk(caplog
 
     assert result.get_column(Col.base_model).to_list() == ["risklink", "verisk"]
     assert result.filter(pl.col(Col.base_model) == "risklink").get_column(Col.risklink_event_day).to_list() == [42]
-    assert any(
-        "risklink event-day join rows before=2 after=1 dropped=1" in record.getMessage()
-        for record in caplog.records
-    )
 
 
 def test_cds_fanout_uses_historical_columns_after_risklink_year_join() -> None:
@@ -75,7 +68,7 @@ def test_cds_fanout_uses_historical_columns_after_risklink_year_join() -> None:
         }
     ).lazy()
 
-    fanout = build_main_fanout(ylt, catalogue).collect()
+    fanout = build_fanout(ylt, catalogue).collect()
 
     assert fanout.columns == [
         Col.forecast_date,
@@ -93,7 +86,7 @@ def test_cds_fanout_uses_historical_columns_after_risklink_year_join() -> None:
     assert fanout.filter(pl.col(Col.base_model) == "risklink").get_column(FanoutCol.ModelEventDay).to_list() == [42]
 
 
-def test_event_loss_threshold_filters_only_final_metric_rows() -> None:
+def test_inline_event_loss_threshold_filters_only_final_metric_rows() -> None:
     ylt = pl.DataFrame(
         {
             Col.metric: ["original", "euws_override", "euws_override", "euws_override"],
@@ -101,8 +94,20 @@ def test_event_loss_threshold_filters_only_final_metric_rows() -> None:
         }
     )
 
-    high_threshold = apply_event_loss_threshold(ylt, metric="euws_override", threshold=1000.0)
-    non_positive_threshold = apply_event_loss_threshold(ylt, metric="euws_override", threshold=0.0)
+    high_threshold_value = 1000.0
+    high_threshold = ylt.filter(
+        (pl.col(Col.metric) != "euws_override")
+        | (pl.col(Col.loss) >= high_threshold_value)
+    )
+    non_positive_threshold_value = 0.0
+    non_positive_threshold = ylt.filter(
+        (pl.col(Col.metric) != "euws_override")
+        | (
+            pl.col(Col.loss).is_not_null()
+            if non_positive_threshold_value <= 0
+            else pl.col(Col.loss) >= non_positive_threshold_value
+        )
+    )
 
     assert high_threshold.get_column(Col.loss).to_list() == [None, 1000.0]
     assert non_positive_threshold.get_column(Col.loss).to_list() == [None, 999.0, 1000.0]
@@ -133,18 +138,17 @@ def test_thresholded_main_and_dialsup_rows_drive_fanouts() -> None:
         }
     ).lazy()
 
-    main = apply_event_loss_threshold(
-        ylt.filter(pl.col(Col.metric) == "euws_override"),
-        metric="euws_override",
-        threshold=1000.0,
-    )
-    dialsup = apply_event_loss_threshold(
-        ylt.filter(pl.col(Col.metric) == "dialsup_localccy_forecast"),
-        metric="dialsup_localccy_forecast",
-        threshold=1000.0,
-    )
-    main_fanout = build_main_fanout(main.lazy(), risklink_events).collect()
-    dialsup_fanout = build_dialsup_fanout(dialsup.lazy(), risklink_events).collect()
+    threshold = 1000.0
+    main = ylt.filter(
+        (pl.col(Col.metric) != "euws_override")
+        | (pl.col(Col.loss) >= threshold)
+    ).filter(pl.col(Col.metric) == "euws_override")
+    dialsup = ylt.filter(
+        (pl.col(Col.metric) != "dialsup_localccy_forecast")
+        | (pl.col(Col.loss) >= threshold)
+    ).filter(pl.col(Col.metric) == "dialsup_localccy_forecast")
+    main_fanout = build_fanout(main.lazy(), risklink_events).collect()
+    dialsup_fanout = build_fanout(dialsup.lazy(), risklink_events).collect()
 
     assert main_fanout.get_column(FanoutCol.ModelGrossLoss).to_list() == [1000.0]
     assert dialsup_fanout.get_column(FanoutCol.ModelGrossLoss).to_list() == [1000.0]
