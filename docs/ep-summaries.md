@@ -107,6 +107,10 @@ uv run rollup analyze   # EP report only from existing outputs
 
 The report contains 2,100 rows (typical) with columns:
 
+When `rollup run` writes `output/rollup.duckdb`, this CSV is also available as
+the `ep_report` table. Use `sql/02_ep_report.sql` for standard DuckDB inspection
+queries.
+
 | Column | Description |
 | --- | --- |
 | `forecast_date` | Forecast date |

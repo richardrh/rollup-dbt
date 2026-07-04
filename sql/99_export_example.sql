@@ -1,5 +1,5 @@
--- Example CSV export pattern.
--- Change the SELECT and destination path for the extract you need.
+-- Example CSV export pattern from output/rollup.duckdb.
+-- Change the SELECT, source table, and destination path for the extract you need.
 
 COPY (
   SELECT *

@@ -1,20 +1,17 @@
--- Input and seed QA queries.
+-- Exported seed lookup checks.
 
--- EP summary coverage.
+-- LOB mappings.
 SELECT
-  vendor,
+  rollup_lob,
   modelled_lob,
-  modelled_peril,
-  ep_type,
-  COUNT(*) AS rows,
-  MIN(return_period) AS min_return_period,
-  MAX(return_period) AS max_return_period,
-  SUM(loss) AS total_loss
-FROM input_ep_summaries
-GROUP BY 1, 2, 3, 4
-ORDER BY vendor, modelled_lob, modelled_peril, ep_type;
+  lob_type,
+  office,
+  class,
+  currency
+FROM seed_lobs
+ORDER BY rollup_lob, modelled_lob;
 
--- Seed peril selection flags.
+-- Peril selection flags for main, DIALSUP, and EUWS logic.
 SELECT
   rollup_peril,
   base_model,
@@ -30,3 +27,13 @@ ORDER BY rollup_peril, base_model;
 SELECT *
 FROM seed_fx_rates
 ORDER BY currency_code, rate_date;
+
+-- Forecast factors by month.
+SELECT
+  forecast_date,
+  COUNT(*) AS rows,
+  MIN(factor) AS min_factor,
+  MAX(factor) AS max_factor
+FROM seed_forecast_factors
+GROUP BY 1
+ORDER BY forecast_date;

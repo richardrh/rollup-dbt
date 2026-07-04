@@ -31,9 +31,19 @@ columns such as `euws_override_YYYYMM_loss` and
 `dialsup_localccy_forecast_YYYYMM_loss`.
 
 DuckDB export is on by default and writes `output/rollup.duckdb` unless
-configured otherwise. Use `uv run rollup run --no-duckdb` to disable it. The CLI
-rejects `--no-duckdb` with `--duckdb-file` because an explicit file path implies
-an export.
+configured otherwise. Use `uv run rollup run --duckdb-file path/to/file.duckdb`
+to choose a different path, or `uv run rollup run --no-duckdb` to disable it.
+The CLI rejects `--no-duckdb` with `--duckdb-file` because an explicit file path
+implies an export. The exporter rebuilds the database from scratch by deleting
+the existing DuckDB file before writing.
+
+The DuckDB export is an analyst inspection bundle. It includes every
+`output/**/mts_tbl_*.parquet` file as a separate table named from the parquet
+stem, `output/analysis/ep_report.csv` as `ep_report` when present, and every
+non-validation seed CSV under `data/seeds/**/*.csv` as `seed_<csv_stem>`. It
+does not include raw input YLTs, validation files under `data/seeds/validation/`,
+validation reports, mart fanout parquets under `output/marts/`, or `.rollup_work`
+internals.
 
 The main and DIALSUP fanouts include only final metric rows at or above the
 configured minimum event loss threshold. The standalone DIALSUP parquet
