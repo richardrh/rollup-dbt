@@ -248,7 +248,13 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
         report=_valid_report(),
     )
 
-    combined, metrics = build_main_ylt_metrics(ylt_ranked, ep_blending_targets, verisk_events, seeds)
+    combined, metrics = build_main_ylt_metrics(
+        ylt_ranked,
+        ep_blending_targets,
+        verisk_events,
+        seeds,
+        include_metrics=True,
+    )
 
     assert set(combined.select(Col.metric).collect().to_series().to_list()) == {
         "original",

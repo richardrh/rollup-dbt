@@ -948,6 +948,8 @@ def build_main_ylt_metrics(
     ep_blending_targets: EpBlendingTargets,
     verisk_events: pl.LazyFrame,
     seeds: SeedValidationResult,
+    *,
+    include_metrics: bool = False,
 ) -> tuple[pl.LazyFrame, dict[str, pl.LazyFrame]]:
     fx_rates = (
         seeds.frames["fx_rates.csv"]
@@ -1050,6 +1052,9 @@ def build_main_ylt_metrics(
         [ylt_ranked, ylt_blended, ylt_localccy, ylt_localccy_forecast, ylt_euws, ylt_euws_override],
         how="diagonal",
     )
+    if not include_metrics:
+        return ylt, {}
+
     metrics = {
         "ylt_blending_applied": ylt_blended,
         "ylt_fx_applied": ylt_localccy,
@@ -1830,28 +1835,25 @@ def run(
         )
 
     with logged_phase("staging"):
-        for filename, frame in seeds.frames.items():
-            seed_frames[Path(filename).stem] = frame
         verisk_events = load_verisk_events(data_root, config)
-        seed_frames["verisk_events"] = verisk_events
         risklink_events = load_risklink_flood_events(data_root, config)
-        seed_frames["risklink_flood_events"] = risklink_events
-        staging_frames["validation_seeds"] = seeds.report
-
-        staging_frames["validation_ylt"] = ylts.report
-        staging_frames["modelled_dimension_coverage"] = coverage_report
-
         normalized_ylts = normalize_ylt(ylts)
-        staging_frames["ylt_verisk_normalized"] = normalized_ylts.verisk
-        staging_frames["ylt_risklink_normalized"] = normalized_ylts.risklink
-
-        staging_frames["validation_ep_summaries"] = ep_summaries.report
-        staging_frames["ep_summaries"] = ep_summaries.frame
-
         staged_ep_summaries = stage_ep_summaries(ep_summaries, seeds)
-        staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
-        staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
-        staging_frames["ep_summaries_selected_dialsup"] = staged_ep_summaries.selected_dialsup
+        if debug:
+            for filename, frame in seeds.frames.items():
+                seed_frames[Path(filename).stem] = frame
+            seed_frames["verisk_events"] = verisk_events
+            seed_frames["risklink_flood_events"] = risklink_events
+            staging_frames["validation_seeds"] = seeds.report
+            staging_frames["validation_ylt"] = ylts.report
+            staging_frames["modelled_dimension_coverage"] = coverage_report
+            staging_frames["ylt_verisk_normalized"] = normalized_ylts.verisk
+            staging_frames["ylt_risklink_normalized"] = normalized_ylts.risklink
+            staging_frames["validation_ep_summaries"] = ep_summaries.report
+            staging_frames["ep_summaries"] = ep_summaries.frame
+            staging_frames["ep_summaries_enriched"] = staged_ep_summaries.enriched
+            staging_frames["ep_summaries_selected"] = staged_ep_summaries.selected
+            staging_frames["ep_summaries_selected_dialsup"] = staged_ep_summaries.selected_dialsup
         logger.info(
             "staging summary seed_frames=%d staging_frames=%d",
             len(seed_frames),
@@ -1866,50 +1868,60 @@ def run(
             staged_ep_summaries,
             use_dialsup_selection=True,
         )
-        intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
-        intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
-        intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
-        intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
+        if debug:
+            intermediate_frames["ylt_verisk_enriched"] = enriched_ylts.verisk
+            intermediate_frames["ylt_risklink_enriched"] = enriched_ylts.risklink
+            intermediate_frames["ylt_combined_enriched"] = enriched_ylts.combined
+            intermediate_frames["ylt_combined_enriched_dialsup"] = enriched_ylts_dialsup.combined
 
         joined_ep_summaries = join_ep_summaries(staged_ep_summaries)
-        intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
-        intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
-        intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
-        intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
+        if debug:
+            intermediate_frames["ep_summaries_enriched"] = joined_ep_summaries.enriched
+            intermediate_frames["ep_summaries_verisk"] = joined_ep_summaries.verisk
+            intermediate_frames["ep_summaries_risklink"] = joined_ep_summaries.risklink
+            intermediate_frames["ep_vendor_joined"] = joined_ep_summaries.joined
 
         ep_blending_targets = calculate_ep_blending_targets(joined_ep_summaries, seeds, config)
-        intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
-        intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
-        intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
+        if debug:
+            intermediate_frames["ep_blending_target_points"] = ep_blending_targets.target_points
+            intermediate_frames["ep_blending_weights"] = ep_blending_targets.weights
+            intermediate_frames["ep_blending_targets"] = ep_blending_targets.blended
 
         ylt_original = enriched_ylts.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        intermediate_frames["ylt_original"] = ylt_original
+        if debug:
+            intermediate_frames["ylt_original"] = ylt_original
 
         ylt_ranked = _add_rank_columns(ylt_original, config)
-        intermediate_frames["ylt_ranked"] = ylt_ranked
+        if debug:
+            intermediate_frames["ylt_ranked"] = ylt_ranked
 
         ylt_original_dialsup = enriched_ylts_dialsup.combined.with_columns(
             pl.lit("original").alias(Col.metric),
         ).filter((pl.col(Col.vendor) == pl.col(Col.base_model)) & (pl.col(Col.loss) >= config.outputs.minimum_event_loss_threshold / 5))
-        intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
+        if debug:
+            intermediate_frames["ylt_original_dialsup"] = ylt_original_dialsup
         ylt_ranked_dialsup = _add_rank_columns(ylt_original_dialsup, config)
-        intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
+        if debug:
+            intermediate_frames["ylt_ranked_dialsup"] = ylt_ranked_dialsup
 
         ylt_dialsup = build_dialsup_ylt_metrics(ylt_ranked_dialsup, verisk_events, seeds)
         ylt_dialsup_path = work_dir / "ylt_dialsup.parquet"
         write_parquet_with_log(ylt_dialsup, ylt_dialsup_path)
         ylt_dialsup = pl.scan_parquet(ylt_dialsup_path)
-        intermediate_frames["ylt_dialsup"] = ylt_dialsup
+        if debug:
+            intermediate_frames["ylt_dialsup"] = ylt_dialsup
 
         ylt, main_metric_frames = build_main_ylt_metrics(
             ylt_ranked,
             ep_blending_targets,
             verisk_events,
             seeds,
+            include_metrics=debug,
         )
-        intermediate_frames.update(main_metric_frames)
+        if debug:
+            intermediate_frames.update(main_metric_frames)
         ylt_path = work_dir / "ylt_combined_all_factors.parquet"
         write_parquet_with_log(ylt, ylt_path)
         ylt = pl.scan_parquet(ylt_path)
