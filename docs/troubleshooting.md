@@ -34,14 +34,9 @@ Run with debug output:
 uv run rollup run --debug
 ```
 
-Inspect likely choke points:
-
-```bash
-duckdb -c "SELECT COUNT(*) FROM 'output/debug/stg_ep_summaries_selected.parquet';"
-duckdb -c "SELECT COUNT(*) FROM 'output/debug/int_ep_blending_targets.parquet';"
-duckdb -c "SELECT COUNT(*) FROM 'output/debug/int_ylt_blending_applied.parquet';"
-duckdb -c "SELECT vendor, rollup_peril, COUNT(*) rows FROM 'output/debug/mts_ylt_combined_all_factors.parquet' GROUP BY 1,2 ORDER BY 1,2;"
-```
+Inspect likely choke-point files under `output/debug/`, especially staged EP
+summaries, EP blending targets, YLT blending output, and the combined YLT debug
+frame.
 
 ## Missing FX or forecast factors
 

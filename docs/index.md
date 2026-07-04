@@ -33,14 +33,12 @@ uv run rollup docs --host localhost --port 4322
 - `output/analysis/ep_report.csv` is written by `rollup run` and can be
   regenerated with `rollup analyze`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
-- Reusable DuckDB SQL templates for analysts live in the top-level `sql/`
-  directory.
 
 Start with [Quickstart](first-run.md). On Windows, use the
 [Windows install guide](windows-install.md) first to install `uv` and build a
 local environment. Then use [Loading your data](load-data.md) for exact file
 locations and [EP summaries](ep-summaries.md) when converting wide vendor CSVs
 to `.long.csv` inputs. If a YLT arrives as CSV, see [Utilities](utilities.md)
-for the DuckDB CSV-to-Parquet command. For reference details, see the
+for DuckDB CSV-to-Parquet guidance. For reference details, see the
 [data-flow architecture](architecture.md), [calculation reference](calculation-reference.md),
 and [seed files](data-requirements.md#seed-files).
