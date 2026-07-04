@@ -30,6 +30,8 @@ flowchart TD
   K --> N[mts_event_validation]
   L --> N
   M --> Q[EP analysis report]
+  M --> R[DuckDB inspection export]
+  Q --> R
 ```
 
 ## Pipeline phases
@@ -177,6 +179,13 @@ and do not split a logical event into separate wide rows.
 **Event validation**: a report grouped by base model, metric, and
 forecast date. For each group it reports row count, missing model event
 IDs, and missing model event days.
+
+**DuckDB export** (`output/rollup.duckdb`): an inspection artifact, not a new
+calculation output. It packages selected generated outputs and seed lookups into
+queryable tables: each `output/**/mts_tbl_*.parquet` file, `ep_report` when
+present, and non-validation seed CSVs as `seed_<csv_stem>`. It intentionally
+excludes raw input YLTs, validation files, mart fanout parquets under
+`output/marts/`, and `.rollup_work` internals.
 
 Normal runs write only final outputs. Use `uv run rollup run --debug`
 when you need intermediate parquet frames in `output/debug/`.

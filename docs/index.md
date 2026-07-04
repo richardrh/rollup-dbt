@@ -23,7 +23,12 @@ uv run rollup docs --host localhost --port 4322
 - Generated outputs default to root `output/`.
 - Mart fanouts are written to `output/marts/`.
 - Wide/report parquets are written to `output/`.
-- DuckDB export is enabled by default; pass `--no-duckdb` to disable it.
+- DuckDB export is enabled by default at `output/rollup.duckdb`; pass
+  `--no-duckdb` to disable it.
+- The DuckDB export includes each `output/**/mts_tbl_*.parquet` table,
+  `output/analysis/ep_report.csv` as `ep_report`, and non-validation seed CSVs
+  as `seed_<csv_stem>` tables. It excludes raw inputs, validation files,
+  `output/marts/`, and `.rollup_work` internals.
 - Final event rows below `minimum_event_loss_threshold` are excluded from final
   marts. `mts_tbl_ylt_dialsup.parquet` contains only final
   `dialsup_localccy_forecast` rows.
@@ -33,6 +38,9 @@ uv run rollup docs --host localhost --port 4322
 - `output/analysis/ep_report.csv` is written by `rollup run` and can be
   regenerated with `rollup analyze`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
+
+Use the templates in [`sql/`](../sql/) to inspect `output/rollup.duckdb`,
+starting with `sql/01_inventory.sql`.
 
 Start with [Quickstart](first-run.md). On Windows, use the
 [Windows install guide](windows-install.md) first to install `uv` and build a

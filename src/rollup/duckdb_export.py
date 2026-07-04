@@ -24,13 +24,12 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
     logger.info("writing duckdb export path=%s", db_path, extra={"event": "duckdb_export_start", "path": db_path})
     connection = duckdb.connect(str(db_path))
     try:
-        sources: list[tuple[str, Path, Literal["parquet", "csv"]]] = [
-            (path.stem, path, "parquet") for path in sorted(output_root.glob("mts_tbl_*.parquet"))
-        ]
+        sources: list[tuple[str, Path, Literal["parquet", "csv"]]] = []
+        sources.extend((path.stem, path, "parquet") for path in sorted(output_root.rglob("mts_tbl_*.parquet")))
+        sources.extend((f"seed_{path.stem}", path, "csv") for path in seed_csv_paths(data_root))
         ep_report_path = output_root / config.outputs.analysis_dir / config.outputs.ep_report_file
         if ep_report_path.exists():
             sources.append(("ep_report", ep_report_path, "csv"))
-        sources.append(("seeds", data_root / "seeds" / "**" / "*.csv", "csv"))
 
         for table_name, source_path, source_format in sources:
             create_table(connection, table_name, source_path, source_format)
@@ -44,6 +43,16 @@ def export_duckdb(data_root: str | Path, output_root: str | Path, config: Rollup
         extra={"event": "duckdb_export_done", "path": db_path, "elapsed_seconds": elapsed_seconds},
     )
     return db_path
+
+
+def seed_csv_paths(data_root: Path) -> list[Path]:
+    seeds_root = data_root / "seeds"
+    validation_root = seeds_root / "validation"
+    return [
+        path
+        for path in sorted(seeds_root.rglob("*.csv"))
+        if validation_root not in path.parents
+    ]
 
 
 def create_table(

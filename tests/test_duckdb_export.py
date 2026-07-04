@@ -31,6 +31,9 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
     pl.DataFrame({"ModelEventID": [2], "ModelGrossLoss": [20.0], "source_row": ["rms"]}).write_parquet(
         output_root / "marts" / "HiscoRMS_202602_dialsup_localccy_forecast.parquet"
     )
+    pl.DataFrame({"event_id": [3], "loss": [30.0], "output_use": ["nested_mts"]}).write_parquet(
+        output_root / "marts" / "mts_tbl_nested.parquet"
+    )
 
     db_path = export_duckdb(
         data_root,
@@ -45,25 +48,38 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
             "mts_tbl_ylt_combined_all_factors",
             "mts_tbl_ylt_combined_all_factors_wide",
             "mts_tbl_ylt_dialsup",
-            "seeds",
+            "mts_tbl_nested",
+            "seed_blending_weights",
+            "seed_euws_rank_overrides",
+            "seed_euws_rate_factors",
+            "seed_forecast_factors",
+            "seed_fx_rates",
+            "seed_lobs",
+            "seed_perils",
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
+        assert row_count(connection, "mts_tbl_nested") == 1
         assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors") >= {"output_use"}
         assert duckdb_columns(connection, "mts_tbl_ylt_combined_all_factors_wide") >= {"output_use"}
         assert duckdb_columns(connection, "mts_tbl_ylt_dialsup") >= {"output_use"}
+        assert duckdb_columns(connection, "mts_tbl_nested") >= {"output_use"}
         assert connection.execute(
             "SELECT output_use FROM mts_tbl_ylt_combined_all_factors ORDER BY event_id"
         ).fetchall() == [("intermediate_audit",), ("cds_main",)]
         assert connection.execute("SELECT output_use FROM mts_tbl_ylt_dialsup").fetchone() == ("cds_dialsup",)
+        assert connection.execute("SELECT output_use FROM mts_tbl_nested").fetchone() == ("nested_mts",)
         assert connection.execute("SELECT output_use FROM mts_tbl_ylt_combined_all_factors_wide").fetchone() == (
             "cds_wide_analysis",
         )
         assert connection.execute("SELECT metric, loss FROM ep_report").fetchone() == ("main", 10.0)
-        assert row_count(connection, "seeds") == 7
+        assert row_count(connection, "seed_lobs") == 1
+        assert row_count(connection, "seed_perils") == 1
+        assert row_count(connection, "seed_fx_rates") == 1
+        assert "seeds" not in tables
+        assert "seed_event_validation" not in tables
         assert "cds_fanouts" not in tables
         assert "input_ylt_verisk" not in tables
-        assert "seed_lobs" not in tables
 
 
 def test_duckdb_export_skips_missing_ep_report_and_quotes_paths(tmp_path: Path) -> None:
@@ -81,10 +97,10 @@ def test_duckdb_export_skips_missing_ep_report_and_quotes_paths(tmp_path: Path) 
     with duckdb.connect(str(db_path)) as connection:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert parquet_table in tables
-        assert "seeds" in tables
+        assert "seed_seed's" in tables
         assert "ep_report" not in tables
         assert row_count(connection, parquet_table) == 1
-        assert row_count(connection, "seeds") == 1
+        assert row_count(connection, "seed_seed's") == 1
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
@@ -103,6 +119,8 @@ def write_input_files(data_root: Path) -> None:
     seeds = data_root / "seeds"
     adjustments = seeds / "adjustments"
     adjustments.mkdir(parents=True)
+    validation = seeds / "validation"
+    validation.mkdir(parents=True)
 
     pl.DataFrame({"Analysis": ["EQ"], "EventID": [1], "GroundUpLoss": [10.0]}).write_parquet(
         data_root / "ylt" / "verisk" / "verisk.parquet"
@@ -122,3 +140,4 @@ def write_input_files(data_root: Path) -> None:
     pl.DataFrame({"forecast_date": ["2026-01-01"], "factor": [1.0]}).write_csv(seeds / "forecast_factors.csv")
     pl.DataFrame({"model_event_id": [101], "factor": [1.0]}).write_csv(seeds / "euws_rate_factors.csv")
     pl.DataFrame({"rollup_lob": ["Fine Art"], "factor": [1.0]}).write_csv(adjustments / "euws_rank_overrides.csv")
+    pl.DataFrame({"validation_id": [1]}).write_csv(validation / "event_validation.csv")

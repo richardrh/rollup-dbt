@@ -111,8 +111,16 @@ uv run rollup run
 ```
 
 Outputs land in root `output/`, not `data/output/`. DuckDB export is enabled by
-default; pass `--no-duckdb` when you only need parquet outputs. Final main and
-DIALSUP mart rows use the configured minimum event loss threshold.
+default and writes `output/rollup.duckdb`; pass `--no-duckdb` when you only need
+parquet outputs. Final main and DIALSUP mart rows use the configured minimum
+event loss threshold.
+
+Open the DuckDB export directly when you need to inspect outputs:
+
+```bash
+duckdb output/rollup.duckdb
+duckdb output/rollup.duckdb < sql/01_inventory.sql
+```
 
 ## Step 5. Optional: check SQL Server config
 
@@ -129,8 +137,19 @@ the pipeline run completes.
 
 ## Step 6. Inspect outputs
 
-Review the generated output files, especially the combined YLT parquet and event
-validation parquet.
+Start with the DuckDB analyst templates:
+
+```bash
+duckdb output/rollup.duckdb < sql/01_inventory.sql
+duckdb output/rollup.duckdb < sql/02_ep_report.sql
+```
+
+For LOB/peril checks, edit the `CHANGE_ME` filters in
+`sql/03_mts_wide_lob_peril_waterfall.sql` or
+`sql/04_mts_long_lob_peril_waterfall.sql`, then run the script against
+`output/rollup.duckdb`. The long-table template is the clearest way to follow
+the transform path from original loss through blending, FX, forecast, EUWS, and
+final override.
 
 ## Step 7. Debug if needed
 
