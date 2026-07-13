@@ -23,7 +23,6 @@ def _write_docs_project(root: Path) -> None:
 def _use_tmp_docs_project(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(rollup_resources, "resource_root", lambda: tmp_path)
-    monkeypatch.setattr(rollup_resources, "is_frozen", lambda: False)
 
 
 def test_docs_command_uses_zensical_runner(monkeypatch, tmp_path, capsys) -> None:

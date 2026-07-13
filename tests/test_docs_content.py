@@ -12,7 +12,6 @@ def test_first_run_combines_ylt_utility_and_ep_summary_guidance() -> None:
     assert "DuckDB; see [Utilities]" in first_run
     assert "utilities.md#convert-a-ylt-csv-extract-to-parquet-with-duckdb" in first_run
     assert "uv run rollup generate-ep-summaries" in first_run
-    assert "dist/rollup/rollup generate-ep-summaries" in first_run
 
 
 def test_programmatic_api_docs_include_dataiku_recipes() -> None:

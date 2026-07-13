@@ -8,9 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import logging
 import os
-import shutil
 import sys
-import tempfile
 
 from rollup.api import run_rollup
 from rollup.config import RollupConfig, load_config
@@ -18,13 +16,12 @@ from rollup.ep_summary_generator import ep_summary_vendor_names, get_ep_summary_
 from rollup.api import generate_ep_summary
 from rollup.logging import configure_console_logging
 from rollup import resources as rollup_resources
-from rollup.pipeline import (
+from rollup.validation import (
     input_ylt_aal_by_lob_peril_summary,
     load_pipeline_validation_inputs,
     modelled_dimension_coverage_report,
     ylt_loss_validation_summary,
 )
-from rollup.sql import check_sql_connection
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +74,6 @@ def build_parser() -> ArgumentParser:
     validate_parser.add_argument("--report-dir", type=Path, default=None)
     validate_parser.set_defaults(func=lambda args: validate_command(args.data_root or args.__dict__.get("data_root") or Path("data"), report_dir=args.report_dir))
 
-    sql_parser = subparsers.add_parser("sql-check", help="check SQL connection")
-    sql_parser.add_argument("--config", type=Path, default=SUPPRESS)
-    sql_parser.set_defaults(func=lambda args: sql_check_command(args.config or args.__dict__.get("config")))
-    sql_alias = subparsers.add_parser("test-sql", help="check SQL connection")
-    sql_alias.add_argument("--config", type=Path, default=SUPPRESS)
-    sql_alias.set_defaults(func=lambda args: sql_check_command(args.config or args.__dict__.get("config")))
     docs_parser = subparsers.add_parser("docs", help="serve docs")
     docs_parser.add_argument("--host", default="localhost")
     docs_parser.add_argument("--port", type=int, default=4321)
@@ -100,10 +91,7 @@ def run_command(args: Namespace | str | Path, *, output_root: Path | None = None
                 args,
                 output_root=output_root or Path("output"),
                 debug=debug,
-                validation_callback=lambda reports: None,
             )
-        except TypeError:
-            result = run_rollup(args, output_root=output_root or Path("output"), debug=debug)
         except RollupValidationError:
             return 1
         return 0 if result is not None else 1
@@ -113,7 +101,7 @@ def run_command(args: Namespace | str | Path, *, output_root: Path | None = None
     log_format = args.log_format or logging_config.logging.format
     configure_console_logging(args.log_level, log_file=log_file, log_format=log_format)
     try:
-        result = run_rollup(
+        run_rollup(
             args.data_root,
             args.output_root,
             config_path=None if config is not None else args.config_path,
@@ -123,13 +111,8 @@ def run_command(args: Namespace | str | Path, *, output_root: Path | None = None
             log_file=log_file,
             log_format=log_format,
         )
-    except TypeError:
-        result = run_rollup(
-            args.data_root,
-            output_root=args.output_root,
-            debug=args.debug,
-            validation_callback=lambda reports: None,
-        )
+    except RollupValidationError:
+        return 1
     return 0
 
 
@@ -261,7 +244,7 @@ def collect_validation_reports(data_root: str | Path) -> ValidationReports:
 def pl_concat_reports(inputs):
     import polars as pl
 
-    return pl.concat([inputs.seeds.report, inputs.ylts.report, inputs.ep_summaries.report], how="diagonal_relaxed")
+    return pl.DataFrame(schema={"valid": pl.Boolean, "error": pl.String})
 
 
 def _has_errors(frame: object) -> bool:
@@ -289,12 +272,6 @@ def validate_command(data_root: str | Path, *, report_dir: Path | None = None) -
             print(f"Failed to write validation CSV reports: {exc}", file=sys.stderr)
             return 1
     return 0 if reports.is_valid else 1
-
-
-def sql_check_command(config_path: Path | None = None) -> int:
-    result = check_sql_connection(config_path)
-    print(f"SQL check {result.status}: {result.message}")
-    return 0 if result.status == "OK" else 1
 
 
 def configure_logging(log_level: str, *, log_file: Path | None = None) -> None:
@@ -329,17 +306,9 @@ def docs_command(host: str = "localhost", port: int = 4322, zensical_runner=None
     if not config_path.exists():
         print(f"Zensical configuration file was not found: {config_path}", file=sys.stderr)
         return 1
-    work_root = root
-    temp_dir = None
-    if rollup_resources.is_frozen():
-        temp_dir = Path(tempfile.mkdtemp(prefix="rollup-docs-"))
-        shutil.copytree(docs_dir, temp_dir / "docs")
-        shutil.copyfile(config_path, temp_dir / "zensical.toml")
-        work_root = temp_dir
-        config_path = work_root / "zensical.toml"
     old_cwd = Path.cwd()
     try:
-        os.chdir(work_root)
+        os.chdir(root)
         print(f"Docs available at http://{host}:{port}/")
         return zensical_runner(["serve", "--config-file", str(config_path), "--dev-addr", f"{host}:{port}"])
     finally:

@@ -6,8 +6,10 @@ from pathlib import Path
 
 import polars as pl
 
+from rollup import cli
 from rollup.logging import JsonLineFormatter, make_formatter, normalize_log_format
-from rollup.pipeline import write_parquet_with_log
+from rollup.pipeline_utils import logged_phase
+from rollup.writers.parquet import write_parquet_with_log
 
 
 def test_jsonl_formatter_emits_parseable_json_with_expected_fields() -> None:
@@ -31,6 +33,16 @@ def test_jsonl_formatter_emits_parseable_json_with_expected_fields() -> None:
     assert payload["function"] == "test_function"
     assert payload["line"] == 12
     assert "timestamp" in payload
+
+
+def test_configure_logging_writes_to_log_file(tmp_path: Path) -> None:
+    log_file = tmp_path / "logs" / "run.log"
+
+    cli.configure_logging("INFO", log_file=log_file)
+    logging.getLogger("rollup.test").info("expected log line")
+
+    assert log_file.is_file()
+    assert "expected log line" in log_file.read_text(encoding="utf-8")
 
 
 def test_jsonl_formatter_includes_safe_custom_extra_fields() -> None:
@@ -123,3 +135,13 @@ def test_write_parquet_with_log_emits_structured_jsonl_fields(tmp_path) -> None:
     assert payload["rows"] == 2
     assert payload["lazy"] is False
     assert "wrote output=" in payload["message"]
+
+
+def test_logged_phase_is_context_manager(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="rollup.pipeline_utils")
+
+    with logged_phase("unit"):
+        pass
+
+    events = [record.event for record in caplog.records if hasattr(record, "event")]
+    assert events == ["phase_start", "phase_done"]

@@ -37,7 +37,7 @@ The CLI rejects `--no-duckdb` with `--duckdb-file` because an explicit file path
 implies an export. The exporter rebuilds the database from scratch by deleting
 the existing DuckDB file before writing.
 
-The DuckDB export is an analyst inspection bundle. It includes every
+The DuckDB export is an analyst inspection database. It includes every
 `output/**/mts_tbl_*.parquet` file as a separate table named from the parquet
 stem, `output/analysis/ep_report.csv` as `ep_report` when present, and every
 non-validation seed CSV under `data/seeds/**/*.csv` as `seed_<csv_stem>`. It
@@ -46,7 +46,7 @@ validation reports, mart fanout parquets under `output/marts/`, or `.rollup_work
 internals.
 
 The main and DIALSUP fanouts include only final metric rows at or above the
-configured minimum event loss threshold. The standalone DIALSUP parquet
+configured minimum event loss threshold. The DIALSUP parquet
 `mts_tbl_ylt_dialsup.parquet` contains only final `dialsup_localccy_forecast` rows;
 intermediate DIALSUP metrics are internal/debug data.
 
@@ -65,22 +65,6 @@ Logging and debug output are separate controls:
   `output/debug/` for data inspection.
 - `--log-level DEBUG` increases log verbosity.
 - `--log-file output/run.log` writes logs to a file as well as stdout.
-
-## SQL Server check and push
-
-Copy `rollup.example.toml` to gitignored `rollup.local.toml`, then fill in the
-`[sql]` connection string, schema, push mode, and optional table prefix.
-
-Check SQL Server connectivity without running the pipeline:
-
-```bash
-uv run rollup sql-check --config rollup.local.toml
-uv run rollup test-sql --config rollup.local.toml
-```
-
-`rollup run` writes files only. It no longer pushes marts to SQL Server as part
-of the run command. Load `output/marts/*.parquet` through Dataiku or a separate
-SQL-loading process after the pipeline finishes.
 
 ## Validation reports
 

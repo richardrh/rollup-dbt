@@ -10,21 +10,28 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from rollup.columns import Col, RawCol
-from rollup.pipeline import (
-    EpSummaryValidationResult,
-    PipelineValidationInputs,
-    SeedValidationResult,
-    YltFrames,
-    YltValidationResult,
-    _ordered_mts_wide_columns,
-    _write_combined_outputs,
-    input_ylt_aal_by_lob_peril_summary,
-    modelled_dimension_coverage_report,
-)
+from rollup.marts.mart_wide import _ordered_mts_wide_columns
+from rollup.pipeline_types import PipelineValidationInputs
+from rollup.validation import input_ylt_aal_by_lob_peril_summary, modelled_dimension_coverage_report
+from rollup.writers.wide_outputs import _write_combined_outputs
 
 
 small_name = st.text(alphabet="ABCDEF012345", min_size=1, max_size=6)
 small_loss = st.floats(min_value=0.0, max_value=1_000_000.0, allow_nan=False, allow_infinity=False)
+
+
+def SeedValidationResult(*, frames: dict[str, pl.DataFrame | pl.LazyFrame], report: pl.DataFrame | None = None) -> dict[str, pl.LazyFrame]:
+    result = {}
+    for key, frame in frames.items():
+        lazy = frame if isinstance(frame, pl.LazyFrame) else frame.lazy()
+        result[key] = lazy
+        if key.endswith(".csv") or key.endswith(".parquet"):
+            result[key.rsplit(".", 1)[0]] = lazy
+    return result
+
+
+def ep_summary_frame(*, frame: pl.DataFrame | pl.LazyFrame, report: pl.DataFrame | None = None) -> pl.LazyFrame:
+    return frame if isinstance(frame, pl.LazyFrame) else frame.lazy()
 
 
 def _valid_report() -> pl.DataFrame:
@@ -73,20 +80,17 @@ def test_fuzz_coverage_has_no_errors_when_dimensions_exist(
     lobs: list[str],
     perils: list[str],
 ) -> None:
-    ylt = YltValidationResult(
-        frames=YltFrames(
-            verisk=pl.DataFrame(
+    ylt = {
+        "verisk": pl.DataFrame(
                 {
                     RawCol.CatalogTypeCode: ["STC"] * len(lobs),
                     RawCol.ExposureAttribute: lobs,
                     RawCol.Analysis: [perils[index % len(perils)] for index in range(len(lobs))],
                 }
-            ).lazy(),
-            risklink=pl.DataFrame({RawCol.anlsid: [1]}).lazy(),
-        ),
-        report=_valid_report(),
-    )
-    ep_summaries = EpSummaryValidationResult(
+        ).lazy(),
+        "risklink": pl.DataFrame({RawCol.anlsid: [1]}).lazy(),
+    }
+    ep_summaries = ep_summary_frame(
         frame=pl.DataFrame(
             {
                 Col.modelled_lob: lobs,
@@ -110,14 +114,11 @@ def _aal_inputs(losses: list[float], unmapped_losses: list[float]) -> PipelineVa
     }
     return PipelineValidationInputs(
         seeds=_seed_result(["LOB_A"], ["PERIL_A"]),
-        ylts=YltValidationResult(
-            frames=YltFrames(
-                verisk=pl.DataFrame(rows).lazy(),
-                risklink=pl.DataFrame(schema={RawCol.anlsid: pl.Int64, RawCol.loss: pl.Float64}).lazy(),
-            ),
-            report=_valid_report(),
-        ),
-        ep_summaries=EpSummaryValidationResult(
+        ylts={
+            "verisk": pl.DataFrame(rows).lazy(),
+            "risklink": pl.DataFrame(schema={RawCol.anlsid: pl.Int64, RawCol.loss: pl.Float64}).lazy(),
+        },
+        ep_summaries=ep_summary_frame(
             frame=pl.DataFrame(
                 {
                     Col.vendor: ["verisk"],

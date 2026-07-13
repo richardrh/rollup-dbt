@@ -17,7 +17,6 @@ dependencies = [
     "duckdb>=1.4.0",
     "polars>=1.20.0",
     "pyarrow>=22.0.0",
-    "pyodbc",
 
 ]
 
@@ -29,20 +28,15 @@ rollup = "rollup.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rollup"]
+include = ["rollup", "rollup.*"]
 
 [dependency-groups]
-build = [
-    "pyinstaller>=6",
-]
 dev = [
     "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
     "hypothesis>=6.148.0",
     "mypy>=2.1.0",
     "ruff>=0.15.13",
-    "sqlalchemy>=2.0.0",
-    "build>=1.5.0",
     "validnator",
 ]
 
@@ -60,9 +54,5 @@ packages = ["src/rollup"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
-    "integration: end-to-end test that requires external resources (Docker, network). Skipped by default; opt-in with `--run-integration` or `-m integration`.",
     "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
 ]
-
-[tool.ruff]
-exclude = ["scripts/build.py"]

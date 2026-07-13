@@ -45,14 +45,6 @@ uv run rollup generate-ep-summaries
 uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
 ```
 
-With the standalone analyst bundle, run the bundled executable instead of
-`uv run rollup`:
-
-```bash
-dist/rollup/rollup generate-ep-summaries
-dist/rollup/rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
-```
-
 Check that the converter wrote the expected `.long.csv`, then continue to Step 3
 and validate. For source columns, aliases, and examples, see
 [EP summaries](ep-summaries.md).
@@ -122,20 +114,7 @@ duckdb output/rollup.duckdb
 duckdb output/rollup.duckdb < sql/01_inventory.sql
 ```
 
-## Step 5. Optional: check SQL Server config
-
-Copy `rollup.example.toml` to `rollup.local.toml`, fill in `[sql]`, and keep the
-local file uncommitted. Check the connection first:
-
-```bash
-uv run rollup sql-check --config rollup.local.toml
-```
-
-`rollup run` writes files only. If marts need to land in SQL Server, load
-`output/marts/*.parquet` through Dataiku or a separate SQL-loading process after
-the pipeline run completes.
-
-## Step 6. Inspect outputs
+## Step 5. Inspect outputs
 
 Start with the DuckDB analyst templates:
 
@@ -151,7 +130,7 @@ For LOB/peril checks, edit the `CHANGE_ME` filters in
 the transform path from original loss through blending, FX, forecast, EUWS, and
 final override.
 
-## Step 7. Debug if needed
+## Step 6. Debug if needed
 
 ```bash
 uv run rollup run --debug
@@ -160,7 +139,7 @@ uv run rollup run --debug
 Then inspect the debug frames under `output/debug/`, starting with the YLT
 blending output.
 
-## Step 8. Generate EP report
+## Step 7. Generate EP report
 
 ```bash
 uv run rollup analyze
