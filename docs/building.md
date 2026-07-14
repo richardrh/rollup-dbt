@@ -1,33 +1,29 @@
-# Building
+# Building the Python package
 
-The project has two build outputs:
+Build a standard Python source distribution and wheel when `rollup` needs to be
+installed into another Python environment, such as Dataiku or a controlled venv.
 
-| Output | Use it when | Command |
-| --- | --- | --- |
-| Python wheel | Installing/importing `rollup` in another Python environment, such as Dataiku | `uv run python scripts/build.py package` |
-| PyInstaller bundle | Sending a self-contained executable folder to analysts | `uv run --group build pyinstaller -y rollup.spec` |
-
-Use the wheel for development and programmatic API usage. Use the PyInstaller
-bundle only when the recipient should not need Python, `uv`, or the repository.
-
-## Build the Python wheel
+## Build artifacts
 
 From the repository root:
 
 ```bash
 uv sync
-uv run python scripts/build.py package
+uv build
 ```
 
-The wheel is written under `dist/`, for example:
+`uv build` writes artifacts under `dist/`, typically:
 
 ```text
-dist/rollup-0.12.0-py3-none-any.whl
+dist/rollup-<version>.tar.gz
+dist/rollup-<version>-py3-none-any.whl
 ```
 
 The version comes from `pyproject.toml`.
 
-Quick import check:
+## Wheel install and import smoke check
+
+Create a clean environment, install the wheel, and verify the public API imports:
 
 ```bash
 python -m venv .venv-test
@@ -36,66 +32,8 @@ python -m venv .venv-test
 .venv-test/bin/python -c "import rollup.api; print('rollup.api import ok')"
 ```
 
-On PowerShell, use `.\.venv-test\Scripts\python.exe` instead of
+On PowerShell, use `\.venv-test\Scripts\python.exe` instead of
 `.venv-test/bin/python`.
-
-## Build the analyst bundle
-
-From the repository root:
-
-```bash
-uv run --group build pyinstaller -y rollup.spec
-```
-
-The output is a one-folder distribution:
-
-```text
-dist/rollup/
-```
-
-Send the whole `dist/rollup/` folder to the analyst. Do not send only the
-executable; the folder also contains bundled libraries, docs, and assets.
-
-Smoke test after each build:
-
-```bash
-dist/rollup/rollup --help
-dist/rollup/rollup generate-ep-summaries --help
-dist/rollup/rollup docs
-```
-
-On Windows:
-
-```powershell
-.\dist\rollup\rollup.exe --help
-.\dist\rollup\rollup.exe generate-ep-summaries --help
-.\dist\rollup\rollup.exe docs
-```
-
-## Analyst folder layout
-
-Analysts should place their `data/` folder next to the copied `rollup/` folder:
-
-```text
-work/
-├── data/
-│   ├── ep_summaries/
-│   ├── seeds/
-│   └── ylt/
-└── rollup/
-    ├── rollup.exe
-    └── _internal/
-```
-
-Run from `work/`:
-
-```powershell
-rollup\rollup.exe validate
-rollup\rollup.exe run
-rollup\rollup.exe docs
-```
-
-Outputs are written to `work/output/`.
 
 ## Clean build artifacts
 

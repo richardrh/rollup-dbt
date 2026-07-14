@@ -45,17 +45,20 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert {
             "ep_report",
+            "HiscoAIR_202601_euws_override",
+            "HiscoRMS_202602_dialsup_localccy_forecast",
             "mts_tbl_ylt_combined_all_factors",
             "mts_tbl_ylt_combined_all_factors_wide",
             "mts_tbl_ylt_dialsup",
             "mts_tbl_nested",
-            "seed_blending_weights",
-            "seed_euws_rank_overrides",
-            "seed_euws_rate_factors",
-            "seed_forecast_factors",
-            "seed_fx_rates",
-            "seed_lobs",
-            "seed_perils",
+            "blending_weights",
+            "euws_rank_overrides",
+            "euws_rate_factors",
+            "event_validation",
+            "forecast_factors",
+            "fx_rates",
+            "lobs",
+            "perils",
         } <= tables
         assert row_count(connection, "mts_tbl_ylt_combined_all_factors") == 2
         assert row_count(connection, "mts_tbl_ylt_dialsup") == 1
@@ -73,11 +76,11 @@ def test_duckdb_export_reads_rollback_pipeline_output_layout(tmp_path: Path) -> 
             "cds_wide_analysis",
         )
         assert connection.execute("SELECT metric, loss FROM ep_report").fetchone() == ("main", 10.0)
-        assert row_count(connection, "seed_lobs") == 1
-        assert row_count(connection, "seed_perils") == 1
-        assert row_count(connection, "seed_fx_rates") == 1
+        assert row_count(connection, "lobs") == 1
+        assert row_count(connection, "perils") == 1
+        assert row_count(connection, "fx_rates") == 1
+        assert row_count(connection, "HiscoAIR_202601_euws_override") == 1
         assert "seeds" not in tables
-        assert "seed_event_validation" not in tables
         assert "cds_fanouts" not in tables
         assert "input_ylt_verisk" not in tables
 
@@ -97,10 +100,10 @@ def test_duckdb_export_skips_missing_ep_report_and_quotes_paths(tmp_path: Path) 
     with duckdb.connect(str(db_path)) as connection:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
         assert parquet_table in tables
-        assert "seed_seed's" in tables
+        assert "seed's" in tables
         assert "ep_report" not in tables
         assert row_count(connection, parquet_table) == 1
-        assert row_count(connection, "seed_seed's") == 1
+        assert row_count(connection, "seed's") == 1
 
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:

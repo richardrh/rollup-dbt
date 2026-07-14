@@ -3,13 +3,8 @@ from __future__ import annotations
 import polars as pl
 
 from rollup.columns import Col, FanoutCol
-from rollup.pipeline import (
-    PipelineRunResult,
-    PipelineStage,
-    build_fanout,
-    enrich_risklink_event_days,
-    write_mart_outputs,
-)
+from rollup.marts.mart_fanout import build_event_validation_report, build_fanout, enrich_risklink_event_days
+from rollup.writers.mart_outputs import write_mart_outputs
 
 
 def test_risklink_event_enrichment_drops_unmatched_risklink_and_preserves_verisk() -> None:
@@ -170,14 +165,7 @@ def test_write_mart_outputs_lazily_writes_fanout_partitions(tmp_path) -> None:
             FanoutCol.LossClassName: ["Wind", "Flood", "Quake"],
         }
     ).lazy()
-    result = PipelineRunResult(
-        seeds=PipelineStage({}),
-        staging=PipelineStage({}),
-        intermediate=PipelineStage({}),
-        marts=PipelineStage({"main_fanout": fanout}),
-    )
-
-    write_mart_outputs(tmp_path, result)
+    write_mart_outputs(tmp_path, {"main_fanout": fanout, "event_validation": build_event_validation_report(fanout)})
 
     air = pl.read_parquet(tmp_path / "marts" / "HiscoAIR_202601_euws_override.parquet")
     rms = pl.read_parquet(tmp_path / "marts" / "HiscoRMS_202602_dialsup_localccy_forecast.parquet")

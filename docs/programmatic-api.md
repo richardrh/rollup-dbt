@@ -162,7 +162,7 @@ Use this rule:
 | Remote/object-store managed folder | Yes | Stage to local disk, run, upload outputs back |
 
 The pipeline API is intentionally filesystem-based. That keeps the same code
-path for local runs, PyInstaller bundle runs, CLI runs, and Dataiku runs.
+path for local CLI runs, installed-package runs, and Dataiku runs.
 
 ## Validate inputs only
 

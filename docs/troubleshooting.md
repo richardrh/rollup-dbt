@@ -52,15 +52,3 @@ frame.
 ```bash
 uv run rollup analyze
 ```
-
-## SQL Server connection check failures
-
-Check the local SQL config with:
-
-```bash
-uv run rollup sql-check --config rollup.local.toml
-```
-
-`rollup.local.toml` should stay uncommitted because it may contain credentials.
-`rollup run` writes files only; load `output/marts/*.parquet` through Dataiku or
-a separate SQL-loading process after the pipeline run completes.

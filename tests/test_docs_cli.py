@@ -52,40 +52,6 @@ def test_docs_command_uses_resolved_resources_and_in_process_zensical(
     assert "Docs available at http://0.0.0.0:9000/" in capsys.readouterr().out
 
 
-def test_docs_command_copies_bundled_docs_to_writable_runtime_project(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    bundle_root = tmp_path / "_internal"
-    _write_docs_project(bundle_root)
-    monkeypatch.setattr(rollup_resources, "resource_root", lambda: bundle_root)
-    monkeypatch.setattr(rollup_resources, "is_frozen", lambda: True)
-
-    calls: list[tuple[list[str], Path]] = []
-
-    def runner(args: Sequence[str]) -> int:
-        runtime_root = Path.cwd()
-        calls.append((list(args), runtime_root))
-        assert runtime_root != bundle_root
-        assert runtime_root.name.startswith("rollup-docs-")
-        assert (runtime_root / "docs" / "index.md").read_text(encoding="utf-8") == "# Docs\n"
-        assert (runtime_root / "zensical.toml").is_file()
-        return 0
-
-    exit_code = cli.docs_command(zensical_runner=runner)
-
-    assert exit_code == 0
-    assert calls
-    args, runtime_root = calls[0]
-    assert args == [
-        "serve",
-        "--config-file",
-        str(runtime_root / "zensical.toml"),
-        "--dev-addr",
-        "localhost:4322",
-    ]
-
-
 def test_docs_command_returns_error_when_docs_are_missing(
     tmp_path: Path,
     monkeypatch,

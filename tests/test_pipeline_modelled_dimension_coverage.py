@@ -7,29 +7,51 @@ import polars as pl
 from rollup import cli
 from rollup.columns import Col, RawCol
 from rollup.config import BlendingConfig, BlendingTargetPoint, RollupConfig
-from rollup.pipeline import (
-    apply_ep_blending_to_ylt,
+from rollup.intermediate.int_ep import (
     calculate_ep_blending_targets,
-    build_main_ylt_metrics,
-    EpBlendingTargets,
-    EpSummaryValidationResult,
-    PipelineValidationInputs,
-    SeedValidationResult,
-    YltFrames,
-    YltValidationResult,
-    ensure_modelled_dimension_coverage,
-    input_ylt_aal_by_lob_peril_summary,
-    _add_rank_columns,
     join_ep_summaries,
-    modelled_dimension_coverage_report,
-    normalize_ylt,
-    stage_ep_summaries,
-    write_parquet_with_log,
+    prepare_ep_blending_weights,
+    select_blending_factor_seed,
+    select_ep_blending_target_points,
 )
+from rollup.intermediate.int_ylt_main import (
+    apply_ep_blending_to_ylt,
+    apply_euws_factors_to_ylt,
+    apply_euws_overrides_to_ylt,
+    apply_forecast_factors_to_ylt,
+    convert_ylt_to_local_currency,
+    rank_ylt,
+)
+from rollup.pipeline_types import PipelineValidationInputs
+from rollup.staging.stg_ep_summaries import select_dialsup_ep_summaries, select_main_ep_summaries, enrich_ep_summaries
+from rollup.staging.stg_factors import stg_forecast_dates, stg_forecast_factors, stg_gbp_fx_rates
+from rollup.staging.stg_ylt import normalize_ylt
+from rollup.validation import ensure_modelled_dimension_coverage, input_ylt_aal_by_lob_peril_summary, modelled_dimension_coverage_report
+from rollup.writers.parquet import write_parquet_with_log
 
 
 def _valid_report() -> pl.DataFrame:
     return pl.DataFrame({"valid": [True], "error": [None]})
+
+
+class _TestSeedFrames(dict):
+    @property
+    def frames(self):
+        return self
+
+
+def SeedValidationResult(*, frames: dict[str, pl.DataFrame | pl.LazyFrame], report: pl.DataFrame | None = None) -> dict[str, pl.LazyFrame]:
+    result = _TestSeedFrames()
+    for key, frame in frames.items():
+        lazy = frame if isinstance(frame, pl.LazyFrame) else frame.lazy()
+        result[key] = lazy
+        if key.endswith(".csv") or key.endswith(".parquet"):
+            result[key.rsplit(".", 1)[0]] = lazy
+    return result
+
+
+def ep_summary_frame(*, frame: pl.DataFrame | pl.LazyFrame, report: pl.DataFrame | None = None) -> pl.LazyFrame:
+    return frame if isinstance(frame, pl.LazyFrame) else frame.lazy()
 
 
 def _seed_result() -> SeedValidationResult:
@@ -42,24 +64,21 @@ def _seed_result() -> SeedValidationResult:
     )
 
 
-def _ylt_result() -> YltValidationResult:
-    return YltValidationResult(
-        frames=YltFrames(
-            verisk=pl.DataFrame(
+def _ylt_result() -> dict[str, pl.LazyFrame]:
+    return {
+        "verisk": pl.DataFrame(
                 {
                     RawCol.CatalogTypeCode: ["STC     ", "STC", "NON_STC"],
                     RawCol.ExposureAttribute: ["LOB_A   ", "LOB_MISSING", "LOB_NON_STC"],
                     RawCol.Analysis: ["PERIL_A   ", "PERIL_MISSING", "PERIL_NON_STC"],
                 }
-            ).lazy(),
-            risklink=pl.DataFrame({RawCol.anlsid: [1]}).lazy(),
-        ),
-        report=_valid_report(),
-    )
+        ).lazy(),
+        "risklink": pl.DataFrame({RawCol.anlsid: [1]}).lazy(),
+    }
 
 
-def _ep_summary_result() -> EpSummaryValidationResult:
-    return EpSummaryValidationResult(
+def _ep_summary_result() -> pl.LazyFrame:
+    return ep_summary_frame(
         frame=pl.DataFrame(
             {
                 Col.modelled_lob: ["LOB_A", "EP_LOB_MISSING"],
@@ -103,7 +122,7 @@ def _summary_seed_result() -> SeedValidationResult:
 
 
 def _empty_risklink_ylt() -> pl.LazyFrame:
-    return pl.DataFrame(schema={RawCol.anlsid: pl.Int64, RawCol.loss: pl.Float64}).lazy()
+    return pl.DataFrame(schema={RawCol.anlsid: pl.Int64, RawCol.yearid: pl.Int64, RawCol.eventid: pl.Int64, RawCol.loss: pl.Float64}).lazy()
 
 
 def _empty_verisk_ylt() -> pl.LazyFrame:
@@ -118,9 +137,8 @@ def _empty_verisk_ylt() -> pl.LazyFrame:
 
 
 def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> None:
-    ylt = YltValidationResult(
-        frames=YltFrames(
-            verisk=pl.DataFrame(
+    ylt = {
+        "verisk": pl.DataFrame(
                 {
                     RawCol.CatalogTypeCode: ["STC     ", "HIST    "],
                     RawCol.ExposureAttribute: ["HIC_HH_UK   ", "HIC_HH_UK   "],
@@ -130,13 +148,11 @@ def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> Non
                     RawCol.EventID: [100, 101],
                     RawCol.GroundUpLoss: [10.0, 20.0],
                 }
-            ).lazy(),
-            risklink=_empty_risklink_ylt(),
-        ),
-        report=_valid_report(),
-    )
+        ).lazy(),
+        "risklink": _empty_risklink_ylt(),
+    }
 
-    normalized = normalize_ylt(ylt).verisk.collect()
+    normalized = normalize_ylt(ylt).filter(pl.col(Col.vendor) == "verisk").collect()
 
     assert normalized.to_dict(as_series=False) == {
         Col.vendor: ["verisk"],
@@ -174,28 +190,24 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
             Col.loss: [88.0],
         }
     ).lazy()
-    ep_blending_targets = EpBlendingTargets(
-        target_points=pl.LazyFrame(),
-        weights=pl.LazyFrame(),
-        blended=pl.DataFrame(
-            {
-                Col.rollup_lob: ["HIC_HH_UK"],
-                Col.rollup_peril: ["UK_WS"],
-                Col.region_peril_id: [101],
-                Col.blend_subregion_peril_id: ["101"],
-                Col.return_period: [0],
-                Col.ep_type: ["AAL"],
-                Col.risklink_loss: [0.0],
-                Col.verisk_loss: [88.0],
-                Col.risklink_blended_contribution: [0.0],
-                Col.verisk_blended_contribution: [88.0],
-                Col.target_loss: [88.0],
-                Col.base_model: ["verisk"],
-                Col.base_model_loss: [88.0],
-                Col.uplift_factor_on_base_model: [1.0],
-            }
-        ).lazy(),
-    )
+    ep_blending_targets = pl.DataFrame(
+        {
+            Col.rollup_lob: ["HIC_HH_UK"],
+            Col.rollup_peril: ["UK_WS"],
+            Col.region_peril_id: [101],
+            Col.blend_subregion_peril_id: ["101"],
+            Col.return_period: [0],
+            Col.ep_type: ["AAL"],
+            Col.risklink_loss: [0.0],
+            Col.verisk_loss: [88.0],
+            Col.risklink_blended_contribution: [0.0],
+            Col.verisk_blended_contribution: [88.0],
+            Col.target_loss: [88.0],
+            Col.base_model: ["verisk"],
+            Col.base_model_loss: [88.0],
+            Col.uplift_factor_on_base_model: [1.0],
+        }
+    ).lazy()
     verisk_events = pl.DataFrame(
         {
             RawCol.EventID: [1001],
@@ -248,13 +260,24 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
         report=_valid_report(),
     )
 
-    combined, metrics = build_main_ylt_metrics(
-        ylt_ranked,
-        ep_blending_targets,
-        verisk_events,
-        seeds,
-        include_metrics=True,
+    fx_rates = stg_gbp_fx_rates(seeds["fx_rates"])
+    forecast_factors = stg_forecast_factors(seeds["forecast_factors"])
+    forecast_dates = stg_forecast_dates(forecast_factors)
+    ylt_blended = apply_ep_blending_to_ylt(ylt_ranked, ep_blending_targets)
+    ylt_localccy = convert_ylt_to_local_currency(ylt_blended, fx_rates)
+    ylt_localccy_forecast = apply_forecast_factors_to_ylt(
+        ylt_localccy,
+        forecast_dates,
+        forecast_factors,
     )
+    ylt_euws = apply_euws_factors_to_ylt(ylt_localccy_forecast, verisk_events, seeds)
+    ylt_euws_override = apply_euws_overrides_to_ylt(ylt_euws, seeds)
+    combined = pl.concat([ylt_ranked, ylt_blended, ylt_localccy, ylt_localccy_forecast, ylt_euws, ylt_euws_override], how="diagonal")
+    metrics = {
+        "ylt_fx_applied": ylt_localccy,
+        "ylt_forecast_applied": ylt_localccy_forecast,
+        "ylt_euws_override_applied": ylt_euws_override,
+    }
 
     assert set(combined.select(Col.metric).collect().to_series().to_list()) == {
         "original",
@@ -299,14 +322,11 @@ def _summary_inputs(
     ).lazy()
     return PipelineValidationInputs(
         seeds=_summary_seed_result(),
-        ylts=YltValidationResult(
-            frames=YltFrames(
-                verisk=verisk if verisk is not None else _empty_verisk_ylt(),
-                risklink=risklink if risklink is not None else _empty_risklink_ylt(),
-            ),
-            report=_valid_report(),
-        ),
-        ep_summaries=EpSummaryValidationResult(frame=ep_frame, report=_valid_report()),
+        ylts={
+            "verisk": verisk if verisk is not None else _empty_verisk_ylt(),
+            "risklink": risklink if risklink is not None else _empty_risklink_ylt(),
+        },
+        ep_summaries=ep_summary_frame(frame=ep_frame, report=_valid_report()),
         coverage_report=pl.DataFrame(schema={"severity": pl.String, "valid": pl.Boolean}),
     )
 
@@ -343,8 +363,8 @@ def _peril_selection_seed_result() -> SeedValidationResult:
     )
 
 
-def _peril_selection_ep_summary_result() -> EpSummaryValidationResult:
-    return EpSummaryValidationResult(
+def _peril_selection_ep_summary_result() -> pl.LazyFrame:
+    return ep_summary_frame(
         frame=pl.DataFrame(
             {
                 Col.vendor: ["risklink"] * 4,
@@ -414,24 +434,18 @@ def test_modelled_dimension_coverage_report_returns_only_input_missing_errors() 
 
 
 def test_main_selection_chooses_lowest_selection_priority() -> None:
-    staged = stage_ep_summaries(
-        _peril_selection_ep_summary_result(),
-        _peril_selection_seed_result(),
-    )
+    enriched = enrich_ep_summaries(_peril_selection_ep_summary_result(), _peril_selection_seed_result())
 
-    selected = staged.selected.select(Col.modelled_peril).collect().to_series().to_list()
+    selected = select_main_ep_summaries(enriched).select(Col.modelled_peril).collect().to_series().to_list()
 
     assert selected == ["LOW"]
 
 
 def test_dialsup_selection_keeps_all_is_dialsup_candidates() -> None:
-    staged = stage_ep_summaries(
-        _peril_selection_ep_summary_result(),
-        _peril_selection_seed_result(),
-    )
+    enriched = enrich_ep_summaries(_peril_selection_ep_summary_result(), _peril_selection_seed_result())
 
     selected = (
-        staged.selected_dialsup.select(Col.modelled_peril)
+        select_dialsup_ep_summaries(enriched).select(Col.modelled_peril)
         .collect()
         .to_series()
         .sort()
@@ -439,6 +453,22 @@ def test_dialsup_selection_keeps_all_is_dialsup_candidates() -> None:
     )
 
     assert selected == ["DIAL_A", "DIAL_B"]
+
+
+def _select_main_ep_for_test(ep_summaries: pl.LazyFrame, seeds: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    return select_main_ep_summaries(enrich_ep_summaries(ep_summaries, seeds))
+
+
+def _calculate_blending_for_test(
+    joined: pl.LazyFrame,
+    seeds: dict[str, pl.LazyFrame],
+    config: RollupConfig | None = None,
+) -> pl.LazyFrame:
+    return calculate_ep_blending_targets(
+        select_ep_blending_target_points(joined, config),
+        prepare_ep_blending_weights(select_blending_factor_seed(seeds)),
+        config,
+    )
 
 
 def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
@@ -458,8 +488,8 @@ def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
     )
     selection_seeds = _peril_selection_seed_result()
     joined = join_ep_summaries(
-        stage_ep_summaries(
-            EpSummaryValidationResult(
+        _select_main_ep_for_test(
+            ep_summary_frame(
                 frame=pl.DataFrame(
                     {
                         Col.vendor: ["verisk", "risklink"],
@@ -485,7 +515,7 @@ def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
         )
     )
 
-    blended = calculate_ep_blending_targets(joined, seeds).blended.collect()
+    blended = _calculate_blending_for_test(joined, seeds).collect()
 
     assert blended.item(0, Col.blend_subregion_peril_id) == "216b"
     assert blended.item(0, Col.sub_region_peril) == "selected"
@@ -493,6 +523,15 @@ def test_blending_joins_weights_by_blend_subregion_peril_id() -> None:
     assert blended.item(0, Col.verisk_blended_contribution) == 25.0
     assert blended.item(0, Col.target_loss) == 175.0
     assert blended.item(0, Col.base_model) == "risklink"
+
+
+def test_missing_blending_seed_aliases_raise_clear_error() -> None:
+    try:
+        select_blending_factor_seed({})
+    except KeyError as exc:
+        assert "expected 'blending_factors' or 'blending_weights'" in str(exc)
+    else:
+        raise AssertionError("missing blending seed aliases did not raise")
 
 
 def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
@@ -511,10 +550,10 @@ def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
         report=_valid_report(),
     )
     selection_seeds = _peril_selection_seed_result()
-    targets = calculate_ep_blending_targets(
+    targets = _calculate_blending_for_test(
         join_ep_summaries(
-            stage_ep_summaries(
-                EpSummaryValidationResult(
+            _select_main_ep_for_test(
+                ep_summary_frame(
                     frame=pl.DataFrame(
                         {
                             Col.vendor: ["verisk", "risklink"],
@@ -581,8 +620,8 @@ def test_blending_falls_back_to_base_model_loss_when_counterparty_missing() -> N
         report=_valid_report(),
     )
     joined = join_ep_summaries(
-        stage_ep_summaries(
-            EpSummaryValidationResult(
+        _select_main_ep_for_test(
+            ep_summary_frame(
                 frame=pl.DataFrame(
                     {
                         Col.vendor: ["risklink"],
@@ -606,7 +645,7 @@ def test_blending_falls_back_to_base_model_loss_when_counterparty_missing() -> N
         )
     )
 
-    blended = calculate_ep_blending_targets(joined, seeds).blended.collect()
+    blended = _calculate_blending_for_test(joined, seeds).collect()
 
     assert blended.height == 1
     assert blended.item(0, Col.target_loss) == 200.0
@@ -624,7 +663,7 @@ def test_blending_uses_configured_target_points_caps_and_vendor_years() -> None:
             uplift_factor_max=2.0,
         )
     )
-    ranked = _add_rank_columns(
+    ranked = rank_ylt(
         pl.DataFrame(
             {
                 Col.vendor: ["verisk", "verisk"],
@@ -654,8 +693,8 @@ def test_blending_uses_configured_target_points_caps_and_vendor_years() -> None:
         report=_valid_report(),
     )
     joined = join_ep_summaries(
-        stage_ep_summaries(
-            EpSummaryValidationResult(
+        _select_main_ep_for_test(
+            ep_summary_frame(
                 frame=pl.DataFrame(
                     {
                         Col.vendor: ["verisk", "risklink"],
@@ -684,8 +723,61 @@ def test_blending_uses_configured_target_points_caps_and_vendor_years() -> None:
             ),
         )
     )
-    blended = calculate_ep_blending_targets(joined, seeds, config).blended.collect()
+    blended = _calculate_blending_for_test(joined, seeds, config).collect()
     assert blended.item(0, Col.uplift_factor_on_base_model) == 2.0
+
+
+def test_rank_ylt_deterministically_breaks_loss_ties() -> None:
+    frame = pl.DataFrame(
+        {
+            Col.vendor: ["verisk", "verisk", "verisk", "verisk"],
+            Col.modelled_lob: ["LOB", "LOB", "LOB", "LOB"],
+            Col.rollup_peril: ["PERIL", "PERIL", "PERIL", "PERIL"],
+            Col.loss: [100.0, 100.0, 100.0, 200.0],
+            Col.year_id: [2026, 2025, 2025, 2026],
+            Col.event_id: [2, 3, 1, 9],
+            Col.analysis_id: ["b", "a", "c", "z"],
+            Col.model_code: [2, 1, 1, 9],
+        }
+    )
+
+    ranked = rank_ylt(frame.lazy()).collect().sort(Col.rnk)
+
+    assert ranked.select(Col.loss, Col.year_id, Col.event_id, Col.rnk).rows() == [
+        (200.0, 2026, 9, 1),
+        (100.0, 2025, 1, 2),
+        (100.0, 2025, 3, 3),
+        (100.0, 2026, 2, 4),
+    ]
+
+
+def test_rank_ylt_tie_ranks_are_stable_for_shuffled_input() -> None:
+    rows = {
+        Col.vendor: ["verisk", "verisk", "verisk", "verisk"],
+        Col.modelled_lob: ["LOB", "LOB", "LOB", "LOB"],
+        Col.rollup_peril: ["PERIL", "PERIL", "PERIL", "PERIL"],
+        Col.loss: [100.0, 100.0, 100.0, 200.0],
+        Col.year_id: [2026, 2025, 2025, 2026],
+        Col.event_id: [2, 3, 1, 9],
+        Col.analysis_id: ["b", "a", "c", "z"],
+        Col.model_code: [2, 1, 1, 9],
+    }
+    expected = (
+        rank_ylt(pl.DataFrame(rows).lazy())
+        .collect()
+        .select(Col.year_id, Col.event_id, Col.rnk)
+        .sort(Col.year_id, Col.event_id)
+    )
+    shuffled = pl.DataFrame(rows).sample(fraction=1.0, shuffle=True, seed=7)
+
+    actual = (
+        rank_ylt(shuffled.lazy())
+        .collect()
+        .select(Col.year_id, Col.event_id, Col.rnk)
+        .sort(Col.year_id, Col.event_id)
+    )
+
+    assert actual.rows() == expected.rows()
 
 
 def test_input_ylt_aal_summary_computes_verisk_raw_aal_sorted_descending() -> None:
@@ -888,14 +980,12 @@ def test_run_command_is_quiet_for_validation_reports_from_api_result(
     capsys,
     tmp_path,
 ) -> None:
-    reports = _cli_reports()
     calls = {}
 
-    def fake_run_rollup(data_root, *, output_root, debug, validation_callback):
+    def fake_run_rollup(data_root, *, output_root, debug):
         calls["data_root"] = data_root
         calls["output_root"] = output_root
         calls["debug"] = debug
-        validation_callback(reports)
         return type(
             "RunResult",
             (),
@@ -923,7 +1013,6 @@ def test_run_command_returns_nonzero_without_running_pipeline_on_validation_fail
     reports = _cli_reports(valid=False)
 
     def fail_validation(*args, **kwargs):
-        kwargs["validation_callback"](reports)
         raise cli.RollupValidationError(reports)
 
     monkeypatch.setattr(cli, "run_rollup", fail_validation)

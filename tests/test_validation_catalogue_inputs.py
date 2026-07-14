@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import polars as pl
 
 from rollup.columns import Col
-from rollup.config import InputConfig, RollupConfig
-from rollup.pipeline import load_risklink_flood_events, load_verisk_events
+from rollup.staging.stg_event_catalogues import stg_event_catalogue__risklink_flood, stg_event_catalogue__verisk
 
 
-def test_load_verisk_events_reads_configured_relative_path(tmp_path: Path) -> None:
-    data_root = tmp_path / "data"
-    events_path = data_root / "custom" / "verisk_events.parquet"
-    events_path.parent.mkdir(parents=True)
-    pl.DataFrame(
+def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
+    frame = stg_event_catalogue__verisk(
+        pl.DataFrame(
         {
             "EventID": [101],
             "ModelID": ["M1"],
@@ -22,12 +18,8 @@ def test_load_verisk_events_reads_configured_relative_path(tmp_path: Path) -> No
             "Year": [2030],
             "Day": [42],
         }
-    ).write_parquet(events_path)
-    config = RollupConfig(
-        inputs=InputConfig(verisk_events_file="custom/verisk_events.parquet")
-    )
-
-    frame = load_verisk_events(data_root, config).collect()
+        ).lazy()
+    ).collect()
 
     assert frame.to_dict(as_series=False) == {
         Col.model_event_id: [101],
@@ -38,21 +30,17 @@ def test_load_verisk_events_reads_configured_relative_path(tmp_path: Path) -> No
     }
 
 
-def test_load_risklink_flood_events_reads_configured_absolute_path(
-    tmp_path: Path,
-) -> None:
-    events_path = tmp_path / "absolute_risklink_events.parquet"
-    pl.DataFrame(
+def test_stg_event_catalogue_risklink_flood_groups_raw_seed_frame() -> None:
+    frame = stg_event_catalogue__risklink_flood(
+        pl.DataFrame(
         {
             "ModelEventID": [301, 301],
             "ModelOccurrenceYear": [2040, 2040],
             "RegionPerilID": [77, 77],
             "ModelOccurrenceDate": [date(2040, 3, 3), date(2040, 1, 2)],
         }
-    ).write_parquet(events_path)
-    config = RollupConfig(inputs=InputConfig(risklink_events_file=str(events_path)))
-
-    frame = load_risklink_flood_events(tmp_path / "data", config).collect()
+        ).lazy()
+    ).collect()
 
     assert frame.to_dict(as_series=False) == {
         Col.event_id: [301],
