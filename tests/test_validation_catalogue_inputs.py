@@ -5,19 +5,19 @@ from datetime import date
 import polars as pl
 
 from rollup.columns import Col
-from rollup.staging.stg_event_catalogues import stg_event_catalogue__risklink_flood, stg_event_catalogue__verisk
+from rollup.staging import stg_risklink_flood_events, stg_verisk_events
 
 
 def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
-    frame = stg_event_catalogue__verisk(
+    frame = stg_verisk_events.transform(
         pl.DataFrame(
-        {
-            "EventID": [101],
-            "ModelID": ["M1"],
-            "Event": [202],
-            "Year": [2030],
-            "Day": [42],
-        }
+            {
+                "EventID": [101],
+                "ModelID": ["M1"],
+                "Event": [202],
+                "Year": [2030],
+                "Day": [42],
+            }
         ).lazy()
     ).collect()
 
@@ -31,14 +31,14 @@ def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
 
 
 def test_stg_event_catalogue_risklink_flood_groups_raw_seed_frame() -> None:
-    frame = stg_event_catalogue__risklink_flood(
+    frame = stg_risklink_flood_events.transform(
         pl.DataFrame(
-        {
-            "ModelEventID": [301, 301],
-            "ModelOccurrenceYear": [2040, 2040],
-            "RegionPerilID": [77, 77],
-            "ModelOccurrenceDate": [date(2040, 3, 3), date(2040, 1, 2)],
-        }
+            {
+                "ModelEventID": [301, 301],
+                "ModelOccurrenceYear": [2040, 2040],
+                "RegionPerilID": [77, 77],
+                "ModelOccurrenceDate": [date(2040, 3, 3), date(2040, 1, 2)],
+            }
         ).lazy()
     ).collect()
 

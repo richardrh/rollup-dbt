@@ -1,8 +1,10 @@
 # Data requirements
 
 Inputs live under `data/`. Generated files live under root `output/`.
-Required external files, columns, and dtypes are described by colocated
-validnator YAML contracts.
+Colocated Validnator YAML files describe external/reference file, column, and
+dtype contracts. The runtime `rollup validate` command checks required
+input/seed presence and LOB/peril coverage; it does not execute those YAML schema
+contracts.
 
 ## Required analyst inputs
 
@@ -21,11 +23,19 @@ need to follow a naming convention, but meaningful names are recommended for
 operator traceability. Keep inactive/test parquet files out of these active
 folders because they will be loaded. Subdirectories are not scanned.
 
-EP summaries used by the pipeline must be long CSVs with exactly:
+EP summaries used by the pipeline must include at least one canonical
+`*.long.csv` under **both** `data/ep_summaries/verisk/` and
+`data/ep_summaries/risklink/`. Nested files below those canonical vendor roots
+are allowed. Unknown, root-level, and case-variant vendor folders are rejected;
+folders named `vendor=...` are not supported. Every individual long file must
+contain exactly these canonical columns:
 
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
+
+Vendor is derived from the canonical vendor root and overwrites any in-file
+`vendor` value. Missing vendor files and per-file schema drift fail immediately.
 
 Raw YLT parquet inputs may include extra vendor-export columns. Validation only
 requires the useful columns consumed by the pipeline:
@@ -60,6 +70,12 @@ data/ep_summaries/risklink/*.csv
 Existing `*.long.csv` files are ignored during source selection. RiskLink uses
 the same source CSV format as Verisk.
 
+Batch generation with `generate_ep_summaries(data_root)` requires exactly one
+candidate source wide CSV per vendor. Zero or multiple candidates fail. If a
+vendor folder contains multiple candidate CSVs, select explicitly with
+`generate_vendor_ep_summary(...)` or the CLI `--vendor` plus `--csv` options. The
+interactive CLI still prompts you to choose a vendor and candidate file.
+
 ### Step 2. Run the converter
 
 Interactive:
@@ -71,8 +87,8 @@ uv run rollup generate-ep-summaries
 Non-interactive:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
-uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
+uv run rollup generate-ep-summaries --vendor risklink --csv risklink_clean.csv
 ```
 
 ### Step 3. Check the generated `.long.csv`
@@ -98,16 +114,12 @@ peril, with EP losses in metric columns.
 | `id` | Yes | Analysis identifier. The converter writes this as `analysis_id` in the long CSV. | `ANALYSIS_1`, `101` |
 | `modelled_lob` | Yes | Modelled line of business. It must exist in `lobs.csv` before the pipeline runs. | `Property` |
 | `modelled_peril` | Yes | Modelled peril. It must exist in `perils.csv` before the pipeline runs. | `US_WS` |
-| Metric columns | Yes, at least one | Loss values to turn into long rows. Names must follow `<EP type>_<return period>` for `AAL`, `AEP`, or `OEP`. | Preferred names are uppercase with no `.0` suffix, such as `AAL_0`, `AEP_50`, `OEP_100`. `AAL` always becomes return period `0`. |
-| `ExposureAttribute` | Optional alias | Accepted instead of `modelled_lob` when `modelled_lob` is not present. | Common in Verisk exports. |
-| `Analysis` | Optional alias | Accepted instead of `modelled_peril` when `modelled_peril` is not present. | Common in Verisk exports. |
+| Metric columns | Yes, at least one | Loss values to turn into long rows. Names must exactly match `AAL_0`, `AEP_<integer>`, or `OEP_<integer>`. | Use uppercase names with no `.0` suffix, such as `AAL_0`, `AEP_50`, `OEP_100`. AAL must be `AAL_0`. |
 | `CatalogTypeCode` | Optional filter | If present, only rows where the trimmed value is `STC` are converted. Other rows are skipped. | `STC` |
 | `segment` | Optional | Accepted but not used in the output. | Ignored by the converter. |
 | `sd*` columns | Optional | Accepted but not used in the output. | `sd_0`, `sd_0.0`; ignored by the converter. |
 
-New source files should use metric names like `AAL_0`, `AEP_50`, and `OEP_100`.
-The converter also accepts lowercase metric names and `.0` suffixes from older
-exports.
+Metric names are strict: lowercase names and `.0` suffixes are rejected.
 
 Example source CSV:
 
@@ -126,8 +138,8 @@ The converter writes exactly these columns:
 | --- | --- | --- |
 | `vendor` | CLI vendor selection (`verisk` or `risklink`) | Vendor name used by the pipeline. |
 | `analysis_id` | Source `id` | Analysis identifier from the wide CSV. |
-| `modelled_lob` | Source `modelled_lob`, or `ExposureAttribute` alias | Modelled line of business. |
-| `modelled_peril` | Source `modelled_peril`, or `Analysis` alias | Modelled peril. |
+| `modelled_lob` | Source `modelled_lob` | Modelled line of business. |
+| `modelled_peril` | Source `modelled_peril` | Modelled peril. |
 | `ep_type` | Metric column name before the underscore | EP metric type: `AAL`, `AEP`, or `OEP`. |
 | `return_period` | Metric column number after the underscore | Return period as a number. `AAL` is always `0`. |
 | `loss` | Metric column value | Loss value with commas and spaces removed, written as a floating-point number. |
@@ -150,10 +162,10 @@ validation and the pipeline.
 
 ## Seed files
 
-Seed contracts are defined by the validnator YAML files under `data/seeds`.
-`uv run rollup validate` reports schema issues and runs
-anti-join validation for LOB/peril coverage. The anti-join report should be
-empty before running the pipeline.
+Seed reference contracts are defined by the validnator YAML files under
+`data/seeds`. `uv run rollup validate` checks required seed presence and runs
+anti-join validation for LOB/peril coverage. The anti-join report should be empty
+before running the pipeline.
 
 ### `data/seeds/business/lobs.csv`
 
@@ -171,9 +183,8 @@ region/peril labels, and `region_peril_id`.
 
 `selection_priority` chooses the main pipeline's preferred modelled peril variant
 when multiple modelled perils map to the same vendor, `rollup_lob`, and
-`rollup_peril`. Lower numbers win. Missing priorities are filled as `99` during
-EP staging; schema text uses `99` as the normal fallback priority, and some
-calling contexts treat the fallback/default as `99`/`100`.
+`rollup_peril`. Lower numbers win. During EP enrichment,
+`int_ep_summaries_enriched` fills missing priorities as `99`.
 
 `is_dialsup` is the independent DIALSUP peril-selection flag. Active base
 candidates per vendor, `rollup_lob`, and `rollup_peril` should be `1`; adjusted
@@ -234,8 +245,8 @@ event day fields for RiskLink flood rows.
 
 - Every EP `modelled_lob` and YLT modelled LOB must exist in `lobs.csv`.
 - Every EP `modelled_peril` and YLT modelled peril must exist in `perils.csv`.
-- Inputs must match their colocated validnator contracts for required files,
-  columns, and types.
+- Inputs should match their colocated Validnator reference contracts for required
+  files, columns, and types.
 - Extra raw YLT vendor columns are allowed, but seed and EP summary files remain
   strict and should not contain unexpected columns.
 - Every RiskLink YLT `anlsid` must exist in the RiskLink EP summary

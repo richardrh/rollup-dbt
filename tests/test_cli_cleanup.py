@@ -23,7 +23,9 @@ def test_cleanup_dry_run_does_not_delete_known_files(tmp_path: Path) -> None:
     assert mart_file.is_file()
 
 
-def test_cleanup_yes_deletes_root_generated_parquets_and_mart_parquets(tmp_path: Path) -> None:
+def test_cleanup_yes_deletes_root_generated_parquets_and_mart_parquets(
+    tmp_path: Path,
+) -> None:
     output_root = tmp_path / "output"
     generated_files = [
         _write(output_root / "mts_tbl_ylt_combined_all_factors.parquet"),
@@ -39,7 +41,9 @@ def test_cleanup_yes_deletes_root_generated_parquets_and_mart_parquets(tmp_path:
     assert all(not path.exists() for path in generated_files)
 
 
-def test_cleanup_yes_preserves_unrelated_analysis_and_debug_files(tmp_path: Path) -> None:
+def test_cleanup_yes_preserves_unrelated_analysis_and_debug_files(
+    tmp_path: Path,
+) -> None:
     output_root = tmp_path / "output"
     preserved_files = [
         _write(output_root / "keep.parquet"),

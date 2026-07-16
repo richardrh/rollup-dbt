@@ -2,7 +2,9 @@ import csv
 from pathlib import Path
 
 
-PERILS_PATH = Path(__file__).resolve().parents[1] / "data" / "seeds" / "business" / "perils.csv"
+PERILS_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "seeds" / "business" / "perils.csv"
+)
 
 
 def _peril_rows() -> list[dict[str, str]]:

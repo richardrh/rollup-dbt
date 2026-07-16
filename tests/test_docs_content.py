@@ -15,9 +15,7 @@ def test_first_run_combines_ylt_utility_and_ep_summary_guidance() -> None:
 
 
 def test_programmatic_api_docs_include_dataiku_recipes() -> None:
-    api_docs = (REPO_ROOT / "docs" / "programmatic-api.md").read_text(
-        encoding="utf-8"
-    )
+    api_docs = (REPO_ROOT / "docs" / "programmatic-api.md").read_text(encoding="utf-8")
 
     assert "Dataiku recipe: local managed folders" in api_docs
     assert "Dataiku recipe: remote managed folders" in api_docs
@@ -26,8 +24,6 @@ def test_programmatic_api_docs_include_dataiku_recipes() -> None:
     assert "get_download_stream" in api_docs
     assert "upload_stream" in api_docs
     assert "run_rollup" in api_docs
-    assert "report_dir" in api_docs
-    assert "write_reports" in api_docs
     assert "log_file" in api_docs
     assert "temporary file" in api_docs
 

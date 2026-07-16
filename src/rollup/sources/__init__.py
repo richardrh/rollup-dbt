@@ -1,1 +1,1 @@
-"""Source scanners and catalogues for the Polars rollup pipeline."""
+"""Lazy input loaders for seeds, YLTs, and EP summaries."""

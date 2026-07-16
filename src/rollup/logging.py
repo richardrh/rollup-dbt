@@ -7,13 +7,21 @@ import logging
 from pathlib import Path
 import sys
 from collections.abc import Iterator
+from typing import Literal, cast
 
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S"
-LogFormat = str
+LogFormat = Literal["text", "jsonl"]
 
 _LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
 
 
 def _json_safe(value: object) -> object:
@@ -28,13 +36,11 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-def normalize_log_format(log_format: str | None = None) -> str:
-    value = (log_format or "jsonl").lower()
-    if value == "json":
-        return "jsonl"
+def validate_log_format(log_format: str | None = None) -> LogFormat:
+    value = log_format or "jsonl"
     if value not in {"text", "jsonl"}:
         raise ValueError("log format must be 'text' or 'jsonl'")
-    return value
+    return cast(LogFormat, value)
 
 
 class JsonLineFormatter(logging.Formatter):
@@ -42,7 +48,9 @@ class JsonLineFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -60,13 +68,15 @@ class JsonLineFormatter(logging.Formatter):
 
 
 def make_formatter(log_format: LogFormat = "jsonl") -> logging.Formatter:
-    normalized = normalize_log_format(log_format)
-    if normalized == "jsonl":
+    validated = validate_log_format(log_format)
+    if validated == "jsonl":
         return JsonLineFormatter()
     return logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT)
 
 
-def _matching_file_handler(logger: logging.Logger, log_file: Path) -> logging.FileHandler | None:
+def _matching_file_handler(
+    logger: logging.Logger, log_file: Path
+) -> logging.FileHandler | None:
     try:
         resolved_log_file = log_file.resolve()
     except FileNotFoundError:
@@ -103,7 +113,12 @@ def configure_console_logging(
     log_file: str | Path | None = None,
     log_format: LogFormat = "jsonl",
 ) -> None:
-    level = getattr(logging, log_level)
+    try:
+        level = _LOG_LEVELS[log_level]
+    except KeyError as exc:
+        raise ValueError(
+            "log level must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL"
+        ) from exc
     logging.basicConfig(
         level=level,
         handlers=[logging.StreamHandler(sys.stdout)],
@@ -114,7 +129,9 @@ def configure_console_logging(
     if log_file is not None:
         root = logging.getLogger()
         if _matching_file_handler(root, Path(log_file)) is None:
-            root.addHandler(make_file_handler(log_file, level=level, log_format=log_format))
+            root.addHandler(
+                make_file_handler(log_file, level=level, log_format=log_format)
+            )
 
 
 @contextmanager

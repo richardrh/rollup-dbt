@@ -15,15 +15,23 @@ From the repository root:
 uv sync
 uv run rollup validate
 uv run rollup run
-uv run rollup docs
 ```
 
-Use `uv run rollup docs --host localhost --port 4322` when you need a fixed docs
-address. The docs include the full [Quickstart](docs/first-run.md), operating
-modes, troubleshooting, and developer notes.
+Serve repository docs with the pinned development docs tool when you need a local
+site. Zensical is a development dependency, not a rollup runtime dependency:
+
+```bash
+uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
+```
+
+The docs include the full [Quickstart](docs/first-run.md), operating modes,
+troubleshooting, and developer notes.
 
 Outputs are written to `output/`. The default run also writes
 `output/rollup.duckdb` for local inspection with the SQL templates under `sql/`.
+
+The installed runtime depends directly on DuckDB and Polars. Development tooling
+includes pytest, Hypothesis, mypy, Ruff, and Zensical.
 
 ## Build a Python package
 

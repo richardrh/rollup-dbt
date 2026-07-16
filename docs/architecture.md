@@ -9,9 +9,9 @@ outputs for downstream reporting.
 
 ```mermaid
 flowchart TD
-  A[Analyst drops inputs under data/] --> B[Source scans and validnator checks]
+  A[Analyst drops inputs under data/] --> B[Source loads and input coverage checks]
   B --> C[Seed lookups\nlobs.csv, perils.csv, VOR factors, validation catalogues]
-  B --> D[EP summary staging\nenrich and select preferred peril]
+  B --> D[EP enrichment and selection\ncanonical long source summaries]
   B --> E[YLT normalization\nVerisk and RiskLink]
   C --> D
   C --> E
@@ -39,79 +39,123 @@ flowchart TD
 The code is arranged in a dbt-like physical layout while remaining a Polars
 LazyFrame pipeline, not a dbt/SQL pipeline:
 
-- `src/rollup/sources/` discovers/scans CSV and parquet sources, including a
-  simple recursive seed loader and a single EP summary source union.
-- `src/rollup/staging/` contains rename, cast, clean, seed-enrichment, and shared
-  factor staging models such as `stg_factors.py`.
-- `src/rollup/intermediate/` contains cumulative business transforms: EP vendor
-  joins and explicit target/weight/blend calculations in `int_ep.py`, the main
-  YLT path in `int_ylt_main.py`, and the DIALSUP branch in `int_ylt_dialsup.py`.
+- `src/rollup/sources/` modules expose one public operation: `load(data_root)`.
+  The name is conventional; source loading returns Polars `LazyFrame` scans and
+  does not collect rows. Source modules own file discovery and immediate source
+  validation such as duplicate seed stems, missing YLT vendor parquets, and EP
+  summary vendor-folder/schema recognition. Automatic recursive seed discovery
+  lives in `sources/seeds.py`; canonical `*.long.csv` EP summary discovery and
+  vendor derivation live in `sources/ep_summaries.py`.
+  Current source entry points are exactly:
+
+  - `seeds.load(data_root)` for recursive seed CSV/parquet discovery keyed by
+    filename stem.
+  - `ylt.load(data_root)` for required top-level Verisk/RiskLink YLT parquets.
+  - `ep_summaries.load(data_root)` for canonical long EP CSV validation and
+    combination.
+- `src/rollup/staging/` canonicalizes real raw transforms only: Verisk/RiskLink
+  YLTs, event catalogues, GBP FX rates, and forecast factors. EP summaries and
+  canonical seeds feed intermediate models directly rather than through
+  pass-through staging models.
+- `src/rollup/intermediate/` contains cumulative business transforms. EP
+  enrichment/selection, YLT union, forecast dates, EP blending, and the explicit
+  main/DIALSUP YLT branches are each represented by semantic `int_*` model
+  modules. `int_ylt_enriched`, `int_ylt_base_selected`, and `int_ylt_ranked` are
+  direct reusable operations invoked separately for main and DIALSUP inputs.
 - `src/rollup/marts/` contains pure mart transformations for fanout, validation,
-  and wide-output column shaping. These modules do not write files.
+  and long-output filtering/tagging. These modules do not write files.
 - `src/rollup/writers/` owns materialization to parquet, debug files, fanout
-  partitions, and DuckDB. `writers/wide_outputs.py` owns the DuckDB subprocess and
-  filesystem writes for long, DIALSUP, and wide MTS output materialization.
-- `src/rollup/pipeline.py` is orchestration only. It wires phases together and no
-  longer re-exports private/model compatibility symbols.
+  partitions, wide output, and DuckDB. Product writer modules expose
+  `validate(...) -> None` and `write(...)`; `writers/wide_output.py` owns the
+  isolated DuckDB subprocess used for wide MTS output materialization.
+- `src/rollup/pipeline.py` is orchestration only. It imports model modules and
+  calls `module.transform(...)`; it owns work-parquet materialization/re-scan,
+  debug registration, and writer calls, not model business logic.
+
+## Model contract
+
+Each public staging, intermediate, and mart model is one semantic Polars model
+per file. The module is the model: it exposes `validate(...) -> None` and
+`transform(...) -> pl.LazyFrame`, and `transform()` calls its own `validate()`.
+There is no abstract model class, registry, context container, dynamic discovery,
+or sequence-number filename convention.
+
+Model validation is schema-only. It uses `LazyFrame.collect_schema()` and helper
+checks for required columns, important dtype families, join-key compatibility,
+and output-plan schema resolution. Model output schema checking calls
+`validate_output(model, frame)`, then returns `frame` explicitly. It must not
+collect rows or perform null, uniqueness, range, or cardinality checks; those
+belong in data-quality validation/tests.
+
+Model names are semantic and import-safe, using `stg_`, `int_`, and `mart_`
+prefixes without numeric ordering. Pipeline dependencies explicitly define
+execution order. Models do not perform file, DuckDB, or subprocess I/O; sources
+read inputs and writers write outputs.
 
 | Phase | What happens | Debug prefix |
 | --- | --- | --- |
-| Seed + validation | Read seed files, event catalogues, YLTs, and EP summaries; report schema and lookup coverage issues. | `seed_*` |
-| Staging | Normalize YLT formats; enrich EP summaries; select main and DIALSUP EP summary rows; stage shared FX and forecast factors. | `stg_*` |
-| Intermediate | Join EP vendors; select target points; prepare blend weights; calculate blend targets; enrich and rank YLT rows; apply main blending, FX, forecast, EUWS, and EUWS overrides; apply DIALSUP FX and forecast. | `int_*` |
-| Marts | Build main/DIALSUP fanouts and event validation; shape wide-output dimensions and column order without writing files. | `mts_*` |
+| Sources | Load canonical source inputs as lazy Polars scans, including `src_ep_summaries` from `data/ep_summaries/{verisk,risklink}/**/*.long.csv`. | `src_*` |
+| Seed + validation | Load seed files, event catalogues, and YLTs as lazy inputs; report required input/seed presence and lookup coverage issues. | `seed_*` |
+| Staging | Canonicalize raw logical sources: vendor YLTs, event catalogues, GBP FX rates, and forecast factors. | `stg_*` |
+| Intermediate | Union YLTs; enrich/select EP summaries; derive forecast dates; join EP vendors; select target points; prepare blend weights; calculate blend targets; enrich and rank YLT rows; apply main blending, FX, forecast, EUWS, and EUWS overrides; apply DIALSUP FX and forecast. | `int_*` |
+| Marts | Build main/DIALSUP long outputs, fanouts, and event validation without writing files. | `mts_*` |
+
+Debug registration follows the same layers. The pipeline records semantic
+suffixes such as `ep_summaries` or `ylt_main_ranked`; the debug writer adds
+`src_`, `seed_`, `stg_`, `int_`, or `mts_`. Non-model compatibility artifacts
+are not written.
 
 ## Pipeline transforms
 
-| # | Step | Function | Output shape |
+| # | Step | Model(s) | Output shape |
 | --- | --- | --- | --- |
-| 1 | Normalize YLT | `normalize_ylt` | Vendor-specific YLT columns become canonical `vendor`, `modelled_lob`, `modelled_peril`, `loss`, `year_id`, and `event_id` columns. |
-| 2 | Stage EP summaries | `enrich_ep_summaries`, `select_main_ep_summaries`, `select_dialsup_ep_summaries` | EP summaries are enriched with LOB/peril seeds, then split into main `selection_priority` and DIALSUP `is_dialsup` selections. |
-| 3 | Stage shared factors | `stg_gbp_fx_rates`, `stg_forecast_factors`, `stg_forecast_dates` | FX rates are limited to GBP targets, forecast factors are normalized to class/office/date, and distinct forecast dates are prepared once for both branches. |
-| 4 | Join EP vendors | `join_ep_summaries` | Verisk and RiskLink EP summaries are aggregated at `(rollup_lob, rollup_peril, region_peril_id, blend_subregion_peril_id, base_model, ep_type, return_period)` grain. |
-| 5 | Select EP target points | `select_ep_blending_target_points` | Configured EP type/return-period target rows are selected for blending. |
-| 6 | Prepare blend weights | `select_blending_factor_seed`, `prepare_ep_blending_weights` | The blending seed is selected and converted to rollup weight columns for RiskLink and Verisk. |
-| 7 | Calculate blend targets | `calculate_ep_blending_targets` | Target points and weights produce vendor contributions, `target_loss`, `base_model_loss`, and clamped `uplift_factor_on_base_model`. |
-| 8 | Enrich YLT | `enrich_ylt_with_ep_summaries` | Main and DIALSUP YLT rows receive rollup LOB/peril, class, office, currency, and region/peril metadata from their selected EP summaries. |
-| 9 | Rank base-model YLT | `rank_ylt` | Base-model rows receive `rnk`, `rp`, and `rp_bucket` for blending and downstream diagnostics. |
-| 10 | Blend main YLT | `apply_ep_blending_to_ylt` | Main `loss` is uplifted from EP blend targets and `metric` becomes `blended`. |
-| 11 | Apply main FX | `convert_ylt_to_local_currency` | Main `loss` is expected to be GBP and is converted to LOB local currency using `currency -> GBP` seed rates; `metric` becomes `localccy`. |
-| 12 | Apply main forecast | `apply_forecast_factors_to_ylt` | Main rows are cross-joined to forecast dates, missing factors default to `1.0`, and `metric` becomes `localccy_forecast`. |
-| 13 | Apply main EUWS | `apply_euws_factors_to_ylt` | Europe Windstorm factors are applied, model event fields are attached, and `metric` becomes `euws`. |
-| 14 | Apply main EUWS overrides | `apply_euws_overrides_to_ylt` | Configured zero-factor overrides are applied and `metric` becomes `euws_override`. |
-| 15 | Build DIALSUP metrics | `enrich_dialsup_ylt_with_factors`, `convert_dialsup_to_local_currency`, `apply_forecast_factors_to_dialsup_ylt`, `drop_dialsup_factor_columns` | DIALSUP uses its selected base-model rows, attaches shared factors once, emits `dialsup_original`, converts to `dialsup_localccy`, then applies forecast factors to emit `dialsup_localccy_forecast`. |
-| 16 | Build fanouts and validation | `build_fanout`, `build_event_validation_report` | Final main and DIALSUP metrics are shaped into mart-ready fanout columns, then summarized for event validation. |
-| 17 | Write combined outputs | `write_mart_outputs`, `_write_combined_outputs`, `_write_wide_output_duckdb_subprocess` | Mart writers write long all-factor main and final DIALSUP parquets, fanout partitions, event validation, and wide MTS output. The wide output is materialized by DuckDB in a subprocess. |
+| 1 | Stage raw sources | `stg_verisk_ylt.transform()`, `stg_risklink_ylt.transform()`, `stg_verisk_events.transform()`, `stg_risklink_flood_events.transform()`, `stg_gbp_fx_rates.transform()`, `stg_forecast_factors.transform()` | Raw logical sources are renamed, cast, and cleaned into canonical staging schemas. EP source rows feed enrichment directly. |
+| 2 | Normalize YLT | `int_ylt_normalized.transform()` | Vendor-specific YLT rows are unioned into canonical `vendor`, `modelled_lob`, `modelled_peril`, `loss`, `year_id`, and `event_id` columns. |
+| 3 | Enrich and select EP summaries | `int_ep_summaries_enriched.transform()`, `int_ep_summaries_main.transform()`, `int_ep_summaries_dialsup.transform()` | EP summaries are enriched with LOB/peril seeds, then split into main `selection_priority` and DIALSUP `is_dialsup` selections. |
+| 4 | Prepare shared dates/factors | `int_forecast_dates.transform()` plus staged FX/forecast models | Distinct forecast dates are prepared once for both branches; FX and forecast factors are already staged. |
+| 5 | Join EP vendors | `int_ep_vendor_joined.transform()` | Verisk and RiskLink EP summaries are aggregated at `(rollup_lob, rollup_peril, region_peril_id, blend_subregion_peril_id, base_model, ep_type, return_period)` grain. |
+| 6 | Calculate EP blending targets | `int_ep_blending_target_points.transform()`, `int_ep_blending_weights.transform()`, `int_ep_blending_targets.transform()` | Target points and weights produce vendor contributions, `target_loss`, `base_model_loss`, and clamped `uplift_factor_on_base_model`. |
+| 7 | Build main YLT stream | `int_ylt_enriched.transform()`, `int_ylt_base_selected.transform()`, `int_ylt_ranked.transform()`, `int_ylt_main_blended.transform()`, `int_ylt_main_local_currency.transform()`, `int_ylt_main_forecast.transform()`, `int_ylt_main_euws.transform()`, `int_ylt_main_euws_override.transform()`, `int_ylt_main_metric_stream.transform()` | Main rows receive EP metadata, base selection, rank buckets, EP blending uplift, local-currency conversion, forecast expansion, EUWS factors, overrides, and a combined metric stream. |
+| 8 | Build DIALSUP stream | `int_ylt_enriched.transform()`, `int_ylt_base_selected.transform()`, `int_ylt_ranked.transform()`, `int_ylt_dialsup_factor_base.transform()`, `int_ylt_dialsup_original_metric.transform()`, `int_ylt_dialsup_local_currency_metric.transform()`, `int_ylt_dialsup_forecast_metric.transform()`, `int_ylt_dialsup_metric_stream.transform()` | DIALSUP reuses enrichment/base-selection/ranking operations with DIALSUP-selected EP rows, attaches shared factors once, emits original/local-currency/forecast metrics, and unions them into an independent stream. |
+| 9 | Build marts | `mart_ylt_main_long.transform()`, `mart_ylt_dialsup_long.transform()`, `mart_main_fanout.transform()`, `mart_dialsup_fanout.transform()`, `mart_event_validation.transform()` | Main long keeps final `cds_main` rows plus `intermediate_audit` audit metrics. DIALSUP long keeps final `dialsup_localccy_forecast` rows and tags them `cds_dialsup`. Fanouts are shaped from those fixed long contracts, then summarized for event validation. `_fanout_helpers.py` holds shared fanout construction. |
+| 10 | Write product outputs | `parquet.write()`, `wide_output.write()`, `fanout_partitions.write()` | Pipeline directly calls writers: a small fixed loop writes main-long, DIALSUP-long, and event-validation parquets; homogeneous loops write debug frames and fanout partitions. There is no aggregate mart-output wrapper and no filesystem discovery hidden in pipeline execution. |
 
 ## Data
 
 The pipeline reads source inputs from a configured data directory:
 
 - **YLT files** — Verisk and RiskLink event-loss tables in parquet format.
-- **EP summaries** — Exceedance probability tables in long CSV format. All
-  `data/ep_summaries/**/*.long.csv` files are scanned into one frame. Vendor is
-  derived from folders such as `risklink/`, `verisk/`, `vendor=risklink/`, or
-  `vendor=verisk/` and takes precedence over any in-file vendor value.
+- **EP summaries** — Exceedance probability tables in long CSV format under
+  canonical vendor roots `data/ep_summaries/verisk/` and
+  `data/ep_summaries/risklink/`. At least one `*.long.csv` is required under
+  both roots. Nested long files below those roots are scanned. Each file must use
+  the exact canonical long schema. Vendor is derived only from the canonical root
+  folder and overwrites any in-file vendor value; unknown, root-level, and
+  case-variant vendor folders are rejected.
 - **Seed files** — Reference lookup tables discovered recursively under
-  `data/seeds/` for both CSV and parquet. Runtime seed keys are simply the file
-  stem, for example `lobs`, `perils`, `fx_rates`, or `verisk_events`. Duplicate
-  stems are rejected at load time.
+  `data/seeds/` for both CSV and parquet by `seeds.load(data_root)`. Runtime seed
+  keys are simply the file stem, for example `lobs`, `perils`, `fx_rates`, or
+  `verisk_events`. Duplicate stems are rejected during source loading.
 - **Event catalogues** — Verisk event definitions and RiskLink flood
   event tables.
 
 ## Validation
 
-All inputs are validated before processing. The validation step checks
-file schemas against colocated validnator YAML contracts, confirms that YLT rows have
-matching EP summary entries and seed lookups, and produces a coverage
-report showing any orphaned or missing references. The pipeline stops if
-validation fails.
+`rollup validate` calls `validation.inspect_inputs(...)` to load sources lazily and
+build coverage reports, then `validation.validate_inputs(...)` to reject blocking
+input errors. It checks required source folders, required YLT/source presence,
+required seed inventory, and modelled LOB/peril coverage for EP summaries and YLT
+data. Modelled LOB/peril anti-join rows are blocking. The command also reports
+input YLT AAL by vendor/LOB/peril for information. Expected input failures return
+non-zero with concise stderr; the CLI does not execute the colocated Validnator
+YAML schema contracts, which remain external/reference contracts.
 
 ## EP summaries
 
-EP summaries from each vendor are staged into a common format. For each vendor,
-rollup LOB, and rollup peril group, the main pipeline selects one modelled peril
-by lowest `selection_priority`. This priority is only for the main pipeline. The
+Canonical long EP summaries from each vendor are enriched directly with seed
+dimensions in `int_ep_summaries_enriched`. For each vendor, rollup LOB, and
+rollup peril group, the main pipeline then selects one modelled peril by lowest
+`selection_priority`. This priority is only for the main pipeline. The selected
 summaries are then joined across Verisk and RiskLink vendors to produce a unified
 view of EP losses per return-period bucket.
 
@@ -179,36 +223,59 @@ loss.
 
 ## Outputs
 
-**Long output** (`mts_tbl_ylt_combined_all_factors.parquet`): one row
-per metric and event/forecast-date combination, with `metric`, `loss`,
-and the available contributing factor columns.
+Output paths are composed directly from fixed constants in
+`src/rollup/output_contract.py`, such as `COMBINED_YLT_FILE`, `MARTS_DIR`, and
+`EP_REPORT_FILE`. There are no public output-path helper functions.
+
+**Long output** (`mts_tbl_ylt_combined_all_factors.parquet`): main-branch rows
+with one row per metric and event/forecast-date combination, `metric`, `loss`,
+`output_use`, and the available contributing factor columns. Final
+`euws_override` rows are tagged `cds_main`; other retained metrics are tagged
+`intermediate_audit`.
 
 **Wide output** (`mts_tbl_ylt_combined_all_factors_wide.parquet`): the
-long data pivoted so each forecast date becomes a separate column per
-metric — e.g. `euws_override_202601_loss`,
-`dialsup_localccy_forecast_202601_loss`. Dimension columns are all non-
-metric, non-forecast-date, non-loss columns present in both the main
-and DIALSUP frames. Blend diagnostics are attached from main rows and are not
-pivot dimensions, so they do not split one logical event into separate main and
-DIALSUP wide rows.
+fixed wide contract written by `writers/wide_output.py`. It has 25 identity
+dimensions from `output_contract.WIDE_IDENTITY_DIMENSIONS`, constant
+`output_use = 'cds_wide_analysis'`, three blend diagnostic columns, then dynamic
+loss columns ordered by forecast date — e.g. `euws_override_202601_loss`,
+`dialsup_localccy_forecast_202601_loss`. Unknown input columns do not become
+dimensions. Missing contract columns and duplicate `(identity dimensions,
+metric, forecast_date)` grains fail before or during materialization.
 
 **DIALSUP output** (`mts_tbl_ylt_dialsup.parquet`): final DIALSUP rows only,
 with `metric = dialsup_localccy_forecast`.
 
 **Fanouts**: mart-ready tables with standardised column names (event
 ID, year, currency, gross loss, event day) for the final main metric
-and final DIALSUP metric. Blend diagnostics are carried from the main final row
-and do not split a logical event into separate wide rows.
+and final DIALSUP metric.
 
 **Event validation**: a report grouped by base model, metric, and
 forecast date. For each group it reports row count, missing model event
 IDs, and missing model event days.
 
 **DuckDB export** (`output/rollup.duckdb`): an inspection artifact, not a new
-calculation output. It packages generated `mts_tbl_*.parquet` files, mart
-fanout parquets, recursive CSV/parquet seed files, and `ep_report` when present.
-Each table name is the file stem, safely quoted for DuckDB. Validation YAML files
-and raw input YLTs are not exported.
+calculation output. It packages generated root `mts_tbl_*.parquet` files using a
+shallow output-root glob, shallow mart fanout parquets from `output/marts/`,
+recursive CSV/parquet seed files, and `ep_report` when present. Each table name
+is the file stem, safely quoted for DuckDB; duplicate table names are rejected.
+Validation YAML files and raw input YLTs are not exported.
+
+Wide materialization stays in a separate `python -m rollup.writers.wide_output`
+DuckDB subprocess to contain memory. The worker uses one filtered aggregate/COPY
+query, spills and writes temporary files next to the final output, then atomically
+replaces the final parquet. Fanout temporary materialization is also created on
+the output filesystem and removed by its temporary-directory context.
+
+Durable outputs are failure-safe at their owning writer boundary, not whole-run
+transactional. Core parquets, the wide parquet, DuckDB export, fanout partitions,
+generated EP long CSVs, the analysis EP report, and validation report CSVs are
+staged on the destination filesystem and replace final outputs only after
+successful generation. Existing good outputs survive pre-publication failures.
+Fanout internals remain temporary; only `Hisco*.parquet` products are published to
+`output/marts/`.
+
+The pipeline creates an output-local temporary `rollup-work-*` directory for
+materialization and removes it automatically on success or failure.
 
 Normal runs write only final outputs. Use `uv run rollup run --debug`
 when you need intermediate parquet frames in `output/debug/`.

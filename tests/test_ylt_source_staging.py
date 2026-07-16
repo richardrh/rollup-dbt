@@ -4,8 +4,9 @@ import pytest
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.sources.ylt import load_ylt_frames
-from rollup.staging.stg_ylt import normalize_ylt
+from rollup.intermediate import int_ylt_normalized
+from rollup.sources.ylt import load
+from rollup.staging import stg_risklink_ylt, stg_verisk_ylt
 
 
 def _write_ylt_fixture(data_root):
@@ -34,27 +35,35 @@ def _write_ylt_fixture(data_root):
     ).write_parquet(risklink_dir / "part.parquet")
 
 
-def test_load_ylt_frames_scans_direct_vendor_folders(tmp_path) -> None:
+def test_loads_direct_vendor_folders(tmp_path) -> None:
     _write_ylt_fixture(tmp_path)
 
-    frames = load_ylt_frames(tmp_path)
+    frames = load(tmp_path)
 
     assert sorted(frames) == ["risklink", "verisk"]
     assert frames["verisk"].collect().height == 1
     assert frames["risklink"].collect().height == 1
 
 
-def test_load_ylt_frames_raises_when_vendor_folder_has_no_parquet(tmp_path) -> None:
+def test_load_raises_when_vendor_folder_has_no_parquet(tmp_path) -> None:
     (tmp_path / "ylt" / "verisk").mkdir(parents=True)
 
     with pytest.raises(FileNotFoundError, match="no verisk YLT parquet files found"):
-        load_ylt_frames(tmp_path)
+        load(tmp_path)
 
 
 def test_normalize_ylt_returns_combined_plain_lazy_frame(tmp_path) -> None:
     _write_ylt_fixture(tmp_path)
 
-    normalized = normalize_ylt(load_ylt_frames(tmp_path)).collect().sort(Col.vendor)
+    ylts = load(tmp_path)
+    normalized = (
+        int_ylt_normalized.transform(
+            stg_verisk_ylt.transform(ylts["verisk"]),
+            stg_risklink_ylt.transform(ylts["risklink"]),
+        )
+        .collect()
+        .sort(Col.vendor)
+    )
 
     assert normalized[Col.vendor].to_list() == ["risklink", "verisk"]
     assert normalized[Col.loss].to_list() == [200.0, 100.0]

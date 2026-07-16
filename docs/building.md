@@ -21,6 +21,12 @@ dist/rollup-<version>-py3-none-any.whl
 
 The version comes from `pyproject.toml`.
 
+Runtime direct dependencies are intentionally small: DuckDB and Polars. The
+development dependency group includes pytest, Hypothesis, mypy, Ruff, and the
+pinned Zensical docs tool. The Validnator YAML files in `data/` remain
+reference/external contracts; there is no external editable Validnator dependency
+to install for the package runtime.
+
 ## Wheel install and import smoke check
 
 Create a clean environment, install the wheel, and verify the public API imports:

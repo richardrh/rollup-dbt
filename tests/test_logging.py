@@ -6,10 +6,9 @@ from pathlib import Path
 
 import polars as pl
 
-from rollup import cli
-from rollup.logging import JsonLineFormatter, make_formatter, normalize_log_format
-from rollup.pipeline_utils import logged_phase
-from rollup.writers.parquet import write_parquet_with_log
+from rollup.logging import JsonLineFormatter, make_formatter, validate_log_format
+from rollup.pipeline import _logged_phase
+from rollup.writers import parquet
 
 
 def test_jsonl_formatter_emits_parseable_json_with_expected_fields() -> None:
@@ -35,10 +34,12 @@ def test_jsonl_formatter_emits_parseable_json_with_expected_fields() -> None:
     assert "timestamp" in payload
 
 
-def test_configure_logging_writes_to_log_file(tmp_path: Path) -> None:
+def test_configure_console_logging_writes_to_log_file(tmp_path: Path) -> None:
     log_file = tmp_path / "logs" / "run.log"
 
-    cli.configure_logging("INFO", log_file=log_file)
+    from rollup.logging import configure_console_logging
+
+    configure_console_logging("INFO", log_file=log_file)
     logging.getLogger("rollup.test").info("expected log line")
 
     assert log_file.is_file()
@@ -70,9 +71,11 @@ def test_jsonl_formatter_includes_safe_custom_extra_fields() -> None:
     assert payload["lazy"] is False
 
 
-def test_json_alias_normalizes_to_jsonl() -> None:
-    assert normalize_log_format("json") == "jsonl"
-    assert isinstance(make_formatter("json"), JsonLineFormatter)
+def test_invalid_log_format_is_rejected() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="log format"):
+        validate_log_format("yaml")
 
 
 def test_jsonl_formatter_is_default_format() -> None:
@@ -110,7 +113,7 @@ def test_text_formatter_remains_available() -> None:
     assert "INFO rollup.example plain text" in formatter.format(record)
 
 
-def test_write_parquet_with_log_emits_structured_jsonl_fields(tmp_path) -> None:
+def test_parquet_write_emits_structured_jsonl_fields(tmp_path) -> None:
     log_path = tmp_path / "rollup.jsonl"
     output_path = tmp_path / "output.parquet"
     handler = logging.FileHandler(log_path, encoding="utf-8")
@@ -122,7 +125,7 @@ def test_write_parquet_with_log_emits_structured_jsonl_fields(tmp_path) -> None:
     pipeline_logger.addHandler(handler)
     pipeline_logger.propagate = False
     try:
-        write_parquet_with_log(pl.DataFrame({"value": [1, 2]}), output_path)
+        parquet.write(pl.DataFrame({"value": [1, 2]}), output_path)
     finally:
         pipeline_logger.removeHandler(handler)
         pipeline_logger.setLevel(previous_level)
@@ -138,10 +141,12 @@ def test_write_parquet_with_log_emits_structured_jsonl_fields(tmp_path) -> None:
 
 
 def test_logged_phase_is_context_manager(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="rollup.pipeline_utils")
+    caplog.set_level(logging.INFO, logger="rollup.pipeline")
 
-    with logged_phase("unit"):
+    with _logged_phase("unit"):
         pass
 
-    events = [record.event for record in caplog.records if hasattr(record, "event")]
+    events = [
+        record.event for record in caplog.records if record.name == "rollup.pipeline"
+    ]
     assert events == ["phase_start", "phase_done"]

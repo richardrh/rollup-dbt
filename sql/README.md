@@ -23,13 +23,13 @@ Final output metrics:
 The DuckDB export contains the analyst inspection tables, not every pipeline
 input or debug artifact:
 
-- `output/**/mts_tbl_*.parquet` as separate tables named from each file stem.
+- Generated `mts_tbl_*.parquet` files as separate tables named from each file stem.
+- Mart fanout parquets under `output/marts/`.
 - `output/analysis/ep_report.csv` as `ep_report`, when present.
-- Non-validation seed CSVs under `data/seeds/**/*.csv` as `seed_<csv_stem>`.
+- Recursive CSV/parquet seeds under `data/seeds/`, including validation catalogue
+  seeds, as `seed_<file_stem>`.
 
-It intentionally excludes raw YLT inputs, validation files under
-`data/seeds/validation/`, validation reports, mart fanout parquets under
-`output/marts/`, and `.rollup_work` internals.
+It intentionally excludes raw YLT inputs.
 
 Files:
 
