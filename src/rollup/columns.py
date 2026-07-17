@@ -34,7 +34,6 @@ class RawCol(StrEnum):
     rate_date = "rate_date"
     rate = "rate"
     factor = "factor"
-    occ_year = "occ_year"
     max_rank = "max_rank"
 
 
@@ -72,14 +71,11 @@ class Col(StrEnum):
     verisk_blended_contribution = "verisk_blended_contribution"
     target_loss = "target_loss"
     uplift_factor_on_base_model = "uplift_factor_on_base_model"
-    sub_region_peril_id = "sub_region_peril_id"
     sub_region_peril = "sub_region_peril"
     rnk = "rnk"
     rp = "rp"
     rp_bucket = "rp_bucket"
     forecast_date = "forecast_date"
-    forecast_factor = "forecast_factor"
-    forecast_factor_raw = "forecast_factor_raw"
     target_currency = "target_currency"
     fx_rate_date = "fx_rate_date"
     fx_rate = "fx_rate"
@@ -92,18 +88,7 @@ class Col(StrEnum):
     loss_sum = "loss_sum"
     missing_model_event_id = "missing_model_event_id"
     missing_model_event_day = "missing_model_event_day"
-    original_ylt_loss = "original_ylt_loss"
-    original_ylt_loss_blended = "original_ylt_loss_blended"
-    original_ylt_loss_blended_localccy = "original_ylt_loss_blended_localccy"
-    original_ylt_loss_blended_localccy_forecast = "original_ylt_loss_blended_localccy_forecast"
-    original_ylt_loss_blended_localccy_forecast_euws_raw = "original_ylt_loss_blended_localccy_forecast_euws_raw"
-    original_ylt_loss_blended_localccy_forecast_euws = "original_ylt_loss_blended_localccy_forecast_euws"
-    euws_factor_raw_source = "euws_factor_raw_source"
-    euws_factor_raw = "euws_factor_raw"
-    euws_factor = "euws_factor"
-    euws_override_max_rank = "euws_override_max_rank"
-    euws_override_factor = "euws_override_factor"
-    euws_override_applied = "euws_override_applied"
+
 
 class FanoutCol(StrEnum):
     ModelEventID = "ModelEventID"

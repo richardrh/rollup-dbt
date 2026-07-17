@@ -79,10 +79,9 @@ does not yet exist in `perils.csv`.
     - `is_dialsup` should be `1` for least-adjusted/base perils that DIALSUP
       should use, and `0` for adjusted alternatives.
 
-3.  If your EP data uses a different column name for perils (e.g. `Analysis`
-      instead of `modelled_peril`), the EP summary converter accepts that alias
-      automatically. No change needed in the peril lookup — just ensure the
-      actual peril value appears in `perils.csv`.
+3.  Ensure the EP source CSV uses the exact converter column name
+    `modelled_peril`. The converter does not accept alternate EP column names.
+    The actual peril value must appear in `perils.csv`.
 
 ## Handling multiple modelled perils for the same rollup peril
 

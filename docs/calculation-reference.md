@@ -2,7 +2,7 @@
 
 This page explains the calculation flow for EP summaries and YLT blending.
 
-## EP summary staging
+## EP summary enrichment
 
 The pipeline reads canonical long CSVs from `data/ep_summaries/**/*.long.csv`.
 Each file must contain:
@@ -11,8 +11,9 @@ Each file must contain:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
-During staging, EP summaries are enriched by joining `modelled_lob` to
-`lobs.csv` and `modelled_peril` to `perils.csv`.
+There is no EP pass-through stage. Canonical long source summaries feed
+`int_ep_summaries_enriched` directly, where `modelled_lob` joins to `lobs.csv`
+and `modelled_peril` joins to `perils.csv`.
 
 For the **main branch**, the pipeline selects one modelled peril per
 `vendor + rollup_lob + rollup_peril`. The selected candidate is the one with the

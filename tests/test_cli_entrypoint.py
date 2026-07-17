@@ -15,7 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_project_installs_rollup_console_script() -> None:
-    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
 
     assert pyproject["project"]["scripts"]["rollup"] == "rollup.cli:main"
 
@@ -30,10 +32,12 @@ def test_rollup_cli_module_is_executable() -> None:
     )
 
     assert result.returncode == 0
-    assert "Local rollup test runner" in result.stdout
+    assert "Catastrophe model rollup pipeline" in result.stdout
 
 
-def test_run_command_accepts_output_root_after_subcommand(monkeypatch, tmp_path: Path) -> None:
+def test_run_command_accepts_output_root_after_subcommand(
+    monkeypatch, tmp_path: Path
+) -> None:
     calls = []
 
     def run_command(args):
@@ -48,7 +52,9 @@ def test_run_command_accepts_output_root_after_subcommand(monkeypatch, tmp_path:
     assert calls[0].duckdb is True
 
 
-def test_run_command_accepts_no_duckdb_after_subcommand(monkeypatch, tmp_path: Path) -> None:
+def test_run_command_accepts_no_duckdb_after_subcommand(
+    monkeypatch, tmp_path: Path
+) -> None:
     calls = []
 
     def run_command(args):
@@ -71,40 +77,22 @@ def test_run_command_rejects_no_duckdb_with_duckdb_file(tmp_path: Path) -> None:
         raise AssertionError("expected parser rejection")
 
 
-def test_parser_rejects_removed_sql_commands_and_options() -> None:
-    parser = cli.build_parser()
-
-    for argv in (["sql-check"], ["test-sql"], ["run", "--push-sql"]):
-        try:
-            parser.parse_args(argv)
-        except SystemExit as exc:
-            assert exc.code == 2
-        else:
-            raise AssertionError(f"expected parser rejection for {argv}")
-
-
-def test_help_does_not_list_removed_sql_commands() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "rollup.cli", "--help"],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "sql-check" not in result.stdout
-    assert "test-sql" not in result.stdout
-
-
-def test_run_command_invokes_current_run_rollup_api_once(monkeypatch, tmp_path: Path) -> None:
+def test_run_command_invokes_current_run_rollup_api_once(
+    monkeypatch, tmp_path: Path
+) -> None:
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     calls: list[dict[str, object]] = []
 
-    def run_rollup(data_root_arg: Path, output_root_arg: Path, **kwargs: object) -> SimpleNamespace:
-        calls.append({"data_root": data_root_arg, "output_root": output_root_arg, **kwargs})
-        return SimpleNamespace(ep_report_path=output_root / "analysis" / "ep_report.csv")
+    def run_rollup(
+        data_root_arg: Path, output_root_arg: Path, **kwargs: object
+    ) -> SimpleNamespace:
+        calls.append(
+            {"data_root": data_root_arg, "output_root": output_root_arg, **kwargs}
+        )
+        return SimpleNamespace(
+            ep_report_path=output_root / "analysis" / "ep_report.csv"
+        )
 
     monkeypatch.setattr(cli, "run_rollup", run_rollup)
 
@@ -127,11 +115,15 @@ def test_run_command_invokes_current_run_rollup_api_once(monkeypatch, tmp_path: 
     assert "validation_callback" not in call
 
 
-def test_no_duckdb_override_disables_configured_export(monkeypatch, tmp_path: Path) -> None:
+def test_no_duckdb_override_disables_configured_export(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         cli,
-        "load_config",
-        lambda path: RollupConfig(outputs=OutputConfig(write_duckdb=True, duckdb_file="configured.duckdb")),
+        "read_config",
+        lambda path: RollupConfig(
+            outputs=OutputConfig(write_duckdb=True, duckdb_file="configured.duckdb")
+        ),
     )
     config = cli.override_config(
         Namespace(
@@ -139,7 +131,7 @@ def test_no_duckdb_override_disables_configured_export(monkeypatch, tmp_path: Pa
             no_duckdb=True,
             duckdb_file=None,
             log_format=None,
-            config_path=tmp_path / "config.toml",
+            config=tmp_path / "config.toml",
         )
     )
 

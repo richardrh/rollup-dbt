@@ -1,22 +1,54 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from pathlib import Path
+from dataclasses import dataclass
 
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.pipeline_types import PipelineValidationInputs
-from rollup.pipeline_utils import _verisk_string
-from rollup.sources.catalog import load_seed_frames
-from rollup.sources.ylt import load_ylt_frames
-from rollup.staging.stg_ep_summaries import load_ep_summaries, enrich_ep_summaries, select_main_ep_summaries
+from rollup.sources import ep_summaries, seeds, ylt
+from rollup.intermediate import (
+    int_ep_summaries_enriched,
+    int_ep_summaries_main,
+    int_ylt_normalized,
+)
+from rollup.intermediate import int_ylt_enriched
+from rollup.staging import stg_risklink_ylt, stg_verisk_ylt
 
 
-_INPUT_YLT_AAL_SUMMARY_SCHEMA = ['vendor', 'rollup_lob', 'rollup_peril', 'modelled_lob', 'modelled_peril', 'row_count', 'loss_sum', 'simulation_count', 'raw_aal']
+_INPUT_YLT_AAL_SUMMARY_SCHEMA = [
+    "vendor",
+    "rollup_lob",
+    "rollup_peril",
+    "modelled_lob",
+    "modelled_peril",
+    "row_count",
+    "loss_sum",
+    "simulation_count",
+    "raw_aal",
+]
+_REQUIRED_SEED_STEMS = (
+    "lobs",
+    "perils",
+    "verisk_events",
+    "risklink_flood22_model_events",
+    "fx_rates",
+    "forecast_factors",
+    "euws_rate_factors",
+    "euws_rank_overrides",
+    "blending_factors",
+)
 
 
-def empty_modelled_dimension_coverage_report() -> pl.DataFrame:
+@dataclass(frozen=True)
+class ValidationInputs:
+    seeds: dict[str, pl.LazyFrame]
+    ylts: dict[str, pl.LazyFrame]
+    ep_summaries: pl.LazyFrame
+    coverage_report: pl.DataFrame
+
+
+def _empty_modelled_dimension_coverage_report() -> pl.DataFrame:
     return pl.DataFrame(
         schema={
             "severity": pl.String,
@@ -33,19 +65,6 @@ def empty_modelled_dimension_coverage_report() -> pl.DataFrame:
     )
 
 
-def ylt_loss_validation_summary(data_root: Path | str = "data") -> pl.DataFrame:
-    return pl.DataFrame(schema={"valid": pl.Boolean, "error": pl.String})
-
-
-def _coverage_rows(groups: pl.LazyFrame, **values: object) -> pl.LazyFrame:
-    if "message" in values and "error" not in values:
-        values["error"] = values["message"]
-    values = {key: str(value) if isinstance(value, Path) else value for key, value in values.items()}
-    return groups.with_columns(
-        *(pl.lit(value).alias(key) for key, value in values.items())
-    )
-
-
 def modelled_dimension_coverage_report(
     seeds: dict[str, pl.LazyFrame],
     ylt: dict[str, pl.LazyFrame],
@@ -53,7 +72,10 @@ def modelled_dimension_coverage_report(
     data_root: Path | str = "data",
 ) -> pl.DataFrame:
     if "lobs" not in seeds or "perils" not in seeds:
-        return empty_modelled_dimension_coverage_report()
+        missing = [key for key in ("lobs", "perils") if key not in seeds]
+        raise ValueError(
+            "modelled dimension coverage requires seed mappings: " + ", ".join(missing)
+        )
     data_root = Path(data_root)
     seed_lobs = seeds["lobs"].select(Col.modelled_lob).unique()
     seed_perils = seeds["perils"].select(Col.modelled_peril).unique()
@@ -62,9 +84,20 @@ def modelled_dimension_coverage_report(
     sources = [
         (
             "verisk_ylt",
-            ylt["verisk"].filter(_verisk_string(RawCol.CatalogTypeCode) == "STC").select(
-                _verisk_string(RawCol.ExposureAttribute).alias(Col.modelled_lob),
-                _verisk_string(RawCol.Analysis).alias(Col.modelled_peril),
+            ylt["verisk"]
+            .filter(
+                pl.col(RawCol.CatalogTypeCode).cast(pl.String).str.strip_chars()
+                == "STC"
+            )
+            .select(
+                pl.col(RawCol.ExposureAttribute)
+                .cast(pl.String)
+                .str.strip_chars()
+                .alias(Col.modelled_lob),
+                pl.col(RawCol.Analysis)
+                .cast(pl.String)
+                .str.strip_chars()
+                .alias(Col.modelled_peril),
             ),
         ),
         (
@@ -77,57 +110,68 @@ def modelled_dimension_coverage_report(
             (Col.modelled_lob, seed_lobs),
             (Col.modelled_peril, seed_perils),
         ):
-            missing = (
+            missing_values = (
                 source.select(pl.col(dimension).cast(pl.String).alias("value"))
                 .drop_nulls()
                 .unique()
-                .join(seed_values.select(pl.col(dimension).cast(pl.String).alias("value")), on="value", how="anti")
+                .join(
+                    seed_values.select(
+                        pl.col(dimension).cast(pl.String).alias("value")
+                    ),
+                    on="value",
+                    how="anti",
+                )
                 .with_columns(pl.len().over("value").alias("count"))
             )
+            message = f"{dimension} value is missing from seed file"
             reports.append(
-                _coverage_rows(
-                    missing,
-                    severity="error",
-                    direction="input_missing_from_seed",
-                    source_group=source_group,
-                    dimension=dimension,
-                    field=dimension,
-                    path=data_root,
-                    message=f"{dimension} value is missing from seed file",
+                missing_values.with_columns(
+                    pl.lit("error").alias("severity"),
+                    pl.lit("input_missing_from_seed").alias("direction"),
+                    pl.lit(source_group).alias("source_group"),
+                    pl.lit(dimension).alias("dimension"),
+                    pl.lit(dimension).alias("field"),
+                    pl.lit(str(data_root)).alias("path"),
+                    pl.lit(message).alias("message"),
+                    pl.lit(message).alias("error"),
                 )
             )
-    if not reports:
-        return empty_modelled_dimension_coverage_report()
     report = pl.concat(reports, how="diagonal_relaxed").collect()
     if report.is_empty():
-        return empty_modelled_dimension_coverage_report()
+        return _empty_modelled_dimension_coverage_report()
     return report.sort(["severity", "direction", "source_group", "dimension", "value"])
 
 
-def ensure_modelled_dimension_coverage(report: pl.DataFrame) -> None:
-    if "severity" in report.columns and report.filter(pl.col("severity") == "error").height:
-        raise ValueError("rollup validate failed: modelled LOB/peril coverage validation failed")
-
-
-def load_pipeline_validation_inputs(data_root: Path | str = "data") -> PipelineValidationInputs:
-    seeds = load_seed_frames(data_root)
-    ylts = load_ylt_frames(data_root)
-    ep_summaries = load_ep_summaries(data_root)
-    coverage_report = modelled_dimension_coverage_report(seeds, ylts, ep_summaries, data_root)
-    return PipelineValidationInputs(
-        seeds=seeds,
-        ylts=ylts,
-        ep_summaries=ep_summaries,
+def inspect_inputs(
+    data_root: Path | str = "data",
+) -> ValidationInputs:
+    seed_frames = seeds.load(data_root)
+    validate_required_seed_inventory(seed_frames)
+    ylt_frames = ylt.load(data_root)
+    ep_summary_frame = ep_summaries.load(data_root)
+    coverage_report = modelled_dimension_coverage_report(
+        seed_frames, ylt_frames, ep_summary_frame, data_root
+    )
+    return ValidationInputs(
+        seeds=seed_frames,
+        ylts=ylt_frames,
+        ep_summaries=ep_summary_frame,
         coverage_report=coverage_report,
     )
 
 
-def ensure_pipeline_validation_inputs(inputs: PipelineValidationInputs) -> None:
+def validate_required_seed_inventory(seeds: dict[str, pl.LazyFrame]) -> None:
+    missing = [stem for stem in _REQUIRED_SEED_STEMS if stem not in seeds]
+    if missing:
+        raise ValueError("missing required seed files: " + ", ".join(missing))
+
+
+def validate_inputs(inputs: ValidationInputs) -> None:
     if _validation_has_blocking_errors(inputs):
         raise ValueError("pipeline input validation failed")
 
 
-def _validation_has_blocking_errors(inputs: PipelineValidationInputs) -> bool:
+def _validation_has_blocking_errors(inputs: ValidationInputs) -> bool:
     return inputs.coverage_report.filter(pl.col("severity") == "error").height > 0
 
 
@@ -153,7 +197,7 @@ def _input_ylt_aal_group(frame: pl.LazyFrame, simulation_count: int) -> pl.LazyF
     )
 
 
-def empty_input_ylt_aal_by_lob_peril_summary() -> pl.DataFrame:
+def _empty_input_ylt_aal_by_lob_peril_summary() -> pl.DataFrame:
     return pl.DataFrame(
         schema={
             Col.vendor: pl.String,
@@ -169,53 +213,30 @@ def empty_input_ylt_aal_by_lob_peril_summary() -> pl.DataFrame:
     )
 
 
-def input_ylt_aal_by_lob_peril_summary(inputs: PipelineValidationInputs) -> pl.DataFrame:
+def input_ylt_aal_by_lob_peril_summary(
+    inputs: ValidationInputs,
+) -> pl.DataFrame:
     if _validation_has_blocking_errors(inputs):
-        return empty_input_ylt_aal_by_lob_peril_summary()
+        return _empty_input_ylt_aal_by_lob_peril_summary()
 
     if "lobs" not in inputs.seeds or "perils" not in inputs.seeds:
-        return empty_input_ylt_aal_by_lob_peril_summary()
+        missing = [key for key in ("lobs", "perils") if key not in inputs.seeds]
+        raise ValueError(
+            "input YLT AAL summary requires seed mappings: " + ", ".join(missing)
+        )
 
-    lobs = inputs.seeds["lobs"].select(
-        Col.modelled_lob,
-        Col.rollup_lob,
+    lobs = inputs.seeds["lobs"].select(Col.modelled_lob, Col.rollup_lob)
+    perils = inputs.seeds["perils"].select(Col.modelled_peril, Col.rollup_peril)
+    verisk_ylt = stg_verisk_ylt.transform(inputs.ylts["verisk"])
+    risklink_ylt = stg_risklink_ylt.transform(inputs.ylts["risklink"])
+    normalized_ylt = int_ylt_normalized.transform(verisk_ylt, risklink_ylt)
+    selected_ep_summaries = int_ep_summaries_main.transform(
+        int_ep_summaries_enriched.transform(inputs.ep_summaries, inputs.seeds)
     )
-    perils = inputs.seeds["perils"].select(
-        Col.modelled_peril,
-        Col.rollup_peril,
-    )
+    enriched_ylt = int_ylt_enriched.transform(normalized_ylt, selected_ep_summaries)
     verisk = (
-        inputs.ylts["verisk"].filter(_verisk_string(RawCol.CatalogTypeCode) == "STC")
-        .select(
-            pl.lit("verisk").alias(Col.vendor),
-            _verisk_string(RawCol.ExposureAttribute).alias(Col.modelled_lob),
-            _verisk_string(RawCol.Analysis).alias(Col.modelled_peril),
-            pl.col(RawCol.GroundUpLoss).cast(pl.Float64).alias(Col.loss),
-        )
-        .join(lobs, on=Col.modelled_lob, how="inner")
+        verisk_ylt.join(lobs, on=Col.modelled_lob, how="inner")
         .join(perils, on=Col.modelled_peril, how="inner")
-    )
-
-    staged_ep_summaries = select_main_ep_summaries(enrich_ep_summaries(inputs.ep_summaries, inputs.seeds))
-    risklink_lookup = (
-        staged_ep_summaries.filter(pl.col(Col.vendor) == "risklink")
-        .select(
-            Col.vendor,
-            Col.analysis_id,
-            Col.modelled_lob,
-            Col.modelled_peril,
-            Col.rollup_lob,
-            Col.rollup_peril,
-        )
-        .unique()
-    )
-    risklink = (
-        inputs.ylts["risklink"].select(
-            pl.lit("risklink").alias(Col.vendor),
-            pl.col(RawCol.anlsid).cast(pl.String).alias(Col.analysis_id),
-            pl.col(RawCol.loss).cast(pl.Float64).alias(Col.loss),
-        )
-        .join(risklink_lookup, on=[Col.vendor, Col.analysis_id], how="inner")
         .select(
             Col.vendor,
             Col.rollup_lob,
@@ -224,6 +245,14 @@ def input_ylt_aal_by_lob_peril_summary(inputs: PipelineValidationInputs) -> pl.D
             Col.modelled_peril,
             Col.loss,
         )
+    )
+    risklink = enriched_ylt.filter(pl.col(Col.vendor) == "risklink").select(
+        Col.vendor,
+        Col.rollup_lob,
+        Col.rollup_peril,
+        Col.modelled_lob,
+        Col.modelled_peril,
+        Col.loss,
     )
 
     return (

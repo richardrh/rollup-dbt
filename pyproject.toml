@@ -5,19 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rollup"
 version = "0.12.0"
-description = "Retail rollup pipeliner"
+description = "Catastrophe-model rollup pipeline for validated local datasets"
 readme = "README.md"
 requires-python = "==3.13.*"
 authors = [ { name = "Richard Hampton" } ]
 
-
-
 dependencies = [
-    "tomli-w>=1.2.0",
     "duckdb>=1.4.0",
     "polars>=1.20.0",
-    "pyarrow>=22.0.0",
-
 ]
 
 [project.scripts]
@@ -32,23 +27,15 @@ include = ["rollup", "rollup.*"]
 
 [dependency-groups]
 dev = [
-    "zensical==0.0.33",     # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
+    "zensical==0.0.33", # 0.0.34 introduced a scheduler regression that produces empty site/ — see zensical#594
     "pytest>=9.0.2",
     "hypothesis>=6.148.0",
     "mypy>=2.1.0",
     "ruff>=0.15.13",
-    "validnator",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
-
-[tool.uv.sources]
-validnator = { path = "../../dev/validnator", editable = true }
-
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/rollup"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -81,16 +81,10 @@ Run with debug outputs:
 uv run rollup run --debug
 ```
 
-Generate the EP analysis report:
-
-```powershell
-uv run rollup analyze
-```
-
 Serve the docs locally:
 
 ```powershell
-uv run rollup docs --port 8010
+uv run zensical serve --config-file zensical.toml --dev-addr localhost:8010
 ```
 
 For the normal first-run flow, continue with the [Quickstart](first-run.md).

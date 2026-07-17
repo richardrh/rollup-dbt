@@ -3,8 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -23,60 +22,31 @@ CANONICAL_COLUMNS = [
     "loss",
 ]
 REQUIRED_SOURCE_COLUMNS = ["id", "modelled_lob", "modelled_peril"]
-SOURCE_ALIASES = {
-    "ExposureAttribute": "modelled_lob",
-    "Analysis": "modelled_peril",
-}
-METRIC_COLUMN_PATTERN = re.compile(r"^(aal|aep|oep)_(\d+(?:\.0)?)$", re.IGNORECASE)
+METRIC_COLUMN_PATTERN = re.compile(r"^(AAL|AEP|OEP)_(0|[1-9]\d*)$")
+RECOGNIZABLE_METRIC_COLUMN_PATTERN = re.compile(r"^(aal|aep|oep)_", re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class EpSummaryVendorConfig:
-    vendor: str
-    source_dirname: str
-    output_filename: str
-
-    def source_dir(self, data_root: Path | str) -> Path:
-        return Path(data_root) / "ep_summaries" / self.source_dirname
-
-    def output_path(self, data_root: Path | str) -> Path:
-        return self.source_dir(data_root) / self.output_filename
-
-
-EP_SUMMARY_VENDOR_CONFIGS = {
-    "verisk": EpSummaryVendorConfig(
-        vendor="verisk",
-        source_dirname="verisk",
-        output_filename="verisk_ep_summary.long.csv",
-    ),
-    "risklink": EpSummaryVendorConfig(
-        vendor="risklink",
-        source_dirname="risklink",
-        output_filename="rms_ep_summary.long.csv",
-    ),
+EP_SUMMARY_OUTPUT_FILENAMES = {
+    "verisk": "verisk_ep_summary.long.csv",
+    "risklink": "rms_ep_summary.long.csv",
 }
 
 
-def ep_summary_vendor_names() -> list[str]:
-    return list(EP_SUMMARY_VENDOR_CONFIGS)
-
-
-def get_ep_summary_vendor_config(vendor: str) -> EpSummaryVendorConfig:
-    try:
-        return EP_SUMMARY_VENDOR_CONFIGS[vendor]
-    except KeyError as exc:
-        known_vendors = ", ".join(ep_summary_vendor_names())
+def _check_vendor(vendor: str) -> None:
+    if vendor not in EP_SUMMARY_OUTPUT_FILENAMES:
+        known_vendors = ", ".join(EP_SUMMARY_OUTPUT_FILENAMES)
         raise ValueError(
             f"unknown EP summary vendor {vendor!r}; expected one of: {known_vendors}"
-        ) from exc
+        )
 
 
 def scan_ep_summary_csvs(data_root: Path | str, vendor: str) -> list[Path]:
-    config = get_ep_summary_vendor_config(vendor)
+    _check_vendor(vendor)
+    source_dir = Path(data_root) / "ep_summaries" / vendor
     return sorted(
         (
             path
-            for path in config.source_dir(data_root).glob("*.csv")
+            for path in source_dir.glob("*.csv")
             if not path.name.endswith(".long.csv")
         ),
         key=lambda path: path.name.lower(),
@@ -84,12 +54,24 @@ def scan_ep_summary_csvs(data_root: Path | str, vendor: str) -> list[Path]:
 
 
 def build_ep_summary_from_wide_csv(csv_path: Path | str, vendor: str) -> pl.DataFrame:
+    _check_vendor(vendor)
     csv_path = Path(csv_path)
     frame = pl.read_csv(csv_path, infer_schema=False)
-    frame = _apply_source_aliases(frame)
     _validate_required_columns(frame, csv_path)
 
-    metric_columns = _metric_columns(frame.columns)
+    invalid_metric_columns = [
+        column
+        for column in frame.columns
+        if RECOGNIZABLE_METRIC_COLUMN_PATTERN.match(column)
+        and not METRIC_COLUMN_PATTERN.fullmatch(column)
+    ]
+    if invalid_metric_columns:
+        raise ValueError(
+            f"{csv_path} contains noncanonical EP metric columns: {invalid_metric_columns}"
+        )
+    metric_columns = [
+        column for column in frame.columns if METRIC_COLUMN_PATTERN.fullmatch(column)
+    ]
     if not metric_columns:
         raise ValueError(
             f"{csv_path} does not contain metric columns like AAL_0, AEP_50, or OEP_100"
@@ -142,62 +124,78 @@ def generate_vendor_ep_summary(
     data_root: Path | str,
     vendor: str,
     csv_path: Path | str,
-    status_callback: Callable[[str], None] | None = None,
 ) -> Path:
-    config = get_ep_summary_vendor_config(vendor)
-    if status_callback is not None:
-        status_callback("Reading CSV...")
     frame = build_ep_summary_from_wide_csv(csv_path, vendor)
-    if status_callback is not None:
-        status_callback("Writing canonical long CSV...")
-    return _write_ep_summary(frame, config.output_path(data_root))
+    output_path = (
+        Path(data_root) / "ep_summaries" / vendor / EP_SUMMARY_OUTPUT_FILENAMES[vendor]
+    )
+    return _write_ep_summary(frame, output_path)
 
 
 def generate_ep_summaries(data_root: Path | str = "data") -> list[Path]:
     data_root = Path(data_root)
     output_paths: list[Path] = []
-    for vendor in EP_SUMMARY_VENDOR_CONFIGS:
+    for vendor in EP_SUMMARY_OUTPUT_FILENAMES:
         source_files = scan_ep_summary_csvs(data_root, vendor)
         if not source_files:
-            raise FileNotFoundError(
-                f"No source CSV files found in {get_ep_summary_vendor_config(vendor).source_dir(data_root)}."
+            source_dir = data_root / "ep_summaries" / vendor
+            raise FileNotFoundError(f"No source CSV files found in {source_dir}.")
+        if len(source_files) > 1:
+            raise ValueError(
+                f"Multiple source CSV files found for {vendor}: {source_files}; "
+                "select explicitly with generate_vendor_ep_summary or CLI --vendor/--csv."
             )
-        output_paths.append(generate_vendor_ep_summary(data_root, vendor, source_files[0]))
+        output_paths.append(
+            generate_vendor_ep_summary(data_root, vendor, source_files[0])
+        )
     return output_paths
 
 
 def _write_ep_summary(frame: pl.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
-    logger.info("writing output=%s", output_path, extra={"event": "ep_summary_write_start", "path": output_path})
-    frame.write_csv(output_path)
+    logger.info(
+        "writing output=%s",
+        output_path,
+        extra={"event": "ep_summary_write_start", "path": output_path},
+    )
+    with tempfile.NamedTemporaryFile(
+        suffix=".csv",
+        prefix=f".{output_path.stem}-",
+        dir=output_path.parent,
+        delete=False,
+    ) as handle:
+        staged_path = Path(handle.name)
+    try:
+        frame.write_csv(staged_path)
+        staged_path.replace(output_path)
+    finally:
+        staged_path.unlink(missing_ok=True)
     elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote output=%s rows=%d elapsed=%.2fs",
         output_path,
         frame.height,
         elapsed_seconds,
-        extra={"event": "ep_summary_write", "path": output_path, "rows": frame.height, "elapsed_seconds": elapsed_seconds},
+        extra={
+            "event": "ep_summary_write",
+            "path": output_path,
+            "rows": frame.height,
+            "elapsed_seconds": elapsed_seconds,
+        },
     )
     return output_path
 
 
-def _apply_source_aliases(frame: pl.DataFrame) -> pl.DataFrame:
-    for alias, canonical in SOURCE_ALIASES.items():
-        if canonical not in frame.columns and alias in frame.columns:
-            frame = frame.rename({alias: canonical})
-    return frame
-
-
 def _validate_required_columns(frame: pl.DataFrame, csv_path: Path) -> None:
-    missing_columns = [column for column in REQUIRED_SOURCE_COLUMNS if column not in frame.columns]
+    missing_columns = [
+        column for column in REQUIRED_SOURCE_COLUMNS if column not in frame.columns
+    ]
     if missing_columns:
         missing = ", ".join(missing_columns)
-        raise ValueError(f"{csv_path} is missing required EP summary columns: {missing}")
-
-
-def _metric_columns(columns: list[str]) -> list[str]:
-    return [column for column in columns if METRIC_COLUMN_PATTERN.fullmatch(column)]
+        raise ValueError(
+            f"{csv_path} is missing required EP summary columns: {missing}"
+        )
 
 
 def _parse_metric_column(metric_name: str) -> dict[str, Any]:
@@ -205,8 +203,10 @@ def _parse_metric_column(metric_name: str) -> dict[str, Any]:
     if match is None:
         raise ValueError(f"unsupported EP metric column: {metric_name}")
 
-    ep_type = match.group(1).upper()
-    return_period = int(float(match.group(2)))
-    if ep_type == "AAL":
-        return_period = 0
+    ep_type = match.group(1)
+    return_period = int(match.group(2))
+    if ep_type == "AAL" and return_period != 0:
+        raise ValueError(
+            f"unsupported EP metric column: {metric_name}; AAL must be AAL_0"
+        )
     return {"metric": metric_name, "ep_type": ep_type, "return_period": return_period}

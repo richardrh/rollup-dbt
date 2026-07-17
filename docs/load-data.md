@@ -35,7 +35,7 @@ inside subdirectories are ignored by the current glob.
 
 ## Step 2. Convert EP summary CSVs if needed
 
-The pipeline needs these `.long.csv` files:
+The pipeline needs at least one canonical `*.long.csv` under both vendor roots:
 
 - `data/ep_summaries/verisk/verisk_ep_summary.long.csv`
 - `data/ep_summaries/risklink/rms_ep_summary.long.csv`
@@ -45,6 +45,10 @@ Required columns:
 ```text
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
+
+Every long file must contain exactly those canonical columns. Vendor is derived
+from the `verisk/` or `risklink/` root and overwrites any in-file `vendor` value.
+Unknown, root-level, and case-variant vendor folders fail validation.
 
 If you have a vendor/source CSV instead:
 
@@ -58,7 +62,7 @@ uv run rollup generate-ep-summaries
 Or run without prompts:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 3. Check the generated `.long.csv` file listed above.

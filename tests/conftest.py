@@ -1,4 +1,5 @@
 """Pytest bootstrap."""
+
 import pytest
 
 

@@ -26,9 +26,11 @@ direct `*.parquet` file in `data/ylt/verisk/` and `data/ylt/risklink/`; there is
 no required filename pattern beyond the extension. Use clear names, and do not
 place inactive/test parquet files in those folders. Subdirectories are ignored.
 
-EP summaries must be canonical long CSVs under `data/ep_summaries/**/*.long.csv`.
-The normal files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
-`data/ep_summaries/risklink/rms_ep_summary.long.csv`.
+EP summaries must be canonical long CSVs under both vendor roots. The normal
+files are `data/ep_summaries/verisk/verisk_ep_summary.long.csv` and
+`data/ep_summaries/risklink/rms_ep_summary.long.csv`; nested `*.long.csv` files
+under those roots are also allowed. Unknown, root-level, and case-variant vendor
+folders are rejected.
 
 Required EP summary columns:
 
@@ -36,17 +38,20 @@ Required EP summary columns:
 vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 ```
 
+Each individual long file must contain exactly those columns. Vendor is derived
+from the canonical root and overwrites any in-file `vendor` value.
+
 Need to convert a vendor/source EP summary CSV to `.long.csv`? Put the source CSV
 in `data/ep_summaries/<vendor>/`, then run either the interactive converter or a
 specific non-interactive conversion:
 
 ```bash
 uv run rollup generate-ep-summaries
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
 
 Check that the converter wrote the expected `.long.csv`, then continue to Step 3
-and validate. For source columns, aliases, and examples, see
+and validate. For source columns and examples, see
 [EP summaries](ep-summaries.md).
 
 ## Step 2. Check seed lookups
@@ -77,22 +82,18 @@ output:
 uv run rollup validate --report-dir output/validation
 ```
 
-This creates `validation_report.csv`,
-`modelled_lob_peril_anti_join_report.csv`,
-`ylt_loss_validation_summary.csv`, and
-`input_ylt_aal_by_lob_peril_summary.csv` under `output/validation/`.
+This writes up to two CSVs under `output/validation/`:
+`modelled_lob_peril_anti_join_report.csv` and
+`input_ylt_aal_by_lob_peril_summary.csv`.
 
-Validation checks input schemas and modelled LOB/peril lookup coverage. Expected
-files, columns, dtypes, and required flags come from the colocated validnator
-contracts under `data/`. Read the output in four sections:
+Validation checks that required source folders, YLT inputs, and seed tables are
+present, then computes modelled LOB/peril coverage and input YLT AAL. Expected
+input failures return non-zero with concise stderr and no traceback. Read the
+reports as:
 
-1. `Validation report`: schema, required-column, and type checks. `valid=False`
-   means fix the file format before running.
-2. `Modelled LOB/peril anti-join report`: should be empty. Any rows are blocking
+1. `Modelled LOB/peril anti-join report`: should be empty. Any rows are blocking
    errors; add/fix values in `lobs.csv`/`perils.csv` or correct the input data.
-3. `YLT loss validation summary`: non-blocking sanity totals unless an input read
-   failed. Check file names, loss sums, and scaled loss.
-4. `Input YLT AAL by LOB/peril summary`: raw input YLT AAL by vendor,
+2. `Input YLT AAL by LOB/peril summary`: informational raw input YLT AAL by vendor,
    rollup/modelled LOB, and rollup/modelled peril before blending, FX, forecast,
    or EUWS adjustments.
 
@@ -139,10 +140,7 @@ uv run rollup run --debug
 Then inspect the debug frames under `output/debug/`, starting with the YLT
 blending output.
 
-## Step 7. Generate EP report
+## Step 7. Review EP report
 
-```bash
-uv run rollup analyze
-```
-
-Review `output/analysis/ep_report.csv` after generation.
+Normal `rollup run` writes `output/analysis/ep_report.csv`. Review it after the
+run completes.

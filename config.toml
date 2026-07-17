@@ -1,19 +1,7 @@
-[fx]
-target_currency = "GBP"
-
 [outputs]
-write_stage_outputs = true
 write_duckdb = true
 duckdb_file = "rollup.duckdb"
 minimum_event_loss_threshold = 1000.0
-
-[outputs.fanout_prefixes]
-verisk = "HiscoAIR"
-risklink = "HiscoRMS"
-
-[inputs]
-verisk_events_file = "seeds/validation/verisk_events.parquet"
-risklink_events_file = "seeds/validation/risklink_flood22_model_events.parquet"
 
 [logging]
 format = "jsonl"

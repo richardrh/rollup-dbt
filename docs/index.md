@@ -13,8 +13,15 @@ uv run rollup validate        # check inputs before a run
 uv run rollup run             # write normal outputs, DuckDB, and analysis/ep_report.csv
 uv run rollup run --no-duckdb # skip the default DuckDB export
 uv run rollup run --debug     # also write intermediate frames to output/debug/
-uv run rollup docs            # serve these docs locally
-uv run rollup docs --host localhost --port 4322
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
+uv run rollup cleanup --yes   # remove generated outputs without prompting
+```
+
+Product CLI commands are `run`, `generate-ep-summaries`, `validate`, and
+`cleanup`. Serve repository docs directly with the pinned development docs tool:
+
+```bash
+uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
 ```
 
 ## Inputs and outputs
@@ -25,18 +32,17 @@ uv run rollup docs --host localhost --port 4322
 - Wide/report parquets are written to `output/`.
 - DuckDB export is enabled by default at `output/rollup.duckdb`; pass
   `--no-duckdb` to disable it.
-- The DuckDB export includes each `output/**/mts_tbl_*.parquet` table,
-  `output/analysis/ep_report.csv` as `ep_report`, and non-validation seed CSVs
-  as `seed_<csv_stem>` tables. It excludes raw inputs, validation files,
-  `output/marts/`, and `.rollup_work` internals.
+- The DuckDB export includes generated `mts_tbl_*.parquet` tables, mart fanout
+  parquets, recursive CSV/parquet seeds including validation catalogue seeds, and
+  `output/analysis/ep_report.csv` as `ep_report` when present. It excludes raw
+  YLT inputs.
 - Final event rows below `minimum_event_loss_threshold` are excluded from final
   marts. `mts_tbl_ylt_dialsup.parquet` contains only final
   `dialsup_localccy_forecast` rows.
 - `output/mts_tbl_ylt_combined_all_factors_wide.parquet` includes forecast loss
   columns such as `euws_override_YYYYMM_loss` and
   `dialsup_localccy_forecast_YYYYMM_loss`.
-- `output/analysis/ep_report.csv` is written by `rollup run` and can be
-  regenerated with `rollup analyze`.
+- `output/analysis/ep_report.csv` is written by `rollup run`.
 - Debug frames are written to `output/debug/` only when `--debug` is used.
 
 Use the templates in [`sql/`](../sql/) to inspect `output/rollup.duckdb`,

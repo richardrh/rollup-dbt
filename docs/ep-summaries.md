@@ -24,8 +24,8 @@ vendor,analysis_id,modelled_lob,modelled_peril,ep_type,return_period,loss
 
 ## File locations
 
-The pipeline expects `.long.csv` files under vendor-named subdirectories of
-`data/ep_summaries/`:
+The pipeline requires at least one `.long.csv` file under both canonical vendor
+roots in `data/ep_summaries/`:
 
 ```text
 data/ep_summaries/
@@ -36,7 +36,12 @@ data/ep_summaries/
 ```
 
 Only files matching `*.long.csv` are read during pipeline validation and
-staging. Non-long CSV files (e.g. source wide CSVs) are ignored.
+pipeline runs. They may be nested below the canonical `verisk/` or `risklink/`
+root. Each individual long file must contain the exact canonical columns listed
+above. Vendor is derived from the canonical root and overwrites any in-file value.
+Non-long CSV files (e.g. source wide CSVs) are ignored. Unknown, root-level, and
+case-variant vendor folders are rejected; vendor folders named `vendor=...` are
+not supported.
 
 ## Creating long CSVs from wide CSV exports
 
@@ -50,6 +55,11 @@ data/ep_summaries/verisk/verisk_clean.csv
 data/ep_summaries/risklink/risklink_clean.csv
 ```
 
+The wide converter requires exact source columns `id`, `modelled_lob`, and
+`modelled_peril`, plus at least one metric column named exactly `AAL_0`,
+`AEP_<integer>`, or `OEP_<integer>`. Lowercase metric names, `.0` suffixes, and
+alternate LOB/peril column names are rejected.
+
 ### Step 2. Run the converter
 
 Interactive — picks up all unmatched source CSVs:
@@ -58,11 +68,18 @@ Interactive — picks up all unmatched source CSVs:
 uv run rollup generate-ep-summaries
 ```
 
+Interactive mode prompts you to choose a vendor and candidate source file.
+
 Non-interactive — for a specific vendor and file:
 
 ```bash
-uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv --yes
+uv run rollup generate-ep-summaries --vendor verisk --csv verisk_clean.csv
 ```
+
+The programmatic batch operation `generate_ep_summaries(data_root)` requires
+exactly one candidate wide source CSV per vendor. Zero or multiple candidates for
+any vendor fail; when multiple files exist, select explicitly with
+`generate_vendor_ep_summary(...)` or CLI `--vendor` plus `--csv`.
 
 ### Step 3. Verify the output
 
@@ -84,28 +101,29 @@ business seed files. Fix any anti-join failures before running the pipeline.
 
 ## How the pipeline uses EP summaries
 
-The pipeline stages, enriches, and blends EP summaries during the run:
+The pipeline reads EP summaries with `sources/ep_summaries.load(data_root)` and
+feeds the lazy combined frame directly into `int_ep_summaries_enriched`; there is
+no pass-through staging model. During a run:
 
-1. **Staging** — reads `.long.csv` files, enriches with `rollup_lob` and
+1. **Enrichment** — reads `.long.csv` files, validates canonical columns plus
+   numeric `return_period`/`loss`, enriches with `rollup_lob` and
    `rollup_peril` from the business seed files, selects the preferred modelled
    peril for each `rollup_lob` + `rollup_peril` combination.
 2. **Blending** — creates blended EP loss targets from Verisk and RiskLink
    sources using VOR blending weights.
-3. **EP report** — after the mart fanout, the pipeline writes
+3. **EP report** — after the long product outputs are written, the pipeline writes
    `output/analysis/ep_report.csv` with per-forecast-date EP losses, ranked
-   and bucketed alongside YLT results.
+   and bucketed alongside the final main and DIALSUP YLT results. The report uses
+   the effective runtime config for simulation counts and return periods.
 
 ## Pipeline outputs
 
-The final EP report is written to `output/analysis/ep_report.csv` by both
-`rollup run` and `rollup analyze`:
+The final EP report is written to `output/analysis/ep_report.csv` by
+`rollup run`:
 
 ```bash
 uv run rollup run       # full pipeline — includes EP report
-uv run rollup analyze   # EP report only from existing outputs
 ```
-
-The report contains 2,100 rows (typical) with columns:
 
 When `rollup run` writes `output/rollup.duckdb`, this CSV is also available as
 the `ep_report` table. Use `sql/02_ep_report.sql` for standard DuckDB inspection
@@ -114,7 +132,7 @@ queries.
 | Column | Description |
 | --- | --- |
 | `forecast_date` | Forecast date |
-| `metric` | `main` or `dialsup` |
+| `metric` | Final metric name, currently `euws_override` or `dialsup_localccy_forecast` |
 | `ep_type` | `AAL`, `AEP`, or `OEP` |
 | `return_period` | Return period |
 | `base_model` | Vendor base model |

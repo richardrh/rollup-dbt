@@ -2,67 +2,106 @@ from __future__ import annotations
 
 import logging
 import time
+import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Literal
 
 import duckdb
 
 from rollup.config import RollupConfig
+from rollup.output_contract import ANALYSIS_DIR, EP_REPORT_FILE, MARTS_DIR
+from rollup.writers._sql import identifier as qid
+from rollup.writers._sql import literal as qlit
 
 logger = logging.getLogger(__name__)
+Source = tuple[str, Path, Literal["parquet", "csv"]]
 
 
-def export_duckdb(data_root: str | Path, output_root: str | Path, config: RollupConfig) -> Path:
-    data_root = Path(data_root)
-    output_root = Path(output_root)
+def validate(
+    data_root: str | Path, output_root: str | Path, config: RollupConfig
+) -> tuple[Path, Path, list[Source]]:
+    if not isinstance(config, RollupConfig):
+        raise TypeError("duckdb_export: config must be a RollupConfig")
+    try:
+        data_root = Path(data_root)
+        output_root = Path(output_root)
+    except TypeError as exc:
+        raise TypeError(
+            "duckdb_export: data_root and output_root must be path-like"
+        ) from exc
+    sources = _source_inventory(data_root, output_root)
+    if not sources:
+        raise ValueError("duckdb_export: no parquet or csv sources found to export")
+    duplicates = sorted(
+        table_name
+        for table_name, count in Counter(source[0] for source in sources).items()
+        if count > 1
+    )
+    if duplicates:
+        raise ValueError(f"duckdb_export: duplicate table names: {duplicates}")
+    missing_paths = [str(path) for _, path, _ in sources if not path.exists()]
+    if missing_paths:
+        raise FileNotFoundError(
+            f"duckdb_export: selected source paths do not exist: {missing_paths}"
+        )
+    return data_root, output_root, sources
+
+
+def write(data_root: str | Path, output_root: str | Path, config: RollupConfig) -> Path:
+    _, output_root, sources = validate(data_root, output_root, config)
     db_path = config.outputs.duckdb_path(output_root)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    if db_path.exists():
-        db_path.unlink()
-
     started = time.perf_counter()
-    logger.info("writing duckdb export path=%s", db_path, extra={"event": "duckdb_export_start", "path": db_path})
-    connection = duckdb.connect(str(db_path))
+    logger.info(
+        "writing duckdb export path=%s",
+        db_path,
+        extra={"event": "duckdb_export_start", "path": db_path},
+    )
+    with tempfile.NamedTemporaryFile(
+        suffix=".duckdb", prefix=f".{db_path.stem}-", dir=db_path.parent, delete=False
+    ) as handle:
+        staged_path = Path(handle.name)
+    staged_path.unlink()
     try:
-        sources: list[tuple[str, Path, Literal["parquet", "csv"]]] = []
-        seen: set[Path] = set()
-
-        def add_source(table_name: str, path: Path, source_format: Literal["parquet", "csv"]) -> None:
-            resolved = path.resolve(strict=False)
-            if resolved in seen:
-                return
-            seen.add(resolved)
-            sources.append((table_name, path, source_format))
-
-        for path in sorted(output_root.rglob("mts_tbl_*.parquet")):
-            add_source(path.stem, path, "parquet")
-        for path in sorted((output_root / "marts").glob("*.parquet")):
-            add_source(path.stem, path, "parquet")
-        for path, source_format in seed_file_paths(data_root):
-            add_source(path.stem, path, source_format)
-        ep_report_path = output_root / config.outputs.analysis_dir / config.outputs.ep_report_file
-        if ep_report_path.exists():
-            add_source("ep_report", ep_report_path, "csv")
-
-        for table_name, source_path, source_format in sources:
-            create_table(connection, table_name, source_path, source_format)
+        connection = duckdb.connect(str(staged_path))
+        try:
+            for table_name, source_path, source_format in sources:
+                _create_table(connection, table_name, source_path, source_format)
+        finally:
+            connection.close()
+        staged_path.replace(db_path)
     finally:
-        connection.close()
+        staged_path.unlink(missing_ok=True)
     elapsed_seconds = time.perf_counter() - started
     logger.info(
         "wrote duckdb export path=%s elapsed=%.2fs",
         db_path,
         elapsed_seconds,
-        extra={"event": "duckdb_export_done", "path": db_path, "elapsed_seconds": elapsed_seconds},
+        extra={
+            "event": "duckdb_export_done",
+            "path": db_path,
+            "elapsed_seconds": elapsed_seconds,
+        },
     )
     return db_path
 
 
-def seed_csv_paths(data_root: Path) -> list[Path]:
-    return [path for path, source_format in seed_file_paths(data_root) if source_format == "csv"]
+def _source_inventory(data_root: Path, output_root: Path) -> list[Source]:
+    sources: list[Source] = []
+    for path in sorted(output_root.glob("mts_tbl_*.parquet")):
+        sources.append((path.stem, path, "parquet"))
+    for path in sorted((output_root / MARTS_DIR).glob("*.parquet")):
+        sources.append((path.stem, path, "parquet"))
+    for path, source_format in _seed_file_paths(data_root):
+        sources.append((path.stem, path, source_format))
+    analysis_report_path = output_root / ANALYSIS_DIR / EP_REPORT_FILE
+    if analysis_report_path.exists():
+        sources.append(("ep_report", analysis_report_path, "csv"))
+    return sources
 
 
-def seed_file_paths(data_root: Path) -> list[tuple[Path, Literal["parquet", "csv"]]]:
+def _seed_file_paths(data_root: Path) -> list[tuple[Path, Literal["parquet", "csv"]]]:
     seeds_root = data_root / "seeds"
     if not seeds_root.exists():
         return []
@@ -72,18 +111,15 @@ def seed_file_paths(data_root: Path) -> list[tuple[Path, Literal["parquet", "csv
     return paths
 
 
-def create_table(
+def _create_table(
     connection: duckdb.DuckDBPyConnection,
     table_name: str,
     path: Path,
     source_format: Literal["parquet", "csv"],
 ) -> None:
-    source_path = str(path.expanduser().resolve(strict=False))
-    quoted_table_name = '"' + table_name.replace('"', '""') + '"'
-    quoted_source_path = "'" + source_path.replace("'", "''") + "'"
     reader = "read_parquet" if source_format == "parquet" else "read_csv_auto"
     filename = ", filename = true" if source_format == "csv" else ""
     connection.execute(
-        f"CREATE OR REPLACE TABLE {quoted_table_name} AS "
-        f"SELECT * FROM {reader}({quoted_source_path}{filename}, union_by_name = true)"
+        f"CREATE TABLE {qid(table_name)} AS "
+        f"SELECT * FROM {reader}({qlit(path.expanduser().resolve(strict=False))}{filename}, union_by_name = true)"
     )

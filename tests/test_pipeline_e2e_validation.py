@@ -6,24 +6,29 @@ from pathlib import Path
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.sources.catalog import load_seed_frames
-from rollup.staging.stg_event_catalogues import stg_event_catalogue__risklink_flood
+from rollup.sources.seeds import load
+from rollup.staging import stg_risklink_flood_events
 
 
-def test_seed_loading_accepts_csv_seed_files(tmp_path: Path) -> None:
+def test_seed_source_accepts_csv_seed_files(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     (data_root / "seeds" / "business").mkdir(parents=True)
     pl.DataFrame({Col.modelled_lob: ["LOB"], Col.rollup_lob: ["LOB"]}).write_csv(
         data_root / "seeds" / "business" / "lobs.csv"
     )
 
-    result = load_seed_frames(data_root)
+    result = load(data_root)
 
     assert "lobs" in result
-    assert result["lobs"].collect().to_dict(as_series=False) == {Col.modelled_lob: ["LOB"], Col.rollup_lob: ["LOB"]}
+    assert result["lobs"].collect().to_dict(as_series=False) == {
+        Col.modelled_lob: ["LOB"],
+        Col.rollup_lob: ["LOB"],
+    }
 
 
-def test_load_risklink_flood_events_keeps_model_occurrence_year(tmp_path: Path) -> None:
+def test_risklink_flood_event_staging_keeps_model_occurrence_year(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     validation_dir = data_root / "seeds" / "validation"
     validation_dir.mkdir(parents=True)
@@ -36,9 +41,20 @@ def test_load_risklink_flood_events_keeps_model_occurrence_year(tmp_path: Path) 
         }
     ).write_parquet(validation_dir / "risklink_flood22_model_events.parquet")
 
-    result = stg_event_catalogue__risklink_flood(load_seed_frames(data_root)["risklink_flood22_model_events"]).collect().sort(Col.model_occurrence_year)
+    result = (
+        stg_risklink_flood_events.transform(
+            load(data_root)["risklink_flood22_model_events"]
+        )
+        .collect()
+        .sort(Col.model_occurrence_year)
+    )
 
-    assert result.select(Col.event_id, Col.model_occurrence_year, Col.region_peril_id, Col.risklink_event_day).rows() == [
+    assert result.select(
+        Col.event_id,
+        Col.model_occurrence_year,
+        Col.region_peril_id,
+        Col.risklink_event_day,
+    ).rows() == [
         (1, 2025, 70, 2),
         (1, 2026, 70, 3),
     ]

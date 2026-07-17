@@ -116,7 +116,9 @@ def test_generate_ep_summaries_non_interactive_accepts_csv_filename(
     monkeypatch.setattr(
         builtins,
         "input",
-        lambda prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
+        lambda prompt="": (_ for _ in ()).throw(
+            AssertionError("input should not be called")
+        ),
     )
 
     exit_code = cli.main(
@@ -128,7 +130,6 @@ def test_generate_ep_summaries_non_interactive_accepts_csv_filename(
             "verisk",
             "--csv",
             "selected.csv",
-            "--yes",
         ]
     )
 
@@ -148,7 +149,9 @@ def test_generate_ep_summaries_explicit_args_without_yes_skip_prompt_for_new_out
     monkeypatch.setattr(
         builtins,
         "input",
-        lambda prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
+        lambda prompt="": (_ for _ in ()).throw(
+            AssertionError("input should not be called")
+        ),
     )
 
     exit_code = cli.main(
@@ -184,7 +187,10 @@ def test_generate_ep_summaries_returns_nonzero_when_input_ends(
     exit_code = cli.main(["--data-root", str(data_root), "generate-ep-summaries"])
 
     assert exit_code == 1
-    assert "Input ended before EP summary generation could continue." in capsys.readouterr().err
+    assert (
+        "Input ended before EP summary generation could continue."
+        in capsys.readouterr().err
+    )
 
 
 def test_generate_ep_summaries_ctrl_c_returns_clean_cancel_status(
@@ -223,12 +229,10 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
         data_root: Path,
         vendor: str,
         csv_path: Path,
-        *,
-        status_callback=None,
     ) -> Path:
         raise ValueError("missing required EP summary columns: modelled_lob")
 
-    monkeypatch.setattr(cli, "generate_ep_summary", fail_generation)
+    monkeypatch.setattr(cli, "generate_vendor_ep_summary", fail_generation)
 
     exit_code = cli.main(
         [
@@ -239,13 +243,15 @@ def test_generate_ep_summaries_parsing_error_is_user_friendly(
             "verisk",
             "--csv",
             "selected.csv",
-            "--yes",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "EP summary generation failed: missing required EP summary columns: modelled_lob" in captured.err
+    assert (
+        "EP summary generation failed: missing required EP summary columns: modelled_lob"
+        in captured.err
+    )
     assert "Traceback" not in captured.err
 
 
