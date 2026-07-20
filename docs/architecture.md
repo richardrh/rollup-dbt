@@ -75,17 +75,33 @@ LazyFrame pipeline, not a dbt/SQL pipeline:
 ## Model contract
 
 Each public staging, intermediate, and mart model is one semantic Polars model
-per file. The module is the model: it exposes `validate(...) -> None` and
-`transform(...) -> pl.LazyFrame`, and `transform()` calls its own `validate()`.
-There is no abstract model class, registry, context container, dynamic discovery,
-or sequence-number filename convention.
+per file. The module is the model: its public model operations are exactly
+`schema() -> pl.Schema`, `validate(frame) -> None`, and
+`transform(...) -> pl.LazyFrame`. `schema()` declares the exact final output
+contract, including column names, order, and dtypes. `transform()` builds a lazy
+candidate, calls its own `validate()`, and returns that candidate. This contract
+applies only to public staging, intermediate, and mart models: sources retain
+`load()`, while writers retain their own `validate()`/`write()` contracts.
 
-Model validation is schema-only. It uses `LazyFrame.collect_schema()` and helper
-checks for required columns, important dtype families, join-key compatibility,
-and output-plan schema resolution. Model output schema checking calls
-`validate_output(model, frame)`, then returns `frame` explicitly. It must not
-collect rows or perform null, uniqueness, range, or cardinality checks; those
-belong in data-quality validation/tests.
+Every model ends with an explicit, visible final `.select(...)` (with casts as
+needed) in `schema()` order. This is the Polars equivalent of a SQL model's
+final `SELECT`: it makes the boundary between internal working columns and the
+published output explicit. Validating at that boundary catches accidental
+column, ordering, or dtype changes before a downstream model consumes the
+output.
+
+Local `validate(frame)` is deliberately a one-line delegation to
+`model_validation.validate_schema(MODEL, schema(), frame)`. The shared helper
+uses only `LazyFrame.collect_schema()`, wraps schema-resolution failures with
+the model name, and compares the actual and expected ordered schemas exactly.
+Schema planning is lazy and does not execute rows, although resolving a schema
+can access source metadata. It cannot establish null, value, range, uniqueness,
+or other row-level constraints; those failures may occur only when rows are
+collected or written and belong in data-quality validation/tests.
+
+There is no abstract model class, inheritance, decorator, factory, registry,
+generated projection, context container, dynamic discovery, or sequence-number
+filename convention.
 
 Model names are semantic and import-safe, using `stg_`, `int_`, and `mart_`
 prefixes without numeric ordering. Pipeline dependencies explicitly define

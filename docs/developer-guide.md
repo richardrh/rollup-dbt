@@ -7,15 +7,41 @@ Use this checklist when changing the pipeline shape.
 1. Add or modify one logical output model per file in the dbt-like Polars
    layout: `src/rollup/staging/`, `intermediate/`, or `marts/`. Sources own input
    loading/discovery; writers own output writing.
-2. Expose only the public model API: `validate(...) -> None` and
-   `transform(...) -> pl.LazyFrame`. `transform()` must call its own
-   `validate()`. Do not add numbering, model base classes, registries, dynamic
-   discovery, or context containers.
-3. Use the schema-validation helpers for required columns, important dtype
-   families, join-key compatibility, and output-plan schema resolution. Use
-   `validate_output(model, frame)` for output-plan schema checks, then explicitly
-   `return frame`. Keep any row-scanning checks (nulls, uniqueness, ranges,
-   cardinality) in data-quality validation/tests, not model `validate()`.
+2. Expose exactly the public model operations `schema() -> pl.Schema`,
+   `validate(frame) -> None`, and `transform(...) -> pl.LazyFrame` for a public
+   staging, intermediate, or mart model. `schema()` is the exact ordered final
+   output contract. Sources retain `load(data_root)` and writers retain their
+   own `validate()`/`write()` contracts.
+3. End `transform()` with an explicit final `.select(...)`, including casts,
+   in `schema()` order. Treat it like a SQL model's final `SELECT`: internal
+   working columns stay upstream, while the selected columns are the published
+   model boundary. Validate this final lazy candidate, then return it:
+
+   ```python
+   def schema() -> pl.Schema:
+       return pl.Schema({"id": pl.Int64, "amount": pl.Float64})
+
+   def validate(frame: pl.LazyFrame) -> None:
+       validate_schema(MODEL, schema(), frame)
+
+   def transform(source: pl.LazyFrame) -> pl.LazyFrame:
+       frame = source.select(
+           pl.col("raw_id").cast(pl.Int64).alias("id"),
+           pl.col("raw_amount").cast(pl.Float64).alias("amount"),
+       )
+       validate(frame)
+       return frame
+   ```
+
+   Import and use `rollup.model_validation.validate_schema`; do not replace the
+   local one-line delegation with custom checks. The helper resolves the lazy
+   plan with `collect_schema()` and compares the exact ordered schema. It does
+   not execute rows, though schema resolution can access source metadata. Keep
+   null, value, uniqueness, range, and cardinality checks in data-quality
+   validation/tests: schema validation cannot guarantee them and they may fail
+   only during collection or writing. Do not add numbering, model base classes,
+   inheritance, decorators, factories, registries, generated projections,
+   dynamic discovery, or context containers.
 4. Source adapters expose exactly one public operation: `load(data_root)`. The
    function must return lazy Polars scans without collecting rows; EP per-file
    schema resolution is allowed. Keep discovery and immediate source validation
