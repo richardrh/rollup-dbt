@@ -1,32 +1,29 @@
 from __future__ import annotations
 
 import polars as pl
+from rollup.model_validation import validate_schema
 
 from rollup.columns import Col, FanoutCol, RawCol
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_dtype_family,
-)
 
 MODEL = "stg_risklink_flood_events"
 
 
-def validate(raw_events: pl.LazyFrame) -> None:
-    schema = collect_lazy_schema(MODEL, "raw_events", raw_events)
-    for column in [
-        FanoutCol.ModelEventID,
-        RawCol.ModelOccurrenceYear,
-        RawCol.RegionPerilID,
-    ]:
-        require_dtype_family(MODEL, "raw_events", schema, column, "integer")
-    require_dtype_family(
-        MODEL, "raw_events", schema, RawCol.ModelOccurrenceDate, "date_like"
+def schema() -> pl.Schema:
+    return pl.Schema(
+        {  # type: ignore[arg-type]  # Polars accepts StrEnum keys.
+            Col.event_id: pl.Int64,
+            Col.model_occurrence_year: pl.Int64,
+            Col.region_peril_id: pl.Int64,
+            Col.risklink_event_day: pl.Int64,
+        }
     )
 
 
+def validate(frame: pl.LazyFrame) -> None:
+    validate_schema(MODEL, schema(), frame)
+
+
 def transform(raw_events: pl.LazyFrame) -> pl.LazyFrame:
-    validate(raw_events)
     frame = (
         raw_events.group_by(
             FanoutCol.ModelEventID, RawCol.ModelOccurrenceYear, RawCol.RegionPerilID
@@ -44,5 +41,5 @@ def transform(raw_events: pl.LazyFrame) -> pl.LazyFrame:
             .alias(Col.risklink_event_day),
         )
     )
-    validate_output(MODEL, frame)
+    validate(frame)
     return frame

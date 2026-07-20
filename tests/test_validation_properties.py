@@ -146,4 +146,8 @@ def test_fuzz_input_ylt_aal_is_additive_and_ignores_unmapped_rows(
 
     assert expanded[Col.row_count] == len(base_losses) + len(added_losses)
     assert expanded[Col.loss_sum] == pytest.approx(sum(base_losses) + sum(added_losses))
-    assert expanded["raw_aal"] >= base["raw_aal"]
+    expanded_raw_aal = expanded["raw_aal"]
+    base_raw_aal = base["raw_aal"]
+    assert isinstance(expanded_raw_aal, int | float)
+    assert isinstance(base_raw_aal, int | float)
+    assert expanded_raw_aal >= base_raw_aal

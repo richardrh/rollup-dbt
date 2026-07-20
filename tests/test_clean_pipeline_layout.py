@@ -59,22 +59,43 @@ def test_source_modules_expose_only_load_as_public_operation() -> None:
     assert offenders == {}
 
 
-def test_public_models_validate_transform_and_transform_validates_contracts() -> None:
+def test_public_models_expose_schema_validate_transform_and_delegate_validation() -> (
+    None
+):
     offenders: dict[str, list[str]] = {}
     for path in _public_model_paths():
         public_defs = _public_functions(path)
         public_names = sorted(node.name for node in public_defs)
-        if public_names != ["transform", "validate"]:
+        if public_names != ["schema", "transform", "validate"]:
             offenders[path.relative_to(REPO_ROOT).as_posix()] = public_names
             continue
         transform = next(node for node in public_defs if node.name == "transform")
-        calls = {
+        transform_calls = {
             node.func.id
             for node in ast.walk(transform)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         }
-        if not {"validate", "validate_output"}.issubset(calls):
-            offenders[path.relative_to(REPO_ROOT).as_posix()] = sorted(calls)
+        validate = next(node for node in public_defs if node.name == "validate")
+        validate_calls = [
+            node
+            for node in ast.walk(validate)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "validate_schema"
+        ]
+        delegates_to_shared_helper = any(
+            len(call.args) == 3
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "MODEL"
+            and isinstance(call.args[1], ast.Call)
+            and isinstance(call.args[1].func, ast.Name)
+            and call.args[1].func.id == "schema"
+            and isinstance(call.args[2], ast.Name)
+            and call.args[2].id == "frame"
+            for call in validate_calls
+        )
+        if "validate" not in transform_calls or not delegates_to_shared_helper:
+            offenders[path.relative_to(REPO_ROOT).as_posix()] = sorted(transform_calls)
 
     assert offenders == {}
 
@@ -299,12 +320,19 @@ def test_model_modules_are_not_import_only_and_public_functions_are_not_forwarde
             returned = body[0].value
             if not isinstance(returned, ast.Call):
                 continue
-            direct_delegate = isinstance(returned.func, ast.Name | ast.Attribute)
+            direct_delegate = isinstance(
+                returned.func, ast.Name | ast.Attribute
+            ) and not (
+                isinstance(returned.func, ast.Attribute)
+                and isinstance(returned.func.value, ast.Name)
+                and returned.func.value.id == "pl"
+                and returned.func.attr == "Schema"
+            )
             validates_or_raises = any(
                 isinstance(node, ast.Raise)
                 or isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"validate", "validate_output"}
+                and node.func.id == "validate"
                 for node in ast.walk(function)
             )
             if direct_delegate and not validates_or_raises:

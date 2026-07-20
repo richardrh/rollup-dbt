@@ -13,7 +13,7 @@ def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
         pl.DataFrame(
             {
                 "EventID": [101],
-                "ModelID": ["M1"],
+                "ModelID": [1],
                 "Event": [202],
                 "Year": [2030],
                 "Day": [42],
@@ -23,7 +23,7 @@ def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
 
     assert frame.to_dict(as_series=False) == {
         Col.model_event_id: [101],
-        Col.model_code: ["M1"],
+        Col.model_code: [1],
         Col.event_id: [202],
         Col.year_id: [2030],
         Col.event_day: [42],

@@ -16,6 +16,53 @@ from rollup.output_contract import EVENT_VALIDATION_FILE, MARTS_DIR
 from rollup.writers import fanout_partitions, parquet
 
 
+def _complete_mart_input(frame: pl.DataFrame) -> pl.DataFrame:
+    defaults = {
+        Col.vendor: "verisk",
+        Col.analysis_id: "analysis",
+        Col.modelled_lob: "LOB_A",
+        Col.modelled_peril: "PERIL_A",
+        Col.rollup_lob: "LOB_A",
+        Col.rollup_peril: "PERIL_A",
+        Col.blend_subregion_peril_id: "70",
+        Col.selection_priority: 1,
+        Col.is_dialsup: 0,
+        Col.is_euws: 1,
+        Col.class_: "CLASS",
+        Col.office: "Office",
+        Col.currency: "GBP",
+        Col.model_code: 1,
+        Col.event_id: 1,
+        Col.year_id: 2025,
+        Col.region_peril_id: 70,
+        Col.rnk: 1,
+        Col.rp: 1.0,
+        Col.rp_bucket: 1,
+        Col.model_event_id: 1,
+        Col.event_day: 1,
+        Col.target_currency: "GBP",
+        Col.fx_rate_date: "2026-01-01",
+        Col.fx_rate: 1.0,
+        Col.risklink_blended_contribution: 1.0,
+        Col.verisk_blended_contribution: 1.0,
+        Col.uplift_factor_on_base_model: 1.0,
+        "_euws_factor_raw": 1.0,
+        "_localccy_forecast_loss": 1.0,
+        Col.forecast_date: date(2026, 1, 1),
+        Col.cds_cat_class_name: "Wind",
+    }
+    schema_types = {
+        **mart_ylt_dialsup_long.schema(),
+        **mart_ylt_main_long.schema(),
+    }
+    additions = [
+        pl.lit(value).cast(schema_types[column]).alias(column)
+        for column, value in defaults.items()
+        if column not in frame.columns
+    ]
+    return frame.with_columns(*additions) if additions else frame
+
+
 def test_risklink_event_enrichment_drops_unmatched_risklink_and_preserves_verisk() -> (
     None
 ):
@@ -111,11 +158,11 @@ def test_inline_event_loss_threshold_filters_only_final_metric_rows() -> None:
 
     high_threshold_value = 1000.0
     high_threshold = mart_ylt_main_long.transform(
-        ylt.lazy(), high_threshold_value
+        _complete_mart_input(ylt).lazy(), high_threshold_value
     ).collect()
     non_positive_threshold_value = 0.0
     non_positive_threshold = mart_ylt_main_long.transform(
-        ylt.lazy(), non_positive_threshold_value
+        _complete_mart_input(ylt).lazy(), non_positive_threshold_value
     ).collect()
 
     assert high_threshold.get_column(Col.loss).to_list() == [None, 1000.0]
@@ -157,12 +204,12 @@ def test_thresholded_main_and_dialsup_rows_drive_fanouts() -> None:
 
     threshold = 1000.0
     main = (
-        mart_ylt_main_long.transform(ylt.lazy(), threshold)
+        mart_ylt_main_long.transform(_complete_mart_input(ylt).lazy(), threshold)
         .filter(pl.col(Col.metric) == "euws_override")
         .collect()
     )
     dialsup = (
-        mart_ylt_dialsup_long.transform(ylt.lazy(), threshold)
+        mart_ylt_dialsup_long.transform(_complete_mart_input(ylt).lazy(), threshold)
         .filter(pl.col(Col.metric) == "dialsup_localccy_forecast")
         .collect()
     )

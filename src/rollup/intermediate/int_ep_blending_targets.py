@@ -1,67 +1,40 @@
 from __future__ import annotations
 
 import polars as pl
+from rollup.model_validation import validate_schema
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-    require_dtype_family,
-    require_join_key_compatible,
-)
 
 MODEL = "int_ep_blending_targets"
 
 
-def validate(
-    target_points: pl.LazyFrame,
-    weights: pl.LazyFrame,
-) -> None:
-    target_schema = collect_lazy_schema(MODEL, "target_points", target_points)
-    weight_schema = collect_lazy_schema(MODEL, "weights", weights)
-    require_columns(
-        MODEL,
-        "target_points",
-        target_schema,
+def schema() -> pl.Schema:
+    return pl.Schema(
         [
-            Col.region_peril_id,
-            Col.blend_subregion_peril_id,
-            Col.base_model,
-            Col.risklink_loss,
-            Col.verisk_loss,
-        ],
+            (str(Col.rollup_lob), pl.String),
+            (str(Col.rollup_peril), pl.String),
+            (str(Col.region_peril_id), pl.Int64),
+            (str(Col.blend_subregion_peril_id), pl.String),
+            (str(Col.base_model), pl.String),
+            (str(Col.ep_type), pl.String),
+            (str(Col.return_period), pl.Int64),
+            (str(Col.risklink_loss), pl.Float64),
+            (str(Col.verisk_loss), pl.Float64),
+            (str(Col.sub_region_peril), pl.String),
+            (str(Col.verisk_weight), pl.Float64),
+            (str(Col.risklink_weight), pl.Float64),
+            (str(Col.base_model_loss), pl.Float64),
+            (str(Col.risklink_blended_contribution), pl.Float64),
+            (str(Col.verisk_blended_contribution), pl.Float64),
+            (str(Col.target_loss), pl.Float64),
+            (str(Col.uplift_factor_on_base_model), pl.Float64),
+        ]
     )
-    require_columns(
-        MODEL,
-        "weights",
-        weight_schema,
-        [
-            Col.region_peril_id,
-            Col.blend_subregion_peril_id,
-            Col.risklink_weight,
-            Col.verisk_weight,
-        ],
-    )
-    require_join_key_compatible(
-        MODEL,
-        "target_points",
-        target_schema,
-        "weights",
-        weight_schema,
-        [Col.region_peril_id, Col.blend_subregion_peril_id],
-    )
-    for input_name, schema in {
-        "target_points": target_schema,
-        "weights": weight_schema,
-    }.items():
-        for column in (
-            [Col.risklink_loss, Col.verisk_loss]
-            if input_name == "target_points"
-            else [Col.risklink_weight, Col.verisk_weight]
-        ):
-            require_dtype_family(MODEL, input_name, schema, column, "numeric")
+
+
+def validate(frame: pl.LazyFrame) -> None:
+    validate_schema(MODEL, schema(), frame)
 
 
 def transform(
@@ -69,7 +42,6 @@ def transform(
     weights: pl.LazyFrame,
     config: RollupConfig | None = None,
 ) -> pl.LazyFrame:
-    validate(target_points, weights)
     config = config or RollupConfig()
     frame = (
         target_points.join(
@@ -124,7 +96,25 @@ def transform(
             )
             .alias(Col.uplift_factor_on_base_model)
         )
-        .drop("_has_both_vendor_losses")
+        .select(
+            pl.col(Col.rollup_lob).cast(pl.String),
+            pl.col(Col.rollup_peril).cast(pl.String),
+            pl.col(Col.region_peril_id).cast(pl.Int64),
+            pl.col(Col.blend_subregion_peril_id).cast(pl.String),
+            pl.col(Col.base_model).cast(pl.String),
+            pl.col(Col.ep_type).cast(pl.String),
+            pl.col(Col.return_period).cast(pl.Int64),
+            pl.col(Col.risklink_loss).cast(pl.Float64),
+            pl.col(Col.verisk_loss).cast(pl.Float64),
+            pl.col(Col.sub_region_peril).cast(pl.String),
+            pl.col(Col.verisk_weight).cast(pl.Float64),
+            pl.col(Col.risklink_weight).cast(pl.Float64),
+            pl.col(Col.base_model_loss).cast(pl.Float64),
+            pl.col(Col.risklink_blended_contribution).cast(pl.Float64),
+            pl.col(Col.verisk_blended_contribution).cast(pl.Float64),
+            pl.col(Col.target_loss).cast(pl.Float64),
+            pl.col(Col.uplift_factor_on_base_model).cast(pl.Float64),
+        )
     )
-    validate_output(MODEL, frame)
+    validate(frame)
     return frame

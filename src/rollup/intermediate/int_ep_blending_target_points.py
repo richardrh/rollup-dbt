@@ -1,29 +1,37 @@
 from __future__ import annotations
 
 import polars as pl
+from rollup.model_validation import validate_schema
 
 from rollup.columns import Col
 from rollup.config import RollupConfig
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-)
 
 MODEL = "int_ep_blending_target_points"
 
 
-def validate(joined_ep_summaries: pl.LazyFrame) -> None:
-    schema = collect_lazy_schema(MODEL, "joined_ep_summaries", joined_ep_summaries)
-    require_columns(
-        MODEL, "joined_ep_summaries", schema, [Col.ep_type, Col.return_period]
+def schema() -> pl.Schema:
+    return pl.Schema(
+        {  # type: ignore[arg-type]  # Polars accepts StrEnum keys.
+            Col.rollup_lob: pl.String,
+            Col.rollup_peril: pl.String,
+            Col.region_peril_id: pl.Int64,
+            Col.blend_subregion_peril_id: pl.String,
+            Col.base_model: pl.String,
+            Col.ep_type: pl.String,
+            Col.return_period: pl.Int64,
+            Col.risklink_loss: pl.Float64,
+            Col.verisk_loss: pl.Float64,
+        }
     )
+
+
+def validate(frame: pl.LazyFrame) -> None:
+    validate_schema(MODEL, schema(), frame)
 
 
 def transform(
     joined_ep_summaries: pl.LazyFrame, config: RollupConfig | None = None
 ) -> pl.LazyFrame:
-    validate(joined_ep_summaries)
     config = config or RollupConfig()
     target_predicate = pl.lit(False)
     for point in config.blending.target_points:
@@ -31,6 +39,16 @@ def transform(
             (pl.col(Col.ep_type) == point.ep_type)
             & (pl.col(Col.return_period) == point.return_period)
         )
-    frame = joined_ep_summaries.filter(target_predicate)
-    validate_output(MODEL, frame)
+    frame = joined_ep_summaries.filter(target_predicate).select(
+        Col.rollup_lob,
+        Col.rollup_peril,
+        pl.col(Col.region_peril_id).cast(pl.Int64),
+        Col.blend_subregion_peril_id,
+        Col.base_model,
+        Col.ep_type,
+        pl.col(Col.return_period).cast(pl.Int64),
+        pl.col(Col.risklink_loss).cast(pl.Float64),
+        pl.col(Col.verisk_loss).cast(pl.Float64),
+    )
+    validate(frame)
     return frame

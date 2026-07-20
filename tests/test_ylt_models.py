@@ -8,16 +8,22 @@ import pytest
 from rollup.columns import Col, RawCol
 from rollup.intermediate import (
     int_forecast_dates,
+    int_ylt_base_selected,
     int_ylt_dialsup_factor_base,
+    int_ylt_dialsup_forecast_metric,
+    int_ylt_dialsup_local_currency_metric,
+    int_ylt_dialsup_metric_stream,
+    int_ylt_dialsup_original_metric,
+    int_ylt_enriched,
     int_ylt_main_blended,
     int_ylt_main_euws,
     int_ylt_main_euws_override,
     int_ylt_main_forecast,
     int_ylt_main_local_currency,
+    int_ylt_main_metric_stream,
     int_ylt_normalized,
     int_ylt_ranked,
 )
-from rollup.marts import mart_main_fanout, mart_ylt_main_long
 from rollup.staging import (
     stg_forecast_factors,
     stg_gbp_fx_rates,
@@ -71,60 +77,154 @@ def test_forecast_factor_staging_rejects_malformed_dates_on_collect() -> None:
         staged.collect()
 
 
-def test_forecast_dates_model_requires_date_like_forecast_date() -> None:
-    with pytest.raises(ValueError, match="forecast_date.*date_like"):
-        int_forecast_dates.validate(
-            pl.DataFrame({Col.forecast_date: ["2026-01-01"]}).lazy()
+def test_forecast_dates_model_canonicalizes_date_output_schema() -> None:
+    candidate = int_forecast_dates.transform(
+        pl.DataFrame({Col.forecast_date: ["2026-01-01"]}).lazy()
+    )
+    assert candidate.collect_schema() == int_forecast_dates.schema()
+
+
+def test_main_forecast_model_rejects_noncanonical_final_schema() -> None:
+    with pytest.raises(
+        ValueError, match="int_ylt_main_forecast.*output schema mismatch"
+    ):
+        int_ylt_main_forecast.validate(
+            pl.LazyFrame(
+                schema={
+                    **int_ylt_main_local_currency.schema(),
+                    Col.forecast_date: pl.String,
+                }
+            )
         )
 
 
-def test_main_forecast_model_requires_date_like_forecast_inputs() -> None:
+def test_main_ylt_schema_contracts_accept_exact_empty_candidates() -> None:
+    for model in [
+        int_ylt_enriched,
+        int_ylt_base_selected,
+        int_ylt_ranked,
+        int_ylt_main_blended,
+        int_ylt_main_local_currency,
+        int_ylt_main_forecast,
+        int_ylt_main_euws,
+        int_ylt_main_euws_override,
+        int_ylt_main_metric_stream,
+        int_ylt_dialsup_factor_base,
+        int_ylt_dialsup_original_metric,
+        int_ylt_dialsup_local_currency_metric,
+        int_ylt_dialsup_forecast_metric,
+        int_ylt_dialsup_metric_stream,
+    ]:
+        candidate = pl.LazyFrame(schema=model.schema())
+        model.validate(candidate)
+        assert candidate.collect_schema() == model.schema()
+
+
+def test_dialsup_factor_base_model_rejects_noncanonical_final_schema() -> None:
+    with pytest.raises(
+        ValueError, match="int_ylt_dialsup_factor_base.*output schema mismatch"
+    ):
+        int_ylt_dialsup_factor_base.validate(
+            pl.LazyFrame(schema={Col.loss: pl.Float64})
+        )
+
+
+def test_dialsup_models_preserve_factor_columns_and_metric_values() -> None:
     ylt = pl.DataFrame(
-        {Col.class_: ["COMM"], Col.office: ["DE"], Col.loss: [1.0]}
-    ).lazy()
-    forecast_dates = pl.DataFrame({Col.forecast_date: ["2026-01-01"]}).lazy()
-    forecast_factors = pl.DataFrame(
         {
-            Col.class_: ["COMM"],
-            Col.office: ["DE"],
-            Col.forecast_date: ["2026-01-01"],
-            "_forecast_factor_raw": [1.0],
-        }
-    ).lazy()
-
-    with pytest.raises(ValueError, match="forecast_date.*date_like"):
-        int_ylt_main_forecast.validate(ylt, forecast_dates, forecast_factors)
-
-
-def test_dialsup_factor_base_model_requires_date_like_forecast_inputs() -> None:
-    ylt = pl.DataFrame(
-        {
+            Col.vendor: ["verisk"],
+            Col.analysis_id: ["analysis"],
+            Col.modelled_lob: ["LOB"],
+            Col.modelled_peril: ["PERIL"],
+            Col.rollup_lob: ["ROLLUP_LOB"],
+            Col.rollup_peril: ["ROLLUP_PERIL"],
+            Col.region_peril_id: [1],
+            Col.blend_subregion_peril_id: ["1"],
+            Col.base_model: ["verisk"],
+            Col.selection_priority: [1],
+            Col.is_dialsup: [1],
+            Col.is_euws: [0],
+            Col.cds_cat_class_name: ["Wind"],
             Col.event_id: [1],
             Col.year_id: [2026],
             Col.model_code: [41],
             Col.currency: ["EUR"],
             Col.class_: ["COMM"],
             Col.office: ["DE"],
+            Col.loss: [88.0],
+            Col.metric: ["original"],
+            Col.rnk: [1],
+            Col.rp: [1.0],
+            Col.rp_bucket: pl.Series([0], dtype=pl.Int32),
         }
     ).lazy()
     verisk_events = pl.DataFrame(
-        {Col.event_id: [1], Col.year_id: [2026], Col.model_code: [41]}
+        {
+            Col.model_event_id: [1001],
+            Col.event_id: [1],
+            Col.year_id: [2026],
+            Col.model_code: [41],
+            Col.event_day: [7],
+        }
     ).lazy()
-    fx_rates = pl.DataFrame({Col.currency: ["EUR"], Col.fx_rate: [0.88]}).lazy()
-    forecast_dates = pl.DataFrame({Col.forecast_date: ["2026-01-01"]}).lazy()
+    fx_rates = pl.DataFrame(
+        {
+            Col.currency: ["EUR"],
+            Col.target_currency: ["GBP"],
+            Col.fx_rate_date: ["2026-01-01"],
+            Col.fx_rate: [0.88],
+        }
+    ).lazy()
+    forecast_dates = pl.DataFrame({Col.forecast_date: [date(2026, 1, 1)]}).lazy()
     forecast_factors = pl.DataFrame(
         {
             Col.class_: ["COMM"],
             Col.office: ["DE"],
-            Col.forecast_date: ["2026-01-01"],
-            "_forecast_factor_raw": [1.0],
+            Col.forecast_date: [date(2026, 1, 1)],
+            "_forecast_factor_raw": [2.5],
         }
     ).lazy()
 
-    with pytest.raises(ValueError, match="forecast_date.*date_like"):
-        int_ylt_dialsup_factor_base.validate(
-            ylt, verisk_events, fx_rates, forecast_dates, forecast_factors
-        )
+    factor_base = int_ylt_dialsup_factor_base.transform(
+        ylt, verisk_events, fx_rates, forecast_dates, forecast_factors
+    )
+    original = int_ylt_dialsup_original_metric.transform(factor_base)
+    local_currency = int_ylt_dialsup_local_currency_metric.transform(factor_base)
+    forecast = int_ylt_dialsup_forecast_metric.transform(factor_base)
+    metric_stream = int_ylt_dialsup_metric_stream.transform(
+        original, local_currency, forecast
+    )
+
+    assert factor_base.collect_schema() == int_ylt_dialsup_factor_base.schema()
+    assert factor_base.select(
+        Col.model_event_id,
+        Col.event_day,
+        Col.target_currency,
+        Col.fx_rate_date,
+        "_forecast_factor_raw",
+        "_forecast_factor",
+    ).collect().to_dict(as_series=False) == {
+        Col.model_event_id: [1001],
+        Col.event_day: [7],
+        Col.target_currency: ["GBP"],
+        Col.fx_rate_date: ["2026-01-01"],
+        "_forecast_factor_raw": [2.5],
+        "_forecast_factor": [2.5],
+    }
+    assert original.collect_schema() == int_ylt_dialsup_original_metric.schema()
+    assert (
+        local_currency.collect_schema()
+        == int_ylt_dialsup_local_currency_metric.schema()
+    )
+    assert forecast.collect_schema() == int_ylt_dialsup_forecast_metric.schema()
+    assert metric_stream.collect_schema() == int_ylt_dialsup_metric_stream.schema()
+    assert metric_stream.select(Col.metric, Col.loss).collect().sort(
+        Col.metric
+    ).rows() == [
+        ("dialsup_localccy", 100.0),
+        ("dialsup_localccy_forecast", 250.0),
+        ("dialsup_original", 88.0),
+    ]
 
 
 def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> None:
@@ -168,6 +268,11 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
             Col.region_peril_id: [101],
             Col.blend_subregion_peril_id: ["101"],
             Col.base_model: ["verisk"],
+            Col.analysis_id: ["analysis"],
+            Col.selection_priority: [1],
+            Col.is_dialsup: [0],
+            Col.is_euws: [1],
+            Col.cds_cat_class_name: ["Wind"],
             Col.class_: ["COMM"],
             Col.office: ["DE"],
             Col.currency: ["EUR"],
@@ -176,7 +281,7 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
             Col.event_id: [10],
             Col.rnk: [50],
             Col.rp: [1.0],
-            Col.rp_bucket: [0],
+            Col.rp_bucket: pl.Series([0], dtype=pl.Int32),
             Col.metric: ["original"],
             Col.loss: [88.0],
         }
@@ -329,23 +434,35 @@ def test_forecast_factor_csv_strings_reach_fanout_as_date_like_schema() -> None:
             Col.cds_cat_class_name: ["Wind"],
         }
     ).lazy()
-    risklink_events = pl.DataFrame(
-        schema={
-            Col.event_id: pl.Int64,
-            Col.model_occurrence_year: pl.Int64,
-            Col.region_peril_id: pl.Int64,
-            Col.risklink_event_day: pl.Int64,
-        }
-    ).lazy()
-
     ylt_forecast = int_ylt_main_forecast.transform(
-        ylt_localccy, forecast_dates, forecast_factors
+        pl.DataFrame(
+            {
+                **ylt_localccy.collect().to_dict(as_series=False),
+                Col.vendor: ["verisk"],
+                Col.analysis_id: ["analysis"],
+                Col.modelled_lob: ["LOB"],
+                Col.modelled_peril: ["PERIL"],
+                Col.rollup_lob: ["LOB"],
+                Col.rollup_peril: ["PERIL"],
+                Col.blend_subregion_peril_id: ["101"],
+                Col.selection_priority: [1],
+                Col.is_dialsup: [0],
+                Col.is_euws: [0],
+                Col.rnk: [1],
+                Col.rp: [1.0],
+                Col.rp_bucket: [0],
+                Col.risklink_blended_contribution: [0.0],
+                Col.verisk_blended_contribution: [0.0],
+                Col.uplift_factor_on_base_model: [1.0],
+                Col.currency: ["GBP"],
+                Col.model_code: [1],
+            }
+        ).lazy(),
+        forecast_dates,
+        forecast_factors,
     ).with_columns(pl.lit("euws_override").alias(Col.metric))
-    main_long = mart_ylt_main_long.transform(ylt_forecast, 0.0)
-    fanout = mart_main_fanout.transform(main_long, risklink_events)
-
-    assert fanout.collect_schema()[Col.forecast_date] == pl.Date
-    assert fanout.select(Col.forecast_date).collect().item() == date(2026, 1, 1)
+    assert ylt_forecast.collect_schema()[Col.forecast_date] == pl.Date
+    assert ylt_forecast.select(Col.forecast_date).collect().item() == date(2026, 1, 1)
 
 
 def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
@@ -359,6 +476,22 @@ def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
             Col.ep_type: ["AAL"],
             Col.rp_bucket: [0],
             Col.base_model: ["risklink"],
+            Col.vendor: ["risklink"],
+            Col.analysis_id: ["analysis"],
+            Col.modelled_lob: ["LOB"],
+            Col.modelled_peril: ["PERIL"],
+            Col.selection_priority: [1],
+            Col.is_dialsup: [0],
+            Col.is_euws: [0],
+            Col.cds_cat_class_name: ["Wind"],
+            Col.class_: ["COMM"],
+            Col.office: ["DE"],
+            Col.currency: ["EUR"],
+            Col.model_code: [1],
+            Col.year_id: [2026],
+            Col.event_id: [1],
+            Col.rnk: [1],
+            Col.rp: [1.0],
             Col.risklink_loss: [200.0],
             Col.verisk_loss: [100.0],
             Col.target_loss: [175.0],
@@ -378,6 +511,22 @@ def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
             Col.base_model: ["risklink"],
             Col.loss: [10.0],
             Col.metric: ["original"],
+            Col.vendor: ["risklink"],
+            Col.analysis_id: ["analysis"],
+            Col.modelled_lob: ["LOB"],
+            Col.modelled_peril: ["PERIL"],
+            Col.selection_priority: [1],
+            Col.is_dialsup: [0],
+            Col.is_euws: [0],
+            Col.cds_cat_class_name: ["Wind"],
+            Col.class_: ["COMM"],
+            Col.office: ["DE"],
+            Col.currency: ["EUR"],
+            Col.model_code: [1],
+            Col.year_id: [2026],
+            Col.event_id: [1],
+            Col.rnk: [1],
+            Col.rp: [1.0],
         }
     ).lazy()
 
@@ -403,6 +552,19 @@ def test_rank_ylt_deterministically_breaks_loss_ties() -> None:
             Col.event_id: [2, 3, 1, 9],
             Col.analysis_id: ["b", "a", "c", "z"],
             Col.model_code: [2, 1, 1, 9],
+            Col.modelled_peril: ["PERIL"] * 4,
+            Col.rollup_lob: ["LOB"] * 4,
+            Col.region_peril_id: [1] * 4,
+            Col.blend_subregion_peril_id: ["1"] * 4,
+            Col.base_model: ["verisk"] * 4,
+            Col.selection_priority: [1] * 4,
+            Col.is_dialsup: [0] * 4,
+            Col.is_euws: [0] * 4,
+            Col.cds_cat_class_name: ["Wind"] * 4,
+            Col.class_: ["COMM"] * 4,
+            Col.office: ["DE"] * 4,
+            Col.currency: ["EUR"] * 4,
+            Col.metric: ["original"] * 4,
         }
     )
 
@@ -426,6 +588,19 @@ def test_rank_ylt_tie_ranks_are_stable_for_shuffled_input() -> None:
         Col.event_id: [2, 3, 1, 9],
         Col.analysis_id: ["b", "a", "c", "z"],
         Col.model_code: [2, 1, 1, 9],
+        Col.modelled_peril: ["PERIL"] * 4,
+        Col.rollup_lob: ["LOB"] * 4,
+        Col.region_peril_id: [1] * 4,
+        Col.blend_subregion_peril_id: ["1"] * 4,
+        Col.base_model: ["verisk"] * 4,
+        Col.selection_priority: [1] * 4,
+        Col.is_dialsup: [0] * 4,
+        Col.is_euws: [0] * 4,
+        Col.cds_cat_class_name: ["Wind"] * 4,
+        Col.class_: ["COMM"] * 4,
+        Col.office: ["DE"] * 4,
+        Col.currency: ["EUR"] * 4,
+        Col.metric: ["original"] * 4,
     }
     expected = (
         int_ylt_ranked.transform(pl.DataFrame(rows).lazy())

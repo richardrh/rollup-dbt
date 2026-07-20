@@ -114,6 +114,29 @@ def _ep_summary_rows(
     ).lazy()
 
 
+def test_ep_intermediate_models_validate_final_candidate_schemas() -> None:
+    enriched = int_ep_summaries_enriched.transform(
+        _peril_selection_ep_summaries(), _peril_selection_seed_mapping()
+    )
+    main = int_ep_summaries_main.transform(enriched)
+    dialsup = int_ep_summaries_dialsup.transform(enriched)
+    joined = int_ep_vendor_joined.transform(main)
+    target_points = int_ep_blending_target_points.transform(joined)
+    targets = int_ep_blending_targets.transform(
+        target_points, int_ep_blending_weights.transform(_blending_factor_mapping())
+    )
+
+    for model, candidate in (
+        (int_ep_summaries_enriched, enriched),
+        (int_ep_summaries_main, main),
+        (int_ep_summaries_dialsup, dialsup),
+        (int_ep_vendor_joined, joined),
+        (int_ep_blending_targets, targets),
+    ):
+        assert candidate.collect_schema() == model.schema()
+        model.validate(candidate)
+
+
 def test_ep_main_selection_chooses_lowest_selection_priority() -> None:
     enriched = int_ep_summaries_enriched.transform(
         _peril_selection_ep_summaries(), _peril_selection_seed_mapping()
@@ -228,6 +251,19 @@ def test_ep_blending_uses_configured_target_points_caps_and_vendor_years() -> No
                 Col.analysis_id: ["A", "A"],
                 Col.model_code: [1, 1],
                 Col.loss: [100.0, 50.0],
+                Col.modelled_peril: ["PERIL", "PERIL"],
+                Col.rollup_lob: ["LOB", "LOB"],
+                Col.region_peril_id: [1, 1],
+                Col.blend_subregion_peril_id: ["1", "1"],
+                Col.base_model: ["verisk", "verisk"],
+                Col.selection_priority: [1, 1],
+                Col.is_dialsup: [0, 0],
+                Col.is_euws: [0, 0],
+                Col.cds_cat_class_name: ["Wind", "Wind"],
+                Col.class_: ["COMM", "COMM"],
+                Col.office: ["DE", "DE"],
+                Col.currency: ["EUR", "EUR"],
+                Col.metric: ["original", "original"],
             }
         ).lazy(),
         config,
