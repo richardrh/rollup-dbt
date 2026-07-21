@@ -9,7 +9,7 @@ from rollup.staging import stg_risklink_flood_events, stg_verisk_events
 
 
 def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
-    frame = stg_verisk_events.transform(
+    frame = stg_verisk_events.Model.transform(
         pl.DataFrame(
             {
                 "EventID": [101],
@@ -31,7 +31,7 @@ def test_stg_event_catalogue_verisk_projects_raw_seed_frame() -> None:
 
 
 def test_stg_event_catalogue_risklink_flood_groups_raw_seed_frame() -> None:
-    frame = stg_risklink_flood_events.transform(
+    frame = stg_risklink_flood_events.Model.transform(
         pl.DataFrame(
             {
                 "ModelEventID": [301, 301],

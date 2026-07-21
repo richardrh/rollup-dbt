@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import polars as pl
 import pytest
 
 from rollup.columns import Col, RawCol
+from rollup.config import RollupConfig
 from rollup.intermediate import (
     int_forecast_dates,
     int_ylt_base_selected,
@@ -44,7 +46,7 @@ def _empty_risklink_ylt() -> pl.LazyFrame:
 
 
 def test_forecast_factor_staging_canonicalizes_iso_dates() -> None:
-    staged = stg_forecast_factors.transform(
+    staged = stg_forecast_factors.Model.transform(
         pl.DataFrame(
             {
                 Col.class_: ["COMM"],
@@ -62,7 +64,7 @@ def test_forecast_factor_staging_canonicalizes_iso_dates() -> None:
 
 
 def test_forecast_factor_staging_rejects_malformed_dates_on_collect() -> None:
-    staged = stg_forecast_factors.transform(
+    staged = stg_forecast_factors.Model.transform(
         pl.DataFrame(
             {
                 Col.class_: ["COMM"],
@@ -78,20 +80,20 @@ def test_forecast_factor_staging_rejects_malformed_dates_on_collect() -> None:
 
 
 def test_forecast_dates_model_canonicalizes_date_output_schema() -> None:
-    candidate = int_forecast_dates.transform(
+    candidate = int_forecast_dates.Model.transform(
         pl.DataFrame({Col.forecast_date: ["2026-01-01"]}).lazy()
     )
-    assert candidate.collect_schema() == int_forecast_dates.schema()
+    assert candidate.collect_schema() == int_forecast_dates.Model.schema()
 
 
 def test_main_forecast_model_rejects_noncanonical_final_schema() -> None:
     with pytest.raises(
         ValueError, match="int_ylt_main_forecast.*output schema mismatch"
     ):
-        int_ylt_main_forecast.validate(
+        int_ylt_main_forecast.Model.validate(
             pl.LazyFrame(
                 schema={
-                    **int_ylt_main_local_currency.schema(),
+                    **int_ylt_main_local_currency.Model.schema(),
                     Col.forecast_date: pl.String,
                 }
             )
@@ -99,22 +101,23 @@ def test_main_forecast_model_rejects_noncanonical_final_schema() -> None:
 
 
 def test_main_ylt_schema_contracts_accept_exact_empty_candidates() -> None:
-    for model in [
-        int_ylt_enriched,
-        int_ylt_base_selected,
-        int_ylt_ranked,
-        int_ylt_main_blended,
-        int_ylt_main_local_currency,
-        int_ylt_main_forecast,
-        int_ylt_main_euws,
-        int_ylt_main_euws_override,
-        int_ylt_main_metric_stream,
-        int_ylt_dialsup_factor_base,
-        int_ylt_dialsup_original_metric,
-        int_ylt_dialsup_local_currency_metric,
-        int_ylt_dialsup_forecast_metric,
-        int_ylt_dialsup_metric_stream,
-    ]:
+    models: list[Any] = [
+        int_ylt_enriched.Model,
+        int_ylt_base_selected.Model,
+        int_ylt_ranked.Model,
+        int_ylt_main_blended.Model,
+        int_ylt_main_local_currency.Model,
+        int_ylt_main_forecast.Model,
+        int_ylt_main_euws.Model,
+        int_ylt_main_euws_override.Model,
+        int_ylt_main_metric_stream.Model,
+        int_ylt_dialsup_factor_base.Model,
+        int_ylt_dialsup_original_metric.Model,
+        int_ylt_dialsup_local_currency_metric.Model,
+        int_ylt_dialsup_forecast_metric.Model,
+        int_ylt_dialsup_metric_stream.Model,
+    ]
+    for model in models:
         candidate = pl.LazyFrame(schema=model.schema())
         model.validate(candidate)
         assert candidate.collect_schema() == model.schema()
@@ -124,7 +127,7 @@ def test_dialsup_factor_base_model_rejects_noncanonical_final_schema() -> None:
     with pytest.raises(
         ValueError, match="int_ylt_dialsup_factor_base.*output schema mismatch"
     ):
-        int_ylt_dialsup_factor_base.validate(
+        int_ylt_dialsup_factor_base.Model.validate(
             pl.LazyFrame(schema={Col.loss: pl.Float64})
         )
 
@@ -185,17 +188,17 @@ def test_dialsup_models_preserve_factor_columns_and_metric_values() -> None:
         }
     ).lazy()
 
-    factor_base = int_ylt_dialsup_factor_base.transform(
+    factor_base = int_ylt_dialsup_factor_base.Model.transform(
         ylt, verisk_events, fx_rates, forecast_dates, forecast_factors
     )
-    original = int_ylt_dialsup_original_metric.transform(factor_base)
-    local_currency = int_ylt_dialsup_local_currency_metric.transform(factor_base)
-    forecast = int_ylt_dialsup_forecast_metric.transform(factor_base)
-    metric_stream = int_ylt_dialsup_metric_stream.transform(
+    original = int_ylt_dialsup_original_metric.Model.transform(factor_base)
+    local_currency = int_ylt_dialsup_local_currency_metric.Model.transform(factor_base)
+    forecast = int_ylt_dialsup_forecast_metric.Model.transform(factor_base)
+    metric_stream = int_ylt_dialsup_metric_stream.Model.transform(
         original, local_currency, forecast
     )
 
-    assert factor_base.collect_schema() == int_ylt_dialsup_factor_base.schema()
+    assert factor_base.collect_schema() == int_ylt_dialsup_factor_base.Model.schema()
     assert factor_base.select(
         Col.model_event_id,
         Col.event_day,
@@ -211,13 +214,15 @@ def test_dialsup_models_preserve_factor_columns_and_metric_values() -> None:
         "_forecast_factor_raw": [2.5],
         "_forecast_factor": [2.5],
     }
-    assert original.collect_schema() == int_ylt_dialsup_original_metric.schema()
+    assert original.collect_schema() == int_ylt_dialsup_original_metric.Model.schema()
     assert (
         local_currency.collect_schema()
-        == int_ylt_dialsup_local_currency_metric.schema()
+        == int_ylt_dialsup_local_currency_metric.Model.schema()
     )
-    assert forecast.collect_schema() == int_ylt_dialsup_forecast_metric.schema()
-    assert metric_stream.collect_schema() == int_ylt_dialsup_metric_stream.schema()
+    assert forecast.collect_schema() == int_ylt_dialsup_forecast_metric.Model.schema()
+    assert (
+        metric_stream.collect_schema() == int_ylt_dialsup_metric_stream.Model.schema()
+    )
     assert metric_stream.select(Col.metric, Col.loss).collect().sort(
         Col.metric
     ).rows() == [
@@ -240,9 +245,9 @@ def test_normalize_ylt_accepts_padded_verisk_stc_and_strips_join_fields() -> Non
         }
     ).lazy()
 
-    normalized = int_ylt_normalized.transform(
-        stg_verisk_ylt.transform(verisk),
-        stg_risklink_ylt.transform(_empty_risklink_ylt()),
+    normalized = int_ylt_normalized.Model.transform(
+        stg_verisk_ylt.Model.transform(verisk),
+        stg_risklink_ylt.Model.transform(_empty_risklink_ylt()),
     ).collect()
 
     assert normalized.to_dict(as_series=False) == {
@@ -336,7 +341,7 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
         ).lazy(),
     }
 
-    fx_rates = stg_gbp_fx_rates.transform(
+    fx_rates = stg_gbp_fx_rates.Model.transform(
         pl.DataFrame(
             {
                 RawCol.currency_code: ["EUR"],
@@ -346,7 +351,7 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
             }
         ).lazy()
     )
-    forecast_factors = stg_forecast_factors.transform(
+    forecast_factors = stg_forecast_factors.Model.transform(
         pl.DataFrame(
             {
                 Col.class_: ["COMM"],
@@ -357,14 +362,16 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
             }
         ).lazy()
     )
-    forecast_dates = int_forecast_dates.transform(forecast_factors)
-    ylt_blended = int_ylt_main_blended.transform(ylt_ranked, ep_blending_targets)
-    ylt_localccy = int_ylt_main_local_currency.transform(ylt_blended, fx_rates)
-    ylt_localccy_forecast = int_ylt_main_forecast.transform(
+    forecast_dates = int_forecast_dates.Model.transform(forecast_factors)
+    ylt_blended = int_ylt_main_blended.Model.transform(ylt_ranked, ep_blending_targets)
+    ylt_localccy = int_ylt_main_local_currency.Model.transform(ylt_blended, fx_rates)
+    ylt_localccy_forecast = int_ylt_main_forecast.Model.transform(
         ylt_localccy, forecast_dates, forecast_factors
     )
-    ylt_euws = int_ylt_main_euws.transform(ylt_localccy_forecast, verisk_events, seeds)
-    ylt_euws_override = int_ylt_main_euws_override.transform(ylt_euws, seeds)
+    ylt_euws = int_ylt_main_euws.Model.transform(
+        ylt_localccy_forecast, verisk_events, seeds
+    )
+    ylt_euws_override = int_ylt_main_euws_override.Model.transform(ylt_euws, seeds)
     combined = pl.concat(
         [
             ylt_ranked,
@@ -407,7 +414,7 @@ def test_main_ylt_metrics_apply_fx_forecast_euws_and_rank_override() -> None:
 
 
 def test_forecast_factor_csv_strings_reach_fanout_as_date_like_schema() -> None:
-    forecast_factors = stg_forecast_factors.transform(
+    forecast_factors = stg_forecast_factors.Model.transform(
         pl.DataFrame(
             {
                 Col.class_: ["COMM"],
@@ -417,7 +424,7 @@ def test_forecast_factor_csv_strings_reach_fanout_as_date_like_schema() -> None:
             }
         ).lazy()
     )
-    forecast_dates = int_forecast_dates.transform(forecast_factors)
+    forecast_dates = int_forecast_dates.Model.transform(forecast_factors)
     ylt_localccy = pl.DataFrame(
         {
             Col.class_: ["COMM"],
@@ -434,7 +441,7 @@ def test_forecast_factor_csv_strings_reach_fanout_as_date_like_schema() -> None:
             Col.cds_cat_class_name: ["Wind"],
         }
     ).lazy()
-    ylt_forecast = int_ylt_main_forecast.transform(
+    ylt_forecast = int_ylt_main_forecast.Model.transform(
         pl.DataFrame(
             {
                 **ylt_localccy.collect().to_dict(as_series=False),
@@ -530,7 +537,7 @@ def test_apply_ep_blending_to_ylt_retains_blend_diagnostics() -> None:
         }
     ).lazy()
 
-    blended_ylt = int_ylt_main_blended.transform(ylt, targets).collect()
+    blended_ylt = int_ylt_main_blended.Model.transform(ylt, targets).collect()
 
     assert Col.risklink_blended_contribution in blended_ylt.columns
     assert Col.verisk_blended_contribution in blended_ylt.columns
@@ -568,7 +575,11 @@ def test_rank_ylt_deterministically_breaks_loss_ties() -> None:
         }
     )
 
-    ranked = int_ylt_ranked.transform(frame.lazy()).collect().sort(Col.rnk)
+    ranked = (
+        int_ylt_ranked.Model.transform(frame.lazy(), RollupConfig())
+        .collect()
+        .sort(Col.rnk)
+    )
 
     assert ranked.select(Col.loss, Col.year_id, Col.event_id, Col.rnk).rows() == [
         (200.0, 2026, 9, 1),
@@ -603,7 +614,7 @@ def test_rank_ylt_tie_ranks_are_stable_for_shuffled_input() -> None:
         Col.metric: ["original"] * 4,
     }
     expected = (
-        int_ylt_ranked.transform(pl.DataFrame(rows).lazy())
+        int_ylt_ranked.Model.transform(pl.DataFrame(rows).lazy(), RollupConfig())
         .collect()
         .select(Col.year_id, Col.event_id, Col.rnk)
         .sort(Col.year_id, Col.event_id)
@@ -611,7 +622,7 @@ def test_rank_ylt_tie_ranks_are_stable_for_shuffled_input() -> None:
     shuffled = pl.DataFrame(rows).sample(fraction=1.0, shuffle=True, seed=7)
 
     actual = (
-        int_ylt_ranked.transform(shuffled.lazy())
+        int_ylt_ranked.Model.transform(shuffled.lazy(), RollupConfig())
         .collect()
         .select(Col.year_id, Col.event_id, Col.rnk)
         .sort(Col.year_id, Col.event_id)

@@ -52,8 +52,8 @@ def _complete_mart_input(frame: pl.DataFrame) -> pl.DataFrame:
         Col.cds_cat_class_name: "Wind",
     }
     schema_types = {
-        **mart_ylt_dialsup_long.schema(),
-        **mart_ylt_main_long.schema(),
+        **mart_ylt_dialsup_long.Model.schema(),
+        **mart_ylt_main_long.Model.schema(),
     }
     additions = [
         pl.lit(value).cast(schema_types[column]).alias(column)
@@ -157,11 +157,11 @@ def test_inline_event_loss_threshold_filters_only_final_metric_rows() -> None:
     )
 
     high_threshold_value = 1000.0
-    high_threshold = mart_ylt_main_long.transform(
+    high_threshold = mart_ylt_main_long.Model.transform(
         _complete_mart_input(ylt).lazy(), high_threshold_value
     ).collect()
     non_positive_threshold_value = 0.0
-    non_positive_threshold = mart_ylt_main_long.transform(
+    non_positive_threshold = mart_ylt_main_long.Model.transform(
         _complete_mart_input(ylt).lazy(), non_positive_threshold_value
     ).collect()
 
@@ -204,12 +204,14 @@ def test_thresholded_main_and_dialsup_rows_drive_fanouts() -> None:
 
     threshold = 1000.0
     main = (
-        mart_ylt_main_long.transform(_complete_mart_input(ylt).lazy(), threshold)
+        mart_ylt_main_long.Model.transform(_complete_mart_input(ylt).lazy(), threshold)
         .filter(pl.col(Col.metric) == "euws_override")
         .collect()
     )
     dialsup = (
-        mart_ylt_dialsup_long.transform(_complete_mart_input(ylt).lazy(), threshold)
+        mart_ylt_dialsup_long.Model.transform(
+            _complete_mart_input(ylt).lazy(), threshold
+        )
         .filter(pl.col(Col.metric) == "dialsup_localccy_forecast")
         .collect()
     )
@@ -237,7 +239,7 @@ def test_fanout_writer_lazily_writes_fanout_partitions(tmp_path) -> None:
         }
     ).lazy()
     parquet.write(
-        mart_event_validation.transform(fanout, fanout.filter(pl.lit(False))),
+        mart_event_validation.Model.transform(fanout, fanout.filter(pl.lit(False))),
         tmp_path / EVENT_VALIDATION_FILE,
     )
     fanout_partitions.write({"main_fanout": fanout}, tmp_path / MARTS_DIR)

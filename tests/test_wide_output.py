@@ -20,7 +20,6 @@ from rollup.output_contract import (
 )
 from rollup.writers import parquet, wide_output
 
-
 small_loss = st.floats(
     min_value=0.0, max_value=1_000_000.0, allow_nan=False, allow_infinity=False
 )
@@ -50,8 +49,8 @@ def _complete_wide_input(frame: pl.DataFrame) -> pl.DataFrame:
         [*WIDE_IDENTITY_DIMENSIONS, *WIDE_DIAGNOSTIC_COLUMNS, *defaults]
     )
     schema_types = {
-        **mart_ylt_dialsup_long.schema(),
-        **mart_ylt_main_long.schema(),
+        **mart_ylt_dialsup_long.Model.schema(),
+        **mart_ylt_main_long.Model.schema(),
     }
     additions = [
         pl.lit(defaults.get(column)).cast(schema_types[column]).alias(column)
@@ -64,8 +63,8 @@ def _complete_wide_input(frame: pl.DataFrame) -> pl.DataFrame:
 def _write_wide_fixture_outputs(
     output_root: Path, ylt: pl.DataFrame, dialsup: pl.DataFrame
 ) -> None:
-    main = mart_ylt_main_long.transform(_complete_wide_input(ylt).lazy(), 0.0)
-    dialsup_long = mart_ylt_dialsup_long.transform(
+    main = mart_ylt_main_long.Model.transform(_complete_wide_input(ylt).lazy(), 0.0)
+    dialsup_long = mart_ylt_dialsup_long.Model.transform(
         _complete_wide_input(dialsup).lazy(), 0.0
     )
     parquet.write(main, output_root / COMBINED_YLT_FILE)

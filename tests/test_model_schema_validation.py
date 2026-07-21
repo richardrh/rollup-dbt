@@ -14,7 +14,7 @@ def test_transform_catches_missing_raw_column_with_model_context() -> None:
     with pytest.raises(
         ValueError, match="stg_verisk_ylt.*could not resolve output schema"
     ):
-        stg_verisk_ylt.transform(frame)
+        stg_verisk_ylt.Model.transform(frame)
 
 
 def test_transform_resolves_casts_for_raw_input_dtypes() -> None:
@@ -30,7 +30,10 @@ def test_transform_resolves_casts_for_raw_input_dtypes() -> None:
         }
     ).lazy()
 
-    assert stg_verisk_ylt.transform(frame).collect_schema() == stg_verisk_ylt.schema()
+    assert (
+        stg_verisk_ylt.Model.transform(frame).collect_schema()
+        == stg_verisk_ylt.Model.schema()
+    )
 
 
 def test_validate_schema_accepts_exact_ordered_schema() -> None:
@@ -98,7 +101,7 @@ def test_risklink_flood_event_transform_rejects_string_occurrence_dates_on_colle
         }
     ).lazy()
 
-    candidate = stg_risklink_flood_events.transform(frame)
-    assert candidate.collect_schema() == stg_risklink_flood_events.schema()
+    candidate = stg_risklink_flood_events.Model.transform(frame)
+    assert candidate.collect_schema() == stg_risklink_flood_events.Model.schema()
     with pytest.raises(pl.exceptions.PolarsError):
         candidate.collect()

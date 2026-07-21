@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.sources import ep_summaries, seeds, ylt
 from rollup.intermediate import (
     int_ep_summaries_enriched,
     int_ep_summaries_main,
+    int_ylt_enriched,
     int_ylt_normalized,
 )
-from rollup.intermediate import int_ylt_enriched
+from rollup.sources import ep_summaries, seeds, ylt
 from rollup.staging import stg_risklink_ylt, stg_verisk_ylt
-
 
 _INPUT_YLT_AAL_SUMMARY_SCHEMA = [
     "vendor",
@@ -227,13 +226,15 @@ def input_ylt_aal_by_lob_peril_summary(
 
     lobs = inputs.seeds["lobs"].select(Col.modelled_lob, Col.rollup_lob)
     perils = inputs.seeds["perils"].select(Col.modelled_peril, Col.rollup_peril)
-    verisk_ylt = stg_verisk_ylt.transform(inputs.ylts["verisk"])
-    risklink_ylt = stg_risklink_ylt.transform(inputs.ylts["risklink"])
-    normalized_ylt = int_ylt_normalized.transform(verisk_ylt, risklink_ylt)
-    selected_ep_summaries = int_ep_summaries_main.transform(
-        int_ep_summaries_enriched.transform(inputs.ep_summaries, inputs.seeds)
+    verisk_ylt = stg_verisk_ylt.Model.transform(inputs.ylts["verisk"])
+    risklink_ylt = stg_risklink_ylt.Model.transform(inputs.ylts["risklink"])
+    normalized_ylt = int_ylt_normalized.Model.transform(verisk_ylt, risklink_ylt)
+    selected_ep_summaries = int_ep_summaries_main.Model.transform(
+        int_ep_summaries_enriched.Model.transform(inputs.ep_summaries, inputs.seeds)
     )
-    enriched_ylt = int_ylt_enriched.transform(normalized_ylt, selected_ep_summaries)
+    enriched_ylt = int_ylt_enriched.Model.transform(
+        normalized_ylt, selected_ep_summaries
+    )
     verisk = (
         verisk_ylt.join(lobs, on=Col.modelled_lob, how="inner")
         .join(perils, on=Col.modelled_peril, how="inner")
