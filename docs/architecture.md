@@ -69,39 +69,49 @@ LazyFrame pipeline, not a dbt/SQL pipeline:
   `validate(...) -> None` and `write(...)`; `writers/wide_output.py` owns the
   isolated DuckDB subprocess used for wide MTS output materialization.
 - `src/rollup/pipeline.py` is orchestration only. It imports model modules and
-  calls `module.transform(...)`; it owns work-parquet materialization/re-scan,
+  calls `module.Model.transform(...)`; it owns work-parquet materialization/re-scan,
   debug registration, and writer calls, not model business logic.
 
 ## Model contract
 
 Each public staging, intermediate, and mart model is one semantic Polars model
-per file. The module is the model: its public model operations are exactly
-`schema() -> pl.Schema`, `validate(frame) -> None`, and
-`transform(...) -> pl.LazyFrame`. `schema()` declares the exact final output
-contract, including column names, order, and dtypes. `transform()` builds a lazy
-candidate, calls its own `validate()`, and returns that candidate. This contract
-applies only to public staging, intermediate, and mart models: sources retain
-`load()`, while writers retain their own `validate()`/`write()` contracts.
+per file. All 34 public staging, intermediate, and mart modules define exactly
+one public `Model` class. It specializes the generic
+`PolarsModel[P]` abstract base class with the precise argument types it accepts;
+`P` is a `ParamSpec`. `Model.schema() -> pl.Schema`,
+`Model.validate(frame) -> None`, and `Model.transform(...) -> pl.LazyFrame` are
+the public contract. Callers use those class methods and pass dependencies
+explicitly. This contract applies only to public staging, intermediate, and mart
+models: sources retain `load()`, while writers retain their own
+`validate()`/`write()` contracts.
 
-Every model ends with an explicit, visible final `.select(...)` (with casts as
-needed) in `schema()` order. This is the Polars equivalent of a SQL model's
-final `SELECT`: it makes the boundary between internal working columns and the
-published output explicit. Validating at that boundary catches accidental
-column, ordering, or dtype changes before a downstream model consumes the
-output.
+`PolarsModel` declares abstract class methods `schema` and private `_transform`.
+Each concrete `Model` implements both with `@override`; `_transform` has the
+exact signature supplied through `P`. The inherited, final `transform` template
+calls `_transform`, validates the resulting lazy frame, and returns it. The
+inherited, final `validate` compares the frame schema with `schema()`. Models do
+not override either orchestration method.
 
-Local `validate(frame)` is deliberately a one-line delegation to
-`model_validation.validate_schema(MODEL, schema(), frame)`. The shared helper
-uses only `LazyFrame.collect_schema()`, wraps schema-resolution failures with
-the model name, and compares the actual and expected ordered schemas exactly.
-Schema planning is lazy and does not execute rows, although resolving a schema
+Every `_transform` ends with an explicit, visible final `.select(...)` (with
+casts as needed) in `schema()` order. This is the Polars equivalent of a SQL
+model's final `SELECT`: it makes the boundary between internal working columns
+and the published output explicit. Inherited `transform` always validates this
+boundary before a downstream model consumes the output.
+
+The shared validation uses only `LazyFrame.collect_schema()`, wraps
+schema-resolution failures with the model name, and compares the actual and
+expected ordered schemas exactly. Schema validation is lazy metadata planning,
+not row-value validation: it does not execute rows, although resolving a schema
 can access source metadata. It cannot establish null, value, range, uniqueness,
 or other row-level constraints; those failures may occur only when rows are
 collected or written and belong in data-quality validation/tests.
 
-There is no abstract model class, inheritance, decorator, factory, registry,
-generated projection, context container, dynamic discovery, or sequence-number
-filename convention.
+Mypy enforces model inheritance, specialized signatures, and explicit
+overrides. Ruff handles formatting and linting. Architecture tests cover module
+discovery, class structure, and final-projection properties that type checking
+cannot establish. There are no model instances, wrappers, registries, factories,
+decorators, generated projections, context containers, dynamic discovery, or
+sequence-number filename convention.
 
 Model names are semantic and import-safe, using `stg_`, `int_`, and `mart_`
 prefixes without numeric ordering. Pipeline dependencies explicitly define
@@ -125,15 +135,15 @@ are not written.
 
 | # | Step | Model(s) | Output shape |
 | --- | --- | --- | --- |
-| 1 | Stage raw sources | `stg_verisk_ylt.transform()`, `stg_risklink_ylt.transform()`, `stg_verisk_events.transform()`, `stg_risklink_flood_events.transform()`, `stg_gbp_fx_rates.transform()`, `stg_forecast_factors.transform()` | Raw logical sources are renamed, cast, and cleaned into canonical staging schemas. EP source rows feed enrichment directly. |
-| 2 | Normalize YLT | `int_ylt_normalized.transform()` | Vendor-specific YLT rows are unioned into canonical `vendor`, `modelled_lob`, `modelled_peril`, `loss`, `year_id`, and `event_id` columns. |
-| 3 | Enrich and select EP summaries | `int_ep_summaries_enriched.transform()`, `int_ep_summaries_main.transform()`, `int_ep_summaries_dialsup.transform()` | EP summaries are enriched with LOB/peril seeds, then split into main `selection_priority` and DIALSUP `is_dialsup` selections. |
-| 4 | Prepare shared dates/factors | `int_forecast_dates.transform()` plus staged FX/forecast models | Distinct forecast dates are prepared once for both branches; FX and forecast factors are already staged. |
-| 5 | Join EP vendors | `int_ep_vendor_joined.transform()` | Verisk and RiskLink EP summaries are aggregated at `(rollup_lob, rollup_peril, region_peril_id, blend_subregion_peril_id, base_model, ep_type, return_period)` grain. |
-| 6 | Calculate EP blending targets | `int_ep_blending_target_points.transform()`, `int_ep_blending_weights.transform()`, `int_ep_blending_targets.transform()` | Target points and weights produce vendor contributions, `target_loss`, `base_model_loss`, and clamped `uplift_factor_on_base_model`. |
-| 7 | Build main YLT stream | `int_ylt_enriched.transform()`, `int_ylt_base_selected.transform()`, `int_ylt_ranked.transform()`, `int_ylt_main_blended.transform()`, `int_ylt_main_local_currency.transform()`, `int_ylt_main_forecast.transform()`, `int_ylt_main_euws.transform()`, `int_ylt_main_euws_override.transform()`, `int_ylt_main_metric_stream.transform()` | Main rows receive EP metadata, base selection, rank buckets, EP blending uplift, local-currency conversion, forecast expansion, EUWS factors, overrides, and a combined metric stream. |
-| 8 | Build DIALSUP stream | `int_ylt_enriched.transform()`, `int_ylt_base_selected.transform()`, `int_ylt_ranked.transform()`, `int_ylt_dialsup_factor_base.transform()`, `int_ylt_dialsup_original_metric.transform()`, `int_ylt_dialsup_local_currency_metric.transform()`, `int_ylt_dialsup_forecast_metric.transform()`, `int_ylt_dialsup_metric_stream.transform()` | DIALSUP reuses enrichment/base-selection/ranking operations with DIALSUP-selected EP rows, attaches shared factors once, emits original/local-currency/forecast metrics, and unions them into an independent stream. |
-| 9 | Build marts | `mart_ylt_main_long.transform()`, `mart_ylt_dialsup_long.transform()`, `mart_main_fanout.transform()`, `mart_dialsup_fanout.transform()`, `mart_event_validation.transform()` | Main long keeps final `cds_main` rows plus `intermediate_audit` audit metrics. DIALSUP long keeps final `dialsup_localccy_forecast` rows and tags them `cds_dialsup`. Fanouts are shaped from those fixed long contracts, then summarized for event validation. `_fanout_helpers.py` holds shared fanout construction. |
+| 1 | Stage raw sources | `stg_verisk_ylt.Model.transform()`, `stg_risklink_ylt.Model.transform()`, `stg_verisk_events.Model.transform()`, `stg_risklink_flood_events.Model.transform()`, `stg_gbp_fx_rates.Model.transform()`, `stg_forecast_factors.Model.transform()` | Raw logical sources are renamed, cast, and cleaned into canonical staging schemas. EP source rows feed enrichment directly. |
+| 2 | Normalize YLT | `int_ylt_normalized.Model.transform()` | Vendor-specific YLT rows are unioned into canonical `vendor`, `modelled_lob`, `modelled_peril`, `loss`, `year_id`, and `event_id` columns. |
+| 3 | Enrich and select EP summaries | `int_ep_summaries_enriched.Model.transform()`, `int_ep_summaries_main.Model.transform()`, `int_ep_summaries_dialsup.Model.transform()` | EP summaries are enriched with LOB/peril seeds, then split into main `selection_priority` and DIALSUP `is_dialsup` selections. |
+| 4 | Prepare shared dates/factors | `int_forecast_dates.Model.transform()` plus staged FX/forecast models | Distinct forecast dates are prepared once for both branches; FX and forecast factors are already staged. |
+| 5 | Join EP vendors | `int_ep_vendor_joined.Model.transform()` | Verisk and RiskLink EP summaries are aggregated at `(rollup_lob, rollup_peril, region_peril_id, blend_subregion_peril_id, base_model, ep_type, return_period)` grain. |
+| 6 | Calculate EP blending targets | `int_ep_blending_target_points.Model.transform()`, `int_ep_blending_weights.Model.transform()`, `int_ep_blending_targets.Model.transform()` | Target points and weights produce vendor contributions, `target_loss`, `base_model_loss`, and clamped `uplift_factor_on_base_model`. |
+| 7 | Build main YLT stream | `int_ylt_enriched.Model.transform()`, `int_ylt_base_selected.Model.transform()`, `int_ylt_ranked.Model.transform()`, `int_ylt_main_blended.Model.transform()`, `int_ylt_main_local_currency.Model.transform()`, `int_ylt_main_forecast.Model.transform()`, `int_ylt_main_euws.Model.transform()`, `int_ylt_main_euws_override.Model.transform()`, `int_ylt_main_metric_stream.Model.transform()` | Main rows receive EP metadata, base selection, rank buckets, EP blending uplift, local-currency conversion, forecast expansion, EUWS factors, overrides, and a combined metric stream. |
+| 8 | Build DIALSUP stream | `int_ylt_enriched.Model.transform()`, `int_ylt_base_selected.Model.transform()`, `int_ylt_ranked.Model.transform()`, `int_ylt_dialsup_factor_base.Model.transform()`, `int_ylt_dialsup_original_metric.Model.transform()`, `int_ylt_dialsup_local_currency_metric.Model.transform()`, `int_ylt_dialsup_forecast_metric.Model.transform()`, `int_ylt_dialsup_metric_stream.Model.transform()` | DIALSUP reuses enrichment/base-selection/ranking operations with DIALSUP-selected EP rows, attaches shared factors once, emits original/local-currency/forecast metrics, and unions them into an independent stream. |
+| 9 | Build marts | `mart_ylt_main_long.Model.transform()`, `mart_ylt_dialsup_long.Model.transform()`, `mart_main_fanout.Model.transform()`, `mart_dialsup_fanout.Model.transform()`, `mart_event_validation.Model.transform()` | Main long keeps final `cds_main` rows plus `intermediate_audit` audit metrics. DIALSUP long keeps final `dialsup_localccy_forecast` rows and tags them `cds_dialsup`. Fanouts are shaped from those fixed long contracts, then summarized for event validation. `_fanout_helpers.py` holds shared fanout construction. |
 | 10 | Write product outputs | `parquet.write()`, `wide_output.write()`, `fanout_partitions.write()` | Pipeline directly calls writers: a small fixed loop writes main-long, DIALSUP-long, and event-validation parquets; homogeneous loops write debug frames and fanout partitions. There is no aggregate mart-output wrapper and no filesystem discovery hidden in pipeline execution. |
 
 ## Data

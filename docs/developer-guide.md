@@ -7,48 +7,61 @@ Use this checklist when changing the pipeline shape.
 1. Add or modify one logical output model per file in the dbt-like Polars
    layout: `src/rollup/staging/`, `intermediate/`, or `marts/`. Sources own input
    loading/discovery; writers own output writing.
-2. Expose exactly the public model operations `schema() -> pl.Schema`,
-   `validate(frame) -> None`, and `transform(...) -> pl.LazyFrame` for a public
-   staging, intermediate, or mart model. `schema()` is the exact ordered final
-   output contract. Sources retain `load(data_root)` and writers retain their
-   own `validate()`/`write()` contracts.
-3. End `transform()` with an explicit final `.select(...)`, including casts,
-   in `schema()` order. Treat it like a SQL model's final `SELECT`: internal
-   working columns stay upstream, while the selected columns are the published
-   model boundary. Validate this final lazy candidate, then return it:
+2. Define exactly one public `Model` class for each staging, intermediate, or
+   mart module. Specialize `PolarsModel[P]` with the exact dependency argument
+   types, where `P` is a `ParamSpec`. Implement only its abstract class methods,
+   `schema()` and private `_transform(...)`, with `@override`. `schema()` is the
+   exact ordered final output contract; final inherited `validate(frame)` and
+   `transform(...)` are the public operations. Sources retain `load(data_root)`
+   and writers retain their own `validate()`/`write()` contracts.
+3. End `_transform()` with an explicit final `.select(...)`, including casts, in
+   `schema()` order. Treat it like a SQL model's final `SELECT`: internal working
+   columns stay upstream, while the selected columns are the published model
+   boundary. Do not call validation in `_transform`: inherited `transform`
+   always validates the returned lazy candidate.
 
    ```python
-   def schema() -> pl.Schema:
-       return pl.Schema({"id": pl.Int64, "amount": pl.Float64})
+    from typing import override
 
-   def validate(frame: pl.LazyFrame) -> None:
-       validate_schema(MODEL, schema(), frame)
+    import polars as pl
 
-   def transform(source: pl.LazyFrame) -> pl.LazyFrame:
-       frame = source.select(
-           pl.col("raw_id").cast(pl.Int64).alias("id"),
-           pl.col("raw_amount").cast(pl.Float64).alias("amount"),
-       )
-       validate(frame)
-       return frame
+    from rollup.model import PolarsModel
+
+
+    class Model(PolarsModel[[pl.LazyFrame]]):
+        @override
+        @classmethod
+        def schema(cls) -> pl.Schema:
+            return pl.Schema({"id": pl.Int64, "amount": pl.Float64})
+
+        @override
+        @classmethod
+        def _transform(cls, source: pl.LazyFrame) -> pl.LazyFrame:
+            return source.select(
+                pl.col("raw_id").cast(pl.Int64).alias("id"),
+                pl.col("raw_amount").cast(pl.Float64).alias("amount"),
+            )
    ```
 
-   Import and use `rollup.model_validation.validate_schema`; do not replace the
-   local one-line delegation with custom checks. The helper resolves the lazy
-   plan with `collect_schema()` and compares the exact ordered schema. It does
-   not execute rows, though schema resolution can access source metadata. Keep
-   null, value, uniqueness, range, and cardinality checks in data-quality
-   validation/tests: schema validation cannot guarantee them and they may fail
-   only during collection or writing. Do not add numbering, model base classes,
-   inheritance, decorators, factories, registries, generated projections,
-   dynamic discovery, or context containers.
+   Call `module.Model.transform(...)`, `module.Model.schema()`, or
+   `module.Model.validate(frame)` as appropriate, passing dependencies
+   explicitly; do not instantiate `Model`. Schema validation resolves the lazy
+   plan with `collect_schema()` and compares the exact ordered schema. It is lazy
+   metadata planning, not row-value validation: it does not execute rows, though
+   schema resolution can access source metadata. Keep null, value, uniqueness,
+   range, and cardinality checks in data-quality validation/tests. Mypy enforces
+   inheritance, signatures, and `@override`; Ruff handles formatting and lint.
+   Architecture tests cover discovery, class structure, and final projection
+   properties that type checking cannot. Do not add numbering, wrappers,
+   registries, factories, decorators, generated projections, dynamic discovery,
+   or context containers.
 4. Source adapters expose exactly one public operation: `load(data_root)`. The
    function must return lazy Polars scans without collecting rows; EP per-file
    schema resolution is allowed. Keep discovery and immediate source validation
    there, and do not add private helper functions or compatibility aliases.
 5. Keep `src/rollup/pipeline.py` as orchestration only: import the model module
-   and call `module.transform(...)` in the correct phase. Prefer `LazyFrame`; keep
-   source IO in sources and file/DuckDB/subprocess IO in writers.
+   and call `module.Model.transform(...)` in the correct phase. Prefer
+   `LazyFrame`; keep source IO in sources and file/DuckDB/subprocess IO in writers.
 6. Add shared column names to `src/rollup/columns.py` enums instead of repeating
    string literals.
 7. If the step adds or changes an input, output, stage, or mart contract, update
