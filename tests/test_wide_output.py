@@ -20,7 +20,6 @@ from rollup.output_contract import (
 )
 from rollup.writers import parquet, wide_output
 
-
 small_loss = st.floats(
     min_value=0.0, max_value=1_000_000.0, allow_nan=False, allow_infinity=False
 )
@@ -41,10 +40,21 @@ def _complete_wide_input(frame: pl.DataFrame) -> pl.DataFrame:
         Col.selection_priority: 1,
         Col.is_dialsup: 0,
         Col.is_euws: 1,
+        Col.fx_rate_date: "2026-01-01",
+        Col.fx_rate: 1.0,
+        "_euws_factor_raw": 1.0,
+        "_localccy_forecast_loss": 1.0,
+    }
+    required_columns = dict.fromkeys(
+        [*WIDE_IDENTITY_DIMENSIONS, *WIDE_DIAGNOSTIC_COLUMNS, *defaults]
+    )
+    schema_types = {
+        **mart_ylt_dialsup_long.Model.schema(),
+        **mart_ylt_main_long.Model.schema(),
     }
     additions = [
-        pl.lit(defaults.get(column)).alias(column)
-        for column in [*WIDE_IDENTITY_DIMENSIONS, *WIDE_DIAGNOSTIC_COLUMNS]
+        pl.lit(defaults.get(column)).cast(schema_types[column]).alias(column)
+        for column in required_columns
         if column not in frame.columns
     ]
     return frame.with_columns(*additions) if additions else frame
@@ -53,8 +63,8 @@ def _complete_wide_input(frame: pl.DataFrame) -> pl.DataFrame:
 def _write_wide_fixture_outputs(
     output_root: Path, ylt: pl.DataFrame, dialsup: pl.DataFrame
 ) -> None:
-    main = mart_ylt_main_long.transform(_complete_wide_input(ylt).lazy(), 0.0)
-    dialsup_long = mart_ylt_dialsup_long.transform(
+    main = mart_ylt_main_long.Model.transform(_complete_wide_input(ylt).lazy(), 0.0)
+    dialsup_long = mart_ylt_dialsup_long.Model.transform(
         _complete_wide_input(dialsup).lazy(), 0.0
     )
     parquet.write(main, output_root / COMBINED_YLT_FILE)
@@ -67,9 +77,9 @@ def _write_wide_fixture_outputs(
 
 
 def _expected_wide_columns(months: list[str]) -> list[str]:
-    columns = list(WIDE_IDENTITY_DIMENSIONS)
-    columns.insert(3, Col.output_use)
-    columns.extend(WIDE_DIAGNOSTIC_COLUMNS)
+    columns = [str(column) for column in WIDE_IDENTITY_DIMENSIONS]
+    columns.insert(3, str(Col.output_use))
+    columns.extend(str(column) for column in WIDE_DIAGNOSTIC_COLUMNS)
     columns.extend(f"euws_override_{month}_loss" for month in months)
     columns.extend(f"dialsup_localccy_forecast_{month}_loss" for month in months)
     return columns
@@ -108,8 +118,10 @@ def _persisted_wide_input_rows(
         Col.metric: metric,
         Col.loss: 100.0 if metric == "euws_override" else 50.0,
     }
-    rows = {column: [value] * len(forecast_dates) for column, value in values.items()}
-    rows[Col.forecast_date] = forecast_dates
+    rows: dict[str, list[object]] = {
+        column: [value] * len(forecast_dates) for column, value in values.items()
+    }
+    rows[str(Col.forecast_date)] = [value for value in forecast_dates]
     if metric == "euws_override":
         rows[Col.risklink_blended_contribution] = [75.0] * len(forecast_dates)
         rows[Col.verisk_blended_contribution] = [25.0] * len(forecast_dates)

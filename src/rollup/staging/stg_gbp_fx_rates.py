@@ -1,36 +1,32 @@
 from __future__ import annotations
 
+from typing import override
+
 import polars as pl
 
 from rollup.columns import Col, RawCol
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-    require_dtype_family,
-)
-
-MODEL = "stg_gbp_fx_rates"
+from rollup.model import PolarsModel
 
 
-def validate(fx_rates: pl.LazyFrame) -> None:
-    schema = collect_lazy_schema(MODEL, "fx_rates", fx_rates)
-    require_columns(
-        MODEL,
-        "fx_rates",
-        schema,
-        [Col.target_currency, RawCol.currency_code, RawCol.rate_date],
-    )
-    require_dtype_family(MODEL, "fx_rates", schema, RawCol.rate, "numeric")
+class Model(PolarsModel[[pl.LazyFrame]]):
+    @override
+    @classmethod
+    def schema(cls) -> pl.Schema:
+        return pl.Schema(
+            {  # type: ignore[arg-type]  # Polars accepts StrEnum keys.
+                Col.currency: pl.String,
+                Col.target_currency: pl.String,
+                Col.fx_rate_date: pl.String,
+                Col.fx_rate: pl.Float64,
+            }
+        )
 
-
-def transform(fx_rates: pl.LazyFrame) -> pl.LazyFrame:
-    validate(fx_rates)
-    frame = fx_rates.filter(pl.col(Col.target_currency) == "GBP").select(
-        pl.col(RawCol.currency_code).alias(Col.currency),
-        Col.target_currency,
-        pl.col(RawCol.rate_date).alias(Col.fx_rate_date),
-        pl.col(RawCol.rate).alias(Col.fx_rate),
-    )
-    validate_output(MODEL, frame)
-    return frame
+    @override
+    @classmethod
+    def _transform(cls, fx_rates: pl.LazyFrame) -> pl.LazyFrame:
+        return fx_rates.filter(pl.col(Col.target_currency) == "GBP").select(
+            pl.col(RawCol.currency_code).cast(pl.String).alias(Col.currency),
+            pl.col(Col.target_currency).cast(pl.String),
+            pl.col(RawCol.rate_date).cast(pl.String).alias(Col.fx_rate_date),
+            pl.col(RawCol.rate).cast(pl.Float64).alias(Col.fx_rate),
+        )

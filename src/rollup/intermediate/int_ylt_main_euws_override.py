@@ -1,84 +1,122 @@
 from __future__ import annotations
+
+from typing import override
+
 import polars as pl
+
 from rollup.columns import Col, RawCol
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-    require_dtype_family,
-    require_join_key_compatible,
-    validate_mapping_key,
-)
-
-MODEL = "int_ylt_main_euws_override"
+from rollup.model import PolarsModel
 
 
-def validate(ylt_euws_raw: pl.LazyFrame, seeds: dict[str, pl.LazyFrame]) -> None:
-    validate_mapping_key(MODEL, "seeds", seeds, "euws_rank_overrides")
-    overrides = seeds["euws_rank_overrides"]
-    ylt_schema = collect_lazy_schema(MODEL, "ylt_euws_raw", ylt_euws_raw)
-    override_schema = collect_lazy_schema(MODEL, "seeds.euws_rank_overrides", overrides)
-    require_columns(
-        MODEL,
-        "ylt_euws_raw",
-        ylt_schema,
-        [
+class Model(PolarsModel[[pl.LazyFrame, dict[str, pl.LazyFrame]]]):
+    @override
+    @classmethod
+    def schema(cls) -> pl.Schema:
+        return pl.Schema(
+            {
+                Col.vendor: pl.String,
+                Col.analysis_id: pl.String,
+                Col.modelled_lob: pl.String,
+                Col.modelled_peril: pl.String,
+                Col.rollup_lob: pl.String,
+                Col.rollup_peril: pl.String,
+                Col.region_peril_id: pl.Int64,
+                Col.blend_subregion_peril_id: pl.String,
+                Col.base_model: pl.String,
+                Col.selection_priority: pl.Int64,
+                Col.is_dialsup: pl.Int64,
+                Col.is_euws: pl.Int64,
+                Col.cds_cat_class_name: pl.String,
+                Col.class_: pl.String,
+                Col.office: pl.String,
+                Col.currency: pl.String,
+                Col.model_code: pl.Int64,
+                Col.year_id: pl.Int64,
+                Col.event_id: pl.Int64,
+                Col.loss: pl.Float64,
+                Col.metric: pl.String,
+                Col.rnk: pl.Int64,
+                Col.rp: pl.Float64,
+                Col.rp_bucket: pl.Int32,
+                Col.risklink_blended_contribution: pl.Float64,
+                Col.verisk_blended_contribution: pl.Float64,
+                Col.uplift_factor_on_base_model: pl.Float64,
+                Col.target_currency: pl.String,
+                Col.forecast_date: pl.Date,
+                Col.model_event_id: pl.Int64,
+                Col.event_day: pl.Int64,
+                "_euws_factor_raw": pl.Float64,
+                "_localccy_forecast_loss": pl.Float64,
+            }
+        )
+
+    @override
+    @classmethod
+    def _transform(
+        cls, ylt_euws_raw: pl.LazyFrame, seeds: dict[str, pl.LazyFrame]
+    ) -> pl.LazyFrame:
+        euws_overrides = seeds["euws_rank_overrides"].select(
             Col.rollup_lob,
-            Col.rnk,
-            Col.loss,
-            "_euws_factor_raw",
-            "_localccy_forecast_loss",
-        ],
-    )
-    require_columns(
-        MODEL,
-        "seeds.euws_rank_overrides",
-        override_schema,
-        [Col.rollup_lob, RawCol.max_rank],
-    )
-    require_dtype_family(
-        MODEL, "seeds.euws_rank_overrides", override_schema, RawCol.factor, "numeric"
-    )
-    require_join_key_compatible(
-        MODEL,
-        "ylt_euws_raw",
-        ylt_schema,
-        "seeds.euws_rank_overrides",
-        override_schema,
-        [Col.rollup_lob],
-    )
-
-
-def transform(
-    ylt_euws_raw: pl.LazyFrame, seeds: dict[str, pl.LazyFrame]
-) -> pl.LazyFrame:
-    validate(ylt_euws_raw, seeds)
-    euws_overrides = seeds["euws_rank_overrides"].select(
-        Col.rollup_lob,
-        pl.col(RawCol.max_rank).alias("_euws_override_max_rank"),
-        pl.col(RawCol.factor).alias("_euws_override_factor"),
-    )
-    override_condition = (
-        pl.col("_euws_override_factor").is_not_null()
-        & (pl.col(Col.rnk) <= pl.col("_euws_override_max_rank"))
-        & (pl.col("_euws_factor_raw") == 0)
-    )
-    frame = (
-        ylt_euws_raw.join(euws_overrides, on=Col.rollup_lob, how="left")
-        .with_columns(
-            pl.when(override_condition)
-            .then(pl.col("_euws_override_factor"))
-            .otherwise(pl.col("_euws_factor_raw"))
-            .alias("_euws_factor")
+            pl.col(RawCol.max_rank).alias("_euws_override_max_rank"),
+            pl.col(RawCol.factor).alias("_euws_override_factor"),
         )
-        .with_columns(
-            pl.when(override_condition)
-            .then(pl.col("_localccy_forecast_loss") * pl.col("_euws_override_factor"))
-            .otherwise(pl.col(Col.loss))
-            .alias(Col.loss),
-            pl.lit("euws_override").alias(Col.metric),
+        override_condition = (
+            pl.col("_euws_override_factor").is_not_null()
+            & (pl.col(Col.rnk) <= pl.col("_euws_override_max_rank"))
+            & (pl.col("_euws_factor_raw") == 0)
         )
-        .drop("_euws_override_max_rank", "_euws_override_factor", "_euws_factor")
-    )
-    validate_output(MODEL, frame)
-    return frame
+        frame = (
+            ylt_euws_raw.join(euws_overrides, on=Col.rollup_lob, how="left")
+            .with_columns(
+                pl.when(override_condition)
+                .then(pl.col("_euws_override_factor"))
+                .otherwise(pl.col("_euws_factor_raw"))
+                .alias("_euws_factor")
+            )
+            .with_columns(
+                pl.when(override_condition)
+                .then(
+                    pl.col("_localccy_forecast_loss") * pl.col("_euws_override_factor")
+                )
+                .otherwise(pl.col(Col.loss))
+                .alias(Col.loss),
+                pl.lit("euws_override").alias(Col.metric),
+            )
+            .drop("_euws_override_max_rank", "_euws_override_factor", "_euws_factor")
+            .select(
+                Col.vendor,
+                Col.analysis_id,
+                Col.modelled_lob,
+                Col.modelled_peril,
+                Col.rollup_lob,
+                Col.rollup_peril,
+                pl.col(Col.region_peril_id).cast(pl.Int64),
+                Col.blend_subregion_peril_id,
+                Col.base_model,
+                pl.col(Col.selection_priority).cast(pl.Int64),
+                pl.col(Col.is_dialsup).cast(pl.Int64),
+                pl.col(Col.is_euws).cast(pl.Int64),
+                Col.cds_cat_class_name,
+                Col.class_,
+                Col.office,
+                Col.currency,
+                pl.col(Col.model_code).cast(pl.Int64),
+                pl.col(Col.year_id).cast(pl.Int64),
+                pl.col(Col.event_id).cast(pl.Int64),
+                pl.col(Col.loss).cast(pl.Float64),
+                Col.metric,
+                pl.col(Col.rnk).cast(pl.Int64),
+                pl.col(Col.rp).cast(pl.Float64),
+                pl.col(Col.rp_bucket).cast(pl.Int32),
+                pl.col(Col.risklink_blended_contribution).cast(pl.Float64),
+                pl.col(Col.verisk_blended_contribution).cast(pl.Float64),
+                pl.col(Col.uplift_factor_on_base_model).cast(pl.Float64),
+                Col.target_currency,
+                pl.col(Col.forecast_date).cast(pl.Date),
+                pl.col(Col.model_event_id).cast(pl.Int64),
+                pl.col(Col.event_day).cast(pl.Int64),
+                pl.col("_euws_factor_raw").cast(pl.Float64),
+                pl.col("_localccy_forecast_loss").cast(pl.Float64),
+            )
+        )
+        return frame

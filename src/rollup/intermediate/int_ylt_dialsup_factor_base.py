@@ -1,125 +1,115 @@
 from __future__ import annotations
+
+from typing import override
+
 import polars as pl
+
 from rollup.columns import Col
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-    require_dtype_family,
-    require_join_key_compatible,
-)
-
-MODEL = "int_ylt_dialsup_factor_base"
+from rollup.model import PolarsModel
 
 
-def validate(
-    ylt: pl.LazyFrame,
-    verisk_events: pl.LazyFrame,
-    fx_rates: pl.LazyFrame,
-    forecast_dates: pl.LazyFrame,
-    forecast_factors: pl.LazyFrame,
-) -> None:
-    ylt_schema = collect_lazy_schema(MODEL, "ylt", ylt)
-    events_schema = collect_lazy_schema(MODEL, "verisk_events", verisk_events)
-    fx_schema = collect_lazy_schema(MODEL, "fx_rates", fx_rates)
-    dates_schema = collect_lazy_schema(MODEL, "forecast_dates", forecast_dates)
-    factor_schema = collect_lazy_schema(MODEL, "forecast_factors", forecast_factors)
-    require_columns(
-        MODEL,
-        "ylt",
-        ylt_schema,
-        [
-            Col.event_id,
-            Col.year_id,
-            Col.model_code,
-            Col.currency,
-            Col.class_,
-            Col.office,
-        ],
-    )
-    require_columns(
-        MODEL,
-        "verisk_events",
-        events_schema,
-        [Col.event_id, Col.year_id, Col.model_code],
-    )
-    require_columns(
-        MODEL,
-        "fx_rates",
-        fx_schema,
-        [Col.currency, Col.fx_rate],
-    )
-    require_columns(
-        MODEL,
-        "forecast_dates",
-        dates_schema,
-        [Col.forecast_date],
-    )
-    require_columns(
-        MODEL,
-        "forecast_factors",
-        factor_schema,
-        [Col.class_, Col.office, Col.forecast_date, "_forecast_factor_raw"],
-    )
-    require_dtype_family(MODEL, "fx_rates", fx_schema, Col.fx_rate, "numeric")
-    require_dtype_family(
-        MODEL, "forecast_factors", factor_schema, "_forecast_factor_raw", "numeric"
-    )
-    require_dtype_family(
-        MODEL, "forecast_dates", dates_schema, Col.forecast_date, "date_like"
-    )
-    require_dtype_family(
-        MODEL, "forecast_factors", factor_schema, Col.forecast_date, "date_like"
-    )
-    require_join_key_compatible(
-        MODEL,
-        "ylt",
-        ylt_schema,
-        "verisk_events",
-        events_schema,
-        [Col.event_id, Col.year_id, Col.model_code],
-    )
-    require_join_key_compatible(
-        MODEL, "ylt", ylt_schema, "fx_rates", fx_schema, [Col.currency]
-    )
-    require_join_key_compatible(
-        MODEL,
-        "ylt",
-        ylt_schema,
-        "forecast_factors",
-        factor_schema,
-        [Col.class_, Col.office],
-    )
-    require_join_key_compatible(
-        MODEL,
-        "forecast_dates",
-        dates_schema,
-        "forecast_factors",
-        factor_schema,
-        [Col.forecast_date],
-    )
-
-
-def transform(
-    ylt: pl.LazyFrame,
-    verisk_events: pl.LazyFrame,
-    fx_rates: pl.LazyFrame,
-    forecast_dates: pl.LazyFrame,
-    forecast_factors: pl.LazyFrame,
-) -> pl.LazyFrame:
-    validate(ylt, verisk_events, fx_rates, forecast_dates, forecast_factors)
-    frame = (
-        ylt.join(
-            verisk_events, on=[Col.event_id, Col.year_id, Col.model_code], how="left"
+class Model(
+    PolarsModel[[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame, pl.LazyFrame, pl.LazyFrame]]
+):
+    @override
+    @classmethod
+    def schema(cls) -> pl.Schema:
+        return pl.Schema(
+            {
+                Col.vendor: pl.String,
+                Col.analysis_id: pl.String,
+                Col.modelled_lob: pl.String,
+                Col.modelled_peril: pl.String,
+                Col.rollup_lob: pl.String,
+                Col.rollup_peril: pl.String,
+                Col.region_peril_id: pl.Int64,
+                Col.blend_subregion_peril_id: pl.String,
+                Col.base_model: pl.String,
+                Col.selection_priority: pl.Int64,
+                Col.is_dialsup: pl.Int64,
+                Col.is_euws: pl.Int64,
+                Col.cds_cat_class_name: pl.String,
+                Col.class_: pl.String,
+                Col.office: pl.String,
+                Col.currency: pl.String,
+                Col.model_code: pl.Int64,
+                Col.year_id: pl.Int64,
+                Col.event_id: pl.Int64,
+                Col.loss: pl.Float64,
+                Col.metric: pl.String,
+                Col.rnk: pl.Int64,
+                Col.rp: pl.Float64,
+                Col.rp_bucket: pl.Int32,
+                Col.model_event_id: pl.Int64,
+                Col.event_day: pl.Int64,
+                Col.target_currency: pl.String,
+                Col.fx_rate_date: pl.String,
+                Col.fx_rate: pl.Float64,
+                Col.forecast_date: pl.Date,
+                "_forecast_factor_raw": pl.Float64,
+                "_forecast_factor": pl.Float64,
+            }
         )
-        .join(fx_rates, on=Col.currency, how="inner")
-        .join(forecast_dates, how="cross")
-        .join(
-            forecast_factors, on=[Col.class_, Col.office, Col.forecast_date], how="left"
+
+    @override
+    @classmethod
+    def _transform(
+        cls,
+        ylt: pl.LazyFrame,
+        verisk_events: pl.LazyFrame,
+        fx_rates: pl.LazyFrame,
+        forecast_dates: pl.LazyFrame,
+        forecast_factors: pl.LazyFrame,
+    ) -> pl.LazyFrame:
+        frame = (
+            ylt.join(
+                verisk_events,
+                on=[Col.event_id, Col.year_id, Col.model_code],
+                how="left",
+            )
+            .join(fx_rates, on=Col.currency, how="inner")
+            .join(forecast_dates, how="cross")
+            .join(
+                forecast_factors,
+                on=[Col.class_, Col.office, Col.forecast_date],
+                how="left",
+            )
+            .with_columns(
+                pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor")
+            )
+            .select(
+                Col.vendor,
+                Col.analysis_id,
+                Col.modelled_lob,
+                Col.modelled_peril,
+                Col.rollup_lob,
+                Col.rollup_peril,
+                pl.col(Col.region_peril_id).cast(pl.Int64),
+                Col.blend_subregion_peril_id,
+                Col.base_model,
+                pl.col(Col.selection_priority).cast(pl.Int64),
+                pl.col(Col.is_dialsup).cast(pl.Int64),
+                pl.col(Col.is_euws).cast(pl.Int64),
+                Col.cds_cat_class_name,
+                Col.class_,
+                Col.office,
+                Col.currency,
+                pl.col(Col.model_code).cast(pl.Int64),
+                pl.col(Col.year_id).cast(pl.Int64),
+                pl.col(Col.event_id).cast(pl.Int64),
+                pl.col(Col.loss).cast(pl.Float64),
+                Col.metric,
+                pl.col(Col.rnk).cast(pl.Int64),
+                pl.col(Col.rp).cast(pl.Float64),
+                pl.col(Col.rp_bucket).cast(pl.Int32),
+                pl.col(Col.model_event_id).cast(pl.Int64),
+                pl.col(Col.event_day).cast(pl.Int64),
+                Col.target_currency,
+                Col.fx_rate_date,
+                pl.col(Col.fx_rate).cast(pl.Float64),
+                pl.col(Col.forecast_date).cast(pl.Date),
+                pl.col("_forecast_factor_raw").cast(pl.Float64),
+                pl.col("_forecast_factor").cast(pl.Float64),
+            )
         )
-        .with_columns(
-            pl.col("_forecast_factor_raw").fill_null(1.0).alias("_forecast_factor")
-        )
-    )
-    validate_output(MODEL, frame)
-    return frame
+        return frame

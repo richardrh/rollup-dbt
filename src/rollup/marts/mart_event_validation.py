@@ -1,51 +1,52 @@
 from __future__ import annotations
+
+from typing import override
+
 import polars as pl
+
 from rollup.columns import Col, FanoutCol
-from rollup.model_validation import (
-    collect_lazy_schema,
-    validate_output,
-    require_columns,
-)
-
-MODEL = "mart_event_validation"
+from rollup.model import PolarsModel
 
 
-def validate(main_fanout: pl.LazyFrame, dialsup_fanout: pl.LazyFrame) -> None:
-    for input_name, frame in {
-        "main_fanout": main_fanout,
-        "dialsup_fanout": dialsup_fanout,
-    }.items():
-        schema = collect_lazy_schema(MODEL, input_name, frame)
-        require_columns(
-            MODEL,
-            input_name,
-            schema,
-            [
-                Col.base_model,
-                Col.metric,
-                Col.forecast_date,
-                FanoutCol.ModelEventID,
-                FanoutCol.ModelEventDay,
-            ],
+class Model(PolarsModel[[pl.LazyFrame, pl.LazyFrame]]):
+    @override
+    @classmethod
+    def schema(cls) -> pl.Schema:
+        return pl.Schema(
+            {  # type: ignore[arg-type]  # Polars accepts StrEnum keys.
+                Col.base_model: pl.String,
+                Col.metric: pl.String,
+                Col.forecast_date: pl.Date,
+                Col.row_count: pl.UInt32,
+                Col.missing_model_event_id: pl.UInt32,
+                Col.missing_model_event_day: pl.UInt32,
+            }
         )
 
-
-def transform(main_fanout: pl.LazyFrame, dialsup_fanout: pl.LazyFrame) -> pl.LazyFrame:
-    validate(main_fanout, dialsup_fanout)
-    reports = [
-        fanout.group_by(Col.base_model, Col.metric, Col.forecast_date).agg(
-            pl.len().alias(Col.row_count),
-            pl.col(FanoutCol.ModelEventID)
-            .is_null()
-            .sum()
-            .alias(Col.missing_model_event_id),
-            pl.col(FanoutCol.ModelEventDay)
-            .is_null()
-            .sum()
-            .alias(Col.missing_model_event_day),
+    @override
+    @classmethod
+    def _transform(
+        cls, main_fanout: pl.LazyFrame, dialsup_fanout: pl.LazyFrame
+    ) -> pl.LazyFrame:
+        reports = [
+            fanout.group_by(Col.base_model, Col.metric, Col.forecast_date).agg(
+                pl.len().alias(Col.row_count),
+                pl.col(FanoutCol.ModelEventID)
+                .is_null()
+                .sum()
+                .alias(Col.missing_model_event_id),
+                pl.col(FanoutCol.ModelEventDay)
+                .is_null()
+                .sum()
+                .alias(Col.missing_model_event_day),
+            )
+            for fanout in [main_fanout, dialsup_fanout]
+        ]
+        return pl.concat(reports, how="vertical").select(
+            Col.base_model,
+            Col.metric,
+            Col.forecast_date,
+            pl.col(Col.row_count).cast(pl.UInt32),
+            pl.col(Col.missing_model_event_id).cast(pl.UInt32),
+            pl.col(Col.missing_model_event_day).cast(pl.UInt32),
         )
-        for fanout in [main_fanout, dialsup_fanout]
-    ]
-    frame = pl.concat(reports, how="vertical")
-    validate_output(MODEL, frame)
-    return frame

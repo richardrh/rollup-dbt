@@ -42,7 +42,7 @@ def test_risklink_flood_event_staging_keeps_model_occurrence_year(
     ).write_parquet(validation_dir / "risklink_flood22_model_events.parquet")
 
     result = (
-        stg_risklink_flood_events.transform(
+        stg_risklink_flood_events.Model.transform(
             load(data_root)["risklink_flood22_model_events"]
         )
         .collect()

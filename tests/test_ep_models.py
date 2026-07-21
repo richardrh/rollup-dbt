@@ -114,13 +114,43 @@ def _ep_summary_rows(
     ).lazy()
 
 
+def test_ep_intermediate_models_validate_final_candidate_schemas() -> None:
+    enriched = int_ep_summaries_enriched.Model.transform(
+        _peril_selection_ep_summaries(), _peril_selection_seed_mapping()
+    )
+    main = int_ep_summaries_main.Model.transform(enriched)
+    dialsup = int_ep_summaries_dialsup.Model.transform(enriched)
+    joined = int_ep_vendor_joined.Model.transform(main)
+    weights = int_ep_blending_weights.Model.transform(_blending_factor_mapping())
+    target_points = int_ep_blending_target_points.Model.transform(
+        joined, RollupConfig()
+    )
+    targets = int_ep_blending_targets.Model.transform(
+        target_points,
+        weights,
+        RollupConfig(),
+    )
+
+    for model, candidate in (
+        (int_ep_summaries_enriched.Model, enriched),
+        (int_ep_summaries_main.Model, main),
+        (int_ep_summaries_dialsup.Model, dialsup),
+        (int_ep_vendor_joined.Model, joined),
+        (int_ep_blending_weights.Model, weights),
+        (int_ep_blending_target_points.Model, target_points),
+        (int_ep_blending_targets.Model, targets),
+    ):
+        assert candidate.collect_schema() == model.schema()
+        model.validate(candidate)
+
+
 def test_ep_main_selection_chooses_lowest_selection_priority() -> None:
-    enriched = int_ep_summaries_enriched.transform(
+    enriched = int_ep_summaries_enriched.Model.transform(
         _peril_selection_ep_summaries(), _peril_selection_seed_mapping()
     )
 
     selected = (
-        int_ep_summaries_main.transform(enriched)
+        int_ep_summaries_main.Model.transform(enriched)
         .select(Col.modelled_peril)
         .collect()
         .to_series()
@@ -131,12 +161,12 @@ def test_ep_main_selection_chooses_lowest_selection_priority() -> None:
 
 
 def test_ep_dialsup_selection_keeps_all_is_dialsup_candidates() -> None:
-    enriched = int_ep_summaries_enriched.transform(
+    enriched = int_ep_summaries_enriched.Model.transform(
         _peril_selection_ep_summaries(), _peril_selection_seed_mapping()
     )
 
     selected = (
-        int_ep_summaries_dialsup.transform(enriched)
+        int_ep_summaries_dialsup.Model.transform(enriched)
         .select(Col.modelled_peril)
         .collect()
         .to_series()
@@ -148,15 +178,19 @@ def test_ep_dialsup_selection_keeps_all_is_dialsup_candidates() -> None:
 
 
 def test_ep_blending_joins_weights_by_blend_subregion_peril_id() -> None:
-    enriched = int_ep_summaries_enriched.transform(
+    enriched = int_ep_summaries_enriched.Model.transform(
         _ep_summary_rows(["verisk", "risklink"], [100.0, 200.0]),
         _selected_low_seed_mapping(),
     )
-    joined = int_ep_vendor_joined.transform(int_ep_summaries_main.transform(enriched))
-    weights = int_ep_blending_weights.transform(_blending_factor_mapping())
+    joined = int_ep_vendor_joined.Model.transform(
+        int_ep_summaries_main.Model.transform(enriched)
+    )
+    weights = int_ep_blending_weights.Model.transform(_blending_factor_mapping())
 
-    blended = int_ep_blending_targets.transform(
-        int_ep_blending_target_points.transform(joined), weights
+    blended = int_ep_blending_targets.Model.transform(
+        int_ep_blending_target_points.Model.transform(joined, RollupConfig()),
+        weights,
+        RollupConfig(),
     ).collect()
 
     assert blended.item(0, Col.blend_subregion_peril_id) == "216b"
@@ -169,7 +203,7 @@ def test_ep_blending_joins_weights_by_blend_subregion_peril_id() -> None:
 
 def test_missing_blending_factors_seed_raises_clear_error() -> None:
     try:
-        int_ep_blending_weights.transform({})
+        int_ep_blending_weights.Model.transform({})
     except ValueError as exc:
         assert "missing required key 'blending_factors'" in str(exc)
     else:
@@ -188,14 +222,17 @@ def test_ep_blending_falls_back_to_base_model_loss_when_counterparty_missing() -
             }
         ).lazy()
     }
-    enriched = int_ep_summaries_enriched.transform(
+    enriched = int_ep_summaries_enriched.Model.transform(
         _ep_summary_rows(["risklink"], [200.0]), _selected_low_seed_mapping()
     )
-    joined = int_ep_vendor_joined.transform(int_ep_summaries_main.transform(enriched))
+    joined = int_ep_vendor_joined.Model.transform(
+        int_ep_summaries_main.Model.transform(enriched)
+    )
 
-    blended = int_ep_blending_targets.transform(
-        int_ep_blending_target_points.transform(joined),
-        int_ep_blending_weights.transform(seeds),
+    blended = int_ep_blending_targets.Model.transform(
+        int_ep_blending_target_points.Model.transform(joined, RollupConfig()),
+        int_ep_blending_weights.Model.transform(seeds),
+        RollupConfig(),
     ).collect()
 
     assert blended.height == 1
@@ -217,7 +254,7 @@ def test_ep_blending_uses_configured_target_points_caps_and_vendor_years() -> No
             uplift_factor_max=2.0,
         )
     )
-    ranked = int_ylt_ranked.transform(
+    ranked = int_ylt_ranked.Model.transform(
         pl.DataFrame(
             {
                 Col.vendor: ["verisk", "verisk"],
@@ -228,6 +265,19 @@ def test_ep_blending_uses_configured_target_points_caps_and_vendor_years() -> No
                 Col.analysis_id: ["A", "A"],
                 Col.model_code: [1, 1],
                 Col.loss: [100.0, 50.0],
+                Col.modelled_peril: ["PERIL", "PERIL"],
+                Col.rollup_lob: ["LOB", "LOB"],
+                Col.region_peril_id: [1, 1],
+                Col.blend_subregion_peril_id: ["1", "1"],
+                Col.base_model: ["verisk", "verisk"],
+                Col.selection_priority: [1, 1],
+                Col.is_dialsup: [0, 0],
+                Col.is_euws: [0, 0],
+                Col.cds_cat_class_name: ["Wind", "Wind"],
+                Col.class_: ["COMM", "COMM"],
+                Col.office: ["DE", "DE"],
+                Col.currency: ["EUR", "EUR"],
+                Col.metric: ["original", "original"],
             }
         ).lazy(),
         config,
@@ -246,16 +296,18 @@ def test_ep_blending_uses_configured_target_points_caps_and_vendor_years() -> No
             }
         ).lazy()
     }
-    enriched = int_ep_summaries_enriched.transform(
+    enriched = int_ep_summaries_enriched.Model.transform(
         _ep_summary_rows(
             ["verisk", "risklink"], [100.0, 1000.0], ep_type="OEP", return_period=2
         ),
         _selected_low_with_region_one_seed_mapping(),
     )
-    joined = int_ep_vendor_joined.transform(int_ep_summaries_main.transform(enriched))
-    blended = int_ep_blending_targets.transform(
-        int_ep_blending_target_points.transform(joined, config),
-        int_ep_blending_weights.transform(seeds),
+    joined = int_ep_vendor_joined.Model.transform(
+        int_ep_summaries_main.Model.transform(enriched)
+    )
+    blended = int_ep_blending_targets.Model.transform(
+        int_ep_blending_target_points.Model.transform(joined, config),
+        int_ep_blending_weights.Model.transform(seeds),
         config,
     ).collect()
     assert blended.item(0, Col.uplift_factor_on_base_model) == 2.0

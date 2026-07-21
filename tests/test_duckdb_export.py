@@ -177,7 +177,9 @@ def test_duckdb_export_preserves_existing_db_when_table_creation_fails(
 
 def row_count(connection: duckdb.DuckDBPyConnection, table_name: str) -> int:
     quoted_table_name = '"' + table_name.replace('"', '""') + '"'
-    return connection.execute(f"SELECT count(*) FROM {quoted_table_name}").fetchone()[0]
+    row = connection.execute(f"SELECT count(*) FROM {quoted_table_name}").fetchone()
+    assert row is not None
+    return int(row[0])
 
 
 def duckdb_columns(connection: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:

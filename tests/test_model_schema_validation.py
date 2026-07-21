@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-
 import polars as pl
 import pytest
 
-from rollup.columns import Col, RawCol
-from rollup.intermediate import int_ep_blending_targets
-from rollup.model_validation import collect_lazy_schema, require_join_key_compatible
+from rollup.columns import RawCol
+from rollup.model_validation import validate_schema
 from rollup.staging import stg_risklink_flood_events, stg_verisk_ylt
 
 
-def test_validation_catches_missing_select_column_with_model_context() -> None:
+def test_transform_catches_missing_raw_column_with_model_context() -> None:
     frame = pl.DataFrame({RawCol.CatalogTypeCode: ["STC"]}).lazy()
 
     with pytest.raises(
-        ValueError, match="stg_verisk_ylt.*raw_ylt.*missing required columns"
+        ValueError, match="stg_verisk_ylt.*could not resolve output schema"
     ):
-        stg_verisk_ylt.validate(frame)
+        stg_verisk_ylt.Model.transform(frame)
 
 
-def test_validation_catches_important_incompatible_dtype() -> None:
+def test_transform_resolves_casts_for_raw_input_dtypes() -> None:
     frame = pl.DataFrame(
         {
             RawCol.CatalogTypeCode: ["STC"],
@@ -33,50 +30,41 @@ def test_validation_catches_important_incompatible_dtype() -> None:
         }
     ).lazy()
 
-    with pytest.raises(ValueError, match="stg_verisk_ylt.*ModelCode.*integer"):
-        stg_verisk_ylt.validate(frame)
-
-
-def test_validation_catches_join_key_dtype_mismatch() -> None:
-    target_points = pl.DataFrame(
-        {
-            Col.region_peril_id: [1],
-            Col.blend_subregion_peril_id: [10],
-            Col.base_model: ["verisk"],
-            Col.risklink_loss: [1.0],
-            Col.verisk_loss: [2.0],
-        }
-    ).lazy()
-    weights = pl.DataFrame(
-        {
-            Col.region_peril_id: ["1"],
-            Col.blend_subregion_peril_id: [10],
-            Col.risklink_weight: [0.5],
-            Col.verisk_weight: [0.5],
-        }
-    ).lazy()
-
-    with pytest.raises(
-        ValueError, match="int_ep_blending_targets.*join key dtype mismatch"
-    ):
-        int_ep_blending_targets.validate(target_points, weights)
-
-
-def test_join_key_validation_accepts_different_numeric_widths() -> None:
-    left = pl.DataFrame({"join_id": pl.Series([1], dtype=pl.Int32)}).lazy()
-    right = pl.DataFrame({"join_id": pl.Series([1], dtype=pl.Int64)}).lazy()
-
-    require_join_key_compatible(
-        "test_model",
-        "left",
-        collect_lazy_schema("test_model", "left", left),
-        "right",
-        collect_lazy_schema("test_model", "right", right),
-        ["join_id"],
+    assert (
+        stg_verisk_ylt.Model.transform(frame).collect_schema()
+        == stg_verisk_ylt.Model.schema()
     )
 
 
-def test_valid_lazyframe_schema_validation_does_not_collect_rows(
+def test_validate_schema_accepts_exact_ordered_schema() -> None:
+    expected = pl.Schema({"name": pl.String, "count": pl.Int64})
+
+    validate_schema(
+        "test_model", expected, pl.DataFrame({"name": ["a"], "count": [1]}).lazy()
+    )
+
+
+def test_validate_schema_rejects_exact_schema_mismatch_with_context() -> None:
+    expected = pl.Schema({"name": pl.String, "count": pl.Int64})
+    actual = pl.DataFrame({"count": [1], "name": ["a"]}).lazy()
+
+    with pytest.raises(ValueError) as exc:
+        validate_schema("test_model", expected, actual)
+
+    message = str(exc.value)
+    assert "test_model" in message
+    assert str(expected) in message
+    assert str(actual.collect_schema()) in message
+
+
+def test_validate_schema_reports_schema_resolution_failure_with_model_context() -> None:
+    frame = pl.DataFrame({"name": ["a"]}).lazy().select("missing")
+
+    with pytest.raises(ValueError, match="test_model.*could not resolve output schema"):
+        validate_schema("test_model", pl.Schema({"name": pl.String}), frame)
+
+
+def test_validate_schema_does_not_collect_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     frame = pl.DataFrame(
@@ -98,10 +86,12 @@ def test_valid_lazyframe_schema_validation_does_not_collect_rows(
 
     monkeypatch.setattr(pl.LazyFrame, "collect", fail_collect)
 
-    stg_verisk_ylt.validate(frame)
+    validate_schema("test_model", frame.collect_schema(), frame)
 
 
-def test_risklink_flood_event_validation_rejects_string_occurrence_dates() -> None:
+def test_risklink_flood_event_transform_rejects_string_occurrence_dates_on_collect() -> (
+    None
+):
     frame = pl.DataFrame(
         {
             "ModelEventID": [1],
@@ -111,37 +101,7 @@ def test_risklink_flood_event_validation_rejects_string_occurrence_dates() -> No
         }
     ).lazy()
 
-    with pytest.raises(
-        ValueError, match="stg_risklink_flood_events.*ModelOccurrenceDate.*date_like"
-    ):
-        stg_risklink_flood_events.validate(frame)
-
-
-@pytest.mark.parametrize("value", [date(2026, 1, 1), datetime(2026, 1, 1, 12, 30)])
-def test_risklink_flood_event_validation_accepts_date_and_datetime_occurrence_dates(
-    value: object,
-) -> None:
-    frame = pl.DataFrame(
-        {
-            "ModelEventID": [1],
-            RawCol.ModelOccurrenceYear: [2026],
-            RawCol.RegionPerilID: [70],
-            RawCol.ModelOccurrenceDate: [value],
-        }
-    ).lazy()
-
-    stg_risklink_flood_events.validate(frame)
-
-
-def test_base_selection_validation_error_uses_owning_model_name() -> None:
-    frame = pl.DataFrame({Col.vendor: ["risklink"]}).lazy()
-
-    with pytest.raises(ValueError) as exc:
-        from rollup.intermediate import int_ylt_base_selected
-
-        int_ylt_base_selected.validate(frame)
-
-    message = str(exc.value)
-    assert "int_ylt_base_selected" in message
-    assert "enriched_ylt" in message
-    assert "int_ylt_main_base_selected" not in message
+    candidate = stg_risklink_flood_events.Model.transform(frame)
+    assert candidate.collect_schema() == stg_risklink_flood_events.Model.schema()
+    with pytest.raises(pl.exceptions.PolarsError):
+        candidate.collect()

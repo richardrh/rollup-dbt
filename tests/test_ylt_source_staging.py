@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import polars as pl
+import pytest
 
 from rollup.columns import Col, RawCol
 from rollup.intermediate import int_ylt_normalized
@@ -57,9 +57,9 @@ def test_normalize_ylt_returns_combined_plain_lazy_frame(tmp_path) -> None:
 
     ylts = load(tmp_path)
     normalized = (
-        int_ylt_normalized.transform(
-            stg_verisk_ylt.transform(ylts["verisk"]),
-            stg_risklink_ylt.transform(ylts["risklink"]),
+        int_ylt_normalized.Model.transform(
+            stg_verisk_ylt.Model.transform(ylts["verisk"]),
+            stg_risklink_ylt.Model.transform(ylts["risklink"]),
         )
         .collect()
         .sort(Col.vendor)

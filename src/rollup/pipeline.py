@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-import time
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 import polars as pl
+
 from rollup import validation
 from rollup.config import RollupConfig
 from rollup.intermediate import (
@@ -42,6 +43,13 @@ from rollup.marts import (
     mart_ylt_dialsup_long,
     mart_ylt_main_long,
 )
+from rollup.output_contract import (
+    COMBINED_YLT_FILE,
+    DIALSUP_YLT_FILE,
+    EVENT_VALIDATION_FILE,
+    MARTS_DIR,
+    WIDE_YLT_FILE,
+)
 from rollup.staging import (
     stg_forecast_factors,
     stg_gbp_fx_rates,
@@ -50,16 +58,8 @@ from rollup.staging import (
     stg_verisk_events,
     stg_verisk_ylt,
 )
-from rollup.output_contract import (
-    COMBINED_YLT_FILE,
-    DIALSUP_YLT_FILE,
-    EVENT_VALIDATION_FILE,
-    MARTS_DIR,
-    WIDE_YLT_FILE,
-)
 from rollup.writers import debug as debug_writer
 from rollup.writers import fanout_partitions, parquet, wide_output
-
 
 logger = logging.getLogger(__name__)
 
@@ -136,14 +136,16 @@ def run(
             )
 
         with _logged_phase("staging"):
-            verisk_events = stg_verisk_events.transform(seeds["verisk_events"])
-            risklink_events = stg_risklink_flood_events.transform(
+            verisk_events = stg_verisk_events.Model.transform(seeds["verisk_events"])
+            risklink_events = stg_risklink_flood_events.Model.transform(
                 seeds["risklink_flood22_model_events"]
             )
-            verisk_ylt = stg_verisk_ylt.transform(ylts["verisk"])
-            risklink_ylt = stg_risklink_ylt.transform(ylts["risklink"])
-            gbp_fx_rates = stg_gbp_fx_rates.transform(seeds["fx_rates"])
-            forecast_factors = stg_forecast_factors.transform(seeds["forecast_factors"])
+            verisk_ylt = stg_verisk_ylt.Model.transform(ylts["verisk"])
+            risklink_ylt = stg_risklink_ylt.Model.transform(ylts["risklink"])
+            gbp_fx_rates = stg_gbp_fx_rates.Model.transform(seeds["fx_rates"])
+            forecast_factors = stg_forecast_factors.Model.transform(
+                seeds["forecast_factors"]
+            )
             source_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {
                 "ep_summaries": ep_summaries,
             }
@@ -168,70 +170,78 @@ def run(
             )
 
         with _logged_phase("intermediate"):
-            normalized_ylt = int_ylt_normalized.transform(verisk_ylt, risklink_ylt)
-            ep_enriched = int_ep_summaries_enriched.transform(ep_summaries, seeds)
-            ep_selected_main = int_ep_summaries_main.transform(ep_enriched)
-            ep_selected_dialsup = int_ep_summaries_dialsup.transform(ep_enriched)
-            forecast_dates = int_forecast_dates.transform(forecast_factors)
-            enriched_ylt = int_ylt_enriched.transform(normalized_ylt, ep_selected_main)
-            enriched_ylt_dialsup = int_ylt_enriched.transform(
+            normalized_ylt = int_ylt_normalized.Model.transform(
+                verisk_ylt, risklink_ylt
+            )
+            ep_enriched = int_ep_summaries_enriched.Model.transform(ep_summaries, seeds)
+            ep_selected_main = int_ep_summaries_main.Model.transform(ep_enriched)
+            ep_selected_dialsup = int_ep_summaries_dialsup.Model.transform(ep_enriched)
+            forecast_dates = int_forecast_dates.Model.transform(forecast_factors)
+            enriched_ylt = int_ylt_enriched.Model.transform(
+                normalized_ylt, ep_selected_main
+            )
+            enriched_ylt_dialsup = int_ylt_enriched.Model.transform(
                 normalized_ylt, ep_selected_dialsup
             )
-            joined_ep_summaries = int_ep_vendor_joined.transform(ep_selected_main)
-            ep_blending_target_points = int_ep_blending_target_points.transform(
+            joined_ep_summaries = int_ep_vendor_joined.Model.transform(ep_selected_main)
+            ep_blending_target_points = int_ep_blending_target_points.Model.transform(
                 joined_ep_summaries, config
             )
-            ep_blending_weights = int_ep_blending_weights.transform(seeds)
-            ep_blending_targets = int_ep_blending_targets.transform(
+            ep_blending_weights = int_ep_blending_weights.Model.transform(seeds)
+            ep_blending_targets = int_ep_blending_targets.Model.transform(
                 ep_blending_target_points, ep_blending_weights, config
             )
-            ylt_original = int_ylt_base_selected.transform(enriched_ylt, config)
-            ylt_ranked = int_ylt_ranked.transform(ylt_original, config)
-            ylt_original_dialsup = int_ylt_base_selected.transform(
+            ylt_original = int_ylt_base_selected.Model.transform(enriched_ylt, config)
+            ylt_ranked = int_ylt_ranked.Model.transform(ylt_original, config)
+            ylt_original_dialsup = int_ylt_base_selected.Model.transform(
                 enriched_ylt_dialsup, config
             )
-            ylt_ranked_dialsup = int_ylt_ranked.transform(ylt_original_dialsup, config)
-            dialsup_factor_base = int_ylt_dialsup_factor_base.transform(
+            ylt_ranked_dialsup = int_ylt_ranked.Model.transform(
+                ylt_original_dialsup, config
+            )
+            dialsup_factor_base = int_ylt_dialsup_factor_base.Model.transform(
                 ylt_ranked_dialsup,
                 verisk_events,
                 gbp_fx_rates,
                 forecast_dates,
                 forecast_factors,
             )
-            dialsup_original = int_ylt_dialsup_original_metric.transform(
+            dialsup_original = int_ylt_dialsup_original_metric.Model.transform(
                 dialsup_factor_base
             )
-            dialsup_localccy = int_ylt_dialsup_local_currency_metric.transform(
+            dialsup_localccy = int_ylt_dialsup_local_currency_metric.Model.transform(
                 dialsup_factor_base
             )
-            dialsup_localccy_forecast = int_ylt_dialsup_forecast_metric.transform(
+            dialsup_localccy_forecast = int_ylt_dialsup_forecast_metric.Model.transform(
                 dialsup_factor_base
             )
-            ylt_dialsup = int_ylt_dialsup_metric_stream.transform(
+            ylt_dialsup = int_ylt_dialsup_metric_stream.Model.transform(
                 dialsup_original, dialsup_localccy, dialsup_localccy_forecast
             )
             ylt_dialsup_path = work_dir / "ylt_dialsup.parquet"
             parquet.write(ylt_dialsup, ylt_dialsup_path)
             ylt_dialsup = pl.scan_parquet(ylt_dialsup_path)
 
-            ylt_blended = int_ylt_main_blended.transform(
+            ylt_blended = int_ylt_main_blended.Model.transform(
                 ylt_ranked, ep_blending_targets
             )
-            ylt_localccy = int_ylt_main_local_currency.transform(
+            ylt_localccy = int_ylt_main_local_currency.Model.transform(
                 ylt_blended, gbp_fx_rates
             )
-            ylt_localccy_forecast = int_ylt_main_forecast.transform(
+            ylt_localccy_forecast = int_ylt_main_forecast.Model.transform(
                 ylt_localccy,
                 forecast_dates,
                 forecast_factors,
             )
-            ylt_euws = int_ylt_main_euws.transform(
+            ylt_euws = int_ylt_main_euws.Model.transform(
                 ylt_localccy_forecast,
                 verisk_events,
                 seeds,
             )
-            ylt_euws_override = int_ylt_main_euws_override.transform(ylt_euws, seeds)
-            ylt = int_ylt_main_metric_stream.transform(
+            ylt_euws_override = int_ylt_main_euws_override.Model.transform(
+                ylt_euws, seeds
+            )
+            ylt = int_ylt_main_metric_stream.Model.transform(
                 ylt_ranked,
                 ylt_blended,
                 ylt_localccy,
@@ -281,17 +291,19 @@ def run(
 
         with _logged_phase("marts"):
             threshold = config.outputs.minimum_event_loss_threshold
-            ylt_thresholded = mart_ylt_main_long.transform(ylt, threshold)
-            ylt_dialsup_thresholded = mart_ylt_dialsup_long.transform(
+            ylt_thresholded = mart_ylt_main_long.Model.transform(ylt, threshold)
+            ylt_dialsup_thresholded = mart_ylt_dialsup_long.Model.transform(
                 ylt_dialsup, threshold
             )
-            main_fanout = mart_main_fanout.transform(ylt_thresholded, risklink_events)
+            main_fanout = mart_main_fanout.Model.transform(
+                ylt_thresholded, risklink_events
+            )
 
-            dialsup_fanout = mart_dialsup_fanout.transform(
+            dialsup_fanout = mart_dialsup_fanout.Model.transform(
                 ylt_dialsup_thresholded, risklink_events
             )
 
-            event_validation = mart_event_validation.transform(
+            event_validation = mart_event_validation.Model.transform(
                 main_fanout, dialsup_fanout
             )
             mart_frames: dict[str, pl.DataFrame | pl.LazyFrame] = {

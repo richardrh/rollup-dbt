@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+import importlib
+import inspect
 import tomllib
+from pathlib import Path
 
+from rollup.model import PolarsModel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ROLLUP_ROOT = REPO_ROOT / "src" / "rollup"
@@ -36,6 +39,10 @@ def _public_model_paths() -> list[Path]:
     ]
 
 
+def _module_name(path: Path) -> str:
+    return ".".join(path.relative_to(ROLLUP_ROOT.parent).with_suffix("").parts)
+
+
 def test_wheel_package_discovery_includes_rollup_subpackages() -> None:
     pyproject = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -59,22 +66,68 @@ def test_source_modules_expose_only_load_as_public_operation() -> None:
     assert offenders == {}
 
 
-def test_public_models_validate_transform_and_transform_validates_contracts() -> None:
-    offenders: dict[str, list[str]] = {}
+def test_public_models_follow_class_contracts() -> None:
+    offenders: dict[str, str] = {}
     for path in _public_model_paths():
-        public_defs = _public_functions(path)
-        public_names = sorted(node.name for node in public_defs)
-        if public_names != ["transform", "validate"]:
-            offenders[path.relative_to(REPO_ROOT).as_posix()] = public_names
+        tree = _tree(path)
+        classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+        class_names = [node.name for node in classes]
+        relative_path = path.relative_to(REPO_ROOT).as_posix()
+        if class_names != ["Model"]:
+            offenders[relative_path] = f"classes={class_names}"
             continue
-        transform = next(node for node in public_defs if node.name == "transform")
-        calls = {
-            node.func.id
-            for node in ast.walk(transform)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        model = classes[0]
+        methods = {
+            node.name: node for node in model.body if isinstance(node, ast.FunctionDef)
         }
-        if not {"validate", "validate_output"}.issubset(calls):
-            offenders[path.relative_to(REPO_ROOT).as_posix()] = sorted(calls)
+        if _public_functions(path) or sorted(methods) != ["_transform", "schema"]:
+            offenders[relative_path] = f"methods={sorted(methods)}"
+            continue
+        if not any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "select"
+            for node in ast.walk(methods["_transform"])
+        ):
+            offenders[relative_path] = "_transform has no final select projection"
+            continue
+        if any(
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "MODEL"
+                for target in node.targets
+            )
+            for node in tree.body
+        ):
+            offenders[relative_path] = "contains compatibility MODEL constant"
+            continue
+
+        runtime_model = importlib.import_module(_module_name(path)).Model
+        if not issubclass(runtime_model, PolarsModel) or inspect.isabstract(
+            runtime_model
+        ):
+            offenders[relative_path] = "Model is not a concrete PolarsModel"
+            continue
+        if {"schema", "_transform"} - runtime_model.__dict__.keys():
+            offenders[relative_path] = "Model does not define schema and _transform"
+            continue
+        if {"validate", "transform"} & runtime_model.__dict__.keys():
+            offenders[relative_path] = "Model overrides public orchestration"
+            continue
+        schema_signature = inspect.signature(runtime_model.schema)
+        validate_signature = inspect.signature(runtime_model.validate)
+        transform_signature = inspect.signature(runtime_model.transform)
+        if (
+            list(schema_signature.parameters) != []
+            or str(schema_signature.return_annotation)
+            not in {"pl.Schema", "polars.Schema"}
+            or list(validate_signature.parameters) != ["frame"]
+            or str(validate_signature.return_annotation) not in {"None", "'None'"}
+            or list(transform_signature.parameters) != ["args", "kwargs"]
+            or str(transform_signature.return_annotation)
+            not in {"pl.LazyFrame", "polars.LazyFrame"}
+        ):
+            offenders[relative_path] = "inherited operations have unexpected signatures"
 
     assert offenders == {}
 
@@ -192,12 +245,27 @@ def test_pipeline_calls_imported_model_transform_methods_without_inline_business
         for alias in node.names
     }
     transform_modules = {
-        node.func.value.id
+        (
+            node.func.value.value.id
+            if isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "Model"
+            and isinstance(node.func.value.value, ast.Name)
+            else node.func.value.id
+            if isinstance(node.func.value, ast.Name)
+            else ""
+        )
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "transform"
-        and isinstance(node.func.value, ast.Name)
+        and (
+            isinstance(node.func.value, ast.Name)
+            or (
+                isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "Model"
+                and isinstance(node.func.value.value, ast.Name)
+            )
+        )
     }
     inline_polars_ops = {
         node.func.attr
@@ -299,12 +367,19 @@ def test_model_modules_are_not_import_only_and_public_functions_are_not_forwarde
             returned = body[0].value
             if not isinstance(returned, ast.Call):
                 continue
-            direct_delegate = isinstance(returned.func, ast.Name | ast.Attribute)
+            direct_delegate = isinstance(
+                returned.func, ast.Name | ast.Attribute
+            ) and not (
+                isinstance(returned.func, ast.Attribute)
+                and isinstance(returned.func.value, ast.Name)
+                and returned.func.value.id == "pl"
+                and returned.func.attr == "Schema"
+            )
             validates_or_raises = any(
                 isinstance(node, ast.Raise)
                 or isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"validate", "validate_output"}
+                and node.func.id == "validate"
                 for node in ast.walk(function)
             )
             if direct_delegate and not validates_or_raises:

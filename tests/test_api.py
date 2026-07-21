@@ -50,13 +50,14 @@ def test_run_rollup_returns_dataiku_friendly_output_paths(
 
     monkeypatch.setattr(api, "run_pipeline", fake_run)
     monkeypatch.setattr(api, "write_ep_report", fake_write_ep_report)
-    monkeypatch.setattr(
-        duckdb_export,
-        "write",
-        lambda data_root_arg, output_root_arg, config: (
-            events.append("export_duckdb") or db_path
-        ),
-    )
+
+    def fake_duckdb_export(
+        data_root_arg: Path, output_root_arg: Path, config: RollupConfig
+    ) -> Path:
+        events.append("export_duckdb")
+        return db_path
+
+    monkeypatch.setattr(duckdb_export, "write", fake_duckdb_export)
 
     result = api.run_rollup(data_root, output_root, debug=True)
 
