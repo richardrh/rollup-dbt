@@ -27,12 +27,14 @@ where `is_dialsup = 1` in `perils.csv`.
 After main-branch selection, Verisk and RiskLink losses are aggregated by:
 
 ```text
-rollup_lob, rollup_peril, region_peril_id, ep_type, return_period
+rollup_lob, rollup_peril, region_peril_id, blend_subregion_peril_id,
+base_model, ep_type, return_period
 ```
 
 Verisk rows produce `verisk_loss`; RiskLink rows produce `risklink_loss`. The two
 aggregates are full/coalesced joined so either vendor can be present in the
-joined EP view.
+joined EP view. This is distributional alignment of EP points at shared
+business dimensions, not event-level alignment.
 
 ## Blending target calculation
 
@@ -42,9 +44,10 @@ Blending targets are calculated only for:
 - `OEP` with `return_period = 200`
 - `OEP` with `return_period = 1000`
 
-Target blend rows require both `verisk_loss` and `risklink_loss`. Blend weights
-come from `blending_factors.csv` by `region_peril_id`. Europe Flood `216` is
-special-cased to use subregion `216b`.
+When both vendor losses are present, their weighted contributions form the
+target. Blend weights come from `blending_factors.csv` by `region_peril_id`.
+Europe Flood `216` is special-cased to use subregion `216b`. If one vendor loss
+is absent, the target remains the configured base-model loss.
 
 ```text
 target_loss = (verisk_loss * AIRBlend) + (risklink_loss * RMSBlend)
@@ -62,10 +65,12 @@ The uplift factor is clipped to `0.1`–`10.0`.
 ## Applying blending to YLT rows
 
 YLT rows are enriched from the selected EP summary mapping. Base-model rows are
-selected before blending.
+selected before blending: the main stream keeps `vendor == base_model`. It does
+not pair RiskLink and Verisk YLT events, rank them together, or exchange their
+event IDs.
 
-Events are ranked within `vendor + modelled_lob + rollup_peril` by descending
-loss. Return period is inferred from rank:
+Selected events are ranked within `vendor + modelled_lob + rollup_peril` by
+descending loss. Return period is inferred from rank:
 
 ```text
 RiskLink RP = 100,000 / rank
@@ -91,6 +96,15 @@ Then:
 ```text
 loss = original_loss * uplift_factor_on_base_model
 ```
+
+For `Europe_WS`, `perils.csv` configures Verisk as base. A RiskLink EP loss can
+contribute to the target and uplift, but the resulting YLT row remains the
+selected Verisk event. Its `(event_id, year_id, model_code)` joins to the
+Verisk catalogue for `model_event_id` and `event_day`; EUWS factors join by
+`model_event_id`. RiskLink rows have no Verisk `model_code`, are never given
+Verisk catalogue IDs, and use the RiskLink occurrence catalogue/fanout path
+when RiskLink is base. Unmatched Verisk-catalogue or EUWS-factor joins stay
+null and use an EUWS factor of `1.0`.
 
 ## Output flow
 

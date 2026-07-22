@@ -60,6 +60,21 @@ def test_developer_guide_documents_test_categories_and_quality_commands() -> Non
     assert "not a\nreal-data smoke pipeline" in developer_guide
 
 
+def test_architecture_documents_distributional_not_event_level_vendor_alignment() -> (
+    None
+):
+    architecture = (REPO_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    alignment_section = (
+        architecture.split("### Cross-vendor event alignment", 1)[1]
+        .split("## FX", 1)[0]
+        .lower()
+    )
+
+    assert "Cross-vendor event alignment" in architecture
+    assert "one-to-one" in alignment_section
+    assert "distribution" in alignment_section
+
+
 def test_docs_do_not_include_sql_statements_or_template_references() -> None:
     docs_text = "\n".join(
         path.read_text(encoding="utf-8") for path in (REPO_ROOT / "docs").glob("*.md")
