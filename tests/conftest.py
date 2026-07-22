@@ -18,7 +18,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     run_fuzz = config.getoption("--run-fuzz")
     run_integration = config.getoption("--run-integration")
     m_option = config.getoption("-m") or ""

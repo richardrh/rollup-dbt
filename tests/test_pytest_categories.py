@@ -8,8 +8,10 @@ import pytest
 
 
 class _Config:
-    def __init__(self, *, run_fuzz: bool, run_integration: bool, markexpr: str = "") -> None:
-        self._options = {
+    def __init__(
+        self, *, run_fuzz: bool, run_integration: bool, markexpr: str = ""
+    ) -> None:
+        self._options: dict[str, bool | str] = {
             "--run-fuzz": run_fuzz,
             "--run-integration": run_integration,
             "-m": markexpr,
@@ -70,7 +72,9 @@ def test_category_hooks_skip_only_unselected_opt_in_categories(
 
     actual_skips = {
         marker_name
-        for marker_name, item in zip(("normal", "fuzz", "integration"), items, strict=True)
+        for marker_name, item in zip(
+            ("normal", "fuzz", "integration"), items, strict=True
+        )
         if item.markers
     }
     assert actual_skips == expected_skips
