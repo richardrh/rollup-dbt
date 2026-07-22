@@ -129,13 +129,12 @@ Run static and documentation checks before submitting changes:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src
+uv run mypy src tests
 uv run zensical build --config-file zensical.toml
 ```
 
-The forthcoming Azure definition will be `pipelines/azure-pipelines.yml`. The
-DevOps task that creates it will use `uv` directly, not `pip`; this repository
-does not define its Azure pipeline here.
+The Azure Pipelines definition is `pipelines/azure-pipelines.yml`. It uses `uv`
+directly, not `pip`; see `pipelines/README.md` for Azure setup notes.
 
 See [Building packages](building.md) when you need to build a wheel for another
 Python environment.

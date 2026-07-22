@@ -41,9 +41,8 @@ uv run pytest -q --run-fuzz         # normal plus property-based fuzz tests
 ```
 
 See the [developer guide](docs/developer-guide.md) for all test selections and
-quality commands. The forthcoming Azure definition will live at
-`pipelines/azure-pipelines.yml`; the DevOps task will create it and will use `uv`
-directly rather than `pip`.
+quality commands. The Azure Pipelines definition lives at
+`pipelines/azure-pipelines.yml` and uses `uv` directly rather than `pip`.
 
 Outputs are written to `output/`. The default run also writes
 `output/rollup.duckdb` for local inspection with the SQL templates under `sql/`.

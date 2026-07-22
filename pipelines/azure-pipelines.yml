@@ -1,0 +1,61 @@
+trigger:
+  branches:
+    include:
+      - master
+
+pr:
+  branches:
+    include:
+      - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  UV_CACHE_DIR: $(Pipeline.Workspace)/.uv-cache
+
+jobs:
+  - job: Quality
+    displayName: Quality
+    steps:
+      - template: templates/setup-uv.yml
+
+      - script: uv run ruff check .
+        displayName: Ruff lint
+
+      - script: uv run ruff format --check .
+        displayName: Ruff format check
+
+      - script: uv run mypy src tests
+        displayName: Mypy
+
+      - script: uv run zensical build --config-file zensical.toml
+        displayName: Build documentation
+
+  - job: Tests
+    displayName: Tests
+    steps:
+      - template: templates/setup-uv.yml
+
+      - script: uv run pytest -q --junitxml=$(Common.TestResultsDirectory)/pytest-normal.xml
+        displayName: Pytest normal
+
+      - script: uv run pytest -q -m integration --junitxml=$(Common.TestResultsDirectory)/pytest-integration.xml
+        displayName: Pytest integration only
+        condition: succeededOrFailed()
+
+      - script: uv run pytest -q -m fuzz --junitxml=$(Common.TestResultsDirectory)/pytest-fuzz.xml
+        displayName: Pytest fuzz only
+        condition: succeededOrFailed()
+
+      - task: PublishTestResults@2
+        displayName: Publish pytest results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: $(Common.TestResultsDirectory)/pytest-*.xml
+          failTaskOnFailedTests: true
+          failTaskOnMissingResultsFile: true
+          failTaskOnFailureToPublishResults: true
+          mergeTestResults: false
+          testRunTitle: Pytest
