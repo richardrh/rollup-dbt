@@ -26,7 +26,7 @@ jobs:
       - script: uv run ruff format --check .
         displayName: Ruff format check
 
-      - script: uv run mypy src tests
+      - script: uv run mypy src tests pipelines/summarize_pytest.py
         displayName: Mypy
 
       - script: uv run zensical build --config-file zensical.toml
@@ -37,7 +37,7 @@ jobs:
     steps:
       - template: templates/setup-uv.yml
 
-      - script: uv run pytest -q --junitxml=$(Common.TestResultsDirectory)/pytest-normal.xml
+      - script: uv run pytest -q -m "not integration and not fuzz" --junitxml=$(Common.TestResultsDirectory)/pytest-normal.xml
         displayName: Pytest normal
 
       - script: uv run pytest -q -m integration --junitxml=$(Common.TestResultsDirectory)/pytest-integration.xml
@@ -48,14 +48,49 @@ jobs:
         displayName: Pytest fuzz only
         condition: succeededOrFailed()
 
+      - script: |
+          summary_path="$(Common.TestResultsDirectory)/pytest-summary.md"
+          uv run python pipelines/summarize_pytest.py \
+            --output "$summary_path" \
+            --suite "normal=$(Common.TestResultsDirectory)/pytest-normal.xml" \
+            --suite "integration=$(Common.TestResultsDirectory)/pytest-integration.xml" \
+            --suite "fuzz=$(Common.TestResultsDirectory)/pytest-fuzz.xml"
+          echo "##vso[task.uploadsummary]$(realpath "$summary_path")"
+        displayName: Publish pytest summary
+        condition: succeededOrFailed()
+
       - task: PublishTestResults@2
-        displayName: Publish pytest results
+        displayName: Publish pytest normal results
         condition: succeededOrFailed()
         inputs:
           testResultsFormat: JUnit
-          testResultsFiles: $(Common.TestResultsDirectory)/pytest-*.xml
+          testResultsFiles: $(Common.TestResultsDirectory)/pytest-normal.xml
           failTaskOnFailedTests: true
           failTaskOnMissingResultsFile: true
           failTaskOnFailureToPublishResults: true
           mergeTestResults: false
-          testRunTitle: Pytest
+          testRunTitle: Pytest normal
+
+      - task: PublishTestResults@2
+        displayName: Publish pytest integration results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: $(Common.TestResultsDirectory)/pytest-integration.xml
+          failTaskOnFailedTests: true
+          failTaskOnMissingResultsFile: true
+          failTaskOnFailureToPublishResults: true
+          mergeTestResults: false
+          testRunTitle: Pytest integration
+
+      - task: PublishTestResults@2
+        displayName: Publish pytest fuzz results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: $(Common.TestResultsDirectory)/pytest-fuzz.xml
+          failTaskOnFailedTests: true
+          failTaskOnMissingResultsFile: true
+          failTaskOnFailureToPublishResults: true
+          mergeTestResults: false
+          testRunTitle: Pytest fuzz

@@ -104,7 +104,7 @@ real-data smoke pipeline.
 
 | Command | Runs |
 | --- | --- |
-| `uv run pytest -q` | Normal tests only; integration and fuzz tests are skipped. |
+| `uv run pytest -q -m "not integration and not fuzz"` | Normal tests only, with no intentional integration/fuzz skips in JUnit XML. |
 | `uv run pytest -q --run-integration` | Normal and integration tests. |
 | `uv run pytest -q -m integration` | Integration tests only. |
 | `uv run pytest -q --run-fuzz` | Normal and property-based fuzz tests. |
@@ -129,7 +129,7 @@ Run static and documentation checks before submitting changes:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src tests
+uv run mypy src tests pipelines/summarize_pytest.py
 uv run zensical build --config-file zensical.toml
 ```
 

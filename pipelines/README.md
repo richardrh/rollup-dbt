@@ -20,5 +20,20 @@ Jobs:
 
 - **Quality**: Ruff lint, Ruff format check, mypy, and Zensical docs build.
 - **Tests**: normal, integration-only, and fuzz-only pytest runs as separate
-  visible steps, each producing its own JUnit XML before publishing all available
-  results.
+  visible steps. The normal run uses `-m "not integration and not fuzz"`, so its
+  JUnit XML contains normal tests only and has zero intentional category skips.
+  Integration and fuzz runs use explicit marker selections and still run after an
+  earlier category fails.
+
+The Tests job publishes three distinct Azure Tests tab runs with exact JUnit XML
+files and titles: `Pytest normal`, `Pytest integration`, and `Pytest fuzz`. Each
+publisher runs on `succeededOrFailed()` and fails the task if its XML is missing,
+contains failed tests, or cannot be published.
+
+After the pytest commands, `pipelines/summarize_pytest.py` generates a Markdown
+summary table from the three XML files. The table is printed in the job logs and
+uploaded with `##vso[task.uploadsummary]`, so it appears in the pipeline run's
+Extensions summary. Missing XML is shown as `MISSING` in that human-readable
+table; the Azure test publisher remains responsible for failing missing machine
+results. Use the raw XML and Azure Tests tab entries for detailed, machine-
+readable test-case data.
