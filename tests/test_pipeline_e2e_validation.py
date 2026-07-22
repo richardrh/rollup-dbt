@@ -4,10 +4,14 @@ from datetime import date
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from rollup.columns import Col, RawCol
 from rollup.sources.seeds import load
 from rollup.staging import stg_risklink_flood_events
+
+
+pytestmark = pytest.mark.integration
 
 
 def test_seed_source_accepts_csv_seed_files(tmp_path: Path) -> None:

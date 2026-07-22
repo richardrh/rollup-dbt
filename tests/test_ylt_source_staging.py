@@ -9,6 +9,9 @@ from rollup.sources.ylt import load
 from rollup.staging import stg_risklink_ylt, stg_verisk_ylt
 
 
+pytestmark = pytest.mark.integration
+
+
 def _write_ylt_fixture(data_root):
     verisk_dir = data_root / "ylt" / "verisk"
     risklink_dir = data_root / "ylt" / "risklink"
