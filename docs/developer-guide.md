@@ -98,11 +98,44 @@ to `output/debug/`.
 
 ## Tests
 
-The default unit suite does not require Docker or external services:
+All categories use local synthetic fixtures; integration tests use `tmp_path`
+files and do not require external services or real data. They are not a
+real-data smoke pipeline.
+
+| Command | Runs |
+| --- | --- |
+| `uv run pytest -q` | Normal tests only; integration and fuzz tests are skipped. |
+| `uv run pytest -q --run-integration` | Normal and integration tests. |
+| `uv run pytest -q -m integration` | Integration tests only. |
+| `uv run pytest -q --run-fuzz` | Normal and property-based fuzz tests. |
+| `uv run pytest -q -m fuzz` | Fuzz tests only. |
+| `uv run pytest -q --run-integration --run-fuzz` | All test categories. |
+
+`-q` keeps pytest output concise. `--run-integration` and `--run-fuzz` opt their
+respective categories into an otherwise normal run. `-m` is pytest's marker
+selector, so `-m integration` or `-m fuzz` selects only that category rather than
+also selecting normal tests. Target a module, test, or matching test names as
+needed:
 
 ```bash
-uv run pytest -q
+uv run pytest -q tests/test_ylt_source_staging.py
+uv run pytest -q tests/test_model.py::test_transform_invokes_private_hook_and_validates_its_schema
+uv run pytest -q -k schema
+uv run pytest -q --run-integration tests/test_pipeline_e2e_validation.py
 ```
+
+Run static and documentation checks before submitting changes:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run zensical build --config-file zensical.toml
+```
+
+The forthcoming Azure definition will be `pipelines/azure-pipelines.yml`. The
+DevOps task that creates it will use `uv` directly, not `pip`; this repository
+does not define its Azure pipeline here.
 
 See [Building packages](building.md) when you need to build a wheel for another
 Python environment.

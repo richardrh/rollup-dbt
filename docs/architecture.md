@@ -86,11 +86,13 @@ models: sources retain `load()`, while writers retain their own
 `validate()`/`write()` contracts.
 
 `PolarsModel` declares abstract class methods `schema` and private `_transform`.
-Each concrete `Model` implements both with `@override`; `_transform` has the
-exact signature supplied through `P`. The inherited, final `transform` template
-calls `_transform`, validates the resulting lazy frame, and returns it. The
-inherited, final `validate` compares the frame schema with `schema()`. Models do
-not override either orchestration method.
+Class methods keep models stateless, so callers use `module.Model.transform(...)`
+without instances. Each concrete `Model` implements both hooks with `@override`;
+`_transform` has the exact signature supplied through `P`. The inherited final
+`transform` calls `_transform`, validates the resulting lazy frame, and returns
+it; the inherited final `validate` compares that frame schema with `schema()`.
+`@final` lets mypy prevent child overrides of this orchestration, so concrete
+hooks must not call validation themselves.
 
 Every `_transform` ends with an explicit, visible final `.select(...)` (with
 casts as needed) in `schema()` order. This is the Polars equivalent of a SQL
