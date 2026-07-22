@@ -27,6 +27,23 @@ uv run zensical serve --config-file zensical.toml --dev-addr localhost:4322
 The docs include the full [Quickstart](docs/first-run.md), operating modes,
 troubleshooting, and developer notes.
 
+## Model contract and tests
+
+Pipeline models are stateless class-level operations: call
+`module.Model.transform(...)` rather than creating an instance. `PolarsModel` keeps
+validation and transform orchestration final, so a concrete `_transform(...)` only
+builds its lazy frame; the inherited transform validates it automatically.
+
+```bash
+uv run pytest -q                    # normal tests
+uv run pytest -q --run-integration  # normal plus synthetic integration tests
+uv run pytest -q --run-fuzz         # normal plus property-based fuzz tests
+```
+
+See the [developer guide](docs/developer-guide.md) for all test selections and
+quality commands. The Azure Pipelines definition lives at
+`pipelines/azure-pipelines.yml` and uses `uv` directly rather than `pip`.
+
 Outputs are written to `output/`. The default run also writes
 `output/rollup.duckdb` for local inspection with the SQL templates under `sql/`.
 

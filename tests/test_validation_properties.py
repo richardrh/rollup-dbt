@@ -57,6 +57,9 @@ def _aal_inputs(losses: list[float], unmapped_losses: list[float]) -> Validation
         + ["LOB_UNMAPPED"] * len(unmapped_losses),
         RawCol.Analysis: ["PERIL_A"] * len(losses)
         + ["PERIL_UNMAPPED"] * len(unmapped_losses),
+        RawCol.ModelCode: [1] * (len(losses) + len(unmapped_losses)),
+        RawCol.YearID: [2026] * (len(losses) + len(unmapped_losses)),
+        RawCol.EventID: list(range(1, len(losses) + len(unmapped_losses) + 1)),
         RawCol.GroundUpLoss: losses + unmapped_losses,
     }
     return ValidationInputs(
@@ -64,7 +67,12 @@ def _aal_inputs(losses: list[float], unmapped_losses: list[float]) -> Validation
         ylts={
             "verisk": pl.DataFrame(rows).lazy(),
             "risklink": pl.DataFrame(
-                schema={RawCol.anlsid: pl.Int64, RawCol.loss: pl.Float64}
+                schema={
+                    RawCol.anlsid: pl.Int64,
+                    RawCol.yearid: pl.Int64,
+                    RawCol.eventid: pl.Int64,
+                    RawCol.loss: pl.Float64,
+                }
             ).lazy(),
         },
         ep_summaries=pl.DataFrame(

@@ -86,11 +86,13 @@ models: sources retain `load()`, while writers retain their own
 `validate()`/`write()` contracts.
 
 `PolarsModel` declares abstract class methods `schema` and private `_transform`.
-Each concrete `Model` implements both with `@override`; `_transform` has the
-exact signature supplied through `P`. The inherited, final `transform` template
-calls `_transform`, validates the resulting lazy frame, and returns it. The
-inherited, final `validate` compares the frame schema with `schema()`. Models do
-not override either orchestration method.
+Class methods keep models stateless, so callers use `module.Model.transform(...)`
+without instances. Each concrete `Model` implements both hooks with `@override`;
+`_transform` has the exact signature supplied through `P`. The inherited final
+`transform` calls `_transform`, validates the resulting lazy frame, and returns
+it; the inherited final `validate` compares that frame schema with `schema()`.
+`@final` lets mypy prevent child overrides of this orchestration, so concrete
+hooks must not call validation themselves.
 
 Every `_transform` ends with an explicit, visible final `.select(...)` (with
 casts as needed) in `schema()` order. This is the Polars equivalent of a SQL
@@ -188,16 +190,44 @@ view of EP losses per return-period bucket.
 ## Blending
 
 The EP-driven blending step calculates target losses per return-period
-bucket from the joined vendor summaries, applying configured blending
-weights. Events in the YLT are ranked within their vendor-modelled-lob-
-rollup-peril group, assigned a return-period bucket, and then matched
-to blending targets. Each event's loss is uplifted by the factor
-corresponding to its bucket.
+bucket from the joined vendor summaries, applying configured blending weights.
+After main YLT base selection, events are ranked within their selected
+vendor/modelled-LOB/rollup-peril group, assigned a return-period bucket, and
+then matched to blending targets. Each event's loss is uplifted by the factor
+for its bucket.
 
 This produces the main blended loss stream and also feeds rank
 information downstream for the wide output.
 
 For calculation details, see the [calculation reference](calculation-reference.md).
+
+### Cross-vendor event alignment
+
+RiskLink and Verisk event rows are **not** cross-vendor event matches. The
+pipeline never pairs them one-to-one, zips them by rank, assigns one vendor's
+event IDs to the other, or orders them together. EP summaries are aligned
+distributionally: vendor EP losses at common business dimensions,
+`base_model`, `ep_type`, and `return_period` form a weighted target and an
+uplift relative to the configured base vendor.
+
+The main YLT stream then retains only rows where `vendor == base_model` before
+ranking. Thus ranking happens within the selected vendor/LOB/peril partition,
+not across vendors. `perils.csv` declares Verisk as the base model for
+`Europe_WS`; RiskLink EP losses can therefore affect the Europe Windstorm
+target and uplift, while the carried-forward event rows remain Verisk rows.
+
+For a Verisk YLT row, `(event_id, year_id, model_code)` maps to the Verisk
+event catalogue's `model_event_id` and `event_day`; the EUWS rate factor then
+joins on `model_event_id`. RiskLink YLT rows have no Verisk `model_code`, are
+not assigned Verisk model-event IDs, and retain their own event identity. When
+RiskLink is base, its occurrence catalogue/fanout path supplies that vendor's
+event information instead. A nonmatching Verisk-catalogue or EUWS-factor join
+remains null and the EUWS factor defaults to `1.0`.
+
+Conceptually, an `Europe_WS` EP point might combine a Verisk loss of 100 and a
+RiskLink loss of 120 into a weighted target of 108. The resulting `1.08`
+uplift applies to the selected Verisk YLT event; it does not transfer a
+RiskLink event ID, rank, occurrence day, or event row to Verisk.
 
 ## FX
 
@@ -237,8 +267,10 @@ for reporting.
 ## EUWS
 
 Europe Windstorm (EUWS) factors are applied to Europe_WS peril rows.
-Verisk event catalogue joins identify storm events and attach per-event
-EUWS rate factors. Non-windstorm rows receive a factor of 1.0.
+Verisk-base YLT rows join the Verisk event catalogue by event ID, year, and
+model code to attach `model_event_id` and event day, then receive per-event
+EUWS rate factors by `model_event_id`. Missing catalogue/factor matches receive
+a factor of 1.0; this is not a cross-vendor event mapping.
 
 ## EUWS overrides
 

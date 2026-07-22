@@ -42,3 +42,7 @@ output/
 data/**
 !data/**/
 !data/**/schema.y*ml
+
+# Local environment files
+.env
+.env.*

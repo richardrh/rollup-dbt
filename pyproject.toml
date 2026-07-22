@@ -42,6 +42,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "fuzz: property-based test using Hypothesis. Skipped by default; opt-in with `--run-fuzz` or `-m fuzz`.",
+    "integration: synthetic cross-boundary or filesystem test. Skipped by default; opt-in with `--run-integration` or `-m integration`.",
 ]
 
 [[tool.mypy.overrides]]
